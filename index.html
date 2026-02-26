@@ -2190,25 +2190,30 @@ function safeFloat(val) {
 
 async function loadData() {
     try {
+        // 1. Load from local storage first so the site feels fast
         const saved = localStorage.getItem('portfolio-data-pro');
         if (saved) {
             data = JSON.parse(saved);
             if (!data.predictionMarkets) data.predictionMarkets = [];
             if (!data.opinionMarkets) data.opinionMarkets = [];
-            
-            // Migrate old data structure or set default
             if (!data.polymarketWallets || data.polymarketWallets.length === 0) {
-                data.polymarketWallets = ['0x2Ec0aa99D26b703585f58bdEd217a640d09e976b']; // Default if empty
+                data.polymarketWallets = ['0x2Ec0aa99D26b703585f58bdEd217a640d09e976b'];
             }
-            
             updateUI();
-        } else {
-             // Init with default wallet if no data exists
-             data.polymarketWallets = ['0x2Ec0aa99D26b703585f58bdEd217a640d09e976b'];
         }
-    } catch(e) { console.log('No saved data'); }
 
-    // Load Opinion config
+        // 2. Fetch the latest data from your Upstash cloud via Vercel
+        const res = await fetch('/api/sync');
+        const cloudData = await res.json();
+        
+        // If data exists in the cloud, use it (this syncs other devices)
+        if (cloudData.result) {
+            data = JSON.parse(cloudData.result);
+            updateUI();
+        }
+    } catch(e) { console.log('Cloud sync pending...'); }
+
+    // Load Opinion config and other settings locally
     try {
         const savedConfig = localStorage.getItem('opinion-config');
         if (savedConfig) {
@@ -2217,7 +2222,6 @@ async function loadData() {
         }
     } catch(e) {}
 
-    // Pre-fill modal if config exists
     loadDomeConfig();
 
     if (opinionConfig.apiKey) {
@@ -2227,13 +2231,21 @@ async function loadData() {
         document.getElementById('opinionWalletAddress').value = opinionConfig.walletAddress;
     }
 
-    // Load watchlist
     loadWatchlist();
 }
 
-function saveData() {
-    try { localStorage.setItem('portfolio-data-pro', JSON.stringify(data)); }
-    catch(e) { console.error('Save error:', e); }
+async function saveData() {
+    try { 
+        // Always save a local backup
+        localStorage.setItem('portfolio-data-pro', JSON.stringify(data)); 
+
+        // Push the latest data to your Upstash database via Vercel
+        await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+    } catch(e) { console.error('Cloud save error:', e); }
 }
 
 function saveOpinionConfig() {
