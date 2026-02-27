@@ -1308,6 +1308,464 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   display: flex; align-items: center; justify-content: center; gap: 0.5rem;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Expand / individual orders ──────────────────────────────────────── */
+.activity-filled-expand-btn {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  margin-left: auto; padding: 3px 9px;
+  background: var(--surf-3); border: 1px solid var(--border-mid);
+  border-radius: var(--r-xs); color: var(--t3);
+  font-size: 0.7rem; font-weight: 600; cursor: pointer;
+  transition: all 0.14s; white-space: nowrap; flex-shrink: 0;
+}
+.activity-filled-expand-btn:hover { color: var(--t1); border-color: var(--border-hi); }
+.activity-filled-expand-btn svg { transition: transform 0.2s; }
+.activity-filled-expand-btn.open svg { transform: rotate(180deg); }
+
+.activity-filled-orders {
+  display: none;
+  border-top: 1px solid var(--border);
+  margin-top: 0.6rem; padding-top: 0.6rem;
+}
+.activity-filled-orders.open { display: block; }
+.activity-filled-order-row {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.35rem 0; font-size: 0.76rem; color: var(--t3);
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.activity-filled-order-row:last-child { border-bottom: none; }
+.activity-filled-order-row .order-price {
+  font-family: var(--ff-mono); color: var(--t1); font-weight: 600;
+  min-width: 42px;
+}
+.activity-filled-order-row .order-size {
+  font-family: var(--ff-mono); min-width: 70px;
+}
+.activity-filled-order-row .order-cost {
+  font-family: var(--ff-mono); margin-left: auto;
+}
+.activity-filled-order-row .order-time {
+  font-size: 0.68rem; color: var(--t3); opacity: 0.7;
+}
+
+/* ── Weekly snapshot badge ───────────────────────────────────────────── */
+.snapshot-pm-badge {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: 0.75rem; font-family: var(--ff-mono);
+  color: var(--fuchsia); background: var(--fuchsia-10);
+  border: 1px solid rgba(217,70,239,0.2);
+  border-radius: var(--r-xs); padding: 2px 8px;
+  margin-left: 0.5rem;
+}
+
+/* ══════════════════════════════════════════════════════
+   ALERT TERMINAL — full-page split layout
+══════════════════════════════════════════════════════ */
+
+/* Scanline overlay for the whole terminal tab */
+#terminalTab {
+  position: relative;
+}
+#terminalTab::before {
+  content: '';
+  position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.06) 2px,
+    rgba(0,0,0,0.06) 4px
+  );
+}
+
+.term-shell {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 1.5rem;
+  height: calc(100vh - 130px);
+  min-height: 520px;
+  position: relative; z-index: 1;
+}
+
+/* ── Left: Console pane ────────────────────────────── */
+.term-left {
+  display: flex; flex-direction: column;
+  background: #050507;
+  border: 1px solid rgba(0,255,170,0.15);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgba(0,255,170,0.05),
+    inset 0 0 80px rgba(0,255,170,0.02),
+    0 8px 40px rgba(0,0,0,0.6);
+}
+
+.term-eyebrow {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.65rem 1rem;
+  background: rgba(0,255,170,0.04);
+  border-bottom: 1px solid rgba(0,255,170,0.1);
+  flex-shrink: 0;
+}
+.term-eyebrow-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #00ffaa;
+  box-shadow: 0 0 8px #00ffaa, 0 0 16px rgba(0,255,170,0.4);
+  flex-shrink: 0;
+  transition: all 0.3s;
+}
+.term-eyebrow-dot.polling {
+  animation: termPulse 1.2s ease-in-out infinite;
+}
+.term-eyebrow-dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
+@keyframes termPulse {
+  0%,100% { opacity: 1; box-shadow: 0 0 8px #00ffaa, 0 0 16px rgba(0,255,170,0.4); }
+  50%      { opacity: 0.4; box-shadow: 0 0 4px #00ffaa; }
+}
+.term-eyebrow-label {
+  font-family: var(--ff-mono); font-size: 0.65rem; font-weight: 700;
+  letter-spacing: 0.18em; color: rgba(0,255,170,0.7);
+  text-transform: uppercase;
+}
+.term-eyebrow-status {
+  font-family: var(--ff-mono); font-size: 0.62rem;
+  color: rgba(0,255,170,0.4); margin-left: auto;
+  letter-spacing: 0.1em;
+}
+
+/* The scrollable log area */
+.term-log {
+  flex: 1; overflow-y: auto;
+  padding: 1rem 1.25rem;
+  display: flex; flex-direction: column; gap: 0.2rem;
+  font-family: var(--ff-mono);
+}
+.term-log::-webkit-scrollbar { width: 3px; }
+.term-log::-webkit-scrollbar-thumb { background: rgba(0,255,170,0.15); border-radius: 2px; }
+
+.term-line {
+  display: flex; gap: 0.85rem; align-items: baseline;
+  line-height: 1.6; font-size: 0.76rem;
+  animation: termFadeIn 0.2s ease;
+}
+@keyframes termFadeIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.tl-ts {
+  color: rgba(0,255,170,0.25); flex-shrink: 0;
+  font-size: 0.65rem; letter-spacing: 0.03em;
+  min-width: 62px;
+}
+.tl-body { flex: 1; }
+
+/* Variants */
+.term-line.tl-cmd   .tl-body { color: #e0f7f2; }
+.term-line.tl-cmd   .tl-ts   { color: rgba(0,255,170,0.5); }
+.term-line.tl-ok    .tl-body { color: #00ffaa; }
+.term-line.tl-error .tl-body { color: #ff4d6a; }
+.term-line.tl-warn  .tl-body { color: #f59e0b; }
+.term-line.tl-info  .tl-body { color: #38bdf8; }
+.term-line.tl-system .tl-body { color: rgba(255,255,255,0.28); font-style: italic; }
+.tl-hint { font-size: 0.7rem !important; opacity: 0.8; }
+
+/* Input row */
+.term-input-area {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(0,255,170,0.1);
+  background: rgba(0,255,170,0.025);
+}
+.term-input-row {
+  display: flex; align-items: center; gap: 0;
+  padding: 0 0 0 1rem;
+}
+.term-ps1 {
+  font-family: var(--ff-mono); font-size: 0.8rem; flex-shrink: 0;
+  white-space: nowrap; padding-right: 0.5rem;
+}
+.term-ps1-user  { color: #00ffaa; font-weight: 700; }
+.term-ps1-sep   { color: rgba(255,255,255,0.3); }
+.term-ps1-host  { color: #38bdf8; font-weight: 700; }
+.term-ps1-end   { color: rgba(255,255,255,0.4); }
+.term-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  font-family: var(--ff-mono); font-size: 0.8rem; color: #e0f7f2;
+  padding: 0.8rem 0; caret-color: #00ffaa;
+  letter-spacing: 0.02em;
+}
+.term-input::placeholder { color: rgba(255,255,255,0.18); }
+
+.term-input-actions {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.4rem 0.75rem 0.65rem 1rem;
+}
+.term-btn-submit {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.4rem 1rem;
+  background: rgba(0,255,170,0.1);
+  border: 1px solid rgba(0,255,170,0.3);
+  border-radius: var(--r-xs); color: #00ffaa;
+  font-family: var(--ff-mono); font-size: 0.72rem; font-weight: 700;
+  letter-spacing: 0.06em; cursor: pointer;
+  transition: all 0.15s;
+}
+.term-btn-submit:hover {
+  background: rgba(0,255,170,0.18);
+  border-color: #00ffaa;
+  box-shadow: 0 0 12px rgba(0,255,170,0.2);
+}
+.term-btn-submit:disabled { opacity: 0.35; cursor: not-allowed; }
+.term-hint-key {
+  font-family: var(--ff-mono); font-size: 0.65rem;
+  color: rgba(255,255,255,0.2); letter-spacing: 0.06em;
+}
+
+/* ── Right: Alerts pane ────────────────────────────── */
+.term-right {
+  display: flex; flex-direction: column;
+  background: var(--surf-1);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+}
+
+.term-panel-header {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--surf-2); border-bottom: 1px solid var(--border);
+  font-family: var(--ff-display); font-size: 0.68rem;
+  font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--t3);
+  flex-shrink: 0;
+}
+.term-alert-count {
+  margin-left: 0.25rem;
+  background: rgba(0,255,170,0.12); color: #00ffaa;
+  border: 1px solid rgba(0,255,170,0.25);
+  border-radius: 99px; padding: 0px 7px;
+  font-family: var(--ff-mono); font-size: 0.65rem; font-weight: 700;
+  min-width: 20px; text-align: center;
+}
+.term-clear-btn {
+  margin-left: auto; background: none; border: none;
+  cursor: pointer; color: var(--t3);
+  font-family: var(--ff-display); font-size: 0.62rem;
+  font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  transition: color 0.12s; padding: 2px 4px;
+}
+.term-clear-btn:hover { color: var(--red); }
+
+.term-alerts {
+  flex: 1; overflow-y: auto; padding: 0.6rem;
+  display: flex; flex-direction: column; gap: 0.4rem;
+}
+.term-alerts::-webkit-scrollbar { width: 3px; }
+.term-alerts::-webkit-scrollbar-thumb { background: var(--surf-3); border-radius: 2px; }
+
+.term-alerts-empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 0.5rem; color: var(--t3);
+  font-family: var(--ff-mono); font-size: 0.72rem;
+  text-align: center; padding: 2rem;
+}
+
+/* Individual alert card */
+.term-alert-card {
+  background: var(--surf-2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 0.65rem 0.75rem;
+  display: flex; flex-direction: column; gap: 0.35rem;
+  transition: border-color 0.2s, background 0.2s;
+  position: relative; overflow: hidden;
+  animation: termFadeIn 0.25s ease;
+}
+.term-alert-card::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 2.5px; border-radius: 0 1px 1px 0;
+  background: var(--card-accent, var(--border-hi));
+  box-shadow: 0 0 8px var(--card-accent, transparent);
+}
+.term-alert-card:hover { border-color: var(--border-mid); }
+.term-alert-card.triggered {
+  background: rgba(245,158,11,0.06);
+  border-color: rgba(245,158,11,0.3);
+}
+.term-alert-card.triggered::before {
+  background: var(--amber);
+  box-shadow: 0 0 8px rgba(245,158,11,0.5);
+  animation: termPulse 1.5s ease-in-out infinite;
+}
+
+.term-alert-top {
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.term-alert-sym {
+  font-family: var(--ff-mono); font-size: 0.82rem; font-weight: 700;
+  color: var(--t1);
+}
+.term-alert-badge {
+  font-size: 0.58rem; font-weight: 800; letter-spacing: 0.07em;
+  text-transform: uppercase; padding: 1px 5px; border-radius: 3px;
+  flex-shrink: 0;
+}
+.term-alert-badge.crypto     { background: rgba(56,189,248,0.12); color: var(--sky); }
+.term-alert-badge.stock      { background: rgba(34,197,94,0.12);  color: var(--green); }
+.term-alert-badge.etf        { background: rgba(108,114,255,0.12);color: var(--indigo); }
+.term-alert-badge.opinion    { background: rgba(249,115,22,0.12); color: var(--orange); }
+.term-alert-badge.polymarket { background: var(--fuchsia-10); color: var(--fuchsia); }
+
+.term-alert-dir {
+  margin-left: auto; font-family: var(--ff-mono);
+  font-size: 0.68rem; color: var(--t3);
+  display: flex; align-items: center; gap: 0.25rem;
+}
+.term-alert-dir .dir-arrow { font-size: 0.85rem; }
+.dir-arrow.up   { color: var(--green); }
+.dir-arrow.down { color: var(--red); }
+
+.term-alert-remove {
+  background: none; border: none; cursor: pointer;
+  color: var(--t3); font-size: 0.9rem; line-height: 1; padding: 0 2px;
+  transition: color 0.12s;
+}
+.term-alert-remove:hover { color: var(--red); }
+
+.term-alert-label {
+  font-size: 0.74rem; color: var(--t2);
+  font-family: var(--ff-body); line-height: 1.3;
+  padding-left: 0.1rem;
+}
+
+.term-alert-prices {
+  display: flex; align-items: center; justify-content: space-between;
+  font-family: var(--ff-mono); font-size: 0.68rem;
+  color: var(--t3); padding-top: 0.2rem;
+  border-top: 1px solid rgba(255,255,255,0.04);
+}
+.term-alert-prices .now { color: var(--t2); }
+.term-alert-prices .target-lbl { opacity: 0.6; }
+.term-alert-fired {
+  font-family: var(--ff-mono); font-size: 0.68rem;
+  color: var(--amber); font-weight: 700;
+  display: flex; align-items: center; gap: 0.3rem;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .term-shell { grid-template-columns: 1fr; grid-template-rows: 1fr auto; height: auto; }
+  .term-left  { min-height: 380px; }
+  .term-right { max-height: 340px; }
+}
+
+/* ══════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — ≤ 768px
+══════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Sidebar becomes a bottom nav bar */
+  .sidebar {
+    position: fixed; bottom: 0; left: 0; right: 0; top: auto;
+    width: 100%; height: auto;
+    flex-direction: row; align-items: center; justify-content: space-around;
+    padding: 0.5rem 0.25rem calc(0.5rem + env(safe-area-inset-bottom));
+    border-right: none; border-top: 1px solid var(--border);
+    gap: 0; z-index: 100; overflow: visible;
+    background: rgba(10,11,17,0.96);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .sidebar-brand, .sidebar-label, .sidebar-spacer, .sidebar-footer { display: none; }
+  .sidebar-section {
+    display: contents;
+  }
+  .nav-item {
+    flex-direction: column; gap: 3px; padding: 0.4rem 0.5rem;
+    font-size: 0.6rem; border-radius: var(--r-sm);
+    min-width: 52px; text-align: center; justify-content: center;
+  }
+  .nav-item svg { width: 20px; height: 20px; }
+  .nav-item::before { display: none; }
+
+  /* Main area gets padding so content isn't behind bottom nav */
+  .main-area { padding-bottom: 64px; }
+
+  /* Topbar stacks vertically */
+  .topbar {
+    flex-direction: column; align-items: flex-start;
+    padding: 0.75rem 1rem; gap: 0.75rem;
+  }
+  .topbar-divider { display: none; }
+  .topbar-metrics {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 0.5rem; width: 100%;
+  }
+  .topbar-hero-value { font-size: 1.6rem; }
+
+  /* Page content padding */
+  .page-content { padding: 1rem; }
+
+  /* Cards & rows go full width, hide overflow-x */
+  .charts-grid { grid-template-columns: 1fr; }
+  .pnl-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Table rows scroll horizontally */
+  .data-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Section header wraps */
+  .section-header {
+    flex-direction: column; align-items: flex-start; gap: 0.75rem;
+  }
+  .button-group { flex-wrap: wrap; }
+
+  /* Overview strip stacks 2-col */
+  .overview-strip {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  /* Activity cards wrap gracefully */
+  .activity-card {
+    align-items: flex-start; flex-wrap: wrap; gap: 0.6rem;
+  }
+  .activity-card-right { width: 100%; text-align: left; margin-left: 52px; }
+
+  .activity-filled-card {
+    flex-wrap: wrap; gap: 0.5rem;
+  }
+  .activity-filled-right { width: 100%; text-align: left; }
+  .activity-filled-expand-btn { margin-left: 0; }
+
+  /* Watchlist cards */
+  .wl-card-top { flex-wrap: wrap; }
+  .wl-price-block { width: 100%; text-align: left; margin-top: 0.25rem; }
+  .wl-price { font-size: 1.1rem; }
+
+  /* PM table — make it scrollable */
+  .table-header, .table-row { min-width: 600px; }
+  .pm-header, .pm-row { grid-template-columns: 2fr 0.7fr 1fr 1fr 1fr 1.1fr 1.1fr; }
+
+  /* Pred sub-tabs scroll */
+  .pred-subtabs { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
+
+  /* Modal sizing */
+  .modal-box { width: calc(100vw - 2rem) !important; max-width: none !important; margin: 1rem; }
+
+  /* P&L config bar stacks */
+  .pnl-config-bar { flex-direction: column; align-items: stretch; }
+  .pnl-config-bar input { min-width: 0; }
+}
+
+/* ══════════════════════════════════════════════════════
+   SMALL MOBILE — ≤ 480px
+══════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+  .topbar-metrics { grid-template-columns: 1fr 1fr; }
+  .topbar-hero-value { font-size: 1.35rem; }
+  .nav-item { min-width: 44px; font-size: 0.55rem; }
+  .nav-item span { display: none; } /* hide labels, icons only */
+  .charts-grid { gap: 1rem; }
+  .chart-card { padding: 1.25rem; }
+  .overview-strip { grid-template-columns: 1fr 1fr !important; }
+}
 .spin { animation: spin 0.8s linear infinite; display: inline-block; }
 
 </style>
@@ -1351,6 +1809,14 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
       <div class="nav-item" data-tab="etf" onclick="switchTab('etf')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
         ETF &amp; Stocks
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Tools</div>
+      <div class="nav-item" data-tab="terminal" onclick="switchTab('terminal')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        Alert Terminal
       </div>
     </div>
 
@@ -1547,10 +2013,6 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
               Activity
             </div>
-            <div class="pred-subtab" onclick="switchPredSubtab('pnl', this)">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-              P&amp;L
-            </div>
             <div class="pred-subtab" onclick="switchPredSubtab('watchlist', this)">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
               Watchlist
@@ -1606,22 +2068,6 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 </div>
                 <div id="opinionTable"></div>
               </div>
-            </div>
-          </div>
-
-          <!-- P&L pane -->
-          <div id="predSubPnl" class="pred-subpane">
-            <div class="pnl-config-bar">
-              <label>Dome API Key</label>
-              <input type="password" id="domeApiKey" placeholder="Your Dome API key from dashboard.domeapi.io…"
-                oninput="saveDomeConfig()" autocomplete="off">
-              <button class="btn-base pm-btn" onclick="fetchDomePnL()" id="pnlFetchBtn">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-                Fetch P&amp;L
-              </button>
-            </div>
-            <div id="pnlTableWrap">
-              <div class="pnl-loading">Enter your Dome API key and click Fetch P&amp;L</div>
             </div>
           </div>
 
@@ -1746,7 +2192,69 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
           <div class="chart-container"><canvas id="etfChart"></canvas></div>
           <div id="etfLegend" class="custom-legend"></div>
         </div>
-      </div>
+
+      </div><!-- /etfTab -->
+
+      <!-- ═══════════════════════════════════════════════════════
+           ALERT TERMINAL TAB
+      ═══════════════════════════════════════════════════════ -->
+      <div id="terminalTab" class="tab-pane">
+        <div class="term-shell">
+
+          <!-- Left: console -->
+          <div class="term-left">
+            <div class="term-eyebrow">
+              <span class="term-eyebrow-dot" id="terminalDot"></span>
+              <span class="term-eyebrow-label">ALERT TERMINAL</span>
+              <span class="term-eyebrow-status" id="terminalStatusText">IDLE</span>
+            </div>
+
+            <div class="term-log" id="terminalLog">
+              <div class="term-line tl-system">
+                <span class="tl-ts">--:--:--</span>
+                <span class="tl-body">System ready. Describe any alert in plain English below.</span>
+              </div>
+              <div class="term-line tl-system">
+                <span class="tl-ts">--:--:--</span>
+                <span class="tl-body tl-hint">Examples — "alert me when BTC goes above 100k" · "notify if SPY drops below 550" · "tell me when Trump wins Polymarket hits 65%" · "ping me if ETH falls under 3000"</span>
+              </div>
+            </div>
+
+            <div class="term-input-area">
+              <div class="term-input-row">
+                <span class="term-ps1"><span class="term-ps1-user">vault</span><span class="term-ps1-sep">@</span><span class="term-ps1-host">alerts</span><span class="term-ps1-end"> ~ $</span></span>
+                <input class="term-input" id="terminalInput" type="text"
+                  placeholder="set alert when…"
+                  onkeydown="if(event.key==='Enter') terminalSubmit()" autocomplete="off" spellcheck="false">
+              </div>
+              <div class="term-input-actions">
+                <button class="term-btn-submit" id="terminalSendBtn" onclick="terminalSubmit()">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  Execute
+                </button>
+                <span class="term-hint-key">↵ Return</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: active alerts -->
+          <div class="term-right">
+            <div class="term-panel-header">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              Active Alerts
+              <span class="term-alert-count" id="termAlertCount">0</span>
+              <button class="term-clear-btn" onclick="terminalClearAll()">Clear all</button>
+            </div>
+            <div class="term-alerts" id="terminalAlertsList">
+              <div class="term-alerts-empty">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                <div>No alerts active</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /terminalTab -->
 
       <div id="historyTab" class="tab-pane">
         <div class="section">
@@ -2272,6 +2780,7 @@ function maybeSaveSnapshot() {
         const totalEtfs = data.etfs.reduce((s,e) => s+(e.shares*e.currentPrice), 0);
         const totalPM   = (data.predictionMarkets||[]).reduce((s,p) => s+p.currentValue, 0);
         const totalOp   = (data.opinionMarkets||[]).reduce((s,p) => s+p.currentValue, 0);
+        const pmUnrealizedPnl = (data.predictionMarkets||[]).reduce((s,p) => s+(p.unrealizedPnl||0), 0);
         // Always overwrite — keeps only the latest import for that week
         snapshots[weekKey] = {
             week: weekKey,
@@ -2280,11 +2789,14 @@ function maybeSaveSnapshot() {
             tokens: JSON.parse(JSON.stringify(data.tokens)),
             protocols: JSON.parse(JSON.stringify(data.protocols)),
             etfs: JSON.parse(JSON.stringify(data.etfs)),
+            predictionMarkets: JSON.parse(JSON.stringify(data.predictionMarkets||[])),
             totalTokens: data.tokens.reduce((s,t) => s+t.value, 0),
             totalProtocols: data.protocols.reduce((s,p) => s+p.value, 0),
             totalEtfs,
             totalPM,
             totalOp,
+            pmUnrealizedPnl,
+            pmPositionCount: (data.predictionMarkets||[]).length,
         };
         localStorage.setItem('portfolio-snapshots', JSON.stringify(snapshots));
     } catch(e) { console.warn('Snapshot save failed:', e); }
@@ -2306,6 +2818,7 @@ function switchTab(tab) {
     const pane = document.getElementById(tab + 'Tab');
     if (pane) pane.classList.add('active');
     if (tab === 'history') renderHistory();
+    if (tab === 'terminal') { terminalRenderAlerts(); }
     if (tab === 'prediction') {
         renderPredictionMarkets();
     }
@@ -2416,22 +2929,33 @@ async function fetchPolymarketPositions() {
     }
 
     const posUrl = "https://data-api.polymarket.com/positions";
-    const proxyUrl = "https://api.allorigins.win/raw?url=";
 
     let aggregatedPositions = [];
     let errors = 0;
 
+    // Multi-proxy fallback: direct → corsproxy.io → allorigins.win → codetabs.com
     async function smartFetch(url) {
-        try {
-            const res = await fetch(url);
-            if (res.ok) return await res.json();
-            throw new Error(res.status);
-        } catch (e) {
-            console.warn(`Direct fetch failed for ${url}, trying proxy...`);
-            const resProxy = await fetch(proxyUrl + encodeURIComponent(url));
-            if (resProxy.ok) return await resProxy.json();
-            throw e;
+        const PROXIES = [
+            u => u,                                                                          // 1. Direct
+            u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,                      // 2. corsproxy.io
+            u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,             // 3. allorigins
+            u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,        // 4. codetabs
+        ];
+        for (const proxy of PROXIES) {
+            try {
+                const res = await fetch(proxy(url), { signal: AbortSignal.timeout(12000) });
+                if (!res.ok) continue;
+                const raw = await res.json();
+                // allorigins wraps in { contents: "..." }
+                if (raw && typeof raw === 'object' && 'contents' in raw && typeof raw.contents === 'string') {
+                    return JSON.parse(raw.contents);
+                }
+                return raw;
+            } catch (e) {
+                console.warn(`Fetch attempt failed (proxy: ${proxy(url).slice(0,60)}…):`, e.message);
+            }
         }
+        throw new Error(`All proxy attempts failed for: ${url}`);
     }
 
     try {
@@ -2472,6 +2996,7 @@ async function fetchPolymarketPositions() {
         });
 
         saveData();
+        maybeSaveSnapshot();
         updateUI();
         renderPredictionMarkets(); // Explicit re-render for chart
         
@@ -2513,20 +3038,28 @@ function switchPredSubtab(name, el) {
     }
 }
 
-// ── Shared fetch helper (direct → allorigins proxy fallback) ──────────────────
+// ── Shared fetch helper (direct → corsproxy.io → allorigins → codetabs) ────────
 async function pmFetch(url) {
-    const PROXY = 'https://api.allorigins.win/raw?url=';
-    try {
-        const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
-        if (r.ok) return await r.json();
-    } catch(e) {}
-    try {
-        const r = await fetch(PROXY + encodeURIComponent(url), { signal: AbortSignal.timeout(12000) });
-        if (r.ok) {
+    const PROXIES = [
+        u => u,                                                                       // 1. Direct
+        u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,                   // 2. corsproxy.io
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,          // 3. allorigins
+        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,     // 4. codetabs
+    ];
+    for (const proxy of PROXIES) {
+        try {
+            const r = await fetch(proxy(url), { signal: AbortSignal.timeout(12000) });
+            if (!r.ok) continue;
             const raw = await r.json();
-            return raw?.contents ? JSON.parse(raw.contents) : raw;
+            // allorigins wraps response in { contents: "..." }
+            if (raw && typeof raw === 'object' && 'contents' in raw && typeof raw.contents === 'string') {
+                return JSON.parse(raw.contents);
+            }
+            return raw;
+        } catch(e) {
+            console.warn(`pmFetch attempt failed (${proxy(url).slice(0,60)}…):`, e.message);
         }
-    } catch(e) {}
+    }
     return null;
 }
 
@@ -2740,15 +3273,16 @@ function renderFilledOrders(trades) {
         const ts = t.timestamp || 0;
 
         if (!grouped.has(key)) {
-            grouped.set(key, { title, outcome, side, totalShares: 0, totalCost: 0, latestTs: 0, wallet: t._wallet || '' });
+            grouped.set(key, { title, outcome, side, totalShares: 0, totalCost: 0, latestTs: 0, wallet: t._wallet || '', orders: [] });
         }
         const g = grouped.get(key);
         g.totalShares += size;
         g.totalCost   += size * price;
+        g.orders.push({ size, price, ts });
         if (ts > g.latestTs) { g.latestTs = ts; g.wallet = t._wallet || g.wallet; }
     }
 
-    el.innerHTML = [...grouped.values()].map(g => {
+    el.innerHTML = [...grouped.values()].map((g, idx) => {
         const isBuy = g.side === 'BUY';
         const avgPrice = g.totalShares > 0 ? g.totalCost / g.totalShares : 0;
         const usdAmt = g.totalCost;
@@ -2756,7 +3290,21 @@ function renderFilledOrders(trades) {
         const timeStr = ts ? ts.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
             + ' · ' + ts.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
         const shortWallet = g.wallet ? g.wallet.slice(0, 6) + '…' + g.wallet.slice(-4) : '';
-        return `<div class="activity-filled-card">
+        const multiOrder = g.orders.length > 1;
+
+        // Sort individual orders newest first
+        const sortedOrders = [...g.orders].sort((a, b) => b.ts - a.ts);
+        const orderRows = sortedOrders.map(o => {
+            const oTime = o.ts ? new Date(o.ts * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
+            return `<div class="activity-filled-order-row">
+                <span class="order-price">${(o.price * 100).toFixed(1)}¢</span>
+                <span class="order-size">${o.size.toFixed(0)} shares</span>
+                <span class="order-cost">$${(o.size * o.price).toFixed(2)}</span>
+                <span class="order-time">${oTime}</span>
+            </div>`;
+        }).join('');
+
+        return `<div class="activity-filled-card" style="flex-wrap:wrap;">
             <span class="activity-filled-badge ${isBuy ? 'buy' : 'sell'}">${g.side}</span>
             <div class="activity-filled-body">
                 <div class="activity-filled-title">${g.title}${g.outcome ? ' — ' + g.outcome : ''}</div>
@@ -2764,10 +3312,22 @@ function renderFilledOrders(trades) {
             </div>
             <div class="activity-filled-right">
                 <div class="activity-filled-usdc">$${usdAmt.toFixed(2)}</div>
-                <div class="activity-filled-shares">${g.totalShares.toFixed(0)} shares @ ${(avgPrice * 100).toFixed(1)}¢ avg</div>
+                <div class="activity-filled-shares">${g.totalShares.toFixed(0)} shares${multiOrder ? ` @ ${(avgPrice * 100).toFixed(1)}¢ avg` : ` @ ${(avgPrice * 100).toFixed(1)}¢`}</div>
             </div>
+            ${multiOrder ? `<button class="activity-filled-expand-btn" onclick="toggleOrderExpand(this)" title="Show individual fills">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                ${g.orders.length} fills
+            </button>` : ''}
+            ${multiOrder ? `<div class="activity-filled-orders">${orderRows}</div>` : ''}
         </div>`;
     }).join('');
+}
+
+function toggleOrderExpand(btn) {
+    btn.classList.toggle('open');
+    const card = btn.closest('.activity-filled-card');
+    const orders = card.querySelector('.activity-filled-orders');
+    if (orders) orders.classList.toggle('open');
 }
 
 
@@ -2938,11 +3498,12 @@ function renderOpinionFilledOrders(trades) {
         const ts = t.createdAt || 0;
 
         if (!grouped.has(key)) {
-            grouped.set(key, { title, outcome, side, totalShares: 0, totalCost: 0, latestTs: 0 });
+            grouped.set(key, { title, outcome, side, totalShares: 0, totalCost: 0, latestTs: 0, orders: [] });
         }
         const g = grouped.get(key);
         g.totalShares += shares;
-        g.totalCost   += shares * price;   // for VWAP
+        g.totalCost   += shares * price;
+        g.orders.push({ shares, price, ts });
         if (ts > g.latestTs) g.latestTs = ts;
     }
 
@@ -2953,17 +3514,37 @@ function renderOpinionFilledOrders(trades) {
         const ts = g.latestTs ? new Date(g.latestTs * 1000) : null;
         const timeStr = ts ? ts.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
             + ' · ' + ts.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-        return `<div class="activity-filled-card">
-            <span class="activity-filled-badge ${isBuy ? 'buy' : 'sell'}">${g.side || '—'}</span>
-            <div class="activity-filled-body">
-                <div class="activity-filled-title">${g.title}${g.outcome ? ` — ${g.outcome}` : ''}</div>
-                <div class="activity-filled-meta">${timeStr}</div>
-            </div>
-            <div class="activity-filled-right">
-                <div class="activity-filled-usdc">$${usdAmt.toFixed(2)}</div>
-                <div class="activity-filled-shares">${g.totalShares.toFixed(0)} shares @ ${(avgPrice * 100).toFixed(1)}¢ avg</div>
-            </div>
-        </div>`;
+        const multiOrder = g.orders.length > 1;
+
+        const sortedOrders = [...g.orders].sort((a, b) => b.ts - a.ts);
+        const orderRows = sortedOrders.map(o => {
+            const oTime = o.ts ? new Date(o.ts * 1000).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
+            return '<div class="activity-filled-order-row">'
+                + '<span class="order-price">' + (o.price * 100).toFixed(1) + '¢</span>'
+                + '<span class="order-size">' + o.shares.toFixed(0) + ' shares</span>'
+                + '<span class="order-cost">$' + (o.shares * o.price).toFixed(2) + '</span>'
+                + '<span class="order-time">' + oTime + '</span>'
+                + '</div>';
+        }).join('');
+
+        return '<div class="activity-filled-card" style="flex-wrap:wrap;">'
+            + '<span class="activity-filled-badge ' + (isBuy ? 'buy' : 'sell') + '">' + (g.side || '—') + '</span>'
+            + '<div class="activity-filled-body">'
+            +   '<div class="activity-filled-title">' + g.title + (g.outcome ? ' — ' + g.outcome : '') + '</div>'
+            +   '<div class="activity-filled-meta">' + timeStr + '</div>'
+            + '</div>'
+            + '<div class="activity-filled-right">'
+            +   '<div class="activity-filled-usdc">$' + usdAmt.toFixed(2) + '</div>'
+            +   '<div class="activity-filled-shares">' + g.totalShares.toFixed(0) + ' shares' + (multiOrder ? ' @ ' + (avgPrice * 100).toFixed(1) + '¢ avg' : ' @ ' + (avgPrice * 100).toFixed(1) + '¢') + '</div>'
+            + '</div>'
+            + (multiOrder
+                ? '<button class="activity-filled-expand-btn" onclick="toggleOrderExpand(this)" title="Show individual fills">'
+                    + '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>'
+                    + g.orders.length + ' fills'
+                    + '</button>'
+                : '')
+            + (multiOrder ? '<div class="activity-filled-orders">' + orderRows + '</div>' : '')
+            + '</div>';
     }).join('');
 }
 
@@ -3164,7 +3745,7 @@ function processProtocolsImport() {
     if (!text) return;
 
     // ── Section-type keywords ────────────────────────────────────────────────
-    const SECTION_TYPES = ['Liquidity Pool','Lending','Vesting','Staking','Staked','Deposit','Yield','Farming','DEX'];
+    const SECTION_TYPES = ['Lending','Vesting','Staking','Staked','Deposit','Yield','Farming','DEX'];
     const HEADER_COLS   = new Set(['pool','balance','rewards','usd value','supplied','borrowed',
                                     'end time','claimable amount','unlock time']);
 
@@ -3203,14 +3784,14 @@ function processProtocolsImport() {
     function parsePositions(lines) {
         const sections = [];
         let curSection = null;
-        let curSubLabel = null; // 'Supplied' | 'Borrowed' | null
+        let curSubLabel = null; // 'Supplied' | 'Borrowed' | 'Liquidity Pool' | null
 
         // token amount pattern: "123.45 SYMBOL" or "123 SYMBOL ($X.XX)"
         const tokenRe = /^([\d,]+\.?\d*)\s+([A-Za-z0-9\-+._]{2,40})(\s+\(\$[\d.,]+\))?$/;
         // value line: $123.45
         const valRe   = /^\$([\d,]+\.?\d*)$/;
-        // subsection labels inside Lending
-        const SUB_LABELS = new Set(['supplied','borrowed']);
+        // subsection labels inside Lending / Pendle
+        const SUB_LABELS = new Set(['supplied','borrowed','liquidity pool']);
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
@@ -3246,7 +3827,7 @@ function processProtocolsImport() {
             }
 
             // Look ahead: pool name → token lines → $value
-            if (!tokenRe.test(line) && !valRe.test(line) && !/^[\d$]/.test(line) && !HEADER_COLS.has(lineLow)) {
+            if (!tokenRe.test(line) && !valRe.test(line) && !/^[\d$]/.test(line) && !HEADER_COLS.has(lineLow) && !SUB_LABELS.has(lineLow)) {
                 const rawTokens = [];
                 let j = i + 1;
                 while (j < lines.length && !valRe.test(lines[j])) {
@@ -3300,15 +3881,15 @@ function processProtocolsImport() {
 
         const existing = data.protocols.find(p => p.name === block.name);
         if (existing) {
-            existing.value = block.totalValue;
+            existing.value += block.totalValue;
             if (healthNote) existing.chain = healthNote;
-            existing.sections = sections;
+            if (sections.length) existing.sections = (existing.sections || []).concat(sections);
         } else {
             data.protocols.push({
                 name: block.name,
                 type: dominant,
                 value: block.totalValue,
-                chain: healthNote || 'Ethereum',
+                chain: healthNote || '',
                 sections,
             });
         }
@@ -3497,7 +4078,11 @@ function renderProtocols() {
                     if (pos.sub !== lastSub) {
                         lastSub = pos.sub;
                         if (pos.sub) {
-                            const subColor = pos.sub === 'Borrowed' ? 'var(--red)' : 'var(--teal)';
+                            const subColor = pos.sub === 'Borrowed'
+                                ? 'var(--red)'
+                                : pos.sub === 'Liquidity Pool'
+                                    ? 'var(--indigo)'
+                                    : 'var(--teal)';
                             subHeader = `<div style="font-size:0.62rem;font-weight:800;letter-spacing:0.12em;
                                 text-transform:uppercase;color:${subColor};margin:0.5rem 0 0.25rem;
                                 font-family:var(--ff-display)">${pos.sub}</div>`;
@@ -3641,46 +4226,64 @@ function renderETFs() {
 // =============================================================================
 // HISTORY TAB
 // =============================================================================
+function renderSnapshotPmRow(p, fmtN) {
+    const pnl = p.unrealizedPnl || 0;
+    const pnlColor = pnl > 0 ? 'var(--green)' : pnl < 0 ? 'var(--red)' : 'var(--t3)';
+    const sign = pnl > 0 ? '+' : '';
+    const pnlHtml = pnl !== 0
+        ? ' <span style="color:' + pnlColor + ';font-size:0.68rem">' + sign + fmtN(pnl) + '</span>'
+        : '';
+    return '<div class="snapshot-item">'
+        + '<span class="snapshot-item-name" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + p.title + '">' + p.title + '</span>'
+        + '<span class="snapshot-item-val">' + fmtN(p.currentValue) + pnlHtml + '</span>'
+        + '</div>';
+}
+
 function renderHistory() {
     const container = document.getElementById('snapshotsList');
     const snapshots = loadSnapshots();
     const keys = Object.keys(snapshots).sort().reverse();
     if (keys.length === 0) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-icon">📅</div><p>No snapshots yet — import data to create your first weekly snapshot.</p></div>`;
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">📅</div><p>No snapshots yet — import data to create your first weekly snapshot.</p></div>';
         return;
     }
     const fmtN = n => '$' + n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
-    container.innerHTML = keys.map(key => {
+    container.innerHTML = keys.map(function(key) {
         const snap = snapshots[key];
         const total = (snap.totalTokens||0) + (snap.totalProtocols||0) + (snap.totalEtfs||0) + (snap.totalPM||0) + (snap.totalOp||0);
-        const topT = (snap.tokens||[]).sort((a,b)=>b.value-a.value).slice(0,6);
-        const topP = (snap.protocols||[]).sort((a,b)=>b.value-a.value).slice(0,6);
+        const topT = (snap.tokens||[]).slice().sort((a,b)=>b.value-a.value).slice(0,6);
+        const topP = (snap.protocols||[]).slice().sort((a,b)=>b.value-a.value).slice(0,6);
         const topE = (snap.etfs||[]).map(e=>({name:e.ticker,value:e.shares*e.currentPrice})).sort((a,b)=>b.value-a.value).slice(0,4);
         const extras = [];
-        if (snap.totalPM)  extras.push(`<span style="color:var(--fuchsia)">● Polymarket — ${fmtN(snap.totalPM)}</span>`);
-        if (snap.totalOp)  extras.push(`<span style="color:var(--orange)">● Opinion — ${fmtN(snap.totalOp)}</span>`);
+        if (snap.totalPM) {
+            extras.push('<span style="color:var(--fuchsia)">● Polymarket — ' + fmtN(snap.totalPM) + '</span>');
+        }
+        if (snap.totalOp) extras.push('<span style="color:var(--orange)">● Opinion — ' + fmtN(snap.totalOp) + '</span>');
+
         const weekDisplay = snap.week || key;
-        return `<div class="snapshot-card">
-            <div class="snapshot-header">
-                <div>
-                    <div class="snapshot-week">${weekDisplay}</div>
-                    <div class="snapshot-date">Saved ${snap.date}</div>
-                </div>
-                <div class="snapshot-total">${fmtN(total)}</div>
-            </div>
-            <div class="snapshot-body">
-                <div class="snapshot-col">
-                    <div class="snapshot-col-label"><span style="color:var(--teal)">●</span> Wallet — ${fmtN(snap.totalTokens||0)}</div>
-                    ${topT.map(t=>`<div class="snapshot-item"><span class="snapshot-item-name">${makeLogo(t.symbol,false,18)} ${t.symbol}</span><span class="snapshot-item-val">${fmtN(t.value)}</span></div>`).join('')}
-                    ${topE.length ? `<div class="snapshot-col-label" style="margin-top:0.5rem"><span style="color:var(--sky)">●</span> ETFs — ${fmtN(snap.totalEtfs||0)}</div>${topE.map(e=>`<div class="snapshot-item"><span class="snapshot-item-name">${e.name}</span><span class="snapshot-item-val">${fmtN(e.value)}</span></div>`).join('')}` : ''}
-                </div>
-                <div class="snapshot-col">
-                    <div class="snapshot-col-label"><span style="color:var(--indigo)">●</span> DeFi — ${fmtN(snap.totalProtocols||0)}</div>
-                    ${topP.map(p=>`<div class="snapshot-item"><span class="snapshot-item-name">${makeLogo(p.name,true,18)} ${p.name}</span><span class="snapshot-item-val">${fmtN(p.value)}</span></div>`).join('')}
-                    ${extras.length ? `<div class="snapshot-col-label" style="margin-top:0.5rem;font-size:0.7rem">${extras.join(' &nbsp;')}</div>` : ''}
-                </div>
-            </div>
-        </div>`;
+
+        const col1 = '<div class="snapshot-col">'
+            + '<div class="snapshot-col-label"><span style="color:var(--teal)">●</span> Wallet — ' + fmtN(snap.totalTokens||0) + '</div>'
+            + topT.map(t => '<div class="snapshot-item"><span class="snapshot-item-name">' + makeLogo(t.symbol,false,18) + ' ' + t.symbol + '</span><span class="snapshot-item-val">' + fmtN(t.value) + '</span></div>').join('')
+            + (topE.length ? '<div class="snapshot-col-label" style="margin-top:0.5rem"><span style="color:var(--sky)">●</span> ETFs — ' + fmtN(snap.totalEtfs||0) + '</div>'
+                + topE.map(e => '<div class="snapshot-item"><span class="snapshot-item-name">' + e.name + '</span><span class="snapshot-item-val">' + fmtN(e.value) + '</span></div>').join('') : '')
+            + '</div>';
+
+        const col2 = '<div class="snapshot-col">'
+            + '<div class="snapshot-col-label"><span style="color:var(--indigo)">●</span> DeFi — ' + fmtN(snap.totalProtocols||0) + '</div>'
+            + topP.map(p => '<div class="snapshot-item"><span class="snapshot-item-name">' + makeLogo(p.name,true,18) + ' ' + p.name + '</span><span class="snapshot-item-val">' + fmtN(p.value) + '</span></div>').join('')
+            + (extras.length ? '<div class="snapshot-col-label" style="margin-top:0.5rem;font-size:0.7rem">' + extras.join('<br>') + '</div>' : '')
+            + '</div>';
+
+        const col3 = '';
+
+        return '<div class="snapshot-card">'
+            + '<div class="snapshot-header">'
+            +   '<div><div class="snapshot-week">' + weekDisplay + '</div><div class="snapshot-date">Saved ' + snap.date + '</div></div>'
+            +   '<div class="snapshot-total">' + fmtN(total) + '</div>'
+            + '</div>'
+            + '<div class="snapshot-body">' + col1 + col2 + col3 + '</div>'
+            + '</div>';
     }).join('');
 }
 
@@ -3932,21 +4535,27 @@ async function fetchDomePnL() {
         // Since predictionMarkets doesn't store cashPnl yet, re-fetch it inline.
         const unrealizedPerWallet = await Promise.all(wallets.map(async wallet => {
             // Try to get cashPnl directly from Polymarket positions API
-            const proxyUrl = 'https://api.allorigins.win/raw?url=';
+            // Multi-proxy fallback: direct → corsproxy.io → allorigins → codetabs
             const posUrl = `https://data-api.polymarket.com/positions?user=${encodeURIComponent(wallet)}&limit=500&sizeThreshold=0.01`;
+            const PNL_PROXIES = [
+                u => u,
+                u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
+                u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+                u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+            ];
             let positions = [];
-            try {
-                let res = await fetch(posUrl, { signal: AbortSignal.timeout(10000) });
-                if (!res.ok) throw new Error();
-                positions = await res.json();
-            } catch {
+            for (const proxy of PNL_PROXIES) {
                 try {
-                    let res = await fetch(proxyUrl + encodeURIComponent(posUrl), { signal: AbortSignal.timeout(12000) });
-                    if (res.ok) {
-                        const raw = await res.json();
-                        positions = raw?.contents ? JSON.parse(raw.contents) : raw;
-                    }
-                } catch {}
+                    const res = await fetch(proxy(posUrl), { signal: AbortSignal.timeout(12000) });
+                    if (!res.ok) continue;
+                    const raw = await res.json();
+                    positions = (raw && typeof raw === 'object' && 'contents' in raw && typeof raw.contents === 'string')
+                        ? JSON.parse(raw.contents)
+                        : raw;
+                    if (Array.isArray(positions) && positions.length > 0) break;
+                } catch(e) {
+                    console.warn(`P&L fetch attempt failed (${proxy(posUrl).slice(0,60)}…):`, e.message);
+                }
             }
             if (!Array.isArray(positions) || positions.length === 0) {
                 // Fall back to stored positions
@@ -4775,10 +5384,442 @@ function renderWatchlist() {
 }
 
 // =============================================================================
+// ALERT TERMINAL
+// =============================================================================
+
+let terminalAlerts = [];       // { id, symbol, type, dir, target, currentPrice, triggered, label }
+let _terminalPollTimer = null;
+const TERMINAL_POLL_MS = 60000;
+
+function terminalLoad() {
+    try {
+        const saved = localStorage.getItem('terminal-alerts');
+        if (saved) terminalAlerts = JSON.parse(saved);
+    } catch(e) {}
+    terminalRenderAlerts();
+    if (terminalAlerts.some(a => !a.triggered)) terminalStartPolling();
+}
+
+function terminalSave() {
+    try { localStorage.setItem('terminal-alerts', JSON.stringify(terminalAlerts)); } catch(e) {}
+}
+
+// ── Log helpers ───────────────────────────────────────────────────────────────
+function terminalLog(msg, cls) {
+    const log = document.getElementById('terminalLog');
+    if (!log) return;
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const line = document.createElement('div');
+    line.className = 'term-line ' + (cls || 'tl-cmd');
+    line.innerHTML = '<span class="tl-ts">' + now + '</span><span class="tl-body">' + msg + '</span>';
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+}
+
+function terminalSetStatus(text, polling, error) {
+    const dot = document.getElementById('terminalDot');
+    const txt = document.getElementById('terminalStatusText');
+    if (dot) {
+        dot.className = 'term-eyebrow-dot' + (error ? ' error' : polling ? ' polling' : '');
+    }
+    if (txt) txt.textContent = text.toUpperCase();
+}
+
+// ── Local NLP parser — no API key needed ─────────────────────────────────────
+
+// Known ETF tickers (extend as needed)
+const ETF_TICKERS = new Set([
+    'SPY','VOO','QQQ','IWM','DIA','VTI','ARKK','GLD','SLV','TLT','HYG','XLF',
+    'XLK','XLE','XLV','XLU','XLB','XLI','XLRE','XLC','XLP','XLY','VNQ','VEA',
+    'VWO','EEM','EFA','AGG','BND','LQD','IEMG','IEFA','SCHB','SCHX','SCHF',
+    'SCHE','VIG','VYM','DGRO','NOBL','QUAL','SIZE','USMV','SPLV','RSP','MDY',
+    'IJR','IJH','IVV','IWB','IWD','IWF','IWN','IWO','IWP','IWS','IWV',
+]);
+
+// Known crypto tickers
+const CRYPTO_TICKERS = new Set(Object.keys({
+    BTC:1,ETH:1,SOL:1,BNB:1,XRP:1,ADA:1,AVAX:1,DOGE:1,DOT:1,MATIC:1,
+    POL:1,SHIB:1,LTC:1,LINK:1,UNI:1,ATOM:1,XLM:1,NEAR:1,APT:1,SUI:1,
+    ARB:1,OP:1,INJ:1,SEI:1,TIA:1,PEPE:1,WIF:1,BONK:1,FTM:1,ALGO:1,
+    AAVE:1,MKR:1,SNX:1,CRV:1,LDO:1,GMX:1,GRT:1,PENDLE:1,ENA:1,MORPHO:1,
+    YFI:1,COMP:1,BAL:1,SUSHI:1,FRAX:1,FXS:1,CVX:1,CRO:1,SAND:1,MANA:1,
+    AXS:1,FLOW:1,USDC:1,USDT:1,DAI:1,WETH:1,WBTC:1,stETH:1,rETH:1,
+}));
+
+function terminalParseNL(raw) {
+    const s = raw.toLowerCase().trim();
+
+    // ── Direction ────────────────────────────────────────────────────────────
+    const ABOVE_RE = /\b(above|over|exceed[s]?|hits?|reaches?|goes?\s+(?:up\s+)?(?:to|past)?|cross(?:es)?\s+(?:up\s+)?(?:above)?|surpass(?:es)?|break[s]?\s+(?:above|out|through)?|rise[s]?\s+(?:above|to|past)?|gets?\s+(?:to|above)|more\s+than|greater\s+than|higher\s+than|at\s+least)\b/;
+    const BELOW_RE = /\b(below|under|drop[s]?|fall[s]?|goes?\s+(?:down\s+)?(?:to|below|under)?|cross(?:es)?\s+(?:down|below)?|decline[s]?|dip[s]?(?:\s+below)?|crash(?:es)?|less\s+than|lower\s+than|at\s+most)\b/;
+
+    let dir = null;
+    if (ABOVE_RE.test(s)) dir = 'above';
+    if (BELOW_RE.test(s)) dir = 'below';
+    // If both matched, last keyword wins — re-test on position
+    if (dir === null) {
+        // fallback: "hits X" with large number = above
+        dir = 'above';
+    }
+
+    // ── Target number ────────────────────────────────────────────────────────
+    // Handles: 100k, 1.5m, 100,000, 100000, 65%, 65 percent, 0.65, $550
+    const NUM_RE = /\$?([\d,]+(?:\.\d+)?)\s*(k|m|b|%|percent)?/gi;
+    let target = null;
+    let numMatch;
+    while ((numMatch = NUM_RE.exec(s)) !== null) {
+        let val = parseFloat(numMatch[1].replace(/,/g, ''));
+        const suffix = (numMatch[2] || '').toLowerCase();
+        if (suffix === 'k') val *= 1000;
+        else if (suffix === 'm') val *= 1_000_000;
+        else if (suffix === 'b') val *= 1_000_000_000;
+        else if (suffix === '%' || suffix === 'percent') val = val / 100;
+        if (!isNaN(val) && val > 0) { target = val; break; }
+    }
+    if (target === null) return null;
+
+    // ── Symbol extraction ────────────────────────────────────────────────────
+    // Priority: explicit ticker in ALL_CAPS, then known lists, then fallback
+    let symbol = null;
+    let type   = null;
+
+    // 1. All-caps word 2-6 chars (stock/crypto ticker style)
+    const capsMatch = raw.match(/\b([A-Z]{2,6})\b/);
+    if (capsMatch) {
+        symbol = capsMatch[1];
+        if (CRYPTO_TICKERS.has(symbol))      type = 'crypto';
+        else if (ETF_TICKERS.has(symbol))    type = 'etf';
+        else                                 type = 'stock'; // assume stock for unknown caps
+    }
+
+    // 2. Lowercase known crypto names
+    if (!symbol) {
+        const CRYPTO_NAMES = {
+            bitcoin:'BTC', ethereum:'ETH', solana:'SOL', bnb:'BNB', ripple:'XRP',
+            cardano:'ADA', avalanche:'AVAX', dogecoin:'DOGE', polkadot:'DOT',
+            polygon:'MATIC', shiba:'SHIB', litecoin:'LTC', chainlink:'LINK',
+            uniswap:'UNI', cosmos:'ATOM', stellar:'XLM', near:'NEAR',
+            aptos:'APT', sui:'SUI', arbitrum:'ARB', optimism:'OP',
+            injective:'INJ', celestia:'TIA', pepe:'PEPE', pendle:'PENDLE',
+        };
+        for (const [name, ticker] of Object.entries(CRYPTO_NAMES)) {
+            if (s.includes(name)) { symbol = ticker; type = 'crypto'; break; }
+        }
+    }
+
+    // 3. Polymarket / Opinion detection
+    const isPolymarket = /polymarket/i.test(s);
+    const isOpinion    = /opinion/i.test(s);
+    if (isPolymarket || isOpinion) {
+        type = isPolymarket ? 'polymarket' : 'opinion';
+        // Extract market name: everything between "when" and the direction/number
+        const mktMatch = s.match(/(?:when|if|once)\s+(.+?)\s+(?:above|below|over|under|hits?|reaches?|goes?|drops?|falls?)/i);
+        if (mktMatch) {
+            symbol = mktMatch[1].replace(/polymarket|opinion|market|the|a\s/gi, '').trim()
+                .replace(/\s+/g, '-').toLowerCase().substring(0, 40);
+        }
+        if (!symbol) symbol = 'market';
+        // Scale: if target > 1, assume percent input → convert
+        if (target > 1) target = target / 100;
+    }
+
+    if (!symbol) return null;
+
+    // ── Build label ──────────────────────────────────────────────────────────
+    const isPM = type === 'polymarket' || type === 'opinion';
+    const targetFmt = isPM
+        ? (target * 100).toFixed(0) + '¢'
+        : '$' + (target >= 1000
+            ? target >= 1_000_000
+                ? (target / 1_000_000).toFixed(1) + 'M'
+                : (target / 1000).toFixed(0) + 'K'
+            : target.toLocaleString('en-US'));
+    const label = symbol.toUpperCase() + ' ' + dir + ' ' + targetFmt;
+
+    return { symbol: symbol.toUpperCase(), type: type || 'crypto', dir, target, label };
+}
+
+async function terminalSubmit() {
+    const input = document.getElementById('terminalInput');
+    const btn   = document.getElementById('terminalSendBtn');
+    const raw   = (input?.value || '').trim();
+    if (!raw) return;
+
+    input.value = '';
+    btn.disabled = true;
+    terminalLog('> ' + raw, 'tl-cmd');
+    terminalSetStatus('parsing…', false);
+
+    const parsed = terminalParseNL(raw);
+
+    if (!parsed) {
+        terminalLog('Could not parse — try: "alert when BTC above 100k" or "notify if SPY drops below 550"', 'tl-error');
+        btn.disabled = false;
+        terminalSetStatus('idle', false);
+        return;
+    }
+
+    const alert = {
+        id: Date.now().toString(),
+        symbol:  parsed.symbol,
+        type:    parsed.type,
+        dir:     parsed.dir,
+        target:  parsed.target,
+        label:   parsed.label,
+        currentPrice: null,
+        triggered: false,
+    };
+
+    terminalAlerts.push(alert);
+    terminalSave();
+    terminalRenderAlerts();
+    terminalLog('✓ Alert set: ' + alert.label, 'tl-ok');
+    terminalSetStatus(terminalAlerts.filter(a => !a.triggered).length + ' active', true);
+
+    // Fetch price immediately
+    try {
+        const price = await terminalFetchPrice(alert);
+        if (price !== null) {
+            alert.currentPrice = price;
+            terminalSave();
+            terminalRenderAlerts();
+            terminalLog('Current price: ' + terminalFmtPrice(price, alert.type), 'tl-info');
+            terminalCheckAlert(alert);
+        } else {
+            terminalLog('⚠ Could not fetch current price for ' + alert.symbol + ' — will retry on next poll', 'tl-warn');
+        }
+    } catch(err) {
+        terminalLog('Price fetch error: ' + err.message, 'tl-warn');
+    }
+
+    terminalStartPolling();
+    btn.disabled = false;
+}
+
+// ── Price fetchers ────────────────────────────────────────────────────────────
+async function terminalFetchPrice(alert) {
+    try {
+        if (alert.type === 'crypto') {
+            // CoinGecko simple price
+            const cgId = terminalCryptoToGeckoId(alert.symbol);
+            const url  = 'https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(cgId) + '&vs_currencies=usd';
+            const res  = await pmFetch(url);
+            if (res && res[cgId]) return res[cgId].usd;
+            // Fallback: try symbol directly
+            const url2 = 'https://api.coingecko.com/api/v3/simple/price?ids=' + encodeURIComponent(alert.symbol.toLowerCase()) + '&vs_currencies=usd';
+            const res2 = await pmFetch(url2);
+            if (res2 && res2[alert.symbol.toLowerCase()]) return res2[alert.symbol.toLowerCase()].usd;
+            return null;
+        }
+        if (alert.type === 'stock' || alert.type === 'etf') {
+            // Yahoo Finance via allorigins proxy
+            const url = 'https://query1.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(alert.symbol.toUpperCase()) + '?interval=1d&range=1d';
+            const raw = await pmFetch(url);
+            const result = raw?.chart?.result?.[0];
+            if (result) {
+                const meta = result.meta;
+                return meta?.regularMarketPrice ?? meta?.previousClose ?? null;
+            }
+            return null;
+        }
+        if (alert.type === 'polymarket') {
+            // Use CLOB API to get current price for a market slug
+            const url = 'https://gamma-api.polymarket.com/markets?slug=' + encodeURIComponent(alert.symbol) + '&limit=1';
+            const res = await pmFetch(url);
+            const market = Array.isArray(res) ? res[0] : (res?.markets?.[0] || null);
+            if (market) {
+                const tokens = market.tokens || market.clobTokenIds;
+                if (tokens && tokens.length > 0) {
+                    const tokenId = typeof tokens[0] === 'string' ? tokens[0] : tokens[0].token_id;
+                    if (tokenId) {
+                        const priceUrl = 'https://clob.polymarket.com/last-trade-price?token_id=' + tokenId;
+                        const priceRes = await pmFetch(priceUrl);
+                        if (priceRes?.price) return parseFloat(priceRes.price);
+                    }
+                }
+                // Fallback: outcomePrices
+                if (market.outcomePrices) {
+                    const prices = JSON.parse(market.outcomePrices);
+                    return parseFloat(prices[0]);
+                }
+            }
+            return null;
+        }
+        if (alert.type === 'opinion') {
+            // Opinion.trade market price
+            const res = await opinionFetch('/openapi/market/search', { keyword: alert.symbol, limit: 1 });
+            const market = (res?.list || [])[0] || (Array.isArray(res) ? res[0] : null);
+            if (market) {
+                const price = parseFloat(market.lastPrice ?? market.price ?? 0);
+                return price > 0 ? price : null;
+            }
+            return null;
+        }
+    } catch(e) {
+        console.warn('terminalFetchPrice error for ' + alert.symbol, e);
+    }
+    return null;
+}
+
+const CRYPTO_GECKO_IDS = {
+    BTC:'bitcoin', ETH:'ethereum', SOL:'solana', BNB:'binancecoin',
+    AVAX:'avalanche-2', MATIC:'matic-network', POL:'matic-network',
+    ARB:'arbitrum', OP:'optimism', LINK:'chainlink', UNI:'uniswap',
+    AAVE:'aave', MKR:'maker', SNX:'synthetix-network-token', CRV:'curve-dao-token',
+    LDO:'lido-dao', GMX:'gmx', GRT:'the-graph', PENDLE:'pendle',
+    ENA:'ethena', MORPHO:'morpho', INJ:'injective-protocol',
+    SUI:'sui', APT:'aptos', SEI:'sei-network', TIA:'celestia',
+    DOGE:'dogecoin', SHIB:'shiba-inu', PEPE:'pepe', WIF:'dogwifcoin',
+    XRP:'ripple', ADA:'cardano', DOT:'polkadot', ATOM:'cosmos',
+    NEAR:'near', FTM:'fantom', ALGO:'algorand', FLOW:'flow',
+    SAND:'the-sandbox', MANA:'decentraland', AXS:'axie-infinity',
+    USDC:'usd-coin', USDT:'tether', DAI:'dai',
+};
+
+function terminalCryptoToGeckoId(symbol) {
+    return CRYPTO_GECKO_IDS[symbol.toUpperCase()] || symbol.toLowerCase();
+}
+
+function terminalFmtPrice(price, type) {
+    if (type === 'polymarket' || type === 'opinion') {
+        return (price * 100).toFixed(1) + '¢';
+    }
+    return '$' + price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ── Alert checking ────────────────────────────────────────────────────────────
+function terminalCheckAlert(alert) {
+    if (alert.triggered || alert.currentPrice === null) return;
+    const hit = alert.dir === 'above'
+        ? alert.currentPrice >= alert.target
+        : alert.currentPrice <= alert.target;
+    if (hit) {
+        alert.triggered = true;
+        terminalSave();
+        terminalRenderAlerts();
+        const priceStr = terminalFmtPrice(alert.currentPrice, alert.type);
+        const msg = alert.label + ' — now at ' + priceStr;
+        terminalLog('🔔 ALERT FIRED: ' + msg, 'tl-warn');
+        wlShowToast('🔔 Alert Triggered', msg, null);
+        // Audio beep
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator(); const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.type = 'sine'; osc.frequency.setValueAtTime(880, ctx.currentTime);
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+            osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.6);
+        } catch(e) {}
+        // Web Notification
+        try {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('Vault Alert 🔔', { body: msg });
+            }
+        } catch(e) {}
+    }
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+function terminalStartPolling() {
+    if (_terminalPollTimer) return;
+    _terminalPollTimer = setInterval(terminalPoll, TERMINAL_POLL_MS);
+}
+
+function terminalStopPolling() {
+    if (_terminalPollTimer) { clearInterval(_terminalPollTimer); _terminalPollTimer = null; }
+}
+
+async function terminalPoll() {
+    const active = terminalAlerts.filter(a => !a.triggered);
+    if (!active.length) { terminalStopPolling(); terminalSetStatus('idle', false); return; }
+    terminalSetStatus('polling…', true);
+    await Promise.all(active.map(async alert => {
+        const price = await terminalFetchPrice(alert);
+        if (price !== null) {
+            alert.currentPrice = price;
+            terminalCheckAlert(alert);
+        }
+    }));
+    terminalSave();
+    terminalRenderAlerts();
+    const still = terminalAlerts.filter(a => !a.triggered).length;
+    terminalSetStatus(still + ' active', still > 0);
+}
+
+// ── Render alerts list ────────────────────────────────────────────────────────
+function terminalRenderAlerts() {
+    const el    = document.getElementById('terminalAlertsList');
+    const count = document.getElementById('termAlertCount');
+    if (!el) return;
+
+    const active = terminalAlerts.filter(a => !a.triggered).length;
+    if (count) count.textContent = active;
+
+    if (!terminalAlerts.length) {
+        el.innerHTML = '<div class="term-alerts-empty">'
+            + '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'
+            + '<div>No alerts active</div></div>';
+        return;
+    }
+
+    // Accent colours per type
+    const ACCENT = {
+        crypto: '#38bdf8', stock: '#22c55e', etf: '#6c72ff',
+        opinion: '#f97316', polymarket: '#d946ef'
+    };
+
+    el.innerHTML = terminalAlerts.slice().reverse().map(a => {
+        const accent     = ACCENT[a.type] || '#ffffff';
+        const priceStr   = a.currentPrice !== null ? terminalFmtPrice(a.currentPrice, a.type) : '—';
+        const targetStr  = terminalFmtPrice(a.target, a.type);
+        const isUp       = a.dir === 'above';
+        const dirClass   = isUp ? 'up' : 'down';
+        const dirArrow   = isUp ? '↑' : '↓';
+
+        return '<div class="term-alert-card' + (a.triggered ? ' triggered' : '') + '" style="--card-accent:' + accent + '">'
+            + '<div class="term-alert-top">'
+            +   '<span class="term-alert-sym">' + a.symbol.toUpperCase() + '</span>'
+            +   '<span class="term-alert-badge ' + a.type + '">' + a.type + '</span>'
+            +   '<span class="term-alert-dir"><span class="dir-arrow ' + dirClass + '">' + dirArrow + '</span>' + targetStr + '</span>'
+            +   '<button class="term-alert-remove" onclick="terminalRemoveAlert(\'' + a.id + '\')" title="Remove">×</button>'
+            + '</div>'
+            + '<div class="term-alert-label">' + a.label + '</div>'
+            + '<div class="term-alert-prices">'
+            +   (a.triggered
+                    ? '<span class="term-alert-fired">🔔 fired · was ' + priceStr + '</span>'
+                    : '<span>now <span class="now">' + priceStr + '</span></span><span class="target-lbl">target ' + targetStr + '</span>')
+            + '</div>'
+            + '</div>';
+    }).join('');
+}
+
+function terminalRemoveAlert(id) {
+    terminalAlerts = terminalAlerts.filter(a => a.id !== id);
+    terminalSave();
+    terminalRenderAlerts();
+    const active = terminalAlerts.filter(a => !a.triggered).length;
+    terminalSetStatus(active > 0 ? active + ' active' : 'idle', active > 0);
+    if (!active) terminalStopPolling();
+}
+
+function terminalClearAll() {
+    if (!terminalAlerts.length) return;
+    if (!confirm('Clear all terminal alerts?')) return;
+    terminalAlerts = [];
+    terminalSave();
+    terminalRenderAlerts();
+    terminalStopPolling();
+    terminalSetStatus('idle', false);
+    terminalLog('All alerts cleared.', 'tl-system');
+}
+
+// =============================================================================
 // BOOT
 // =============================================================================
 loadData();
 LogoEngine.init();
+terminalLoad();
 
 // If running from file://, show notification instructions the first time
 // the user visits the Watchlist tab so they know what to do
