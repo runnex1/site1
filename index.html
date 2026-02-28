@@ -6443,40 +6443,41 @@ async function fetchMarketTicker() {
             }
         } catch(e) { console.warn('Binance ticker error:', symbol, e); }
     }
-    // Gold — goldprice.org (free, no key, CORS-friendly, live)
-    try {
-        const r = await fetch(`https://data-asg.goldprice.org/dbXRates/USD`, {
-            signal: AbortSignal.timeout(8000), cache: 'no-store'
-        });
-        if (r.ok) {
-            const d = await r.json();
-            const item = d?.items?.[0];
-            if (item?.xauPrice) {
-                // goldprice.org returns price per troy oz in USD
-                // No previous close available, so we skip chg
-                setTickerItem('tk-gold-price', 'tk-gold-chg', item.xauPrice, null);
+    // Gold (GC=F) + S&P 500 (^GSPC) via Yahoo Finance, racing two proxies
+    const yahooItems = [
+        { ySymbol: 'GC%3DF',  priceId: 'tk-gold-price', chgId: 'tk-gold-chg'  },
+        { ySymbol: '%5EGSPC', priceId: 'tk-sp-price',   chgId: 'tk-sp-chg'    },
+    ];
+    for (const { ySymbol, priceId, chgId } of yahooItems) {
+        try {
+            const base = `https://query1.finance.yahoo.com/v8/finance/chart/${ySymbol}?interval=1d&range=2d&_=${Date.now()}`;
+            const proxies = [
+                `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+                `https://api.allorigins.win/get?url=${encodeURIComponent(base)}`,
+            ];
+            let meta = null;
+            for (const proxy of proxies) {
+                try {
+                    const r = await fetch(proxy, { signal: AbortSignal.timeout(8000), cache: 'no-store' });
+                    if (!r.ok) continue;
+                    let text = await r.text();
+                    if (text.trimStart().startsWith('{')) {
+                        const j = JSON.parse(text);
+                        if (j.contents) text = j.contents;
+                    }
+                    const d = JSON.parse(text);
+                    meta = d?.chart?.result?.[0]?.meta;
+                    if (meta?.regularMarketPrice) break;
+                } catch(e) {}
             }
-        }
-    } catch(e) { console.warn('Gold price error:', e); }
-
-    // S&P 500 — Yahoo Finance via corsproxy with cache-busting timestamp
-    try {
-        const ts = Date.now();
-        const yhUrl = `https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=2d&_=${ts}`;
-        const proxiedUrl = `https://corsproxy.io/?url=${encodeURIComponent(yhUrl)}`;
-        const r = await fetch(proxiedUrl, { signal: AbortSignal.timeout(8000), cache: 'no-store' });
-        if (r.ok) {
-            const raw = await r.json();
-            const yhData = raw?.contents ? JSON.parse(raw.contents) : raw;
-            const meta = yhData?.chart?.result?.[0]?.meta;
             if (meta) {
                 const price  = meta.regularMarketPrice || meta.previousClose;
                 const prev   = meta.chartPreviousClose || meta.previousClose;
                 const chgPct = prev ? ((price - prev) / prev) * 100 : null;
-                setTickerItem('tk-sp-price', 'tk-sp-chg', price, chgPct);
+                setTickerItem(priceId, chgId, price, chgPct);
             }
-        }
-    } catch(e) { console.warn('S&P 500 ticker error:', e); }
+        } catch(e) { console.warn('Yahoo ticker error:', ySymbol, e); }
+    }
 }
 
 // Boot ticker + refresh every 5min
