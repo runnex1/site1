@@ -6490,6 +6490,21 @@ async function fetchDailyNews() {
     const el = document.getElementById('briefNewsGrid');
     if (!el) return;
 
+    const CACHE_KEY = 'vault_news_cache';
+    const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
+
+    // ── Check cache first ────────────────────────────────────────────────────
+    try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+            const { html, ts } = JSON.parse(cached);
+            if (Date.now() - ts < CACHE_TTL && html) {
+                el.innerHTML = html;
+                return;
+            }
+        }
+    } catch(e) {}
+
     // ── Step 1: fetch raw RSS headlines via CORS proxy ───────────────────────
     async function fetchRSSHeadlines(rssUrl, maxItems) {
         const proxies = [
@@ -6622,6 +6637,9 @@ Reply with ONLY a raw JSON array, no markdown:
                 </div>
             </a>
         `).join('');
+
+        // Save to cache for 2 hours
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ html: el.innerHTML, ts: Date.now() })); } catch(e) {}
 
     } catch(e) {
         console.error('Groq ranking error:', e);
