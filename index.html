@@ -734,7 +734,7 @@ body::after {
   font-family: var(--ff-display);
 }
 .tokens-header   { grid-template-columns: 2fr 1.5fr 1.5fr 1fr; }
-.protocols-header{ grid-template-columns: 2fr 1fr 1.5fr 1fr; }
+.protocols-header{ grid-template-columns: 2fr 1fr 1.5fr 0.8fr 1fr; }
 .etf-header      { grid-template-columns: 1fr 1.5fr 1fr 1fr 1.5fr 1fr; }
 /* Updated PM Header for 8 Columns */
 .pm-header       { grid-template-columns: 2.5fr 0.8fr 1fr 1fr 1fr 1.2fr 1.2fr; }
@@ -761,7 +761,7 @@ body::after {
 .table-row:last-child { border-bottom: none; }
 
 .tokens-row    { grid-template-columns: 2fr 1.5fr 1.5fr 1fr; }
-.protocols-row { grid-template-columns: 2fr 1fr 1.5fr 1fr; }
+.protocols-row { grid-template-columns: 2fr 1fr 1.5fr 0.8fr 1fr; }
 .etf-row       { grid-template-columns: 1fr 1.5fr 1fr 1fr 1.5fr 1fr; }
 /* Updated PM Row for 8 Columns */
 .pm-row        { grid-template-columns: 2.5fr 0.8fr 1fr 1fr 1fr 1.2fr 1.2fr; }
@@ -867,6 +867,7 @@ body::after {
   padding: 0.4rem 0;
   border-bottom: 1px solid var(--border);
   font-size: 0.8rem;
+  gap: 0.5rem;
 }
 .drawer-position:last-child { border-bottom: none; }
 .drawer-position-name {
@@ -883,7 +884,22 @@ body::after {
   flex-shrink: 0; margin-left: 1rem;
 }
 
-/* ─── RISK ALERT ─────────────────────────────────────────── */
+/* ─── APR BADGE ──────────────────────────────────────────── */
+.apr-badge {
+  display: inline-flex; align-items: center;
+  font-family: var(--ff-mono); font-size: 0.75rem; font-weight: 700;
+  padding: 2px 7px; border-radius: var(--r-xs);
+  white-space: nowrap;
+}
+.apr-badge.pos { color: var(--green); background: rgba(34,197,94,0.10); border: 1px solid rgba(34,197,94,0.22); }
+.apr-badge.neg { color: var(--red);   background: rgba(244,63,94,0.10);  border: 1px solid rgba(244,63,94,0.22); }
+.apr-badge.neu { color: var(--t3);    background: var(--surf-3);          border: 1px solid var(--border); }
+.drawer-position-apr {
+  font-family: var(--ff-mono); font-size: 0.75rem; font-weight: 700;
+  text-align: right; flex-shrink: 0; margin-left: 0.75rem; align-self: center;
+}
+
+
 .risk-alert {
   display: inline-flex; align-items: center; gap: 0.3rem;
   font-size: 0.75rem; font-weight: 600; color: var(--red);
@@ -2176,6 +2192,10 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                 Clear
               </button>
+              <span id="tokenPriceDot" style="display:none;align-items:center;gap:0.35rem;font-size:0.72rem;color:var(--t3);margin-left:0.25rem;">
+                <span id="tokenPricePulse" style="width:7px;height:7px;border-radius:50%;background:var(--t3);display:inline-block;transition:background 0.4s"></span>
+                <span id="tokenPriceStatus">—</span>
+              </span>
             </div>
           </div>
           <div class="data-table">
@@ -2191,6 +2211,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
             <div class="section-title">
               <div class="section-title-dot" style="background:var(--indigo)"></div>
               Protocol Positions
+              <span id="totalDefiApr" style="display:none;margin-left:0.6rem;font-size:0.72rem;font-weight:700;font-family:var(--ff-mono);padding:2px 9px;border-radius:var(--r-xs);background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:var(--indigo);"></span>
             </div>
             <div class="button-group">
               <button class="btn-base add-btn" onclick="openModal('protocol')">
@@ -2210,7 +2231,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
           </div>
           <div class="data-table">
             <div class="table-header protocols-header">
-              <div>Protocol</div><div>Type</div><div>Value</div><div>Notes</div>
+              <div>Protocol</div><div>Type</div><div>Value</div><div>APR</div><div>Notes</div>
             </div>
             <div id="protocolsTable"></div>
           </div>
@@ -2556,6 +2577,23 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
     <div class="form-group">
       <label class="form-label">DeFi positions — paste from your portfolio tracker</label>
       <textarea id="importProtocolsText" placeholder="Paste copied DeFi positions text…"></textarea>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;">
+      <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.82rem;color:var(--t2);user-select:none;">
+        <input type="checkbox" id="firstSnapshotToggle" onchange="toggleFirstSnapshot()"
+          style="width:15px;height:15px;accent-color:var(--amber);cursor:pointer;">
+        <span>First Snapshot</span>
+        <span style="font-size:0.72rem;color:var(--t3)">(historical reference — won't update positions)</span>
+      </label>
+    </div>
+    <div id="firstSnapshotDateRow" style="display:none;gap:0.5rem;align-items:center;flex-wrap:wrap;padding-bottom:0.5rem;">
+      <span style="font-size:0.8rem;color:var(--t2);">Snapshot date &amp; time:</span>
+      <input type="date" id="firstSnapshotDate"
+        style="background:var(--surface-2);border:1px solid var(--border-mid);border-radius:6px;
+               color:var(--t1);padding:4px 8px;font-size:0.8rem;font-family:var(--ff-mono);">
+      <input type="time" id="firstSnapshotTime" value="12:00"
+        style="background:var(--surface-2);border:1px solid var(--border-mid);border-radius:6px;
+               color:var(--t1);padding:4px 8px;font-size:0.8rem;font-family:var(--ff-mono);width:90px;">
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal('importProtocols')">Cancel</button>
@@ -2946,23 +2984,27 @@ async function loadData() {
         }
     } catch(e) { console.warn('localStorage load failed:', e); }
 
+
+
     // 2. Always render immediately with whatever data we have
     updateUI();
     updateLogoStatus('ready', 'Ready');
 
-    // 3. Fire-and-forget cloud sync (won't block or break the app if it fails)
-    (async () => {
-        try {
-            const res = await fetch('/api/sync', { signal: AbortSignal.timeout(5000) });
-            if (!res.ok) return;
-            const cloudData = await res.json();
-            if (cloudData && cloudData.result) {
-                data = JSON.parse(cloudData.result);
-                saveData();
-                updateUI();
-            }
-        } catch(e) { /* running locally or offline — that's fine */ }
-    })();
+    // 3. Fire-and-forget cloud sync (only when served via http/https)
+    if (location.protocol !== 'file:') {
+        (async () => {
+            try {
+                const res = await fetch('/api/sync', { signal: AbortSignal.timeout(5000) });
+                if (!res.ok) return;
+                const cloudData = await res.json();
+                if (cloudData && cloudData.result) {
+                    data = JSON.parse(cloudData.result);
+                    saveData();
+                    updateUI();
+                }
+            } catch(e) { /* offline or not deployed */ }
+        })();
+    }
 
     // 4. Load Opinion config and other settings
     try {
@@ -2987,16 +3029,17 @@ async function loadData() {
 
 async function saveData() {
     try { 
-        // Always save a local backup
+        // Always save to localStorage
         localStorage.setItem('portfolio-data-pro', JSON.stringify(data)); 
 
-        // Push the latest data to your Upstash database via Vercel
+        // Cloud sync only works when served via http/https (not file://)
+        if (location.protocol === 'file:') return;
         await fetch('/api/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
-    } catch(e) { console.error('Cloud save error:', e); }
+    } catch(e) { if (location.protocol !== 'file:') console.error('Cloud save error:', e); }
 }
 
 function saveOpinionConfig() {
@@ -3045,9 +3088,140 @@ function maybeSaveSnapshot() {
     } catch(e) { console.warn('Snapshot save failed:', e); }
 }
 
+
+// =============================================================================
+// PROTOCOL IMPORT HISTORY (for APR calculation)
+// =============================================================================
+const PROTO_HISTORY_KEY = 'protocol-import-history';
+const PROTO_HISTORY_VERSION = 3; // bump when key format changes
+const MAX_HISTORY_ENTRIES = 30; // keep last 30 imports
+
+function buildPositionMap(protocols) {
+    const positions = {};
+    for (const p of protocols) {
+        if (!p.sections) continue;
+        const secTypeCounts = {};
+        for (const sec of p.sections) {
+            if (!sec.positions) continue;
+            const st = sec.type || 'Yield';
+            secTypeCounts[st] = (secTypeCounts[st] || 0) + 1;
+            const secIdx = secTypeCounts[st] > 1 ? `[${secTypeCounts[st]}]` : '';
+            for (const pos of sec.positions) {
+                const key = `${p.name}|||${st}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+                positions[key] = (positions[key] || 0) + pos.value;
+            }
+        }
+    }
+    return positions;
+}
+
+function saveProtocolImportHistory(protocols, { ts = Date.now(), firstSnapshot = false } = {}) {
+    try {
+        // Always preserve the first snapshot regardless of version or cap
+        const prevHistory = loadProtocolImportHistory();
+        const existingFirstSnap = prevHistory.find(e => e.firstSnapshot);
+
+        let history = prevHistory.filter(e => e.v === PROTO_HISTORY_VERSION && !e.firstSnapshot);
+        const positions = buildPositionMap(protocols);
+        const entry = { v: PROTO_HISTORY_VERSION, ts, positions, firstSnapshot: firstSnapshot || undefined };
+
+        if (firstSnapshot) {
+            // Replace existing first snapshot
+            history.unshift(entry);
+        } else {
+            // Re-prepend preserved first snapshot, then add new regular entry
+            if (existingFirstSnap) history.unshift(existingFirstSnap);
+            history.push(entry);
+            // Trim regular entries only (keep first snapshot)
+            const regularEntries = history.filter(e => !e.firstSnapshot);
+            while (regularEntries.length > MAX_HISTORY_ENTRIES) regularEntries.shift();
+            history = existingFirstSnap ? [existingFirstSnap, ...regularEntries] : regularEntries;
+        }
+
+        localStorage.setItem(PROTO_HISTORY_KEY, JSON.stringify(history));
+    } catch(e) { console.warn('Protocol history save failed:', e); }
+}
+
+function loadProtocolImportHistory() {
+    try { return JSON.parse(localStorage.getItem(PROTO_HISTORY_KEY) || '[]'); }
+    catch(e) { return []; }
+}
+
+/**
+ * For a given "ProtocolName|||PoolName" key, find the best pair of history
+ * entries to compute APR.
+ * Priority: pair with distance 7–9 days. Fallback: closest pair >= 2 days.
+ * Returns { apr: number|null, daysDiff: number|null, oldTs, newTs }
+ */
+function calcPositionAPR(posKey) {
+    const history = loadProtocolImportHistory();
+    const allEntries = history.filter(e => posKey in e.positions);
+    const firstSnap  = allEntries.find(e => e.firstSnapshot);
+    const regular    = allEntries.filter(e => !e.firstSnapshot).sort((a, b) => a.ts - b.ts);
+
+    // Always require a first snapshot — no fallback to regular-pair logic
+    if (!firstSnap) return { apr: null };
+    if (regular.length < 1) return { apr: null };
+
+    const MS_PER_DAY = 86400000;
+
+    // First snapshot paired with the most recent regular import only
+    const newer = regular[regular.length - 1];
+    const older = firstSnap;
+    if (older.ts >= newer.ts) return { apr: null };
+    const rawDiff = (newer.ts - older.ts) / MS_PER_DAY;
+    const daysDiff = Math.max(rawDiff, 1);
+    const newerVal = newer.positions[posKey];
+    const olderVal = older.positions[posKey];
+    if (!olderVal) return { apr: null };
+
+    // Ignore positions where the absolute value change exceeds $500
+    // (likely a deposit/withdrawal, not yield)
+    if (Math.abs(newerVal - olderVal) > 500) return { apr: null };
+
+    const apr = ((newerVal - olderVal) / olderVal) * (365 / daysDiff) * 100;
+
+    // Ignore implausibly high/low APRs (likely noise or bad data)
+    if (Math.abs(apr) >= 60) return { apr: null };
+
+    return { apr, daysDiff };
+}
+
 function loadSnapshots() {
     try { return JSON.parse(localStorage.getItem('portfolio-snapshots') || '{}'); }
     catch(e) { return {}; }
+}
+
+// =============================================================================
+// DEBUG
+// =============================================================================
+function debugAPRHistory() {
+    const history = loadProtocolImportHistory();
+    const snap = history.find(e => e.firstSnapshot);
+    const regular = history.filter(e => !e.firstSnapshot).sort((a,b) => a.ts - b.ts);
+    console.log('=== APR History Debug ===');
+    console.log('First snapshot:', snap ? new Date(snap.ts).toLocaleString() + ' — ' + Object.keys(snap.positions).length + ' keys' : 'NONE');
+    console.log('Regular imports:', regular.length);
+    if (regular.length) console.log('Latest:', new Date(regular[regular.length-1].ts).toLocaleString() + ' — ' + Object.keys(regular[regular.length-1].positions).length + ' keys');
+    if (snap) {
+        console.log('--- Snapshot keys ---');
+        Object.entries(snap.positions).forEach(([k,v]) => console.log(' ', k, '= $' + v));
+    }
+    if (regular.length) {
+        console.log('--- Latest import keys ---');
+        Object.entries(regular[regular.length-1].positions).forEach(([k,v]) => console.log(' ', k, '= $' + v));
+    }
+    if (snap && regular.length) {
+        const snapKeys = new Set(Object.keys(snap.positions));
+        const latestKeys = new Set(Object.keys(regular[regular.length-1].positions));
+        const matched = [...snapKeys].filter(k => latestKeys.has(k));
+        const snapOnly = [...snapKeys].filter(k => !latestKeys.has(k));
+        const latestOnly = [...latestKeys].filter(k => !snapKeys.has(k));
+        console.log('Matched:', matched.length, '| Snap-only:', snapOnly.length, '| Latest-only:', latestOnly.length);
+        if (snapOnly.length) { console.log('SNAP-ONLY:'); snapOnly.forEach(k => console.log('  ', k)); }
+        if (latestOnly.length) { console.log('LATEST-ONLY:'); latestOnly.forEach(k => console.log('  ', k)); }
+        if (matched.length) { console.log('MATCHED:'); matched.forEach(k => console.log('  ', k)); }
+    }
 }
 
 // =============================================================================
@@ -3989,18 +4163,30 @@ function processTokensImport() {
     document.getElementById('importTokensText').value = '';
 }
 
+
+function toggleFirstSnapshot() {
+    const checked = document.getElementById('firstSnapshotToggle')?.checked;
+    const row = document.getElementById('firstSnapshotDateRow');
+    if (row) row.style.display = checked ? 'flex' : 'none';
+    if (checked) {
+        // Default date to today
+        const d = document.getElementById('firstSnapshotDate');
+        if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
+    }
+}
 function processProtocolsImport() {
     const text = document.getElementById('importProtocolsText').value;
     if (!text) return;
 
     // ── Section-type keywords ────────────────────────────────────────────────
-    const SECTION_TYPES = ['Lending','Vesting','Staking','Staked','Deposit','Yield','Farming','DEX'];
-    const HEADER_COLS   = new Set(['pool','balance','rewards','usd value','supplied','borrowed',
-                                    'end time','claimable amount','unlock time']);
+    const SECTION_TYPES = ['Lending','Vesting','Staking','Staked','Deposit','Yield','Farming','DEX','Leveraged Farming'];
+    const HEADER_COLS   = new Set(['pool','balance','rewards','usd value',
+                                    'end time','claimable amount','unlock time',
+                                    'supply','borrow','debt ratio','withdraw','claim','-']);
 
     function inferType(label) {
         const l = label.toLowerCase();
-        if (/lending/.test(l))                    return 'Lending';
+        if (/lending|leveraged farming/.test(l))  return 'Lending';
         if (/vest/.test(l))                       return 'Vesting';
         if (/liquidity pool|farming|dex/.test(l)) return 'DEX';
         if (/stak/.test(l))                       return 'Staking';
@@ -4036,14 +4222,17 @@ function processProtocolsImport() {
         let curSubLabel = null; // 'Supplied' | 'Borrowed' | 'Liquidity Pool' | null
 
         // token amount pattern: "123.45 SYMBOL" or "123 SYMBOL ($X.XX)"
+        // Also normalize subscript digits (₀-₉) to regular digits
+        const normalizeSubscripts = s => s.replace(/[₀₁₂₃₄₅₆₇₈₉]/g, d => '0123456789'['₀₁₂₃₄₅₆₇₈₉'.indexOf(d)]);
         const tokenRe = /^([\d,]+\.?\d*)\s+([A-Za-z0-9\-+._]{2,40})(\s+\(\$[\d.,]+\))?$/;
-        // value line: $123.45
-        const valRe   = /^\$([\d,]+\.?\d*)$/;
+        // value line: $123.45 or <$0.01
+        const valRe   = /^(?:<)?\$([\d,]+\.?\d*)$/;
         // subsection labels inside Lending / Pendle
         const SUB_LABELS = new Set(['supplied','borrowed','liquidity pool']);
 
         for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+            const line = normalizeSubscripts(lines[i]);
+            lines[i] = line; // update in place so look-ahead also sees normalized version
             const lineLow = line.toLowerCase();
 
             // Section type header
@@ -4053,21 +4242,29 @@ function processProtocolsImport() {
                 sections.push(curSection);
                 continue;
             }
-            // Health rate — extract number on SAME line
-            const hr = line.match(/Health\s*Rate\s*(>?\s*[\d.]+)/i);
+            // Health rate — number may be on same line or next line
+            const hr = line.match(/Health\s*Rate\s*(>?\s*[\d.]+)?/i);
             if (hr) {
-                if (curSection) curSection.health = hr[1].trim();
+                if (hr[1]) {
+                    if (curSection) curSection.health = hr[1].trim();
+                } else if (i + 1 < lines.length && /^>?\s*[\d.]+$/.test(lines[i + 1])) {
+                    if (curSection) curSection.health = lines[i + 1].trim();
+                    i++; // consume the next line
+                }
                 continue;
             }
             // Supplied / Borrowed sub-labels — track but don't skip
             if (SUB_LABELS.has(lineLow)) {
-                curSubLabel = line; // 'Supplied' or 'Borrowed'
+                curSubLabel = line.trim(); // 'Supplied' or 'Borrowed'
                 continue;
             }
             // Regular column header rows — skip
             if (HEADER_COLS.has(lineLow)) continue;
             // Blank / noise
             if (!line || line === ' ') continue;
+            // Stray percentage lines (e.g. "94.00%") and lone numbers (e.g. stray health rate value)
+            if (/^\d[\d,.]*%$/.test(line)) continue;
+            if (/^>?\s*[\d.]+$/.test(line)) continue;
 
             // If no section yet, create a default one
             if (!curSection) {
@@ -4087,7 +4284,7 @@ function processProtocolsImport() {
                     if (tl && tl !== ' ') rawTokens.push(tl);
                     j++;
                 }
-                const posValue = j < lines.length ? parseFloat(lines[j].replace(/[$,]/g,'')) : 0;
+                const posValue = j < lines.length ? parseFloat(lines[j].replace(/^</, '').replace(/[$,]/g,'')) : 0;
                 if (posValue > 0) {
                     // Deduplicate: remove standalone symbol lines if an amount line
                     // already contains that symbol (e.g. "USDT0" + "8,331 USDT0")
@@ -4110,6 +4307,9 @@ function processProtocolsImport() {
         return sections;
     }
 
+    // Reset protocols — each import is a full replacement, not an accumulation
+    data.protocols = [];
+
     let imported = 0;
     for (const block of protocolBlocks) {
         const blockLines = rawLines.slice(block.start, block.end);
@@ -4128,6 +4328,7 @@ function processProtocolsImport() {
             if (sections.some(s => s.type === t || inferType(s.type) === t)) { dominant = t; break; }
         }
 
+        // Same protocol name = merge sections (e.g. two Pendle V2 blocks in one paste)
         const existing = data.protocols.find(p => p.name === block.name);
         if (existing) {
             existing.value += block.totalValue;
@@ -4145,11 +4346,32 @@ function processProtocolsImport() {
         imported++;
     }
 
-    maybeSaveSnapshot(); saveData(); updateUI();
-    closeModal('importProtocols');
-    document.getElementById('importProtocolsText').value = '';
-    if (imported > 0) alert(`✅ Imported ${imported} protocol positions`);
-    else alert('No protocols detected.');
+    const isFirstSnapshot = document.getElementById('firstSnapshotToggle')?.checked;
+
+    if (isFirstSnapshot) {
+        // Use already-parsed data.protocols as the snapshot source, then restore previous state
+        const dateVal = document.getElementById('firstSnapshotDate')?.value;
+        const timeVal = document.getElementById('firstSnapshotTime')?.value || '12:00';
+        if (!dateVal) { alert('Please select a date for the First Snapshot.'); return; }
+        const ts = new Date(`${dateVal}T${timeVal}:00`).getTime();
+        if (isNaN(ts)) { alert('Invalid date/time for First Snapshot.'); return; }
+
+        saveProtocolImportHistory(data.protocols, { ts, firstSnapshot: true });
+
+        // Restore protocols to what they were before (snapshot shouldn't change display)
+        loadData();
+        closeModal('importProtocols');
+        document.getElementById('importProtocolsText').value = '';
+        document.getElementById('firstSnapshotToggle').checked = false;
+        document.getElementById('firstSnapshotDateRow').style.display = 'none';
+        alert(`✅ First Snapshot saved for ${new Date(ts).toLocaleString()}`);
+    } else {
+        saveProtocolImportHistory(data.protocols); saveData(); updateUI();
+        closeModal('importProtocols');
+        document.getElementById('importProtocolsText').value = '';
+        if (imported > 0) alert(`✅ Imported ${imported} protocol positions`);
+        else alert('No protocols detected.');
+    }
 }
 
 // =============================================================================
@@ -4247,6 +4469,7 @@ window.updateUI = function updateUI() {
     renderETFs();
     updateCharts();
     renderDailyBrief();
+    updateTotalDefiApr();
 };
 
 function renderTokensOverview() {
@@ -4288,6 +4511,107 @@ function renderTokens() {
     }).join('');
 }
 
+// =============================================================================
+// LIVE TOKEN PRICES  (CoinGecko simple/price, refreshes every 60s)
+// =============================================================================
+let _tokenPriceTimer = null;
+
+async function fetchLiveTokenPrices() {
+    if (!data.tokens.length) return;
+
+    const pulse  = document.getElementById('tokenPricePulse');
+    const status = document.getElementById('tokenPriceStatus');
+    const dot    = document.getElementById('tokenPriceDot');
+    if (dot)   dot.style.display = 'flex';
+    if (pulse) pulse.style.background = 'var(--amber)';
+
+    // Build list of gecko IDs for each token
+    const geckoIds = data.tokens.map(t => {
+        const sym = t.symbol.toUpperCase();
+        return CRYPTO_GECKO_IDS[sym] || sym.toLowerCase();
+    });
+    const uniqueIds = [...new Set(geckoIds)];
+
+    try {
+        const url = `https://api.coingecko.com/api/v3/simple/price?ids=${uniqueIds.join(',')}&vs_currencies=usd`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        if (!res.ok) throw new Error('CoinGecko ' + res.status);
+        const prices = await res.json();
+
+        let anyUpdated = false;
+        data.tokens.forEach(t => {
+            const geckoId = CRYPTO_GECKO_IDS[t.symbol.toUpperCase()] || t.symbol.toLowerCase();
+            const usd = prices[geckoId]?.usd;
+            if (usd && t.amount > 0) {
+                t.value = t.amount * usd;
+                anyUpdated = true;
+            }
+        });
+
+        if (anyUpdated) {
+            saveData();
+            updateUI();
+        }
+
+        if (pulse) pulse.style.background = 'var(--green)';
+        if (status) {
+            const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            status.textContent = 'prices live · ' + t;
+        }
+    } catch(e) {
+        console.warn('Live token price fetch failed:', e);
+        if (pulse) pulse.style.background = 'var(--red)';
+        if (status) status.textContent = 'price update failed';
+    }
+}
+
+function startLiveTokenPrices() {
+    if (_tokenPriceTimer) return;
+    fetchLiveTokenPrices();
+    _tokenPriceTimer = setInterval(fetchLiveTokenPrices, 60000);
+}
+
+// =============================================================================
+// TOTAL DeFi APR
+// =============================================================================
+function updateTotalDefiApr() {
+    const el = document.getElementById('totalDefiApr');
+    if (!el || !data.protocols.length) { if (el) el.style.display = 'none'; return; }
+
+    let weightedSum = 0, totalWeight = 0;
+    for (const p of data.protocols) {
+        if (!p.sections) continue;
+        const _tc1 = {};
+        for (const sec of p.sections) {
+            if (!sec.positions) continue;
+            const _st1 = sec.type || 'Yield'; _tc1[_st1] = (_tc1[_st1]||0)+1;
+            const _si1 = _tc1[_st1] > 1 ? `[${_tc1[_st1]}]` : '';
+            for (const pos of sec.positions) {
+                let { apr } = calcPositionAPR(`${p.name}|||${_st1}${_si1}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`);
+                if (apr !== null && pos.value > 0) {
+                    if (pos.sub?.toLowerCase() === 'borrowed') apr = -apr;
+                    weightedSum += apr * pos.value;
+                    totalWeight += pos.value;
+                }
+            }
+        }
+    }
+
+    if (totalWeight === 0) { el.style.display = 'none'; return; }
+
+    const avg  = weightedSum / totalWeight;
+    const sign = avg > 0 ? '+' : '';
+    const col  = avg > 0 ? 'var(--green)' : avg < 0 ? 'var(--red)' : 'var(--t3)';
+    const bg   = avg > 0 ? 'rgba(34,197,94,0.10)' : avg < 0 ? 'rgba(244,63,94,0.10)' : 'var(--surf-3)';
+    const bdr  = avg > 0 ? 'rgba(34,197,94,0.22)' : avg < 0 ? 'rgba(244,63,94,0.22)' : 'var(--border)';
+
+    el.style.display      = 'inline';
+    el.style.color        = col;
+    el.style.background   = bg;
+    el.style.borderColor  = bdr;
+    el.textContent        = `avg APR ${sign}${avg.toFixed(1)}%`;
+}
+
 function toggleProtocolDrawer(idx) {
     const btn    = document.getElementById(`pdrawer-btn-${idx}`);
     const drawer = document.getElementById(`pdrawer-${idx}`);
@@ -4306,6 +4630,43 @@ function renderProtocols() {
 
     const fmtV = v => '$' + v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
+    function aprBadgeHtml(posKey, sub) {
+        let { apr } = calcPositionAPR(posKey);
+        if (apr === null) return `<span class="apr-badge neu">—</span>`;
+        // Borrowed positions: value growing = debt cost, so negate
+        if (sub?.toLowerCase() === 'borrowed') apr = -apr;
+        const cls = apr > 0 ? 'pos' : apr < 0 ? 'neg' : 'neu';
+        const sign = apr > 0 ? '+' : '';
+        return `<span class="apr-badge ${cls}">${sign}${apr.toFixed(1)}%</span>`;
+    }
+
+    // Compute protocol-level APR as weighted average of its positions
+    function protocolAprHtml(p) {
+        if (!p.sections) return `<span class="apr-badge neu">—</span>`;
+        let totalWeight = 0, weightedSum = 0, hasAny = false;
+        const _tc2 = {};
+        for (const sec of p.sections) {
+            if (!sec.positions) continue;
+            const _st2 = sec.type || 'Yield'; _tc2[_st2] = (_tc2[_st2]||0)+1;
+            const _si2 = _tc2[_st2] > 1 ? `[${_tc2[_st2]}]` : '';
+            for (const pos of sec.positions) {
+                const key = `${p.name}|||${_st2}${_si2}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+                let { apr } = calcPositionAPR(key);
+                if (apr !== null) {
+                    if (pos.sub?.toLowerCase() === 'borrowed') apr = -apr;
+                    weightedSum += apr * pos.value;
+                    totalWeight += pos.value;
+                    hasAny = true;
+                }
+            }
+        }
+        if (!hasAny) return `<span class="apr-badge neu">—</span>`;
+        const avg = totalWeight > 0 ? weightedSum / totalWeight : 0;
+        const cls = avg > 0 ? 'pos' : avg < 0 ? 'neg' : 'neu';
+        const sign = avg > 0 ? '+' : '';
+        return `<span class="apr-badge ${cls}">${sign}${avg.toFixed(1)}%</span>`;
+    }
+
     table.innerHTML = [...data.protocols].sort((a,b)=>b.value-a.value).map((p,i) => {
         let riskHtml = '';
         if (p.chain?.includes('Health')) {
@@ -4320,7 +4681,11 @@ function renderProtocols() {
         // Build drawer HTML
         let drawerHtml = '';
         if (hasSections) {
+            const _drawerTypeCounts = {};
             const sectionHtmls = p.sections.filter(s => s.positions && s.positions.length).map(sec => {
+                const _secType = sec.type || 'Yield';
+                _drawerTypeCounts[_secType] = (_drawerTypeCounts[_secType] || 0) + 1;
+                const _secIdx = _drawerTypeCounts[_secType] > 1 ? `[${_drawerTypeCounts[_secType]}]` : '';
                 // Group positions by their sub-label (Supplied / Borrowed / null)
                 let lastSub = undefined;
                 const posRows = sec.positions.map(pos => {
@@ -4328,9 +4693,9 @@ function renderProtocols() {
                     if (pos.sub !== lastSub) {
                         lastSub = pos.sub;
                         if (pos.sub) {
-                            const subColor = pos.sub === 'Borrowed'
+                            const subColor = pos.sub?.toLowerCase() === 'borrowed'
                                 ? 'var(--red)'
-                                : pos.sub === 'Liquidity Pool'
+                                : pos.sub?.toLowerCase() === 'liquidity pool'
                                     ? 'var(--indigo)'
                                     : 'var(--teal)';
                             subHeader = `<div style="font-size:0.62rem;font-weight:800;letter-spacing:0.12em;
@@ -4341,11 +4706,14 @@ function renderProtocols() {
                     const tokensHtml = pos.tokens.length
                         ? pos.tokens.map(t => `<div>${t}</div>`).join('')
                         : '<div style="color:var(--t3);font-style:italic">—</div>';
+                    const posKey = `${p.name}|||${_secType}${_secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+                    const aprHtml = aprBadgeHtml(posKey, pos.sub);
                     return `${subHeader}<div class="drawer-position">
                         <div>
                             <div class="drawer-position-name">${pos.pool}</div>
                             <div class="drawer-position-tokens">${tokensHtml}</div>
                         </div>
+                        <div class="drawer-position-apr">${aprHtml}</div>
                         <div class="drawer-position-value">${fmtV(pos.value)}</div>
                     </div>`;
                 }).join('');
@@ -4379,6 +4747,7 @@ function renderProtocols() {
                     ${expandBtn}
                 </div>
                 <div class="value">${fmtV(p.value)}</div>
+                <div>${protocolAprHtml(p)}</div>
                 <div class="percentage">
                     ${p.chain ? p.chain.replace(/Health:[\s\d.>]+/,'') : ''}
                     ${riskHtml}
@@ -5305,6 +5674,36 @@ async function wlRefreshPrices() {
     if (dot) dot.style.background = 'var(--amber)';
 
     let anyFailed = false;
+
+    // Migration: backfill tokenIdNo for old entries saved without it
+    await Promise.all(watchlist.map(async entry => {
+        if (!entry.tokenIdNo && entry.slug) {
+            try {
+                const market = await wlFetchMarket(entry.slug);
+                if (market) {
+                    if (market._source === 'dome') {
+                        entry.tokenIdNo = market.side_b?.id ?? null;
+                        entry.labelYes  = market.side_a?.label || entry.labelYes || 'YES';
+                        entry.labelNo   = market.side_b?.label || entry.labelNo  || 'NO';
+                    } else {
+                        const ids = market.clobTokenIds
+                            ? (typeof market.clobTokenIds === 'string' ? JSON.parse(market.clobTokenIds) : market.clobTokenIds)
+                            : [];
+                        entry.tokenIdNo = ids[1] || null;
+                    }
+                    if (entry.tokenIdNo) {
+                        const newPricesNo = await wlFetchPrices(entry.tokenIdNo);
+                        if (newPricesNo && newPricesNo.length > 0) {
+                            entry.pricesNo       = newPricesNo;
+                            entry.currentPriceNo = newPricesNo[newPricesNo.length - 1].p;
+                        }
+                        saveWatchlist();
+                    }
+                }
+            } catch(e) {}
+        }
+    }));
+
     await Promise.all(watchlist.map(async entry => {
         // Fetch YES prices
         const tokenYes = entry.tokenIdYes || entry.tokenId;
@@ -5488,20 +5887,8 @@ function wlToggleSide(id) {
     if (!entry) return;
     entry.viewingSide = entry.viewingSide === 'no' ? 'yes' : 'no';
     entry.outcome = entry.viewingSide === 'no' ? (entry.labelNo || 'NO') : (entry.labelYes || 'YES');
-
-    // Update pill labels
-    const yesBtn = document.getElementById(`wl-side-yes-${id}`);
-    const noBtn  = document.getElementById(`wl-side-no-${id}`);
-    if (yesBtn) yesBtn.classList.toggle('active', entry.viewingSide === 'yes');
-    if (noBtn)  noBtn.classList.toggle('active',  entry.viewingSide === 'no');
-
-    // Update price & change display
-    wlUpdateCardPrice(entry);
-
-    // Redraw chart with the correct price series
-    wlRedrawChart(entry);
-
     saveWatchlist();
+    renderWatchlistCard(entry);
 }
 
 function wlCardHTML(entry) {
@@ -6651,7 +7038,10 @@ Reply with ONLY a raw JSON array, no markdown:
 // =============================================================================
 // BOOT
 // =============================================================================
-loadData();
+(async () => {
+    await loadData();
+    startLiveTokenPrices();
+})();
 LogoEngine.init(); // runs in background, never blocks UI
 terminalLoad();
 fetchDailyNews();
