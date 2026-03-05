@@ -2222,6 +2222,12 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
                 Import Text
               </button>
+              <button onclick="setCurrentAsFirstSnapshot()"
+                title="Save current positions as First Snapshot for APR baseline"
+                style="font-size:0.7rem;padding:3px 8px;background:rgba(245,158,11,0.12);color:var(--amber);border:1px solid rgba(245,158,11,0.25);border-radius:6px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:4px;height:28px;">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Snapshot
+              </button>
 
               <button class="btn-base danger-btn" onclick="deleteAllData('protocols')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
@@ -4163,6 +4169,17 @@ function processTokensImport() {
     document.getElementById('importTokensText').value = '';
 }
 
+
+function setCurrentAsFirstSnapshot() {
+    if (!data.protocols || !data.protocols.length) {
+        alert('No protocol positions loaded.');
+        return;
+    }
+    if (!confirm('Set current positions as First Snapshot?\nThis will replace any existing snapshot and is used as the APR baseline.')) return;
+    const ts = Date.now();
+    saveProtocolImportHistory(data.protocols, { ts, firstSnapshot: true });
+    alert(`✅ First Snapshot set for ${new Date(ts).toLocaleString()}`);
+}
 
 function toggleFirstSnapshot() {
     const checked = document.getElementById('firstSnapshotToggle')?.checked;
@@ -6895,7 +6912,11 @@ async function fetchDailyNews() {
 
     // ── Step 1: fetch raw RSS headlines via CORS proxy ───────────────────────
     async function fetchRSSHeadlines(rssUrl, maxItems) {
-        const proxies = [
+        // On Vercel use server-side proxy to avoid CORS issues
+        const proxies = location.protocol === 'https:' ? [
+            `/api/rss?url=${encodeURIComponent(rssUrl)}`,
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}&_=${Date.now()}`,
+        ] : [
             `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}&_=${Date.now()}`,
             `https://corsproxy.io/?url=${encodeURIComponent(rssUrl)}`,
         ];
