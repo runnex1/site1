@@ -2235,6 +2235,17 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               </button>
             </div>
           </div>
+          <!-- View toggle pill -->
+          <div id="protocolViewToggle" style="display:flex;align-items:center;gap:0;margin-bottom:0.85rem;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:8px;overflow:hidden;width:fit-content;">
+            <button id="btnCurrentPositions" onclick="switchProtocolView('current')"
+              style="padding:5px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;border-right:1px solid var(--border-mid);transition:all 0.15s;background:var(--teal-10);color:var(--teal);font-family:var(--ff-body);">
+              Current
+            </button>
+            <button id="btnSnapshotPositions" onclick="switchProtocolView('snapshot')"
+              style="padding:5px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;transition:all 0.15s;background:transparent;color:var(--t3);font-family:var(--ff-body);">
+              📸 First Snapshot
+            </button>
+          </div>
           <div class="data-table">
             <div class="table-header protocols-header">
               <div>Protocol</div><div>Type</div><div>Value</div><div>APR</div><div>Notes</div>
@@ -3105,7 +3116,13 @@ const MAX_HISTORY_ENTRIES = 30; // keep last 30 imports
 function buildPositionMap(protocols) {
     const positions = {};
     for (const p of protocols) {
-        if (!p.sections) continue;
+        // Always store the protocol-level net value (used by snapshot view for correct totals)
+        positions[`${p.name}|||__net__`] = p.value || 0;
+
+        if (!p.sections) {
+            positions[`${p.name}|||__total__`] = (positions[`${p.name}|||__total__`] || 0) + (p.value || 0);
+            continue;
+        }
         const secTypeCounts = {};
         for (const sec of p.sections) {
             if (!sec.positions) continue;
@@ -3163,20 +3180,28 @@ function calcPositionAPR(posKey) {
     const history = loadProtocolImportHistory();
     const allEntries = history.filter(e => posKey in e.positions);
     const firstSnap  = allEntries.find(e => e.firstSnapshot);
-    const regular    = allEntries.filter(e => !e.firstSnapshot).sort((a, b) => a.ts - b.ts);
+    let   regular    = allEntries.filter(e => !e.firstSnapshot).sort((a, b) => a.ts - b.ts);
 
-    // Always require a first snapshot — no fallback to regular-pair logic
+    // Always require a first snapshot
     if (!firstSnap) return { apr: null };
-    if (regular.length < 1) return { apr: null };
+
+    // If no regular import exists, synthesise one from live data.protocols
+    if (regular.length < 1) {
+        const livePositions = buildPositionMap(data.protocols);
+        if (!(posKey in livePositions)) return { apr: null };
+        regular = [{ ts: Date.now(), positions: livePositions, firstSnapshot: false }];
+    }
 
     const MS_PER_DAY = 86400000;
 
-    // First snapshot paired with the most recent regular import only
     const newer = regular[regular.length - 1];
     const older = firstSnap;
-    if (older.ts >= newer.ts) return { apr: null };
+
+    // Need at least a small time gap — clamp to minimum 1 day so APR formula works
     const rawDiff = (newer.ts - older.ts) / MS_PER_DAY;
+    if (rawDiff < 0) return { apr: null };
     const daysDiff = Math.max(rawDiff, 1);
+
     const newerVal = newer.positions[posKey];
     const olderVal = older.positions[posKey];
     if (!olderVal) return { apr: null };
@@ -4176,9 +4201,17 @@ function setCurrentAsFirstSnapshot() {
         return;
     }
     if (!confirm('Set current positions as First Snapshot?\nThis will replace any existing snapshot and is used as the APR baseline.')) return;
-    const ts = Date.now();
+    // Preserve the original snapshot timestamp if one already exists
+    const existing = loadProtocolImportHistory().find(e => e.firstSnapshot);
+    const ts = existing ? existing.ts : Date.now();
     saveProtocolImportHistory(data.protocols, { ts, firstSnapshot: true });
-    alert(`✅ First Snapshot set for ${new Date(ts).toLocaleString()}`);
+    alert('✅ First Snapshot updated (date kept: ' + new Date(ts).toLocaleString() + ')');
+    // Refresh whichever view is currently active
+    if (typeof _protocolView !== 'undefined' && _protocolView === 'snapshot') {
+        renderProtocolsSnapshot();
+    } else {
+        renderProtocols();
+    }
 }
 
 function toggleFirstSnapshot() {
@@ -4382,6 +4415,10 @@ function processProtocolsImport() {
         document.getElementById('firstSnapshotToggle').checked = false;
         document.getElementById('firstSnapshotDateRow').style.display = 'none';
         alert(`✅ First Snapshot saved for ${new Date(ts).toLocaleString()}`);
+        // Refresh view if snapshot toggle is active
+        if (typeof _protocolView !== 'undefined' && _protocolView === 'snapshot') {
+            renderProtocolsSnapshot();
+        }
     } else {
         saveProtocolImportHistory(data.protocols); saveData(); updateUI();
         closeModal('importProtocols');
@@ -4480,7 +4517,11 @@ window.updateUI = function updateUI() {
 
     renderTokensOverview();
     renderTokens();
-    renderProtocols();
+    if (typeof _protocolView !== 'undefined' && _protocolView === 'snapshot') {
+        renderProtocolsSnapshot();
+    } else {
+        renderProtocols();
+    }
     renderPredictionMarkets();
     renderOpinionMarkets();
     renderETFs();
@@ -4773,6 +4814,135 @@ function renderProtocols() {
             ${drawerHtml}
         </div>`;
     }).join('');
+}
+
+// ── Protocol view toggle (current vs. first snapshot) ────────────────────────
+let _protocolView = 'current'; // 'current' | 'snapshot'
+
+function switchProtocolView(view) {
+    _protocolView = view;
+    const btnC = document.getElementById('btnCurrentPositions');
+    const btnS = document.getElementById('btnSnapshotPositions');
+    if (btnC && btnS) {
+        if (view === 'current') {
+            btnC.style.background = 'var(--teal-10)';
+            btnC.style.color      = 'var(--teal)';
+            btnS.style.background = 'transparent';
+            btnS.style.color      = 'var(--t3)';
+        } else {
+            btnS.style.background = 'rgba(245,158,11,0.12)';
+            btnS.style.color      = 'var(--amber)';
+            btnC.style.background = 'transparent';
+            btnC.style.color      = 'var(--t3)';
+        }
+    }
+    if (view === 'snapshot') {
+        renderProtocolsSnapshot();
+    } else {
+        renderProtocols();
+    }
+}
+
+function renderProtocolsSnapshot() {
+    const table = document.getElementById('protocolsTable');
+    const history = loadProtocolImportHistory();
+    const snap = history.find(e => e.firstSnapshot);
+
+    if (!snap || !snap.positions || !Object.keys(snap.positions).length) {
+        table.innerHTML = '<div class="empty-state"><div class="empty-icon">📸</div><div>No first snapshot saved yet.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">Use the Snapshot button or import with "First Snapshot" checked.</small></div></div>';
+        return;
+    }
+
+    const fmtV = v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const snapDate = new Date(snap.ts).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+    // Group all position keys by protocol name
+    const grouped = {};
+    for (const [key, value] of Object.entries(snap.positions)) {
+        const sep = key.indexOf('|||');
+        const name = sep !== -1 ? key.slice(0, sep) : key;
+        const rest = sep !== -1 ? key.slice(sep + 3) : '';
+        if (!grouped[name]) grouped[name] = { net: null, positions: [] };
+        if (rest === '__net__') {
+            grouped[name].net = value; // use stored net value for correct total
+        } else if (rest !== '__total__') {
+            grouped[name].positions.push({ rest, value });
+        }
+    }
+
+    // For old snapshots without __net__, fall back to summing positions
+    for (const g of Object.values(grouped)) {
+        if (g.net === null) g.net = g.positions.reduce((s, p) => s + p.value, 0);
+    }
+
+    const sorted = Object.entries(grouped).sort((a, b) => b[1].net - a[1].net);
+    const grandTotal = sorted.reduce((s, [, g]) => s + g.net, 0);
+
+    const rowsHtml = sorted.map(([name, g], i) => {
+        const posRows = g.positions.sort((a, b) => b.value - a.value).map(({ rest, value }) => {
+            if (!rest) return '';
+            const colonIdx = rest.indexOf(':');
+            const afterSection = colonIdx !== -1 ? rest.slice(colonIdx + 1) : rest;
+            const colonIdx2 = afterSection.indexOf(':');
+            const pool = colonIdx2 !== -1 ? afterSection.slice(colonIdx2 + 1) : afterSection;
+            const sub  = colonIdx2 !== -1 ? afterSection.slice(0, colonIdx2) : null;
+            const subColor = sub?.toLowerCase() === 'borrowed' ? 'var(--red)'
+                           : sub?.toLowerCase() === 'liquidity pool' ? 'var(--indigo)'
+                           : 'var(--teal)';
+            const subTag = sub ? `<div style="font-size:0.62rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:${subColor}">${sub}</div>` : '';
+            return `<div class="drawer-position">
+                <div>
+                    ${subTag}
+                    <div class="drawer-position-name">${pool}</div>
+                </div>
+                <div class="drawer-position-apr"><span class="apr-badge neu">snap</span></div>
+                <div class="drawer-position-value">${fmtV(value)}</div>
+            </div>`;
+        }).join('');
+
+        const drawerHtml = g.positions.length ? `<div class="protocol-drawer" id="snap-pdrawer-${i}">
+            <div class="drawer-section">
+                <div class="drawer-section-label">Positions at snapshot · ${snapDate}</div>
+                ${posRows}
+            </div>
+        </div>` : '';
+
+        const expandBtn = g.positions.length ? `<button class="protocol-expand-btn" id="snap-pdrawer-btn-${i}"
+            onclick="(function(i){
+                var d=document.getElementById('snap-pdrawer-'+i);
+                var b=document.getElementById('snap-pdrawer-btn-'+i);
+                var open=d.classList.toggle('open');
+                b.classList.toggle('open',open);
+                b.querySelector('.chevron').textContent=open?'▲':'▼';
+            })(${i})">
+            <i class="chevron">▼</i>
+        </button>` : '';
+
+        return `<div class="protocol-row-wrap">
+            <div class="table-row protocols-row row-yield">
+                <div class="token-info">
+                    ${makeLogo(name, true, 30)}
+                    <div class="token-name">${name}</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:0.3rem;align-items:flex-start">
+                    <span class="badge badge-yield" style="background:rgba(245,158,11,0.12);color:var(--amber);border-color:rgba(245,158,11,0.25);">Snapshot</span>
+                    ${expandBtn}
+                </div>
+                <div class="value" style="color:var(--amber);">${fmtV(g.net)}</div>
+                <div><span class="apr-badge neu">—</span></div>
+                <div class="percentage" style="font-size:0.7rem;color:var(--t3);">${snapDate}</div>
+            </div>
+            ${drawerHtml}
+        </div>`;
+    }).join('');
+
+    table.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.55rem 1.5rem 0.6rem;font-size:0.72rem;color:var(--amber);font-family:var(--ff-mono);background:rgba(245,158,11,0.06);border-bottom:1px solid rgba(245,158,11,0.15);">
+            <span>📸 First Snapshot · ${snapDate}</span>
+            <span style="font-weight:700;">${fmtV(grandTotal)}</span>
+        </div>
+        ${rowsHtml}
+    `;
 }
 
 function renderPredictionMarkets() {
