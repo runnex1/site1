@@ -2004,6 +2004,10 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
         Alert Terminal
       </div>
+      <div class="nav-item" data-tab="watcher" onclick="switchTab('watcher')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        Watcher
+      </div>
     </div>
 
     <div class="sidebar-section">
@@ -2289,10 +2293,6 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
               Activity
             </div>
-            <div class="pred-subtab" onclick="switchPredSubtab('watchlist', this)">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-              Watchlist
-            </div>
           </div>
 
           <!-- Positions pane -->
@@ -2347,32 +2347,8 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
             </div>
           </div>
 
-          <!-- Watchlist pane -->
-          <div id="predSubWatchlist" class="pred-subpane">
-            <div class="wl-add-bar">
-              <input type="text" id="wlUrlInput"
-                placeholder="Paste a Polymarket market URL — e.g. https://polymarket.com/event/will-x-happen"
-                onkeydown="if(event.key==='Enter') addWatchlistMarket()">
-              <button class="btn-base pm-btn" onclick="addWatchlistMarket()" id="wlAddBtn">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add Market
-              </button>
-            </div>
-            <div class="wl-refresh-bar" id="wlRefreshBar" style="display:none">
-              <span class="wl-loading-dot" id="wlPollDot"></span>
-              <span id="wlRefreshStatus">Prices refresh every 60s</span>
-            </div>
-            <div class="wl-grid" id="wlGrid">
-              <div class="wl-empty">
-                <div class="wl-empty-icon">👁</div>
-                No markets on your watchlist yet.<br>
-                Paste a Polymarket URL above to start tracking.
-              </div>
-            </div>
-          </div>
-
           <!-- Activity pane -->
-          <div id="predSubActivity" class="pred-subpane">
+          <div id="predSubActivity" class="pred-subpane active">
             <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem;">
               <div style="font-size:0.78rem; color:var(--t3);">Showing data for all wallets in Manage Wallets</div>
               <button class="activity-refresh-btn" id="activityRefreshBtn" onclick="refreshActivity()">
@@ -2474,6 +2450,68 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
       <!-- ═══════════════════════════════════════════════════════
            ALERT TERMINAL TAB
       ═══════════════════════════════════════════════════════ -->
+      <div id="watcherTab" class="tab-pane">
+        <div class="section">
+
+          <!-- Markets Watchlist -->
+          <div class="section-header" style="margin-bottom:1rem;">
+            <div class="section-title">
+              <div class="section-title-dot" style="background:var(--teal)"></div>
+              Markets Watchlist
+            </div>
+          </div>
+          <div class="wl-add-bar">
+            <input type="text" id="wlUrlInput"
+              placeholder="Paste a Polymarket or Opinion.trade market URL…"
+              onkeydown="if(event.key==='Enter') addWatchlistMarket()">
+            <button class="btn-base pm-btn" onclick="addWatchlistMarket()" id="wlAddBtn">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Market
+            </button>
+          </div>
+          <div class="wl-refresh-bar" id="wlRefreshBar" style="display:none">
+            <span class="wl-loading-dot" id="wlPollDot"></span>
+            <span id="wlRefreshStatus">Prices refresh every 60s</span>
+          </div>
+          <div class="wl-grid" id="wlGrid">
+            <div class="wl-empty">
+              <div class="wl-empty-icon">👁</div>
+              No markets on your watchlist yet.<br>
+              Paste a Polymarket or Opinion.trade URL above to start tracking.
+            </div>
+          </div>
+
+          <!-- Divider -->
+          <div style="margin:2.5rem 0 1.5rem; border-top:1px solid var(--border-low);"></div>
+
+          <!-- Web Links -->
+          <div class="section-header" style="margin-bottom:1rem;">
+            <div class="section-title">
+              <div class="section-title-dot" style="background:var(--indigo)"></div>
+              Saved Links
+            </div>
+          </div>
+          <div class="wl-add-bar">
+            <input type="text" id="wlLinkUrlInput" placeholder="https://…" style="flex:2;"
+              onkeydown="if(event.key==='Enter') document.getElementById('wlLinkNameInput').focus()">
+            <input type="text" id="wlLinkNameInput" placeholder="Label (optional)" style="flex:1;"
+              onkeydown="if(event.key==='Enter') addWatcherLink()">
+            <button class="btn-base" onclick="addWatcherLink()" id="wlLinkAddBtn"
+              style="background:var(--indigo-10,rgba(108,114,255,0.12));color:var(--indigo);border-color:rgba(108,114,255,0.3);">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Save Link
+            </button>
+          </div>
+          <div id="watcherLinksGrid" style="display:flex;flex-direction:column;gap:0.5rem;margin-top:1rem;">
+            <div class="wl-empty" id="watcherLinksEmpty">
+              <div class="wl-empty-icon">🔗</div>
+              No saved links yet.<br>Paste any URL above to save it here.
+            </div>
+          </div>
+
+        </div>
+      </div>
+
       <div id="terminalTab" class="tab-pane">
         <div class="term-shell">
 
@@ -2721,6 +2759,43 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
       <button class="btn btn-orange" onclick="saveAndSyncOpinion()">
         Save &amp; Sync Positions
       </button>
+    </div>
+  </div>
+</div>
+
+<div id="opinionOutcomeModal" class="modal">
+  <div class="modal-content" style="max-width:480px;">
+    <div class="modal-header">Select Outcome to Track</div>
+    <div class="modal-sub" id="opinionOutcomeMarketTitle" style="margin-bottom:1rem;color:var(--t1);font-weight:600;"></div>
+    <div id="opinionOutcomeList" style="display:flex;flex-direction:column;gap:0.5rem;max-height:320px;overflow-y:auto;margin-bottom:1.25rem;"></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('opinionOutcome')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="opinionTokenIdModal" class="modal">
+  <div class="modal-content" style="max-width:460px;">
+    <div class="modal-header">Enter Token ID</div>
+    <div class="modal-sub">
+      This market wasn't found in your positions, so we can't look up its token ID automatically.
+      To show a price chart, paste the token ID below.<br><br>
+      <strong>How to find it:</strong> Open the market on Opinion, open DevTools (F12) → Network tab, 
+      look for a <code>price-history</code> request and copy the <code>token_id</code> value from the URL.
+      <br><br>
+      Leave blank to add without a chart.
+    </div>
+    <div class="form-group">
+      <label class="form-label">Token ID <span style="color:var(--t3);font-weight:400;">(optional)</span></label>
+      <input type="text" class="form-input" id="opinionManualTokenId" placeholder="Paste token ID…" style="font-family:var(--ff-mono);font-size:0.8rem;">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Outcome label <span style="color:var(--t3);font-weight:400;">(optional)</span></label>
+      <input type="text" class="form-input" id="opinionManualOutcome" placeholder="e.g. YES, >$2B…">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('opinionTokenId')">Cancel</button>
+      <button class="btn btn-orange" onclick="confirmOpinionManualTokenId()">Add to Watchlist</button>
     </div>
   </div>
 </div>
@@ -3042,6 +3117,7 @@ async function loadData() {
     }
 
     loadWatchlist();
+    loadWatcherLinks();
 }
 
 async function saveData() {
@@ -3146,7 +3222,13 @@ function saveProtocolImportHistory(protocols, { ts = Date.now(), firstSnapshot =
 
         let history = prevHistory.filter(e => e.v === PROTO_HISTORY_VERSION && !e.firstSnapshot);
         const positions = buildPositionMap(protocols);
-        const entry = { v: PROTO_HISTORY_VERSION, ts, positions, firstSnapshot: firstSnapshot || undefined };
+        // For first snapshots, also store the full protocol objects so the snapshot view
+        // can render identically to the current view
+        const entry = {
+            v: PROTO_HISTORY_VERSION, ts, positions,
+            firstSnapshot: firstSnapshot || undefined,
+            ...(firstSnapshot ? { protocols: JSON.parse(JSON.stringify(protocols)) } : {})
+        };
 
         if (firstSnapshot) {
             // Replace existing first snapshot
@@ -3275,6 +3357,14 @@ function switchTab(tab) {
     if (tab === 'terminal') { terminalRenderAlerts(); }
     if (tab === 'prediction') {
         renderPredictionMarkets();
+    }
+    if (tab === 'watcher') {
+        renderWatchlist();
+        renderWatcherLinks();
+        if (watchlist.length > 0) wlStartPolling();
+        wlBackfillMissingTokens();
+    } else {
+        wlStopPolling();
     }
 }
 
@@ -3482,13 +3572,6 @@ function switchPredSubtab(name, el) {
     document.getElementById('predSub' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
     if (name === 'activity') {
         refreshActivity();
-    }
-    if (name === 'watchlist') {
-        renderWatchlist();
-        if (watchlist.length > 0) wlStartPolling();
-    } else {
-        // Stop polling when leaving the tab to save requests
-        wlStopPolling();
     }
 }
 
@@ -3798,10 +3881,13 @@ async function opinionFetch(path, params = {}) {
             });
             if (!res.ok) continue;
             const json = await res.json();
-            // API uses errno/errmsg (not code/msg)
+            console.log('[opinionFetch]', path, params, '→', JSON.stringify(json).slice(0, 300));
             const errCode = json.errno ?? json.code;
-            if (errCode !== 0) continue;
-            return json.result;
+            // Only treat as error if errno/code is explicitly non-zero
+            // (undefined means the field is absent — treat as success)
+            if (errCode !== undefined && errCode !== 0) continue;
+            // Return result field if present, otherwise the whole response
+            return json.result !== undefined ? json.result : json;
         } catch(e) {}
     }
     return null;
@@ -4124,8 +4210,8 @@ async function fetchOpinionPositions() {
             unrealizedPnl,
             dailyPnlChange,
             realizedPnl: 0,
-            marketId: pos.marketId || null,
-            tokenId:  pos.tokenId  || null,
+            marketId: pos.marketId || pos.market_id || null,
+            tokenId:  pos.tokenId  || pos.token_id  || null,
         };
     });
 
@@ -4848,87 +4934,99 @@ function renderProtocolsSnapshot() {
     const history = loadProtocolImportHistory();
     const snap = history.find(e => e.firstSnapshot);
 
-    if (!snap || !snap.positions || !Object.keys(snap.positions).length) {
+    if (!snap) {
         table.innerHTML = '<div class="empty-state"><div class="empty-icon">📸</div><div>No first snapshot saved yet.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">Use the Snapshot button or import with "First Snapshot" checked.</small></div></div>';
+        return;
+    }
+
+    // Use saved full protocol objects if available (new snapshots), otherwise fall back to flat map
+    const snapProtocols = snap.protocols;
+    if (!snapProtocols || !snapProtocols.length) {
+        table.innerHTML = '<div class="empty-state"><div class="empty-icon">📸</div><div>Snapshot has no protocol data.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">Re-save your snapshot to enable full view.</small></div></div>';
         return;
     }
 
     const fmtV = v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const snapDate = new Date(snap.ts).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    const grandTotal = snapProtocols.reduce((s, p) => s + p.value, 0);
 
-    // Group all position keys by protocol name
-    const grouped = {};
-    for (const [key, value] of Object.entries(snap.positions)) {
-        const sep = key.indexOf('|||');
-        const name = sep !== -1 ? key.slice(0, sep) : key;
-        const rest = sep !== -1 ? key.slice(sep + 3) : '';
-        if (!grouped[name]) grouped[name] = { net: null, positions: [] };
-        if (rest === '__net__') {
-            grouped[name].net = value; // use stored net value for correct total
-        } else if (rest !== '__total__') {
-            grouped[name].positions.push({ rest, value });
+    // Render each protocol exactly like renderProtocols does
+    const rowsHtml = [...snapProtocols].sort((a, b) => b.value - a.value).map((p, i) => {
+        const hasSections = p.sections && p.sections.some(s => s.positions && s.positions.length > 0);
+
+        let drawerHtml = '';
+        if (hasSections) {
+            const _drawerTypeCounts = {};
+            const sectionHtmls = p.sections.filter(s => s.positions && s.positions.length).map(sec => {
+                const _secType = sec.type || 'Yield';
+                _drawerTypeCounts[_secType] = (_drawerTypeCounts[_secType] || 0) + 1;
+                const _secIdx = _drawerTypeCounts[_secType] > 1 ? `[${_drawerTypeCounts[_secType]}]` : '';
+                let lastSub = undefined;
+                const posRows = sec.positions.map(pos => {
+                    let subHeader = '';
+                    if (pos.sub !== lastSub) {
+                        lastSub = pos.sub;
+                        if (pos.sub) {
+                            const subColor = pos.sub?.toLowerCase() === 'borrowed'
+                                ? 'var(--red)'
+                                : pos.sub?.toLowerCase() === 'liquidity pool'
+                                    ? 'var(--indigo)'
+                                    : 'var(--teal)';
+                            subHeader = `<div style="font-size:0.62rem;font-weight:800;letter-spacing:0.12em;
+                                text-transform:uppercase;color:${subColor};margin:0.5rem 0 0.25rem;
+                                font-family:var(--ff-display)">${pos.sub}</div>`;
+                        }
+                    }
+                    const tokensHtml = (pos.tokens || []).length
+                        ? pos.tokens.map(t => `<div>${t}</div>`).join('')
+                        : '<div style="color:var(--t3);font-style:italic">—</div>';
+                    return `${subHeader}<div class="drawer-position">
+                        <div>
+                            <div class="drawer-position-name">${pos.pool}</div>
+                            <div class="drawer-position-tokens">${tokensHtml}</div>
+                        </div>
+                        <div class="drawer-position-apr"><span class="apr-badge neu">—</span></div>
+                        <div class="drawer-position-value">${fmtV(pos.value)}</div>
+                    </div>`;
+                }).join('');
+
+                const healthTag = sec.health
+                    ? ` <span style="color:var(--green);font-weight:700;font-size:0.68rem">· Health ${sec.health}</span>`
+                    : '';
+                return `<div class="drawer-section">
+                    <div class="drawer-section-label">${sec.type}${healthTag}</div>
+                    ${posRows}
+                </div>`;
+            }).join('');
+
+            drawerHtml = `<div class="protocol-drawer" id="snap-pdrawer-${i}">${sectionHtmls}</div>`;
         }
-    }
 
-    // For old snapshots without __net__, fall back to summing positions
-    for (const g of Object.values(grouped)) {
-        if (g.net === null) g.net = g.positions.reduce((s, p) => s + p.value, 0);
-    }
+        const expandBtn = hasSections
+            ? `<button class="protocol-expand-btn" id="snap-pdrawer-btn-${i}"
+                onclick="(function(i){
+                    var d=document.getElementById('snap-pdrawer-'+i);
+                    var b=document.getElementById('snap-pdrawer-btn-'+i);
+                    var open=d.classList.toggle('open');
+                    b.classList.toggle('open',open);
+                    b.querySelector('.chevron').textContent=open?'▲':'▼';
+                })(${i})">
+                <i class="chevron">▼</i>
+               </button>`
+            : '';
 
-    const sorted = Object.entries(grouped).sort((a, b) => b[1].net - a[1].net);
-    const grandTotal = sorted.reduce((s, [, g]) => s + g.net, 0);
-
-    const rowsHtml = sorted.map(([name, g], i) => {
-        const posRows = g.positions.sort((a, b) => b.value - a.value).map(({ rest, value }) => {
-            if (!rest) return '';
-            const colonIdx = rest.indexOf(':');
-            const afterSection = colonIdx !== -1 ? rest.slice(colonIdx + 1) : rest;
-            const colonIdx2 = afterSection.indexOf(':');
-            const pool = colonIdx2 !== -1 ? afterSection.slice(colonIdx2 + 1) : afterSection;
-            const sub  = colonIdx2 !== -1 ? afterSection.slice(0, colonIdx2) : null;
-            const subColor = sub?.toLowerCase() === 'borrowed' ? 'var(--red)'
-                           : sub?.toLowerCase() === 'liquidity pool' ? 'var(--indigo)'
-                           : 'var(--teal)';
-            const subTag = sub ? `<div style="font-size:0.62rem;font-weight:800;letter-spacing:0.1em;text-transform:uppercase;color:${subColor}">${sub}</div>` : '';
-            return `<div class="drawer-position">
-                <div>
-                    ${subTag}
-                    <div class="drawer-position-name">${pool}</div>
-                </div>
-                <div class="drawer-position-apr"><span class="apr-badge neu">snap</span></div>
-                <div class="drawer-position-value">${fmtV(value)}</div>
-            </div>`;
-        }).join('');
-
-        const drawerHtml = g.positions.length ? `<div class="protocol-drawer" id="snap-pdrawer-${i}">
-            <div class="drawer-section">
-                <div class="drawer-section-label">Positions at snapshot · ${snapDate}</div>
-                ${posRows}
-            </div>
-        </div>` : '';
-
-        const expandBtn = g.positions.length ? `<button class="protocol-expand-btn" id="snap-pdrawer-btn-${i}"
-            onclick="(function(i){
-                var d=document.getElementById('snap-pdrawer-'+i);
-                var b=document.getElementById('snap-pdrawer-btn-'+i);
-                var open=d.classList.toggle('open');
-                b.classList.toggle('open',open);
-                b.querySelector('.chevron').textContent=open?'▲':'▼';
-            })(${i})">
-            <i class="chevron">▼</i>
-        </button>` : '';
-
+        const typeKey = (p.type || 'yield').toLowerCase().split(' ')[0];
         return `<div class="protocol-row-wrap">
-            <div class="table-row protocols-row row-yield">
+            <div class="table-row protocols-row row-${typeKey}">
                 <div class="token-info">
-                    ${makeLogo(name, true, 30)}
-                    <div class="token-name">${name}</div>
+                    ${makeLogo(p.name, true, 30)}
+                    <div class="token-name">${p.name}</div>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:0.3rem;align-items:flex-start">
-                    <span class="badge badge-yield" style="background:rgba(245,158,11,0.12);color:var(--amber);border-color:rgba(245,158,11,0.25);">Snapshot</span>
+                    <span class="badge badge-${typeKey}">${p.type}</span>
                     ${expandBtn}
                 </div>
-                <div class="value" style="color:var(--amber);">${fmtV(g.net)}</div>
+                <div class="value">${fmtV(p.value)}</div>
                 <div><span class="apr-badge neu">—</span></div>
                 <div class="percentage" style="font-size:0.7rem;color:var(--t3);">${snapDate}</div>
             </div>
@@ -5508,6 +5606,137 @@ function loadWatchlist() {
     } catch(e) {}
 }
 
+// ── Watcher Links ─────────────────────────────────────────────────────────────
+let watcherLinks = [];
+
+function saveWatcherLinks() {
+    try { localStorage.setItem('watcher-links', JSON.stringify(watcherLinks)); } catch(e) {}
+}
+function loadWatcherLinks() {
+    try {
+        const raw = localStorage.getItem('watcher-links');
+        if (raw) watcherLinks = JSON.parse(raw);
+    } catch(e) {}
+}
+
+function addWatcherLink() {
+    const urlEl  = document.getElementById('wlLinkUrlInput');
+    const nameEl = document.getElementById('wlLinkNameInput');
+    let url  = urlEl.value.trim();
+    let name = nameEl.value.trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    if (!name) {
+        try { name = new URL(url).hostname.replace(/^www\./, ''); } catch(e) { name = url; }
+    }
+    watcherLinks.push({ id: Date.now().toString(), url, name, addedAt: Date.now() });
+    saveWatcherLinks();
+    urlEl.value  = '';
+    nameEl.value = '';
+    renderWatcherLinks();
+}
+
+function removeWatcherLink(id) {
+    watcherLinks = watcherLinks.filter(l => l.id !== id);
+    saveWatcherLinks();
+    renderWatcherLinks();
+}
+
+function renderWatcherLinks() {
+    const grid  = document.getElementById('watcherLinksGrid');
+    const empty = document.getElementById('watcherLinksEmpty');
+    if (!grid) return;
+    if (!watcherLinks.length) {
+        grid.innerHTML = `<div class="wl-empty" id="watcherLinksEmpty">
+            <div class="wl-empty-icon">🔗</div>
+            No saved links yet.<br>Paste any URL above to save it here.
+        </div>`;
+        return;
+    }
+    grid.innerHTML = watcherLinks.map(l => {
+        const host = (() => { try { return new URL(l.url).hostname.replace(/^www\./, ''); } catch(e) { return l.url; } })();
+        const favicon = `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
+        return `
+        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.9rem;
+            background:var(--surf-2);border:1px solid var(--border-low);border-radius:var(--r-sm);
+            transition:border-color 0.15s;"
+            onmouseover="this.style.borderColor='var(--indigo)'"
+            onmouseout="this.style.borderColor='var(--border-low)'">
+            <img src="${favicon}" width="16" height="16" style="border-radius:3px;flex-shrink:0;"
+                onerror="this.style.display='none'">
+            <a href="${l.url}" target="_blank" style="flex:1;font-size:0.85rem;font-weight:600;
+                color:var(--t1);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
+                onmouseover="this.style.color='var(--indigo)'" onmouseout="this.style.color='var(--t1)'"
+                title="${l.url}">${l.name}</a>
+            <span style="font-size:0.7rem;color:var(--t3);white-space:nowrap;flex-shrink:0;">${host}</span>
+            <button onclick="removeWatcherLink('${l.id}')" title="Remove"
+                style="background:none;border:none;cursor:pointer;color:var(--t3);padding:2px;display:flex;align-items:center;flex-shrink:0;"
+                onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--t3)'">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>`;
+    }).join('');
+}
+async function wlBackfillMissingTokens() {
+    const needsBackfill = watchlist.filter(w =>
+        ((!w.source && w.slug) || w.source === 'opinion') &&
+        (!w.tokenIdNo || !w.pricesNo?.length)
+    );
+    if (!needsBackfill.length) return;
+
+    for (const entry of needsBackfill) {
+        try {
+            // Opinion backfill via slug API
+            if (entry.source === 'opinion' && entry.marketId && !entry.tokenIdNo) {
+                const result = await wlFetchOpinionMarket(entry.marketId);
+                const m = result?.single || result?.multi?.[0];
+                if (m?.tokenIdNo) {
+                    entry.tokenIdNo    = m.tokenIdNo;
+                    entry.labelYes     = entry.labelYes || m.labelYes || 'YES';
+                    entry.labelNo      = entry.labelNo  || m.labelNo  || 'NO';
+                    entry.pricesNo     = await wlFetchOpinionPrices(m.tokenIdNo) || [];
+                    entry.currentPriceNo = entry.pricesNo.length ? entry.pricesNo[entry.pricesNo.length - 1].p : null;
+                    if (!entry.viewingSide) entry.viewingSide = 'yes';
+                    saveWatchlist();
+                    renderWatchlistCard(entry);
+                }
+                continue;
+            }
+            const market = await wlFetchMarket(entry.slug);
+            if (!market) continue;
+
+            let tokenIdNo = entry.tokenIdNo;
+            let labelYes  = entry.labelYes || 'YES';
+            let labelNo   = entry.labelNo  || 'NO';
+
+            if (market._source === 'dome') {
+                tokenIdNo = tokenIdNo || market.side_b?.id || null;
+                labelYes  = market.side_a?.label || labelYes;
+                labelNo   = market.side_b?.label || labelNo;
+            } else {
+                const ids = market.clobTokenIds
+                    ? (typeof market.clobTokenIds === 'string' ? JSON.parse(market.clobTokenIds) : market.clobTokenIds)
+                    : [market.tokenId || market.clob_token_ids?.[0]];
+                tokenIdNo = tokenIdNo || ids[1] || null;
+            }
+
+            if (tokenIdNo && tokenIdNo !== entry.tokenIdYes) {
+                entry.tokenIdNo = tokenIdNo;
+                entry.labelYes  = labelYes;
+                entry.labelNo   = labelNo;
+                if (!entry.pricesNo?.length) {
+                    entry.pricesNo = await wlFetchPrices(tokenIdNo) || [];
+                    entry.currentPriceNo = entry.pricesNo.length ? entry.pricesNo[entry.pricesNo.length - 1].p : null;
+                }
+                saveWatchlist();
+                renderWatchlistCard(entry);
+            }
+        } catch(e) {
+            console.warn('[WL backfill] failed for', entry.slug, e.message);
+        }
+    }
+}
+
 // ── URL → slug ────────────────────────────────────────────────────────────────
 function wlSlugFromUrl(url) {
     // Multi-outcome: /event/{event-slug}/{market-slug}
@@ -5517,6 +5746,348 @@ function wlSlugFromUrl(url) {
     const single = url.match(/polymarket\.com\/(?:event|market)\/([^/?#]+)/);
     if (single) return { eventSlug: single[1], marketSlug: single[1] };
     return null;
+}
+
+// ── Detect Opinion URL and extract market ID ──────────────────────────────────
+function wlOpinionMarketIdFromUrl(url) {
+    // app.opinion.trade/market/{id}  or  opinion.trade/market/{id}  or  .../markets/{id}
+    const m = url.match(/(?:app\.)?opinion\.trade\/markets?\/([^/?#]+)/i);
+    return m ? m[1] : null;
+}
+
+// ── Try to extract Opinion market data from the page HTML via CORS proxy ─────
+async function wlScrapeOpinionMarketPage(marketId) {
+    const url = `https://app.opinion.trade/market/${marketId}`;
+    const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    ];
+    for (const proxy of proxies) {
+        try {
+            const r = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
+            if (!r.ok) continue;
+            const html = await r.text();
+
+            // Try __NEXT_DATA__ (Next.js apps embed full page state here)
+            const nextMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>(\{[\s\S]*?\})<\/script>/);
+            if (nextMatch) {
+                try {
+                    const nextData = JSON.parse(nextMatch[1]);
+                    // Walk the props tree to find market data
+                    const str = JSON.stringify(nextData);
+                    return wlParseOpinionJsonBlob(str, marketId);
+                } catch(e) {}
+            }
+
+            // Try any inline JSON blob containing tokenId
+            const jsonBlobs = html.matchAll(/\{[^{}]{0,2000}"tokenId"\s*:\s*"(\d{50,})"[^{}]{0,2000}\}/g);
+            const outcomes = [];
+            for (const match of jsonBlobs) {
+                try {
+                    const obj = JSON.parse(match[0]);
+                    outcomes.push({
+                        tokenId:      obj.tokenId || obj.token_id,
+                        outcome:      obj.outcomeSideEnum || obj.outcome || 'YES',
+                        outcomeLabel: obj.marketTitle || obj.title || null,
+                        rootTitle:    obj.rootMarketTitle || null,
+                        marketId:     obj.marketId || marketId,
+                    });
+                } catch(e) {}
+            }
+            if (outcomes.length) return { outcomes, rootTitle: outcomes[0].rootTitle };
+
+            // Regex fallback: find all tokenId values in the page
+            const tokenIds = [...html.matchAll(/"tokenId"\s*:\s*"(\d{50,})"/g)].map(m => m[1]);
+            const titles   = [...html.matchAll(/"marketTitle"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+            const sides    = [...html.matchAll(/"outcomeSideEnum"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+            const rootTitles = [...html.matchAll(/"rootMarketTitle"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+            if (tokenIds.length) {
+                return {
+                    outcomes: tokenIds.map((tid, i) => ({
+                        tokenId:      tid,
+                        outcome:      sides[i] || 'YES',
+                        outcomeLabel: titles[i] || null,
+                        marketId,
+                    })),
+                    rootTitle: rootTitles[0] || null,
+                };
+            }
+        } catch(e) {
+            console.warn('[Opinion scrape] proxy failed:', proxy.slice(0, 60), e.message);
+        }
+    }
+    return null;
+}
+
+function wlParseOpinionJsonBlob(str, marketId) {
+    const tokenIds   = [...str.matchAll(/"tokenId"\s*:\s*"(\d{50,})"/g)].map(m => m[1]);
+    const titles     = [...str.matchAll(/"marketTitle"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+    const sides      = [...str.matchAll(/"outcomeSideEnum"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+    const rootTitles = [...str.matchAll(/"rootMarketTitle"\s*:\s*"([^"]+)"/g)].map(m => m[1]);
+    if (!tokenIds.length) return null;
+    return {
+        outcomes: tokenIds.map((tid, i) => ({
+            tokenId: tid, outcome: sides[i] || 'YES',
+            outcomeLabel: titles[i] || null, marketId,
+        })),
+        rootTitle: rootTitles[0] || null,
+    };
+}
+async function wlFetchOpinionMarket(marketId) {
+    const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const slugNorm = norm(marketId.replace(/-/g, ' ')).slice(0, 12);
+
+    // Convert API market object → watchlist candidate entries
+    function marketToCandidates(m, rootTitle) {
+        const root = rootTitle || m.marketTitle || marketId;
+        if (!m.childMarkets?.length) {
+            // Binary: return ONE entry with both sides
+            return [{ marketId: m.marketId, tokenId: m.yesTokenId || null, tokenIdNo: m.noTokenId || null,
+                      title: root, rootTitle: root, outcome: 'Yes', outcomeLabel: null }];
+        }
+        // Categorical: each child is a separate outcome bucket (each has its own YES+NO)
+        return m.childMarkets.map(child => ({
+            marketId:    child.marketId,
+            tokenId:     child.yesTokenId || null,
+            tokenIdNo:   child.noTokenId  || null,
+            title:       root,
+            rootTitle:   root,
+            outcome:     'Yes',
+            outcomeLabel: child.marketTitle,
+        }));
+    }
+
+    // 1. Slug endpoint — works for any URL slug, no positions needed
+    const bySlug = await opinionFetch(`/openapi/market/slug/${encodeURIComponent(marketId)}`);
+    const slugData = bySlug?.data || bySlug;
+    if (slugData?.marketId) {
+        let m = slugData;
+        // Categorical: fetch child markets
+        if (slugData.marketType === 1 || slugData.childMarkets?.length) {
+            const cat = await opinionFetch(`/openapi/market/categorical/${slugData.marketId}`);
+            m = cat?.data || cat || slugData;
+        }
+        const candidates = marketToCandidates(m, m.marketTitle || slugData.marketTitle);
+        if (candidates.length === 1) return { single: candidates[0] };
+        if (candidates.length > 1)  return { multi: candidates, rootTitle: m.marketTitle || slugData.marketTitle };
+    }
+
+    // 2. Numeric ID direct lookup
+    if (/^\d+$/.test(marketId)) {
+        const res = await opinionFetch(`/openapi/market/${marketId}`);
+        const m = res?.data || res;
+        if (m?.marketId) {
+            const candidates = marketToCandidates(m, m.marketTitle);
+            if (candidates.length === 1) return { single: candidates[0] };
+            if (candidates.length > 1)  return { multi: candidates, rootTitle: m.marketTitle };
+        }
+    }
+
+    // 3. Fallback: live positions scan (for markets in user portfolio)
+    if (opinionConfig.walletAddress) {
+        const wallet = opinionConfig.walletAddress.trim();
+        let allPos = [], page = 1;
+        while (true) {
+            const posData = await opinionFetch(`/openapi/positions/user/${wallet}`, { page, limit: 50 });
+            const chunk = posData?.list || (Array.isArray(posData) ? posData : []);
+            allPos.push(...chunk);
+            if (chunk.length < 50 || allPos.length >= (posData?.total || 0)) break;
+            page++;
+        }
+        const matched = allPos.filter(p =>
+            String(p.marketId || p.market_id) === String(marketId) ||
+            String(p.rootMarketId) === String(marketId) ||
+            norm(p.rootMarketTitle).includes(slugNorm) ||
+            norm(p.marketTitle).includes(slugNorm)
+        );
+        if (matched.length) {
+            const candidates = matched.map(p => ({
+                marketId: p.marketId || p.market_id,
+                tokenId:  p.tokenId  || p.token_id || null,
+                title:    p.rootMarketTitle || p.marketTitle || marketId,
+                rootTitle: p.rootMarketTitle || p.marketTitle || marketId,
+                outcomeLabel: (p.rootMarketTitle && p.marketTitle && p.marketTitle !== p.rootMarketTitle) ? p.marketTitle : null,
+                outcome: p.outcomeSideEnum || p.outcome || 'YES',
+            }));
+            const rootTitle = matched[0].rootMarketTitle || matched[0].marketTitle;
+            if (candidates.length === 1) return { single: candidates[0] };
+            return { multi: candidates, rootTitle };
+        }
+    }
+
+    // 4. Nothing worked — show manual token ID modal
+    return { single: { marketId, tokenId: null, title: marketId.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), outcome: 'YES', _stub: true } };
+}
+
+// ── Fetch Opinion price history for a tokenId ────────────────────────────────
+async function wlFetchOpinionPrices(tokenId) {
+    const startAt = Math.floor(Date.now() / 1000) - 365 * 86400; // 1 year back
+    const hist = await opinionFetch('/openapi/token/price-history', {
+        token_id: tokenId, interval: '1d', start_at: startAt
+    });
+    const history = hist?.history || (Array.isArray(hist) ? hist : []);
+    if (!history.length) return null;
+    return history.map(p => ({ t: p.t ?? p.timestamp, p: parseFloat(p.p ?? p.price) }));
+}
+
+// ── Add an Opinion.trade market to watchlist ──────────────────────────────────
+async function addOpinionWatchlistMarket(url) {
+    const btn   = document.getElementById('wlAddBtn');
+    const input = document.getElementById('wlUrlInput');
+
+    if (!opinionConfig.apiKey) {
+        alert('Opinion API key required. Please configure it in Prediction Markets → Opinion → Configure & Sync first.');
+        return;
+    }
+
+    const marketId = wlOpinionMarketIdFromUrl(url);
+    if (!marketId) { alert('Could not parse Opinion market URL. Expected opinion.trade/market/{id}'); return; }
+
+    btn.disabled = true;
+    btn.innerHTML = `<svg class="spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg> Adding…`;
+
+    try {
+        const result = await wlFetchOpinionMarket(marketId);
+
+        if (result.multi) {
+            // Show outcome picker modal
+            document.getElementById('opinionOutcomeMarketTitle').textContent = result.rootTitle;
+            const listEl = document.getElementById('opinionOutcomeList');
+            listEl.innerHTML = result.multi.map((m, idx) => {
+                const isYes = (m.outcome || '').toLowerCase() === 'yes';
+                const pillColor = isYes ? 'rgba(34,197,94,0.15)' : 'rgba(244,63,94,0.15)';
+                const pillText  = isYes ? 'var(--green)' : 'var(--red)';
+                const pillBorder= isYes ? 'rgba(34,197,94,0.3)' : 'rgba(244,63,94,0.3)';
+                const label     = m.outcomeLabel || m.outcome; // e.g. ">$2B" or "Yes"
+                const sublabel  = m.outcomeLabel ? m.outcome : ''; // "Yes"/"No" only when bucket exists
+                return `
+                <button onclick="confirmAddOpinionOutcome(${idx})"
+                    style="display:flex;align-items:center;justify-content:space-between;gap:1rem;
+                    padding:0.7rem 1rem;background:var(--surf-2);border:1px solid var(--border-mid);
+                    border-radius:var(--r-sm);cursor:pointer;transition:all 0.15s;text-align:left;width:100%;"
+                    onmouseover="this.style.borderColor='var(--orange)';this.style.background='var(--orange-10)'"
+                    onmouseout="this.style.borderColor='var(--border-mid)';this.style.background='var(--surf-2)'">
+                    <div style="display:flex;align-items:center;gap:0.6rem;">
+                        <span style="font-size:0.75rem;font-weight:700;padding:2px 9px;border-radius:100px;
+                            background:${pillColor};color:${pillText};border:1px solid ${pillBorder};white-space:nowrap;">
+                            ${m.outcome}
+                        </span>
+                        <span style="font-size:0.9rem;font-weight:600;color:var(--t1);">${label}</span>
+                    </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color:var(--t3);flex-shrink:0;"><polyline points="9 18 15 12 9 6"/></svg>
+                </button>`;
+            }).join('');
+            window._pendingOpinionOutcomes = result.multi;
+            window._pendingOpinionMarketId = marketId;
+            window._pendingOpinionUrl = url;
+            input.value = '';
+            openModal('opinionOutcome');
+            return;
+        }
+
+        // Single outcome — add directly
+        if (result.single._stub) {
+            // Market not in positions — ask user for token ID
+            window._pendingOpinionMarketId = marketId;
+            window._pendingOpinionUrl = url;
+            window._pendingOpinionStubTitle = result.single.title;
+            document.getElementById('opinionManualTokenId').value = '';
+            document.getElementById('opinionManualOutcome').value = '';
+            input.value = '';
+            openModal('opinionTokenId');
+            return;
+        }
+        await _doAddOpinionEntry(result.single, marketId, url);
+        input.value = '';
+        renderWatchlist();
+        wlStartPolling();
+
+    } catch(e) {
+        alert(`Failed to add Opinion market: ${e.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Add Market`;
+    }
+}
+
+async function confirmOpinionManualTokenId() {
+    closeModal('opinionTokenId');
+    const marketId = window._pendingOpinionMarketId;
+    const url      = window._pendingOpinionUrl;
+    const title    = window._pendingOpinionStubTitle;
+    const tokenId  = document.getElementById('opinionManualTokenId').value.trim() || null;
+    const outcome  = document.getElementById('opinionManualOutcome').value.trim() || 'YES';
+    if (!marketId) return;
+    try {
+        await _doAddOpinionEntry({ marketId, tokenId, title, rootTitle: title, outcome, outcomeLabel: null }, marketId, url);
+        renderWatchlist();
+        wlStartPolling();
+    } catch(e) {
+        alert(`Failed to add: ${e.message}`);
+    }
+}
+
+async function confirmAddOpinionOutcome(idx) {
+    closeModal('opinionOutcome');
+    const outcome  = window._pendingOpinionOutcomes?.[idx];
+    const marketId = window._pendingOpinionMarketId;
+    const url      = window._pendingOpinionUrl;
+    if (!outcome) return;
+    try {
+        await _doAddOpinionEntry(outcome, marketId, url);
+        renderWatchlist();
+        wlStartPolling();
+    } catch(e) {
+        alert(`Failed to add: ${e.message}`);
+    }
+}
+
+async function _doAddOpinionEntry(market, marketId, url) {
+    if (market.tokenId && watchlist.find(w => w.source === 'opinion' && w.tokenId === market.tokenId)) {
+        alert('Already on your watchlist.'); return;
+    }
+
+    // market.outcome = 'Yes'/'No', market.outcomeLabel = bucket e.g. '>$2B'
+    // The API gives us yesTokenId + noTokenId; from positions we only get the one side's tokenId
+    const isYesSide   = (market.outcome || '').toLowerCase() !== 'no';
+    const tokenIdYes  = isYesSide ? (market.tokenId || null) : (market.tokenIdNo  || null);
+    const tokenIdNo   = isYesSide ? (market.tokenIdNo  || null) : (market.tokenId || null);
+    const labelYes    = 'YES';
+    const labelNo     = 'NO';
+    const title       = market.outcomeLabel
+        ? `${market.rootTitle || market.title || marketId} — ${market.outcomeLabel}`
+        : (market.rootTitle || market.title || marketId);
+
+    let pricesYes = [], pricesNo = [];
+    if (tokenIdYes) pricesYes = await wlFetchOpinionPrices(tokenIdYes) || [];
+    if (tokenIdNo)  pricesNo  = await wlFetchOpinionPrices(tokenIdNo)  || [];
+
+    const currentPrice   = pricesYes.length ? pricesYes[pricesYes.length - 1].p : null;
+    const currentPriceNo = pricesNo.length  ? pricesNo[pricesNo.length - 1].p   : null;
+
+    watchlist.push({
+        id:             Date.now().toString(),
+        source:         'opinion',
+        marketId,
+        tokenId:        tokenIdYes,   // primary token (YES side)
+        tokenIdYes,
+        tokenIdNo,
+        labelYes,
+        labelNo,
+        viewingSide:    'yes',
+        title,
+        outcome:        labelYes,
+        outcomeLabel:   market.outcomeLabel || null,
+        currentPrice,
+        currentPriceNo,
+        prices:         pricesYes,
+        pricesNo,
+        alerts:         [],
+        addedAt:        Date.now(),
+        url:            `https://app.opinion.trade/market/${marketId}`,
+    });
+    saveWatchlist();
 }
 
 // ── Fetch market metadata via Dome API (supports single & multi-outcome) ──────
@@ -5557,9 +6128,15 @@ async function wlFetchPrices(tokenId) {
 // ── Add a market ─────────────────────────────────────────────────────────────
 async function addWatchlistMarket() {
     const input = document.getElementById('wlUrlInput');
-    const btn   = document.getElementById('wlAddBtn');
     const raw   = input.value.trim();
     if (!raw) return;
+
+    // Route Opinion.trade URLs to their own handler
+    if (/opinion\.trade/i.test(raw)) {
+        return addOpinionWatchlistMarket(raw);
+    }
+
+    const btn = document.getElementById('wlAddBtn');
 
     const parsed = wlSlugFromUrl(raw);
     const slug = parsed ? parsed.marketSlug : raw.replace(/^https?:\/\//, '').split('/').pop();
@@ -5864,6 +6441,7 @@ async function wlRefreshPrices() {
 
     // Migration: backfill tokenIdNo for old entries saved without it
     await Promise.all(watchlist.map(async entry => {
+        if (entry.source === 'opinion') return; // skip Opinion entries
         if (!entry.tokenIdNo && entry.slug) {
             try {
                 const market = await wlFetchMarket(entry.slug);
@@ -5892,6 +6470,30 @@ async function wlRefreshPrices() {
     }));
 
     await Promise.all(watchlist.map(async entry => {
+        // ── Opinion entries ───────────────────────────────────────────────────
+        if (entry.source === 'opinion') {
+            if (entry.tokenId || entry.tokenIdYes) {
+                const tid = entry.tokenIdYes || entry.tokenId;
+                const newPrices = await wlFetchOpinionPrices(tid);
+                if (newPrices && newPrices.length > 0) {
+                    entry.prices       = newPrices;
+                    entry.currentPrice = newPrices[newPrices.length - 1].p;
+                } else { anyFailed = true; }
+            }
+            if (entry.tokenIdNo) {
+                const newPricesNo = await wlFetchOpinionPrices(entry.tokenIdNo);
+                if (newPricesNo && newPricesNo.length > 0) {
+                    entry.pricesNo       = newPricesNo;
+                    entry.currentPriceNo = newPricesNo[newPricesNo.length - 1].p;
+                }
+            }
+            wlCheckAlerts(entry, entry.currentPrice ?? null, entry.currentPriceNo ?? null);
+            wlUpdateCardPrice(entry);
+            wlRedrawChart(entry);
+            return;
+        }
+
+        // ── Polymarket entries ────────────────────────────────────────────────
         // Fetch YES prices
         const tokenYes = entry.tokenIdYes || entry.tokenId;
         if (tokenYes) {
@@ -6079,6 +6681,110 @@ function wlToggleSide(id) {
 }
 
 function wlCardHTML(entry) {
+    // ── Opinion.trade card ────────────────────────────────────────────────────
+    if (entry.source === 'opinion') {
+        const isNo      = entry.viewingSide === 'no';
+        const price     = isNo ? entry.currentPriceNo : entry.currentPrice;
+        const prices    = isNo ? (entry.pricesNo || []) : (entry.prices || []);
+        const priceStr  = price != null ? (price * 100).toFixed(1) + '¢' : '—';
+        const hasNo     = !!entry.tokenIdNo;
+
+        let changeStr = '', changeCls = 'flat';
+        if (prices.length >= 2) {
+            const open  = prices[0].p;
+            const close = price ?? open;
+            const pct   = ((close - open) / open) * 100;
+            changeStr = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% (all-time)`;
+            changeCls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat';
+        }
+
+        const labelYes = entry.labelYes || 'YES';
+        const labelNo  = entry.labelNo  || 'NO';
+        const otherPrice    = isNo ? entry.currentPrice : entry.currentPriceNo;
+        const otherLabel    = isNo ? labelYes : labelNo;
+        const otherPriceStr = (hasNo && otherPrice != null) ? `${otherLabel} ${(otherPrice * 100).toFixed(1)}¢` : '';
+
+        const alertBadges = (entry.alerts || []).map(a => {
+            const side = a.side || 'yes';
+            const lbl  = side === 'no' ? labelNo : labelYes;
+            return `<span class="wl-alert-badge ${a.triggered ? 'triggered' : ''}">
+                ${a.triggered ? '🔔' : '🔕'} <span style="opacity:0.6;font-size:0.65rem;">${lbl}</span> ${a.dir} ${(a.price * 100).toFixed(0)}¢
+                <button class="wl-alert-remove" onclick="wlRemoveAlert('${entry.id}','${a.id}')" title="Remove">×</button>
+            </span>`;
+        }).join('');
+
+        return `
+        <div class="wl-card" id="wl-card-${entry.id}" style="border-color:rgba(249,115,22,0.15);">
+            <div class="wl-card-top">
+                <div class="wl-card-body">
+                    <div class="wl-card-title" title="${entry.title}">
+                        <a href="${entry.url}" target="_blank" style="color:inherit;text-decoration:none;"
+                           onmouseover="this.style.color='var(--orange)'" onmouseout="this.style.color=''">${entry.title}</a>
+                    </div>
+                    <div class="wl-card-meta">
+                        ${hasNo ? `
+                        <span style="display:inline-flex;border:1px solid rgba(249,115,22,0.3);border-radius:100px;overflow:hidden;font-size:0.7rem;">
+                            <button onclick="wlToggleSide('${entry.id}')"
+                                style="padding:2px 10px;background:${!isNo ? 'rgba(249,115,22,0.15)' : 'transparent'};color:${!isNo ? 'var(--orange)' : 'var(--t3)'};border:none;cursor:pointer;font-weight:700;font-size:0.7rem;transition:all 0.15s;">
+                                ${labelYes}</button>
+                            <button onclick="wlToggleSide('${entry.id}')"
+                                style="padding:2px 10px;background:${isNo ? 'rgba(244,63,94,0.12)' : 'transparent'};color:${isNo ? 'var(--red)' : 'var(--t3)'};border:none;cursor:pointer;font-weight:700;font-size:0.7rem;transition:all 0.15s;">
+                                ${labelNo}</button>
+                        </span>` : `<span class="wl-outcome-pill" style="background:rgba(249,115,22,0.12);color:var(--orange);border-color:rgba(249,115,22,0.25);">${entry.outcome}</span>`}
+                        <span id="wl-no-price-${entry.id}" style="font-size:0.72rem;color:var(--t3);font-family:var(--ff-mono);">${otherPriceStr}</span>
+                        <span style="font-size:0.68rem;color:var(--orange);font-weight:700;letter-spacing:0.05em;">OPINION</span>
+                        <span>Added ${new Date(entry.addedAt).toLocaleDateString()}</span>
+                    </div>
+                </div>
+                <div class="wl-price-block">
+                    <div class="wl-price" id="wl-price-${entry.id}" style="color:var(--orange);">${priceStr}</div>
+                    <div class="wl-price-change ${changeCls}" id="wl-change-${entry.id}">${changeStr}</div>
+                </div>
+            </div>
+
+            <div class="wl-chart-wrap">
+                <canvas id="wl-chart-${entry.id}"></canvas>
+            </div>
+
+            <div class="wl-alerts">
+                <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem;">
+                    <div id="wl-alert-badges-${entry.id}" style="display:flex;gap:0.4rem;flex-wrap:wrap;">${alertBadges}</div>
+                </div>
+                <div class="wl-alert-row">
+                    <span style="font-size:0.75rem;color:var(--t3);">Add alert:</span>
+                    ${hasNo ? `
+                    <select class="wl-alert-select" id="wl-alert-side-${entry.id}">
+                        <option value="yes">${labelYes}</option>
+                        <option value="no" ${isNo ? 'selected' : ''}>${labelNo}</option>
+                    </select>` : `<input type="hidden" id="wl-alert-side-${entry.id}" value="yes">`}
+                    <select class="wl-alert-select" id="wl-alert-dir-${entry.id}">
+                        <option value="above">Above</option>
+                        <option value="below">Below</option>
+                    </select>
+                    <input type="number" class="wl-alert-input" id="wl-alert-val-${entry.id}"
+                        min="0.01" max="0.99" step="0.01" placeholder="0.75"
+                        onkeydown="if(event.key==='Enter') wlAddAlert('${entry.id}')">
+                    <button class="wl-btn" onclick="wlAddAlert('${entry.id}')" style="border-color:rgba(249,115,22,0.3);color:var(--orange);">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                        Set Alert
+                    </button>
+                </div>
+            </div>
+
+            <div class="wl-card-actions">
+                <button class="wl-btn danger" onclick="removeWatchlistMarket('${entry.id}')">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+                    Remove
+                </button>
+                <a href="${entry.url}" target="_blank" class="wl-btn" style="text-decoration:none;color:var(--orange);border-color:rgba(249,115,22,0.25);">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    Open on Opinion
+                </a>
+            </div>
+        </div>`;
+    }
+
+    // ── Polymarket card (original) ────────────────────────────────────────────
     const isNo      = entry.viewingSide === 'no';
     const price     = isNo ? entry.currentPriceNo : entry.currentPrice;
     const prices    = isNo ? (entry.pricesNo || []) : (entry.prices || []);
@@ -6196,7 +6902,7 @@ function renderWatchlist() {
     if (!grid) return;
 
     if (watchlist.length === 0) {
-        grid.innerHTML = `<div class="wl-empty"><div class="wl-empty-icon">👁</div>No markets on your watchlist yet.<br>Paste a Polymarket URL above to start tracking.</div>`;
+        grid.innerHTML = `<div class="wl-empty"><div class="wl-empty-icon">👁</div>No markets on your watchlist yet.<br>Paste a Polymarket or Opinion.trade URL above to start tracking.</div>`;
         return;
     }
 
