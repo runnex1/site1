@@ -2127,7 +2127,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
         </div>
         <div class="ticker-strip-sep"></div>
         <div class="ticker-asset" id="tk-custom1-wrap">
-          <div class="ticker-asset-icon" style="background:var(--surf-3);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.6rem;font-weight:700;color:var(--teal);font-family:var(--ff-mono);flex-shrink:0;" id="tk-c1-icon">C1</div>
+          <div class="ticker-asset-icon" style="width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;" id="tk-c1-icon"></div>
           <div class="ticker-asset-body">
             <div class="ticker-asset-name" style="display:flex;align-items:center;gap:4px;">
               <span id="tk-c1-label">—</span>
@@ -2143,7 +2143,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
         </div>
         <div class="ticker-strip-sep"></div>
         <div class="ticker-asset" id="tk-custom2-wrap">
-          <div class="ticker-asset-icon" style="background:var(--surf-3);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.6rem;font-weight:700;color:var(--teal);font-family:var(--ff-mono);flex-shrink:0;" id="tk-c2-icon">C2</div>
+          <div class="ticker-asset-icon" style="width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;" id="tk-c2-icon"></div>
           <div class="ticker-asset-body">
             <div class="ticker-asset-name" style="display:flex;align-items:center;gap:4px;">
               <span id="tk-c2-label">—</span>
@@ -3054,7 +3054,18 @@ const LogoEngine = (() => {
         return initPromise;
     }
 
-    return { init, getTokenLogo, getProtocolLogo, makeSvgFallback };
+    // Allow external callers (e.g. custom ticker) to inject an image URL into the cache
+    function _injectTokenImage(symbol, url) {
+        if (symbol && url) cache[`token:${symbol.toUpperCase()}`] = url;
+    }
+
+    // Synchronous cache peek — returns cached URL if present (real image), null if missing or SVG fallback
+    function _peekTokenImage(symbol) {
+        const v = cache[`token:${symbol.toUpperCase()}`];
+        return (v && !v.startsWith('data:image/svg')) ? v : null;
+    }
+
+    return { init, getTokenLogo, getProtocolLogo, makeSvgFallback, _injectTokenImage, _peekTokenImage };
 })();
 
 // =============================================================================
@@ -5117,8 +5128,8 @@ function renderPredictionMarkets() {
             <div class="token-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${p.title}">${p.title}</div>
             <div class="token-amount">${p.outcome}</div>
             <div class="token-amount">${p.size.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-            <div class="value">$${p.avgPrice.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3})}</div>
-            <div class="value">$${curPrice.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3})}</div>
+            <div class="value">$${fmtTokenPrice(p.avgPrice)}</div>
+            <div class="value">$${fmtTokenPrice(curPrice)}</div>
             <div class="value" style="${upnlColor}">${upnl >= 0 ? '+' : ''}$${upnl.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
             <div class="value">$${p.currentValue.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
         </div>`;
@@ -5152,8 +5163,8 @@ function renderOpinionMarkets() {
             <div class="token-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${p.title}">${p.title}</div>
             <div class="token-amount" style="${outcomeColor};font-weight:700">${p.outcome}</div>
             <div class="token-amount">${p.size.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-            <div class="value">$${p.avgPrice.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3})}</div>
-            <div class="value">$${curPrice.toLocaleString('en-US',{minimumFractionDigits:3,maximumFractionDigits:3})}</div>
+            <div class="value">$${fmtTokenPrice(p.avgPrice)}</div>
+            <div class="value">$${fmtTokenPrice(curPrice)}</div>
             <div class="value" style="${upnlColor}">${upnl >= 0 ? '+' : ''}$${upnl.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
             <div class="value">$${p.currentValue.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
         </div>`;
@@ -5173,8 +5184,8 @@ function renderETFs() {
         <div class="table-row etf-row" ondblclick="deleteItem('etfs',${i})">
             <div class="token-name">${e.ticker}</div>
             <div class="token-amount">${e.shares.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
-            <div class="value">$${e.avgPrice.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
-            <div class="value">$${e.currentPrice.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
+            <div class="value">${fmtTokenPrice(e.avgPrice)}</div>
+            <div class="value">${fmtTokenPrice(e.currentPrice)}</div>
             <div class="value">$${val.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
             <div class="value ${gl>=0?'positive':'negative'}">${gl>=0?'+':''}$${gl.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
         </div>`;
@@ -7337,7 +7348,7 @@ function terminalFmtPrice(price, type) {
     if (type === 'polymarket' || type === 'opinion') {
         return (price * 100).toFixed(1) + '¢';
     }
-    return '$' + price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return fmtTokenPrice(price);
 }
 
 // ── Alert checking ────────────────────────────────────────────────────────────
@@ -7560,6 +7571,8 @@ function renderDailyBrief() {
     }
 
     // ── 3. Vesting unlocks (already unlocked or within 3 days) ──────────────
+    // Pool/section names that signal a time-locked position even outside 'Vesting' sections
+    const LOCK_KEYWORDS = /lock|unlock|vest|cliff|linear|stream|escrow/i;
     const vestItems = [];
     function parseVestDate(str) {
         const pe = parsePendleExpiry(str);
@@ -7572,9 +7585,18 @@ function renderDailyBrief() {
     }
     for (const proto of (data.protocols || [])) {
         for (const sec of (proto.sections || [])) {
-            if (sec.type !== 'Vesting') continue;
+            const isVestingSection = sec.type === 'Vesting' ||
+                LOCK_KEYWORDS.test(sec.type || '') ||
+                LOCK_KEYWORDS.test(sec.label || '');
             for (const pos of (sec.positions || [])) {
                 if ((pos.value || 0) < MIN_VALUE) continue;
+                const isLockedPool = LOCK_KEYWORDS.test(pos.pool || '');
+                const allStrs = [pos.pool || '', ...(pos.tokens || [])];
+                const hasDate = allStrs.some(s => parseVestDate(s) !== null);
+                const hasLockHint = allStrs.some(s => LOCK_KEYWORDS.test(s));
+                // Include if: explicit vesting section, OR pool name is lock-like,
+                // OR any token string has both a date and a lock hint
+                if (!isVestingSection && !isLockedPool && !(hasDate && hasLockHint)) continue;
                 const strs = [pos.pool || '', ...(pos.tokens || [])];
                 let unlockDate = null;
                 for (const s of strs) { const d = parseVestDate(s); if (d) { unlockDate = d; break; } }
@@ -7728,10 +7750,28 @@ function renderDailyBrief() {
 // =============================================================================
 const TICKER_REFRESH_MS = 10 * 1000; // 10 seconds
 
-function tickerFmt(price, decimals) {
-    if (price === null || price === undefined) return '—';
+// Significant-decimal rule: for prices under $1, show the first non-zero decimal
+// digit plus two more. e.g. 0.000742 → "$0.000742", 0.031 → "$0.0310", 0.85 → "$0.85"
+// For prices $1+, standard 2-decimal or comma-integer format.
+function fmtTokenPrice(price) {
+    if (price === null || price === undefined || isNaN(price)) return '—';
+    if (price <= 0) return '$0.00';
     if (price >= 1000) return '$' + price.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
-    return '$' + price.toLocaleString('en-US', {minimumFractionDigits: decimals||2, maximumFractionDigits: decimals||2});
+    if (price >= 1)    return '$' + price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    // Sub-$1: find first non-zero decimal digit then show that + 2 more
+    const s = price.toFixed(20);
+    const afterDot = s.split('.')[1] || '';
+    let firstNonZero = -1;
+    for (let i = 0; i < afterDot.length; i++) {
+        if (afterDot[i] !== '0') { firstNonZero = i; break; }
+    }
+    if (firstNonZero === -1) return '$0.00';
+    const decimals = firstNonZero + 3;
+    return '$' + price.toLocaleString('en-US', {minimumFractionDigits: decimals, maximumFractionDigits: decimals});
+}
+
+function tickerFmt(price) {
+    return fmtTokenPrice(price);
 }
 
 function tickerChgClass(chg) {
@@ -7759,37 +7799,45 @@ function setTickerItem(priceId, chgId, price, chgPct) {
     if (rt) rt.textContent = 'updated ' + now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
 }
 
-// Fetch single Stooq CSV and return { price, chgPct } or null
-async function fetchStooq(stooqSymbol) {
+// Fetch Yahoo Finance via multiple CORS proxies in parallel — resolve on first success
+async function fetchYahoo(ySymbol) {
+    const base = `https://query1.finance.yahoo.com/v8/finance/chart/${ySymbol}?interval=1d&range=2d&_=${Date.now()}`;
+    const proxies = [
+        `https://corsproxy.io/?url=${encodeURIComponent(base)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
+    ];
+    const tryProxy = async (proxy) => {
+        const r = await fetch(proxy, { signal: AbortSignal.timeout(7000), cache: 'no-store' });
+        if (!r.ok) throw new Error('not ok');
+        let text = await r.text();
+        if (text.trimStart().startsWith('{')) {
+            try { const j = JSON.parse(text); if (j.contents) text = j.contents; } catch(e) {}
+        }
+        const d = JSON.parse(text);
+        const meta = d?.chart?.result?.[0]?.meta;
+        if (!meta?.regularMarketPrice) throw new Error('no price');
+        return meta;
+    };
+    // Race both proxies; whichever responds first with valid data wins
     try {
-        const url = `https://stooq.com/q/l/?s=${encodeURIComponent(stooqSymbol)}&f=sd2t2ohlcv&h&e=csv&_=${Date.now()}`;
-        const r = await fetch(url, { signal: AbortSignal.timeout(6000), cache: 'no-store' });
-        if (!r.ok) return null;
-        const text = await r.text();
-        const lines = text.trim().split('\n');
-        if (lines.length < 2) return null;
-        const fields = lines[1].split(',');
-        // Name,Date,Time,Open,High,Low,Close,Volume
-        const close = parseFloat(fields[6]);
-        const open  = parseFloat(fields[3]);
-        if (!isFinite(close) || !isFinite(open) || close <= 0) return null;
-        const chgPct = open > 0 ? ((close - open) / open) * 100 : null;
-        return { price: close, chgPct };
+        const meta = await Promise.any(proxies.map(tryProxy));
+        const price  = meta.regularMarketPrice || meta.previousClose;
+        const prev   = meta.chartPreviousClose || meta.previousClose;
+        const chgPct = prev ? ((price - prev) / prev) * 100 : null;
+        return { price, chgPct };
     } catch(e) { return null; }
 }
 
 async function fetchMarketTicker() {
-    // --- BTC + ETH + Custom crypto: Binance (fast, no CORS) ---
+    // --- BTC + ETH: Binance (fast, CORS-open) ---
     const binancePairs = [
         { symbol: 'BTCUSDT', priceId: 'tk-btc-price', chgId: 'tk-btc-chg' },
         { symbol: 'ETHUSDT', priceId: 'tk-eth-price', chgId: 'tk-eth-chg' },
     ];
     const binancePromises = binancePairs.map(async ({ symbol, priceId, chgId }) => {
         try {
-            const r = await fetch(
-                `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`,
-                { signal: AbortSignal.timeout(6000) }
-            );
+            const r = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`,
+                { signal: AbortSignal.timeout(6000) });
             if (r.ok) {
                 const d = await r.json();
                 setTickerItem(priceId, chgId, parseFloat(d.lastPrice), parseFloat(d.priceChangePercent));
@@ -7797,46 +7845,18 @@ async function fetchMarketTicker() {
         } catch(e) { console.warn('Binance ticker error:', symbol, e); }
     });
 
-    // --- Gold + S&P 500: Stooq CSV (fast, no CORS proxy needed) ---
-    const stooqItems = [
-        { stooqSym: 'gc.f',  priceId: 'tk-gold-price', chgId: 'tk-gold-chg' },
-        { stooqSym: '^spx',  priceId: 'tk-sp-price',   chgId: 'tk-sp-chg'   },
+    // --- Gold + S&P 500: Yahoo Finance, two proxies in parallel (first wins) ---
+    const yahooItems = [
+        { ySymbol: 'GC%3DF',  priceId: 'tk-gold-price', chgId: 'tk-gold-chg' },
+        { ySymbol: '%5EGSPC', priceId: 'tk-sp-price',   chgId: 'tk-sp-chg'   },
     ];
-    const stooqPromises = stooqItems.map(async ({ stooqSym, priceId, chgId }) => {
-        const result = await fetchStooq(stooqSym);
-        if (result) {
-            setTickerItem(priceId, chgId, result.price, result.chgPct);
-        } else {
-            // Fallback: Yahoo Finance via allorigins
-            try {
-                const yMap = { 'gc.f': 'GC%3DF', '^spx': '%5EGSPC' };
-                const ySymbol = yMap[stooqSym];
-                if (!ySymbol) return;
-                const base = `https://query1.finance.yahoo.com/v8/finance/chart/${ySymbol}?interval=1d&range=2d&_=${Date.now()}`;
-                const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`;
-                const r = await fetch(proxy, { signal: AbortSignal.timeout(8000), cache: 'no-store' });
-                if (!r.ok) return;
-                let text = await r.text();
-                if (text.trimStart().startsWith('{')) {
-                    const j = JSON.parse(text);
-                    if (j.contents) text = j.contents;
-                }
-                const d = JSON.parse(text);
-                const meta = d?.chart?.result?.[0]?.meta;
-                if (meta?.regularMarketPrice) {
-                    const price  = meta.regularMarketPrice || meta.previousClose;
-                    const prev   = meta.chartPreviousClose || meta.previousClose;
-                    const chgPct = prev ? ((price - prev) / prev) * 100 : null;
-                    setTickerItem(priceId, chgId, price, chgPct);
-                }
-            } catch(e) { console.warn('Yahoo fallback error:', stooqSym, e); }
-        }
+    const yahooPromises = yahooItems.map(async ({ ySymbol, priceId, chgId }) => {
+        const result = await fetchYahoo(ySymbol);
+        if (result) setTickerItem(priceId, chgId, result.price, result.chgPct);
     });
 
-    // Run all in parallel
-    await Promise.all([...binancePromises, ...stooqPromises]);
-
-    // Custom tickers (fetched separately so they don't slow down main ticker)
+    // Run all in parallel — custom tickers fire independently
+    Promise.all([...binancePromises, ...yahooPromises]);
     fetchCustomTicker(1);
     fetchCustomTicker(2);
 }
@@ -7844,7 +7864,9 @@ async function fetchMarketTicker() {
 // =============================================================================
 // CUSTOM TICKERS
 // =============================================================================
-const TICKER_CRYPTO_SYMBOLS = new Set(['BTC','ETH','BNB','SOL','XRP','ADA','DOGE','AVAX','DOT','MATIC','LINK','UNI','LTC','BCH','ATOM','TRX','NEAR','OP','ARB','PEPE','WIF','BONK','INJ','SUI','APT','SEI','TIA','JUP','PYTH','RNDR','FET']);
+
+// Cache: symbol → CoinGecko ID, stored in memory (refreshes each session)
+const _tkGeckoIdCache = {};
 
 function tkGetSym(n) {
     return (localStorage.getItem(`vault_tk_c${n}`) || (n === 1 ? 'MSFT' : 'NVDA')).toUpperCase();
@@ -7854,7 +7876,15 @@ function tkSetLabel(n, sym) {
     const lbl = document.getElementById(`tk-c${n}-label`);
     const icon = document.getElementById(`tk-c${n}-icon`);
     if (lbl) lbl.textContent = sym;
-    if (icon) icon.textContent = sym.substring(0, 3);
+    if (icon) {
+        // Render a logo img that LogoEngine will resolve; fallback SVG shown immediately
+        const fallback = LogoEngine.makeSvgFallback(sym.substring(0, 3), sym);
+        icon.innerHTML = `<img data-logo-symbol="${sym}" data-logo-type="token"
+            src="${fallback}" alt="${sym}"
+            style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+        // Trigger logo resolution for this new img
+        resolveAllPendingLogos();
+    }
 }
 
 function tkEditStart(n) {
@@ -7877,6 +7907,8 @@ function tkEditSave(n) {
     const sym = input.value.trim().toUpperCase();
     if (sym) {
         localStorage.setItem(`vault_tk_c${n}`, sym);
+        // Clear cached gecko ID so it re-resolves for the new symbol
+        delete _tkGeckoIdCache[sym];
         tkSetLabel(n, sym);
         document.getElementById(`tk-c${n}-price`).textContent = '…';
         document.getElementById(`tk-c${n}-chg`).textContent = '';
@@ -7893,41 +7925,198 @@ function tkEditCancel(n) {
     if (lbl) lbl.style.display = '';
 }
 
+// Try Binance for a symbol (appends USDT). Returns { price, chgPct } or null.
+async function tkTryBinance(sym) {
+    const pair = sym.endsWith('USDT') ? sym : sym + 'USDT';
+    try {
+        const r = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`,
+            { signal: AbortSignal.timeout(5000) });
+        if (!r.ok) return null;
+        const d = await r.json();
+        const price = parseFloat(d.lastPrice);
+        if (price > 0) return { price, chgPct: parseFloat(d.priceChangePercent) };
+    } catch(e) {}
+    return null;
+}
+
+// Resolve symbol → CoinGecko coin ID via /search, cache result.
+async function tkGeckoResolve(sym) {
+    if (_tkGeckoIdCache[sym] !== undefined) return _tkGeckoIdCache[sym];
+    // Check known map first
+    const id = (CRYPTO_GECKO_IDS || {})[sym] || null;
+    if (id) { _tkGeckoIdCache[sym] = id; return id; }
+    // Check LogoEngine's geckoMap (populated from CoinGecko top-250 during init)
+    try {
+        await LogoEngine.init(); // no-op if already done
+        // geckoMap is internal, but we can try getTokenLogo to see if it was cached
+    } catch(e) {}
+    try {
+        const r = await fetch(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(sym)}`,
+            { signal: AbortSignal.timeout(6000) });
+        if (!r.ok) { _tkGeckoIdCache[sym] = null; return null; }
+        const d = await r.json();
+        const coins = d?.coins || [];
+        // Require exact symbol match — don't fall back to first result (too many false positives)
+        const match = coins.find(c => c.symbol.toUpperCase() === sym) || null;
+        const geckoId = match ? match.id : null;
+        _tkGeckoIdCache[sym] = geckoId;
+        // Inject the thumb image into LogoEngine's cache so resolveAllPendingLogos picks it up
+        if (match?.thumb && !match.thumb.includes('missing')) {
+            try { LogoEngine._injectTokenImage(sym, match.thumb); } catch(e) {}
+        }
+        return geckoId;
+    } catch(e) { _tkGeckoIdCache[sym] = null; return null; }
+}
+
+// Try DeFiLlama coins API by contract address — works for DEX-only tokens CoinGecko can't price in USD.
+// contractAddrs: array of "chain:0x..." strings (e.g. ["ethereum:0xabc...", "arbitrum-one:0xdef..."])
+async function tkTryDefiLlama(contractAddrs) {
+    if (!contractAddrs || contractAddrs.length === 0) return null;
+    try {
+        const query = contractAddrs.slice(0, 3).join(',');
+        const r = await fetch(
+            `https://coins.llama.fi/prices/current/${encodeURIComponent(query)}`,
+            { signal: AbortSignal.timeout(6000) }
+        );
+        if (!r.ok) return null;
+        const d = await r.json();
+        const coins = d?.coins || {};
+        for (const key of contractAddrs) {
+            const entry = coins[key];
+            if (entry?.price > 0) {
+                return { price: entry.price, chgPct: null };
+            }
+        }
+        return null;
+    } catch(e) { return null; }
+}
+
+// Resolve logo + price via CoinGecko /coins/{id} in one call.
+// Falls back to DeFiLlama if CoinGecko has no USD price (DEX-only tokens like PMUSD).
+async function tkResolveLogoAndPrice(sym) {
+    const logoAlreadyCached = LogoEngine._peekTokenImage(sym);
+
+    // Resolve CoinGecko ID (also injects thumb as side-effect of /search call)
+    const geckoId = await tkGeckoResolve(sym);
+    if (!geckoId) return null;
+
+    // If logo is now cached from the /search thumb, trigger re-render
+    if (!logoAlreadyCached && LogoEngine._peekTokenImage(sym)) {
+        resolveAllPendingLogos();
+    }
+
+    // Fetch full coin data: market_data=true + platforms gives us price, image, and contract addresses
+    let coinData = null;
+    try {
+        const r = await fetch(
+            `https://api.coingecko.com/api/v3/coins/${geckoId}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false`,
+            { signal: AbortSignal.timeout(7000) }
+        );
+        if (r.ok) coinData = await r.json();
+    } catch(e) {}
+
+    if (coinData) {
+        // Inject logo if we don't have a real one yet
+        if (!LogoEngine._peekTokenImage(sym)) {
+            const img = coinData?.image?.small || coinData?.image?.thumb;
+            if (img && !img.includes('missing')) {
+                LogoEngine._injectTokenImage(sym, img);
+                resolveAllPendingLogos();
+            }
+        }
+
+        // Try USD price from CoinGecko
+        let usd = coinData?.market_data?.current_price?.usd;
+        const chg24h = coinData?.market_data?.price_change_percentage_24h ?? null;
+        if (usd > 0) return { price: usd, chgPct: chg24h };
+
+        // CoinGecko has no USD price — try DeFiLlama with contract addresses
+        // (covers DEX-only tokens like PMUSD which only have BTC-denominated price on CoinGecko)
+        const platforms = coinData?.platforms || {};
+        const contractAddrs = Object.entries(platforms)
+            .filter(([chain, addr]) => addr && addr.startsWith('0x'))
+            .map(([chain, addr]) => `${chain}:${addr.toLowerCase()}`);
+
+        if (contractAddrs.length > 0) {
+            const llamaResult = await tkTryDefiLlama(contractAddrs);
+            if (llamaResult) return { price: llamaResult.price, chgPct: chg24h };
+        }
+    }
+
+    // CoinGecko entirely failed — try DeFiLlama with a best-guess ethereum address from search
+    // (tkGeckoResolve may have cached a thumb but not contract info)
+    return null;
+}
+
+// Try Coinpaprika — free, no API key, reliable USD prices including DEX-only tokens.
+async function tkTryCoinpaprika(sym) {
+    try {
+        // Search for the coin ID first
+        const sr = await fetch(
+            `https://api.coinpaprika.com/v1/search?q=${encodeURIComponent(sym)}&c=currencies&limit=5`,
+            { signal: AbortSignal.timeout(6000) }
+        );
+        if (!sr.ok) return null;
+        const sd = await sr.json();
+        const coins = sd?.currencies || [];
+        const match = coins.find(c => c.symbol.toUpperCase() === sym) || null;
+        if (!match) return null;
+
+        // Fetch price by ID
+        const pr = await fetch(
+            `https://api.coinpaprika.com/v1/tickers/${match.id}`,
+            { signal: AbortSignal.timeout(6000) }
+        );
+        if (!pr.ok) return null;
+        const pd = await pr.json();
+        const usd = pd?.quotes?.USD?.price;
+        if (!usd || usd <= 0) return null;
+        const chg24h = pd?.quotes?.USD?.percent_change_24h ?? null;
+        return { price: usd, chgPct: chg24h };
+    } catch(e) { return null; }
+}
+
 async function fetchCustomTicker(n) {
     const sym = tkGetSym(n);
     tkSetLabel(n, sym);
     const priceId = `tk-c${n}-price`;
     const chgId   = `tk-c${n}-chg`;
 
-    // Try Binance first for crypto
-    const isCrypto = TICKER_CRYPTO_SYMBOLS.has(sym) || sym.endsWith('USDT') || sym.endsWith('BTC');
-    const binanceSym = sym.endsWith('USDT') ? sym : sym + 'USDT';
-
-    if (isCrypto) {
-        try {
-            const r = await fetch(
-                `https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSym}`,
-                { signal: AbortSignal.timeout(5000) }
-            );
-            if (r.ok) {
-                const d = await r.json();
-                const price = parseFloat(d.lastPrice);
-                if (price > 0) {
-                    setTickerItem(priceId, chgId, price, parseFloat(d.priceChangePercent));
-                    return;
-                }
-            }
-        } catch(e) {}
+    // 1. Try Binance (handles major crypto + anything with a USDT pair)
+    const binanceResult = await tkTryBinance(sym);
+    if (binanceResult) {
+        setTickerItem(priceId, chgId, binanceResult.price, binanceResult.chgPct);
+        // Still resolve logo in background (Binance gives no image)
+        tkResolveLogoAndPrice(sym);
+        return;
     }
 
-    // Stooq for stocks/ETFs/indices
-    const result = await fetchStooq(sym.toLowerCase());
-    if (result) {
-        setTickerItem(priceId, chgId, result.price, result.chgPct);
-    } else {
-        const pe = document.getElementById(priceId);
-        if (pe) pe.textContent = 'N/A';
+    // 2. Try Yahoo Finance (stocks, ETFs, indices like SPY, QQQ, AAPL, etc.)
+    const yahooResult = await fetchYahoo(encodeURIComponent(sym));
+    if (yahooResult) {
+        setTickerItem(priceId, chgId, yahooResult.price, yahooResult.chgPct);
+        // Still resolve logo in background
+        tkResolveLogoAndPrice(sym);
+        return;
     }
+
+    // 3. CoinGecko + DeFiLlama — fetches logo and price; DeFiLlama covers DEX-only tokens
+    const geckoResult = await tkResolveLogoAndPrice(sym);
+    if (geckoResult) {
+        setTickerItem(priceId, chgId, geckoResult.price, geckoResult.chgPct);
+        return;
+    }
+
+    // 4. Coinpaprika — independent data source, works for tokens CoinGecko can't price in USD
+    const paprikaResult = await tkTryCoinpaprika(sym);
+    if (paprikaResult) {
+        setTickerItem(priceId, chgId, paprikaResult.price, paprikaResult.chgPct);
+        return;
+    }
+
+    // 5. Nothing worked
+    const pe = document.getElementById(priceId);
+    if (pe) pe.textContent = 'N/A';
 }
 
 // Boot ticker + refresh
