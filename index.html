@@ -1952,6 +1952,28 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   font-size: 0.62rem; color: var(--t3); font-family: var(--ff-mono);
   opacity: 0.5;
 }
+/* Custom ticker editing */
+.ticker-custom-edit {
+  display: flex; align-items: center; gap: 0.3rem; padding: 0 1.5rem 0 0;
+  height: 100%;
+}
+.ticker-custom-input {
+  background: var(--surf-3); border: 1px solid var(--border-mid);
+  border-radius: 4px; color: var(--t1); font-family: var(--ff-mono);
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  padding: 2px 5px; width: 60px; outline: none; text-align: center;
+  transition: border-color 0.15s;
+}
+.ticker-custom-input:focus { border-color: var(--teal); }
+.ticker-custom-input::placeholder { color: var(--t3); opacity: 0.5; }
+.ticker-edit-btn {
+  width: 16px; height: 16px; border-radius: 3px; background: transparent;
+  border: 1px solid var(--border); color: var(--t3); font-size: 0.55rem;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.15s, color 0.15s; flex-shrink: 0;
+  font-family: var(--ff-mono); padding: 0; outline: none;
+}
+.ticker-edit-btn:hover { border-color: var(--teal); color: var(--teal); }
 
 
 </style>
@@ -2102,6 +2124,38 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
             <div class="ticker-asset-price" id="tk-sp-price">—</div>
           </div>
           <div class="ticker-change flat" id="tk-sp-chg"></div>
+        </div>
+        <div class="ticker-strip-sep"></div>
+        <div class="ticker-asset" id="tk-custom1-wrap">
+          <div class="ticker-asset-icon" style="background:var(--surf-3);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.6rem;font-weight:700;color:var(--teal);font-family:var(--ff-mono);flex-shrink:0;" id="tk-c1-icon">C1</div>
+          <div class="ticker-asset-body">
+            <div class="ticker-asset-name" style="display:flex;align-items:center;gap:4px;">
+              <span id="tk-c1-label">—</span>
+              <button class="ticker-edit-btn" onclick="tkEditStart(1)" title="Edit symbol">✎</button>
+            </div>
+            <div id="tk-c1-editor" style="display:none;">
+              <input class="ticker-custom-input" id="tk-c1-input" maxlength="10" placeholder="MSFT"
+                onkeydown="if(event.key==='Enter')tkEditSave(1);if(event.key==='Escape')tkEditCancel(1);">
+            </div>
+            <div class="ticker-asset-price" id="tk-c1-price">—</div>
+          </div>
+          <div class="ticker-change flat" id="tk-c1-chg"></div>
+        </div>
+        <div class="ticker-strip-sep"></div>
+        <div class="ticker-asset" id="tk-custom2-wrap">
+          <div class="ticker-asset-icon" style="background:var(--surf-3);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:0.6rem;font-weight:700;color:var(--teal);font-family:var(--ff-mono);flex-shrink:0;" id="tk-c2-icon">C2</div>
+          <div class="ticker-asset-body">
+            <div class="ticker-asset-name" style="display:flex;align-items:center;gap:4px;">
+              <span id="tk-c2-label">—</span>
+              <button class="ticker-edit-btn" onclick="tkEditStart(2)" title="Edit symbol">✎</button>
+            </div>
+            <div id="tk-c2-editor" style="display:none;">
+              <input class="ticker-custom-input" id="tk-c2-input" maxlength="10" placeholder="NVDA"
+                onkeydown="if(event.key==='Enter')tkEditSave(2);if(event.key==='Escape')tkEditCancel(2);">
+            </div>
+            <div class="ticker-asset-price" id="tk-c2-price">—</div>
+          </div>
+          <div class="ticker-change flat" id="tk-c2-chg"></div>
         </div>
         <div class="ticker-strip-refresh" id="tickerRefreshTime"></div>
       </div>
@@ -7670,7 +7724,7 @@ function renderDailyBrief() {
 
 
 // =============================================================================
-// MARKET TICKER — BTC, ETH, Gold, S&P 500
+// MARKET TICKER — BTC, ETH, Gold, S&P 500, Custom1, Custom2
 // =============================================================================
 const TICKER_REFRESH_MS = 10 * 1000; // 10 seconds
 
@@ -7705,62 +7759,182 @@ function setTickerItem(priceId, chgId, price, chgPct) {
     if (rt) rt.textContent = 'updated ' + now.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
 }
 
+// Fetch single Stooq CSV and return { price, chgPct } or null
+async function fetchStooq(stooqSymbol) {
+    try {
+        const url = `https://stooq.com/q/l/?s=${encodeURIComponent(stooqSymbol)}&f=sd2t2ohlcv&h&e=csv&_=${Date.now()}`;
+        const r = await fetch(url, { signal: AbortSignal.timeout(6000), cache: 'no-store' });
+        if (!r.ok) return null;
+        const text = await r.text();
+        const lines = text.trim().split('\n');
+        if (lines.length < 2) return null;
+        const fields = lines[1].split(',');
+        // Name,Date,Time,Open,High,Low,Close,Volume
+        const close = parseFloat(fields[6]);
+        const open  = parseFloat(fields[3]);
+        if (!isFinite(close) || !isFinite(open) || close <= 0) return null;
+        const chgPct = open > 0 ? ((close - open) / open) * 100 : null;
+        return { price: close, chgPct };
+    } catch(e) { return null; }
+}
+
 async function fetchMarketTicker() {
-    // Binance for BTC + ETH (public API, no CORS issues)
+    // --- BTC + ETH + Custom crypto: Binance (fast, no CORS) ---
     const binancePairs = [
         { symbol: 'BTCUSDT', priceId: 'tk-btc-price', chgId: 'tk-btc-chg' },
         { symbol: 'ETHUSDT', priceId: 'tk-eth-price', chgId: 'tk-eth-chg' },
     ];
-    for (const { symbol, priceId, chgId } of binancePairs) {
+    const binancePromises = binancePairs.map(async ({ symbol, priceId, chgId }) => {
         try {
             const r = await fetch(
                 `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`,
-                { signal: AbortSignal.timeout(8000) }
+                { signal: AbortSignal.timeout(6000) }
             );
             if (r.ok) {
                 const d = await r.json();
                 setTickerItem(priceId, chgId, parseFloat(d.lastPrice), parseFloat(d.priceChangePercent));
             }
         } catch(e) { console.warn('Binance ticker error:', symbol, e); }
-    }
-    // Gold (GC=F) + S&P 500 (^GSPC) via Yahoo Finance, racing two proxies
-    const yahooItems = [
-        { ySymbol: 'GC%3DF',  priceId: 'tk-gold-price', chgId: 'tk-gold-chg'  },
-        { ySymbol: '%5EGSPC', priceId: 'tk-sp-price',   chgId: 'tk-sp-chg'    },
+    });
+
+    // --- Gold + S&P 500: Stooq CSV (fast, no CORS proxy needed) ---
+    const stooqItems = [
+        { stooqSym: 'gc.f',  priceId: 'tk-gold-price', chgId: 'tk-gold-chg' },
+        { stooqSym: '^spx',  priceId: 'tk-sp-price',   chgId: 'tk-sp-chg'   },
     ];
-    for (const { ySymbol, priceId, chgId } of yahooItems) {
+    const stooqPromises = stooqItems.map(async ({ stooqSym, priceId, chgId }) => {
+        const result = await fetchStooq(stooqSym);
+        if (result) {
+            setTickerItem(priceId, chgId, result.price, result.chgPct);
+        } else {
+            // Fallback: Yahoo Finance via allorigins
+            try {
+                const yMap = { 'gc.f': 'GC%3DF', '^spx': '%5EGSPC' };
+                const ySymbol = yMap[stooqSym];
+                if (!ySymbol) return;
+                const base = `https://query1.finance.yahoo.com/v8/finance/chart/${ySymbol}?interval=1d&range=2d&_=${Date.now()}`;
+                const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`;
+                const r = await fetch(proxy, { signal: AbortSignal.timeout(8000), cache: 'no-store' });
+                if (!r.ok) return;
+                let text = await r.text();
+                if (text.trimStart().startsWith('{')) {
+                    const j = JSON.parse(text);
+                    if (j.contents) text = j.contents;
+                }
+                const d = JSON.parse(text);
+                const meta = d?.chart?.result?.[0]?.meta;
+                if (meta?.regularMarketPrice) {
+                    const price  = meta.regularMarketPrice || meta.previousClose;
+                    const prev   = meta.chartPreviousClose || meta.previousClose;
+                    const chgPct = prev ? ((price - prev) / prev) * 100 : null;
+                    setTickerItem(priceId, chgId, price, chgPct);
+                }
+            } catch(e) { console.warn('Yahoo fallback error:', stooqSym, e); }
+        }
+    });
+
+    // Run all in parallel
+    await Promise.all([...binancePromises, ...stooqPromises]);
+
+    // Custom tickers (fetched separately so they don't slow down main ticker)
+    fetchCustomTicker(1);
+    fetchCustomTicker(2);
+}
+
+// =============================================================================
+// CUSTOM TICKERS
+// =============================================================================
+const TICKER_CRYPTO_SYMBOLS = new Set(['BTC','ETH','BNB','SOL','XRP','ADA','DOGE','AVAX','DOT','MATIC','LINK','UNI','LTC','BCH','ATOM','TRX','NEAR','OP','ARB','PEPE','WIF','BONK','INJ','SUI','APT','SEI','TIA','JUP','PYTH','RNDR','FET']);
+
+function tkGetSym(n) {
+    return (localStorage.getItem(`vault_tk_c${n}`) || (n === 1 ? 'MSFT' : 'NVDA')).toUpperCase();
+}
+
+function tkSetLabel(n, sym) {
+    const lbl = document.getElementById(`tk-c${n}-label`);
+    const icon = document.getElementById(`tk-c${n}-icon`);
+    if (lbl) lbl.textContent = sym;
+    if (icon) icon.textContent = sym.substring(0, 3);
+}
+
+function tkEditStart(n) {
+    const editor = document.getElementById(`tk-c${n}-editor`);
+    const input  = document.getElementById(`tk-c${n}-input`);
+    const lbl    = document.getElementById(`tk-c${n}-label`);
+    if (!editor || !input) return;
+    input.value = tkGetSym(n);
+    editor.style.display = 'block';
+    lbl.style.display = 'none';
+    input.focus();
+    input.select();
+}
+
+function tkEditSave(n) {
+    const input  = document.getElementById(`tk-c${n}-input`);
+    const editor = document.getElementById(`tk-c${n}-editor`);
+    const lbl    = document.getElementById(`tk-c${n}-label`);
+    if (!input) return;
+    const sym = input.value.trim().toUpperCase();
+    if (sym) {
+        localStorage.setItem(`vault_tk_c${n}`, sym);
+        tkSetLabel(n, sym);
+        document.getElementById(`tk-c${n}-price`).textContent = '…';
+        document.getElementById(`tk-c${n}-chg`).textContent = '';
+        fetchCustomTicker(n);
+    }
+    if (editor) editor.style.display = 'none';
+    if (lbl) lbl.style.display = '';
+}
+
+function tkEditCancel(n) {
+    const editor = document.getElementById(`tk-c${n}-editor`);
+    const lbl    = document.getElementById(`tk-c${n}-label`);
+    if (editor) editor.style.display = 'none';
+    if (lbl) lbl.style.display = '';
+}
+
+async function fetchCustomTicker(n) {
+    const sym = tkGetSym(n);
+    tkSetLabel(n, sym);
+    const priceId = `tk-c${n}-price`;
+    const chgId   = `tk-c${n}-chg`;
+
+    // Try Binance first for crypto
+    const isCrypto = TICKER_CRYPTO_SYMBOLS.has(sym) || sym.endsWith('USDT') || sym.endsWith('BTC');
+    const binanceSym = sym.endsWith('USDT') ? sym : sym + 'USDT';
+
+    if (isCrypto) {
         try {
-            const base = `https://query1.finance.yahoo.com/v8/finance/chart/${ySymbol}?interval=1d&range=2d&_=${Date.now()}`;
-            const proxies = [
-                `https://api.allorigins.win/raw?url=${encodeURIComponent(base)}`,
-                `https://api.allorigins.win/get?url=${encodeURIComponent(base)}`,
-            ];
-            let meta = null;
-            for (const proxy of proxies) {
-                try {
-                    const r = await fetch(proxy, { signal: AbortSignal.timeout(8000), cache: 'no-store' });
-                    if (!r.ok) continue;
-                    let text = await r.text();
-                    if (text.trimStart().startsWith('{')) {
-                        const j = JSON.parse(text);
-                        if (j.contents) text = j.contents;
-                    }
-                    const d = JSON.parse(text);
-                    meta = d?.chart?.result?.[0]?.meta;
-                    if (meta?.regularMarketPrice) break;
-                } catch(e) {}
+            const r = await fetch(
+                `https://api.binance.com/api/v3/ticker/24hr?symbol=${binanceSym}`,
+                { signal: AbortSignal.timeout(5000) }
+            );
+            if (r.ok) {
+                const d = await r.json();
+                const price = parseFloat(d.lastPrice);
+                if (price > 0) {
+                    setTickerItem(priceId, chgId, price, parseFloat(d.priceChangePercent));
+                    return;
+                }
             }
-            if (meta) {
-                const price  = meta.regularMarketPrice || meta.previousClose;
-                const prev   = meta.chartPreviousClose || meta.previousClose;
-                const chgPct = prev ? ((price - prev) / prev) * 100 : null;
-                setTickerItem(priceId, chgId, price, chgPct);
-            }
-        } catch(e) { console.warn('Yahoo ticker error:', ySymbol, e); }
+        } catch(e) {}
+    }
+
+    // Stooq for stocks/ETFs/indices
+    const result = await fetchStooq(sym.toLowerCase());
+    if (result) {
+        setTickerItem(priceId, chgId, result.price, result.chgPct);
+    } else {
+        const pe = document.getElementById(priceId);
+        if (pe) pe.textContent = 'N/A';
     }
 }
 
-// Boot ticker + refresh every 5min
+// Boot ticker + refresh
+(function initCustomLabels() {
+    tkSetLabel(1, tkGetSym(1));
+    tkSetLabel(2, tkGetSym(2));
+})();
 fetchMarketTicker();
 setInterval(fetchMarketTicker, TICKER_REFRESH_MS);
 
