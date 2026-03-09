@@ -276,6 +276,153 @@ html { height: 100%; }
 }
 .wl-btn:hover { color: var(--t1); border-color: var(--border-hi); }
 .wl-btn.danger:hover { color: var(--red); border-color: rgba(244,63,94,0.4); }
+
+/* ─── WATCHER SUB-TABS ───────────────────────────────────── */
+.wtab-row {
+  display: flex; gap: 0.2rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.75rem;
+}
+.wtab-btn {
+  display: flex; align-items: center; gap: 0.45rem;
+  padding: 0.55rem 1rem;
+  font-family: var(--ff-body); font-size: 0.82rem; font-weight: 500;
+  color: var(--t3); background: none; border: none;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.wtab-btn:hover { color: var(--t1); }
+.wtab-btn.active { color: var(--t1); border-bottom-color: var(--teal); }
+.wtab-btn.active.indigo { border-bottom-color: var(--indigo); }
+.wtab-live-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--teal); flex-shrink: 0;
+  animation: wPulseDot 2s ease-in-out infinite;
+}
+.wtab-live-dot.indigo { background: var(--indigo); animation: none; }
+@keyframes wPulseDot {
+  0%,100% { box-shadow: 0 0 0 0 rgba(0,212,170,0.5); }
+  50%      { box-shadow: 0 0 0 4px rgba(0,212,170,0); }
+}
+.wtab-badge {
+  font-size: 0.62rem; font-family: var(--ff-mono); font-weight: 600;
+  padding: 1px 5px; border-radius: 100px;
+  background: var(--surf-3); border: 1px solid var(--border-mid);
+  color: var(--t3); line-height: 1.5;
+}
+.wtab-btn.active .wtab-badge { background: var(--teal-10); border-color: rgba(0,212,170,0.2); color: var(--teal); }
+.wtab-btn.active.indigo .wtab-badge { background: var(--indigo-10); border-color: rgba(108,114,255,0.2); color: var(--indigo); }
+
+.wtab-panel { display: none; }
+.wtab-panel.active { display: block; animation: fadeUp 0.2s ease; }
+
+/* Section header inside sub-tabs */
+.wsec-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.wsec-count {
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--t3);
+}
+.wsec-add-btn {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 4px 10px; border-radius: var(--r-xs);
+  font-size: 0.75rem; font-weight: 600; cursor: pointer;
+  border: 1px solid rgba(0,212,170,0.25); background: var(--teal-10);
+  color: var(--teal); transition: all 0.14s; white-space: nowrap;
+  font-family: var(--ff-body);
+}
+.wsec-add-btn:hover { background: var(--teal-20); border-color: var(--teal); }
+.wsec-add-btn.indigo {
+  border-color: rgba(108,114,255,0.25); background: var(--indigo-10); color: var(--indigo);
+}
+.wsec-add-btn.indigo:hover { background: rgba(108,114,255,0.2); border-color: var(--indigo); }
+
+/* Wallet preview cards (wv- prefix to avoid conflicts) */
+.wv-grid { display: flex; flex-direction: column; gap: 0.75rem; }
+.wv-card {
+  background: var(--surf-1); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 1rem 1.25rem;
+  transition: border-color 0.15s; position: relative; overflow: hidden;
+}
+.wv-card:hover { border-color: var(--border-mid); }
+.wv-card.wv-flash { animation: wvFlash 0.8s ease forwards; }
+@keyframes wvFlash {
+  0%   { background: var(--teal-10); border-color: rgba(0,212,170,0.3); }
+  100% { background: var(--surf-1);  border-color: var(--border); }
+}
+.wv-top { display: flex; align-items: flex-start; gap: 1rem; }
+.wv-body { flex: 1; min-width: 0; }
+.wv-label { font-size: 0.9rem; font-weight: 600; color: var(--t1); margin-bottom: 0.15rem; }
+.wv-addr { font-family: var(--ff-mono); font-size: 0.7rem; color: var(--t3); letter-spacing: 0.02em; }
+.wv-meta { display: flex; align-items: center; gap: 0.55rem; margin-top: 0.3rem; flex-wrap: wrap; }
+.wv-chain {
+  font-size: 0.65rem; font-weight: 700; padding: 2px 7px; border-radius: 100px;
+  background: var(--surf-3); border: 1px solid var(--border-mid);
+  color: var(--t3); letter-spacing: 0.05em; text-transform: uppercase;
+}
+.wv-live {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 0.65rem; font-weight: 600; color: var(--teal);
+  letter-spacing: 0.05em; text-transform: uppercase;
+}
+.wv-live-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--teal); animation: wPulseDot 1.8s ease-in-out infinite;
+}
+.wv-ts { font-family: var(--ff-mono); font-size: 0.68rem; color: var(--t3); }
+.wv-price-block { text-align: right; flex-shrink: 0; }
+.wv-balance { font-family: var(--ff-mono); font-size: 1.2rem; font-weight: 700; color: var(--t2); line-height: 1; }
+.wv-change { font-family: var(--ff-mono); font-size: 0.7rem; margin-top: 3px; }
+.wv-change.up   { color: var(--green); }
+.wv-change.down { color: var(--red); }
+.wv-activity {
+  margin-top: 0.8rem; padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 0.4rem;
+}
+.wv-act-row { display: flex; align-items: center; gap: 0.55rem; font-size: 0.74rem; color: var(--t3); }
+.wv-act-type {
+  font-size: 0.63rem; font-weight: 700; padding: 1px 6px; border-radius: 3px;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.wv-act-type.swap { color: var(--sky);   border: 1px solid rgba(56,189,248,0.2);  background: rgba(56,189,248,0.06); }
+.wv-act-type.recv { color: var(--green); border: 1px solid rgba(34,197,94,0.2);   background: rgba(34,197,94,0.06); }
+.wv-act-type.send { color: var(--amber); border: 1px solid rgba(245,158,11,0.2);  background: rgba(245,158,11,0.06); }
+.wv-act-amt { font-family: var(--ff-mono); font-size: 0.71rem; color: var(--t1); }
+.wv-act-ts  { font-family: var(--ff-mono); font-size: 0.66rem; color: var(--t3); margin-left: auto; }
+
+/* Yield tool preview cards (wy- prefix) */
+.wy-grid { display: flex; flex-direction: column; gap: 0.6rem; }
+.wy-card {
+  background: var(--surf-1); border: 1px solid var(--border);
+  border-left: 3px solid var(--indigo);
+  border-radius: 0 var(--r) var(--r) 0;
+  padding: 0.8rem 1rem;
+  display: flex; align-items: center; gap: 0.9rem;
+  transition: border-color 0.15s, background 0.15s;
+  cursor: pointer; text-decoration: none;
+}
+.wy-card:hover { background: var(--surf-2); border-color: rgba(108,114,255,0.35); border-left-color: var(--indigo); }
+.wy-icon {
+  width: 30px; height: 30px; background: var(--indigo-10);
+  border: 1px solid rgba(108,114,255,0.2); border-radius: var(--r-xs);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-size: 0.72rem; font-weight: 700;
+  font-family: var(--ff-mono); color: var(--indigo);
+}
+.wy-body { flex: 1; min-width: 0; }
+.wy-name { font-size: 0.86rem; font-weight: 600; color: var(--t1); margin-bottom: 0.12rem; }
+.wy-desc { font-size: 0.72rem; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wy-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 0.2rem; flex-shrink: 0; }
+.wy-tag {
+  font-size: 0.62rem; font-weight: 700; padding: 2px 6px; border-radius: 3px;
+  background: var(--indigo-10); border: 1px solid rgba(108,114,255,0.2);
+  color: var(--indigo); text-transform: uppercase; letter-spacing: 0.05em;
+}
+.wy-visited { font-family: var(--ff-mono); font-size: 0.65rem; color: var(--t3); }
+
 .wl-empty {
   text-align: center; padding: 3rem 1rem; color: var(--t3);
   font-size: 0.85rem; line-height: 1.6;
@@ -2507,64 +2654,197 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
       <div id="watcherTab" class="tab-pane">
         <div class="section">
 
-          <!-- Markets Watchlist -->
-          <div class="section-header" style="margin-bottom:1rem;">
-            <div class="section-title">
-              <div class="section-title-dot" style="background:var(--teal)"></div>
-              Markets Watchlist
-            </div>
-          </div>
-          <div class="wl-add-bar">
-            <input type="text" id="wlUrlInput"
-              placeholder="Paste a Polymarket or Opinion.trade market URL…"
-              onkeydown="if(event.key==='Enter') addWatchlistMarket()">
-            <button class="btn-base pm-btn" onclick="addWatchlistMarket()" id="wlAddBtn">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add Market
+          <!-- Sub-tab row -->
+          <div class="wtab-row">
+            <button class="wtab-btn active" id="wtab-btn-wallets" onclick="switchWTab('wallets',this)">
+              <span class="wtab-live-dot"></span>
+              Wallet Watchlist
+              <span class="wtab-badge">3 watching</span>
+            </button>
+            <button class="wtab-btn" id="wtab-btn-markets" onclick="switchWTab('markets',this)">
+              <span class="wtab-live-dot"></span>
+              Prediction Markets
+              <span class="wtab-badge" id="wtab-markets-badge">0 tracked</span>
+            </button>
+            <button class="wtab-btn indigo" id="wtab-btn-yield" onclick="switchWTab('yield',this)">
+              <span class="wtab-live-dot indigo"></span>
+              Yield Tools
+              <span class="wtab-badge">5 saved</span>
             </button>
           </div>
-          <div class="wl-refresh-bar" id="wlRefreshBar" style="display:none">
-            <span class="wl-loading-dot" id="wlPollDot"></span>
-            <span id="wlRefreshStatus">Prices refresh every 60s</span>
-          </div>
-          <div class="wl-grid" id="wlGrid">
-            <div class="wl-empty">
-              <div class="wl-empty-icon">👁</div>
-              No markets on your watchlist yet.<br>
-              Paste a Polymarket or Opinion.trade URL above to start tracking.
+
+          <!-- ── SUB-TAB: Wallet Watchlist ──────────────────────── -->
+          <div class="wtab-panel active" id="wtab-wallets">
+            <div class="wsec-header">
+              <span class="wsec-count">3 wallets</span>
+              <button class="wsec-add-btn" onclick="openModal('manageWallets')">
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                Add Wallet
+              </button>
+            </div>
+            <div class="wv-grid">
+
+              <div class="wv-card" id="wv-card-1">
+                <div class="wv-top">
+                  <div class="wv-body">
+                    <div class="wv-label">Whale Alpha</div>
+                    <div class="wv-addr">0x3fC9…a4B2</div>
+                    <div class="wv-meta">
+                      <span class="wv-chain">ETH</span>
+                      <span class="wv-live"><span class="wv-live-dot"></span>Live</span>
+                      <span class="wv-ts">Updated 2m ago</span>
+                    </div>
+                  </div>
+                  <div class="wv-price-block">
+                    <div class="wv-balance">$4,218,330</div>
+                    <div class="wv-change up">+$84,200 (2.0%)</div>
+                  </div>
+                </div>
+                <div class="wv-activity">
+                  <div class="wv-act-row"><span class="wv-act-type swap">Swap</span><span class="wv-act-amt">500K USDC → ETH</span><span class="wv-act-ts">2m ago</span></div>
+                  <div class="wv-act-row"><span class="wv-act-type recv">Recv</span><span class="wv-act-amt">12.4 ETH from 0x8a3…</span><span class="wv-act-ts">1h ago</span></div>
+                </div>
+              </div>
+
+              <div class="wv-card">
+                <div class="wv-top">
+                  <div class="wv-body">
+                    <div class="wv-label">DeFi Dev</div>
+                    <div class="wv-addr">vitalik.eth</div>
+                    <div class="wv-meta">
+                      <span class="wv-chain">ETH</span>
+                      <span class="wv-live"><span class="wv-live-dot"></span>Live</span>
+                      <span class="wv-ts">Updated 14m ago</span>
+                    </div>
+                  </div>
+                  <div class="wv-price-block">
+                    <div class="wv-balance">$1,052,880</div>
+                    <div class="wv-change down">−$12,100 (−1.1%)</div>
+                  </div>
+                </div>
+                <div class="wv-activity">
+                  <div class="wv-act-row"><span class="wv-act-type send">Send</span><span class="wv-act-amt">2,000 DAI to 0x71f…</span><span class="wv-act-ts">14m ago</span></div>
+                </div>
+              </div>
+
+              <div class="wv-card">
+                <div class="wv-top">
+                  <div class="wv-body">
+                    <div class="wv-label">Arbitrage Bot</div>
+                    <div class="wv-addr">0xB91D…c3E7</div>
+                    <div class="wv-meta">
+                      <span class="wv-chain">ARB</span>
+                      <span class="wv-live"><span class="wv-live-dot"></span>Live</span>
+                      <span class="wv-ts">Updated 31m ago</span>
+                    </div>
+                  </div>
+                  <div class="wv-price-block">
+                    <div class="wv-balance">$228,450</div>
+                    <div class="wv-change up">+$3,400 (1.5%)</div>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </div>
 
-          <!-- Divider -->
-          <div style="margin:2.5rem 0 1.5rem; border-top:1px solid var(--border-low);"></div>
-
-          <!-- Web Links -->
-          <div class="section-header" style="margin-bottom:1rem;">
-            <div class="section-title">
-              <div class="section-title-dot" style="background:var(--indigo)"></div>
-              Saved Links
+          <!-- ── SUB-TAB: Prediction Markets (existing functionality) ── -->
+          <div class="wtab-panel" id="wtab-markets">
+            <div class="wsec-header">
+              <span class="wsec-count" id="wtab-markets-count">0 markets</span>
+              <button class="wsec-add-btn" onclick="document.getElementById('wlUrlInput').focus()">
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                Add Market
+              </button>
+            </div>
+            <div class="wl-add-bar">
+              <input type="text" id="wlUrlInput"
+                placeholder="Paste a Polymarket or Opinion.trade market URL…"
+                onkeydown="if(event.key==='Enter') addWatchlistMarket()">
+              <button class="btn-base pm-btn" onclick="addWatchlistMarket()" id="wlAddBtn">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Market
+              </button>
+            </div>
+            <div class="wl-refresh-bar" id="wlRefreshBar" style="display:none">
+              <span class="wl-loading-dot" id="wlPollDot"></span>
+              <span id="wlRefreshStatus">Prices refresh every 60s</span>
+            </div>
+            <div class="wl-grid" id="wlGrid">
+              <div class="wl-empty">
+                <div class="wl-empty-icon">👁</div>
+                No markets on your watchlist yet.<br>
+                Paste a Polymarket or Opinion.trade URL above to start tracking.
+              </div>
             </div>
           </div>
-          <div class="wl-add-bar">
-            <input type="text" id="wlLinkUrlInput" placeholder="https://…" style="flex:2;"
-              onkeydown="if(event.key==='Enter') document.getElementById('wlLinkNameInput').focus()">
-            <input type="text" id="wlLinkNameInput" placeholder="Label (optional)" style="flex:1;"
-              onkeydown="if(event.key==='Enter') addWatcherLink()">
-            <button class="btn-base" onclick="addWatcherLink()" id="wlLinkAddBtn"
-              style="background:var(--indigo-10,rgba(108,114,255,0.12));color:var(--indigo);border-color:rgba(108,114,255,0.3);">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Save Link
-            </button>
-          </div>
-          <div id="watcherLinksGrid" style="display:flex;flex-direction:column;gap:0.5rem;margin-top:1rem;">
-            <div class="wl-empty" id="watcherLinksEmpty">
-              <div class="wl-empty-icon">🔗</div>
-              No saved links yet.<br>Paste any URL above to save it here.
+
+          <!-- ── SUB-TAB: Yield Tools ───────────────────────────── -->
+          <div class="wtab-panel" id="wtab-yield">
+            <div class="wsec-header">
+              <span class="wsec-count" id="wy-tools-count">0 tools saved</span>
+              <button class="wsec-add-btn indigo" onclick="switchWTab('yield', document.getElementById('wtab-btn-yield')); setTimeout(()=>document.getElementById('wlLinkUrlInput').focus(), 50)">
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                Add Yield Tool
+              </button>
+            </div>
+
+            <!-- Saved tools grid (rendered by renderWatcherLinks) -->
+            <div id="watcherLinksGrid" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1.5rem;">
+              <div class="wl-empty" id="watcherLinksEmpty">
+                <div class="wl-empty-icon">🔗</div>
+                No yield tools saved yet.<br>Paste a protocol URL below to add one.
+              </div>
+            </div>
+
+            <!-- Add bar -->
+            <div class="wl-add-bar">
+              <input type="text" id="wlLinkUrlInput" placeholder="https://pendle.finance, https://morpho.xyz…" style="flex:2;"
+                onkeydown="if(event.key==='Enter') document.getElementById('wlLinkNameInput').focus()">
+              <input type="text" id="wlLinkNameInput" placeholder="Label (optional)" style="flex:1;"
+                onkeydown="if(event.key==='Enter') { addWatcherLink(); updateWyCount(); }">
+              <button class="btn-base" onclick="addWatcherLink(); updateWyCount();" id="wlLinkAddBtn"
+                style="background:var(--indigo-10,rgba(108,114,255,0.12));color:var(--indigo);border-color:rgba(108,114,255,0.3);">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Save Tool
+              </button>
+            </div>
+
+            <!-- Divider + example tools -->
+            <div style="margin:1.75rem 0 1rem; border-top:1px solid var(--border);"></div>
+            <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:var(--t3);margin-bottom:0.75rem;">Popular Protocols</div>
+            <div class="wy-grid">
+              <a class="wy-card" href="https://pendle.finance" target="_blank">
+                <div class="wy-icon">PE</div>
+                <div class="wy-body"><div class="wy-name">Pendle Finance</div><div class="wy-desc">Fixed & variable yield tokenization — split PT/YT positions</div></div>
+                <div class="wy-meta"><span class="wy-tag">LST Yield</span></div>
+              </a>
+              <a class="wy-card" href="https://convexfinance.com" target="_blank">
+                <div class="wy-icon">CV</div>
+                <div class="wy-body"><div class="wy-name">Convex Finance</div><div class="wy-desc">Boosted Curve LP rewards without locking CRV yourself</div></div>
+                <div class="wy-meta"><span class="wy-tag">Curve Boost</span></div>
+              </a>
+              <a class="wy-card" href="https://yearn.fi" target="_blank">
+                <div class="wy-icon">YF</div>
+                <div class="wy-body"><div class="wy-name">Yearn Finance</div><div class="wy-desc">Auto-compounding vaults — single-asset and multi-strategy</div></div>
+                <div class="wy-meta"><span class="wy-tag">Auto-compound</span></div>
+              </a>
+              <a class="wy-card" href="https://app.eigenlayer.xyz" target="_blank">
+                <div class="wy-icon">EL</div>
+                <div class="wy-body"><div class="wy-name">EigenLayer</div><div class="wy-desc">Restaking protocol for additional yield on staked ETH</div></div>
+                <div class="wy-meta"><span class="wy-tag">Restaking</span></div>
+              </a>
+              <a class="wy-card" href="https://gearbox.fi" target="_blank">
+                <div class="wy-icon">GY</div>
+                <div class="wy-body"><div class="wy-name">Gearbox Protocol</div><div class="wy-desc">Credit accounts for leveraged yield strategies on top protocols</div></div>
+                <div class="wy-meta"><span class="wy-tag">Leverage</span></div>
+              </a>
             </div>
           </div>
 
         </div>
       </div>
+
 
       <div id="terminalTab" class="tab-pane">
         <div class="term-shell">
@@ -3428,6 +3708,13 @@ function switchTab(tab) {
         renderWatcherLinks();
         if (watchlist.length > 0) wlStartPolling();
         wlBackfillMissingTokens();
+        // Sync badges
+        updateWyCount();
+        const badge   = document.getElementById('wtab-markets-badge');
+        const countEl = document.getElementById('wtab-markets-count');
+        const n = watchlist.length;
+        if (badge)   badge.textContent   = n + (n === 1 ? ' market' : ' markets');
+        if (countEl) countEl.textContent = n + (n === 1 ? ' market' : ' markets');
     } else {
         wlStopPolling();
     }
@@ -6699,7 +6986,7 @@ function wlDrawChart(entry, canvasId) {
             }},
             scales: {
                 x: { display: false },
-                y: { display: false, min: 0, max: 1 }
+                y: { display: false, min: Math.max(0, Math.min(...vals) - 0.03), max: Math.min(1, Math.max(...vals) + 0.03) }
             }
         }
     });
@@ -8320,6 +8607,38 @@ if (wlIsFileProtocol()) {
         }
     });
 }
+
+// ── Watcher sub-tab switching ──────────────────────────────────────
+function updateWyCount() {
+    const n = typeof watcherLinks !== 'undefined' ? watcherLinks.length : 0;
+    const el = document.getElementById('wy-tools-count');
+    if (el) el.textContent = n + (n === 1 ? ' tool saved' : ' tools saved');
+}
+
+function switchWTab(name, btn) {
+    document.querySelectorAll('.wtab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.wtab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('wtab-' + name).classList.add('active');
+    btn.classList.add('active');
+    // Keep markets badge in sync with watchlist length
+    if (name === 'markets') {
+        const count = typeof watchlist !== 'undefined' ? watchlist.length : 0;
+        const badge = document.getElementById('wtab-markets-badge');
+        const countEl = document.getElementById('wtab-markets-count');
+        if (badge)   badge.textContent   = count + (count === 1 ? ' market' : ' markets');
+        if (countEl) countEl.textContent = count + (count === 1 ? ' market' : ' markets');
+    }
+}
+
+// ── Wallet card flash sim (preview only) ──────────────────────────
+setInterval(() => {
+    const card = document.getElementById('wv-card-1');
+    if (card) {
+        card.classList.remove('wv-flash');
+        void card.offsetWidth;
+        card.classList.add('wv-flash');
+    }
+}, 8000);
 
 </script>
 </body>
