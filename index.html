@@ -2522,8 +2522,8 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 </div>
                 <div class="button-group">
                   <button class="btn-base opinion-btn" onclick="openModal('opinionConfig')">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
-                    Configure &amp; Sync
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    Sync Wallets
                   </button>
                   <button class="btn-base danger-btn" onclick="deleteAllData('opinionMarkets')">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
@@ -2532,8 +2532,8 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 </div>
               </div>
               <div id="opinionConfigNotice" class="opinion-config-notice" onclick="openModal('opinionConfig')" style="display:none">
-                <span class="opinion-config-notice-icon">🔑</span>
-                <span><strong>API key required</strong> — Click "Configure &amp; Sync" to enter your Opinion API key and wallet address to load positions.</span>
+                <span class="opinion-config-notice-icon">👛</span>
+                <span><strong>Wallet required</strong> — Click "Sync Wallets" to add your BNB Chain wallet address and load positions.</span>
               </div>
               <div id="opinionStatusBar" class="opinion-status-bar" style="display:none">
                 <span id="opinionStatusText">No positions loaded</span>
@@ -2809,37 +2809,6 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 Save Tool
               </button>
             </div>
-
-            <!-- Divider + example tools -->
-            <div style="margin:1.75rem 0 1rem; border-top:1px solid var(--border);"></div>
-            <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.1em;color:var(--t3);margin-bottom:0.75rem;">Popular Protocols</div>
-            <div class="wy-grid">
-              <a class="wy-card" href="https://pendle.finance" target="_blank">
-                <div class="wy-icon">PE</div>
-                <div class="wy-body"><div class="wy-name">Pendle Finance</div><div class="wy-desc">Fixed & variable yield tokenization — split PT/YT positions</div></div>
-                <div class="wy-meta"><span class="wy-tag">LST Yield</span></div>
-              </a>
-              <a class="wy-card" href="https://convexfinance.com" target="_blank">
-                <div class="wy-icon">CV</div>
-                <div class="wy-body"><div class="wy-name">Convex Finance</div><div class="wy-desc">Boosted Curve LP rewards without locking CRV yourself</div></div>
-                <div class="wy-meta"><span class="wy-tag">Curve Boost</span></div>
-              </a>
-              <a class="wy-card" href="https://yearn.fi" target="_blank">
-                <div class="wy-icon">YF</div>
-                <div class="wy-body"><div class="wy-name">Yearn Finance</div><div class="wy-desc">Auto-compounding vaults — single-asset and multi-strategy</div></div>
-                <div class="wy-meta"><span class="wy-tag">Auto-compound</span></div>
-              </a>
-              <a class="wy-card" href="https://app.eigenlayer.xyz" target="_blank">
-                <div class="wy-icon">EL</div>
-                <div class="wy-body"><div class="wy-name">EigenLayer</div><div class="wy-desc">Restaking protocol for additional yield on staked ETH</div></div>
-                <div class="wy-meta"><span class="wy-tag">Restaking</span></div>
-              </a>
-              <a class="wy-card" href="https://gearbox.fi" target="_blank">
-                <div class="wy-icon">GY</div>
-                <div class="wy-body"><div class="wy-name">Gearbox Protocol</div><div class="wy-desc">Credit accounts for leveraged yield strategies on top protocols</div></div>
-                <div class="wy-meta"><span class="wy-tag">Leverage</span></div>
-              </a>
-            </div>
           </div>
 
         </div>
@@ -3073,20 +3042,19 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 
 <div id="opinionConfigModal" class="modal">
   <div class="modal-content">
-    <div class="modal-header">Opinion.Trade — Configure &amp; Sync</div>
+    <div class="modal-header">Opinion.Trade — Wallet Sync</div>
     <div class="modal-sub">
-      Enter your Opinion API key and wallet address (BNB Chain) to sync your positions.
-      Your API key is stored locally in your browser and never sent anywhere except the Opinion API.
-      <br><br>
-      Don't have an API key? <a href="https://docs.google.com/forms/d/1h7gp8UffZeXzYQ-lv4jcou9PoRNOqMAQhyW4IwZDnII" target="_blank" style="color:var(--orange)">Request one here →</a>
+      Add one or more BNB Chain wallet addresses to sync your Opinion positions.
+      Addresses are stored locally in your browser.
     </div>
     <div class="form-group">
-      <label class="form-label">Opinion API Key</label>
-      <input type="password" class="form-input opinion-focus" id="opinionApiKey" placeholder="Your Opinion API key…">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Wallet Address (BNB Chain)</label>
-      <input type="text" class="form-input opinion-focus" id="opinionWalletAddress" placeholder="0x…">
+      <label class="form-label" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Wallet Addresses (BNB Chain)</span>
+        <button onclick="opinionAddWalletRow()" style="background:rgba(249,115,22,0.12);border:1px solid rgba(249,115,22,0.3);color:var(--orange);border-radius:var(--r-xs);padding:2px 9px;font-size:0.72rem;font-weight:600;cursor:pointer;font-family:var(--ff-body);">
+          + Add Wallet
+        </button>
+      </label>
+      <div id="opinionWalletRows" style="display:flex;flex-direction:column;gap:0.5rem;"></div>
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal('opinionConfig')">Cancel</button>
@@ -3398,7 +3366,8 @@ let charts = { portfolio: null, protocols: null, etf: null };
 const chartColors = ['#00D4AA','#6C72FF','#38BDF8','#D946EF','#F97316','#F59E0B','#F43F5E','#E879F9','#22C55E','#FB923C','#A78BFA','#34D399'];
 
 // Opinion config stored separately so API key persists independently
-let opinionConfig = { apiKey: '', walletAddress: '' };
+// wallets[] is the new multi-wallet field; walletAddress kept for backwards compat
+let opinionConfig = { apiKey: atob('TVNDb2szRmFNNUNLY1ZxY2NSdlUxc2tHdEZTaEV5QzA='), walletAddress: '', wallets: [] };
 
 // Helper to safely parse strings to float, handling empty strings and nulls
 function safeFloat(val) {
@@ -3443,23 +3412,19 @@ async function loadData() {
         })();
     }
 
-    // 4. Load Opinion config and other settings
+    // 4. Load Opinion wallet config (API key is hardcoded, only wallets persist)
     try {
         const savedConfig = localStorage.getItem('opinion-config');
         if (savedConfig) {
-            opinionConfig = JSON.parse(savedConfig);
+            const parsed = JSON.parse(savedConfig);
+            // Preserve hardcoded key; only restore wallet addresses
+            opinionConfig.wallets = parsed.wallets || [];
+            opinionConfig.walletAddress = parsed.walletAddress || '';
             updateOpinionStatusBar();
         }
     } catch(e) {}
 
     loadDomeConfig();
-
-    if (opinionConfig.apiKey) {
-        document.getElementById('opinionApiKey').value = opinionConfig.apiKey;
-    }
-    if (opinionConfig.walletAddress) {
-        document.getElementById('opinionWalletAddress').value = opinionConfig.walletAddress;
-    }
 
     loadWatchlist();
     loadWatcherLinks();
@@ -3481,8 +3446,13 @@ async function saveData() {
 }
 
 function saveOpinionConfig() {
-    try { localStorage.setItem('opinion-config', JSON.stringify(opinionConfig)); }
-    catch(e) { console.error('Opinion config save error:', e); }
+    try {
+        // Never persist the API key — store only wallet addresses
+        localStorage.setItem('opinion-config', JSON.stringify({
+            wallets: opinionConfig.wallets,
+            walletAddress: opinionConfig.walletAddress
+        }));
+    } catch(e) { console.error('Opinion config save error:', e); }
 }
 
 // =============================================================================
@@ -3722,6 +3692,15 @@ function switchTab(tab) {
 
 function openModal(type) { 
     if (type === 'manageWallets') renderWalletList();
+    if (type === 'opinionConfig') {
+        const existing = opinionConfig.wallets && opinionConfig.wallets.length
+            ? opinionConfig.wallets
+            : (opinionConfig.walletAddress ? [opinionConfig.walletAddress] : []);
+        const rowsEl = document.getElementById('opinionWalletRows');
+        rowsEl.innerHTML = '';
+        if (existing.length > 0) existing.forEach(addr => opinionAddWalletRow(addr));
+        else opinionAddWalletRow();
+    }
     document.getElementById(`${type}Modal`).classList.add('active'); 
 }
 function closeModal(type) { document.getElementById(`${type}Modal`).classList.remove('active'); }
@@ -3778,13 +3757,21 @@ function updateOpinionStatusBar() {
     const statusText = document.getElementById('opinionStatusText');
     const walletDisplay = document.getElementById('opinionWalletDisplay');
 
-    if (opinionConfig.apiKey && opinionConfig.walletAddress) {
+    const wallets = opinionConfig.wallets && opinionConfig.wallets.length
+        ? opinionConfig.wallets
+        : (opinionConfig.walletAddress ? [opinionConfig.walletAddress] : []);
+
+    if (opinionConfig.apiKey && wallets.length > 0) {
         notice.style.display = 'none';
         statusBar.style.display = 'flex';
         const count = data.opinionMarkets ? data.opinionMarkets.length : 0;
         statusText.textContent = count > 0 ? `${count} positions loaded` : 'Ready to sync';
-        const addr = opinionConfig.walletAddress;
-        walletDisplay.textContent = addr.substring(0,6) + '…' + addr.substring(addr.length - 4);
+        if (wallets.length === 1) {
+            const addr = wallets[0];
+            walletDisplay.textContent = addr.substring(0,6) + '…' + addr.substring(addr.length - 4);
+        } else {
+            walletDisplay.textContent = `${wallets.length} wallets tracked`;
+        }
     } else {
         notice.style.display = 'flex';
         statusBar.style.display = 'none';
@@ -3795,15 +3782,15 @@ function updateOpinionStatusBar() {
 // OPINION CONFIG SAVE + SYNC TRIGGER
 // =============================================================================
 function saveAndSyncOpinion() {
-    const apiKey = document.getElementById('opinionApiKey').value.trim();
-    const walletAddress = document.getElementById('opinionWalletAddress').value.trim();
+    const inputs = document.querySelectorAll('#opinionWalletRows .opinion-wallet-input');
+    const wallets = Array.from(inputs).map(i => i.value.trim()).filter(v => v.length > 0);
 
-    if (!apiKey) { alert('Please enter your Opinion API key.'); return; }
-    if (!walletAddress || !walletAddress.startsWith('0x')) {
-        alert('Please enter a valid wallet address starting with 0x.'); return;
-    }
+    if (wallets.length === 0) { alert('Please enter at least one wallet address.'); return; }
+    const invalid = wallets.find(w => !w.startsWith('0x'));
+    if (invalid) { alert(`Invalid address: "${invalid}" — must start with 0x.`); return; }
 
-    opinionConfig = { apiKey, walletAddress };
+    opinionConfig.wallets = wallets;
+    opinionConfig.walletAddress = wallets[0];
     saveOpinionConfig();
     closeModal('opinionConfig');
     fetchOpinionPositions();
@@ -3900,7 +3887,8 @@ async function fetchPolymarketPositions() {
         else alert(`⚠️ Synced with errors.`);
 
         // Also sync Opinion if configured
-        if (opinionConfig.apiKey && opinionConfig.walletAddress) {
+        const _opWallets = opinionConfig.wallets && opinionConfig.wallets.length ? opinionConfig.wallets : (opinionConfig.walletAddress ? [opinionConfig.walletAddress] : []);
+        if (opinionConfig.apiKey && _opWallets.length > 0) {
             fetchOpinionPositions();
         }
 
@@ -3956,7 +3944,7 @@ async function pmFetch(url) {
 async function refreshActivity() {
     const btn = document.getElementById('activityRefreshBtn');
     const wallets = data.polymarketWallets || [];
-    const hasOpinion = !!(opinionConfig.apiKey && opinionConfig.walletAddress);
+    const hasOpinion = !!(opinionConfig.apiKey && (opinionConfig.wallets?.length || opinionConfig.walletAddress));
 
     // Show loading state in all containers
     const loading = (id, msg) => document.getElementById(id).innerHTML =
@@ -3974,9 +3962,9 @@ async function refreshActivity() {
 
     if (!hasOpinion) {
         document.getElementById('activityOpinionMoversContainer').innerHTML =
-            `<div class="activity-empty"><div class="activity-empty-icon">🔑</div>Configure Opinion via Configure &amp; Sync to load</div>`;
+            `<div class="activity-empty"><div class="activity-empty-icon">👛</div>Add a wallet via Sync Wallets to load Opinion data</div>`;
         document.getElementById('activityOpinionFilledContainer').innerHTML =
-            `<div class="activity-empty"><div class="activity-empty-icon">🔑</div>Configure Opinion via Configure &amp; Sync to load</div>`;
+            `<div class="activity-empty"><div class="activity-empty-icon">👛</div>Add a wallet via Sync Wallets to load Opinion data</div>`;
     } else {
         loading('activityOpinionMoversContainer', 'Loading Opinion positions…');
         loading('activityOpinionFilledContainer', 'Loading Opinion trades…');
@@ -4247,7 +4235,7 @@ async function opinionFetch(path, params = {}) {
 
 // ── Opinion Movers: positions with >5% price change in 24h ───────────────────
 async function fetchOpinionMovers() {
-    const wallet = opinionConfig.walletAddress.trim();
+    const wallet = (opinionConfig.wallets?.[0] || opinionConfig.walletAddress || '').trim();
     if (!wallet) return [];
 
     // Fetch all positions
@@ -4338,7 +4326,7 @@ function renderOpinionMovers(movers) {
 
 // ── Opinion Filled orders: trades in last 24h ─────────────────────────────────
 async function fetchOpinionFilledOrders() {
-    const wallet = opinionConfig.walletAddress.trim();
+    const wallet = (opinionConfig.wallets?.[0] || opinionConfig.walletAddress || '').trim();
     if (!wallet) return [];
 
     const since = Math.floor(Date.now() / 1000) - 86400; // Unix seconds
@@ -4445,8 +4433,12 @@ function renderOpinionFilledOrders(trades) {
 // OPINION API FETCH ENGINE
 // =============================================================================
 async function fetchOpinionPositions() {
-    if (!opinionConfig.apiKey || !opinionConfig.walletAddress) {
-        openModal('opinionConfig');
+    const wallets = opinionConfig.wallets && opinionConfig.wallets.length
+        ? opinionConfig.wallets
+        : (opinionConfig.walletAddress ? [opinionConfig.walletAddress] : []);
+
+    if (!opinionConfig.apiKey || wallets.length === 0) {
+        if (wallets.length === 0) openModal('opinionConfig');
         return;
     }
 
@@ -4463,8 +4455,6 @@ async function fetchOpinionPositions() {
         'https://proxy.opinion.trade:8443',
     ];
 
-    const walletAddr = opinionConfig.walletAddress.trim();
-    const endpoint = `/openapi/positions/user/${walletAddr}`;
     const limit = 20;
 
     async function tryFetch(baseUrl, urlPath, paramsObj = {}) {
@@ -4488,36 +4478,36 @@ async function fetchOpinionPositions() {
     let allPositions = [];
     let workingBaseUrl = null;
 
-    loadingStatus.textContent = 'Probing Opinion endpoints…';
-    
-    for (const baseUrl of BASE_URLS) {
-        try {
-            // 1. Fetch Positions
-            const listData = await tryFetch(baseUrl, endpoint, { page: 1, limit });
-            
-            const list = listData.list || (Array.isArray(listData) ? listData : []);
-            const total = listData.total || listData.totalCount || 0;
-            
-            workingBaseUrl = baseUrl;
-            allPositions.push(...list);
+    for (let wi = 0; wi < wallets.length; wi++) {
+        const walletAddr = wallets[wi].trim();
+        const endpoint = `/openapi/positions/user/${walletAddr}`;
+        loadingStatus.textContent = `Syncing wallet ${wi + 1}/${wallets.length}…`;
 
-            if (total > limit && list.length === limit) {
-                let page = 2;
-                while (allPositions.length < total) {
-                    const next = await tryFetch(baseUrl, endpoint, { page, limit });
-                    const nextList = next.list || [];
-                    if (nextList.length === 0) break;
-                    allPositions.push(...nextList);
-                    if (nextList.length < limit) break;
-                    page++;
+        for (const baseUrl of BASE_URLS) {
+            try {
+                const listData = await tryFetch(baseUrl, endpoint, { page: 1, limit });
+                const list = listData.list || (Array.isArray(listData) ? listData : []);
+                const total = listData.total || listData.totalCount || 0;
+
+                workingBaseUrl = baseUrl;
+                allPositions.push(...list.map(p => ({ ...p, _wallet: walletAddr })));
+
+                if (total > limit && list.length === limit) {
+                    let page = 2;
+                    while (allPositions.filter(p => p._wallet === walletAddr).length < total) {
+                        const next = await tryFetch(baseUrl, endpoint, { page, limit });
+                        const nextList = next.list || [];
+                        if (nextList.length === 0) break;
+                        allPositions.push(...nextList.map(p => ({ ...p, _wallet: walletAddr })));
+                        if (nextList.length < limit) break;
+                        page++;
+                    }
                 }
-            }
-            break; 
-        } catch (err) {
-            if (baseUrl === BASE_URLS[BASE_URLS.length - 1]) {
-                loadingOverlay.style.display = 'none';
-                alert(`❌ Failed to sync Opinion positions. Check API key.`);
-                return;
+                break;
+            } catch (err) {
+                if (baseUrl === BASE_URLS[BASE_URLS.length - 1]) {
+                    console.warn(`[Opinion] Failed for wallet ${walletAddr}:`, err.message);
+                }
             }
         }
     }
@@ -6237,8 +6227,8 @@ async function wlFetchOpinionMarket(marketId) {
     }
 
     // 3. Fallback: live positions scan (for markets in user portfolio)
-    if (opinionConfig.walletAddress) {
-        const wallet = opinionConfig.walletAddress.trim();
+    if (opinionConfig.wallets?.length || opinionConfig.walletAddress) {
+        const wallet = (opinionConfig.wallets?.[0] || opinionConfig.walletAddress).trim();
         let allPos = [], page = 1;
         while (true) {
             const posData = await opinionFetch(`/openapi/positions/user/${wallet}`, { page, limit: 50 });
@@ -8606,6 +8596,27 @@ if (wlIsFileProtocol()) {
             document.removeEventListener('click', onFirstWatchlistNav);
         }
     });
+}
+
+// ── Opinion multi-wallet modal helpers ────────────────────────────
+function opinionAddWalletRow(value = '') {
+    const container = document.getElementById('opinionWalletRows');
+    if (!container) return;
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:0.4rem;';
+    row.innerHTML = `
+        <input type="text" class="form-input opinion-focus opinion-wallet-input"
+            placeholder="0x…" value="${value}"
+            style="flex:1;font-family:var(--ff-mono);font-size:0.82rem;">
+        <button onclick="this.closest('div').remove()"
+            style="background:none;border:1px solid rgba(244,63,94,0.2);color:var(--t3);
+                   border-radius:var(--r-xs);padding:6px 9px;cursor:pointer;font-size:0.8rem;
+                   flex-shrink:0;transition:all 0.14s;"
+            onmouseover="this.style.color='var(--red)';this.style.borderColor='rgba(244,63,94,0.5)'"
+            onmouseout="this.style.color='var(--t3)';this.style.borderColor='rgba(244,63,94,0.2)'"
+            title="Remove wallet">✕</button>`;
+    container.appendChild(row);
+    row.querySelector('input').focus();
 }
 
 // ── Watcher sub-tab switching ──────────────────────────────────────
