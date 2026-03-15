@@ -3404,15 +3404,7 @@ async function loadData() {
                 if (!res.ok) return;
                 const cloudData = await res.json();
                 if (cloudData && cloudData.result) {
-                    const parsed = JSON.parse(cloudData.result);
-                    // Extract watcherLinks if bundled, then restore main data
-                    if (parsed._watcherLinks && Array.isArray(parsed._watcherLinks)) {
-                        watcherLinks = parsed._watcherLinks;
-                        localStorage.setItem('watcher-links', JSON.stringify(watcherLinks));
-                        renderWatcherLinks();
-                        delete parsed._watcherLinks;
-                    }
-                    data = parsed;
+                    data = JSON.parse(cloudData.result);
                     saveData();
                     updateUI();
                 }
@@ -3445,12 +3437,10 @@ async function saveData() {
 
         // Cloud sync only works when served via http/https (not file://)
         if (location.protocol === 'file:') return;
-        // Bundle watcherLinks into the cloud payload so they persist across devices
-        const payload = { ...data, _watcherLinks: watcherLinks };
         await fetch('/api/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(data)
         });
     } catch(e) { if (location.protocol !== 'file:') console.error('Cloud save error:', e); }
 }
@@ -3723,17 +3713,6 @@ function renderWalletList() {
     list.innerHTML = data.polymarketWallets.map((w, i) => `
         <div class="wallet-item">
             <span class="wallet-address">${w}</span>
-            <a href="https://debank.com/profile/${w}" target="_blank" rel="noopener"
-               title="View on DeBank"
-               style="display:flex;align-items:center;gap:0.3rem;padding:2px 8px;border-radius:4px;
-                      background:rgba(108,114,255,0.1);border:1px solid rgba(108,114,255,0.25);
-                      color:var(--indigo);font-size:0.68rem;font-weight:700;text-decoration:none;
-                      white-space:nowrap;flex-shrink:0;transition:background 0.15s;"
-               onmouseover="this.style.background='rgba(108,114,255,0.2)'"
-               onmouseout="this.style.background='rgba(108,114,255,0.1)'">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                DeBank
-            </a>
             <div class="wallet-remove" onclick="removeWallet(${i})">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -5974,8 +5953,6 @@ let watcherLinks = [];
 
 function saveWatcherLinks() {
     try { localStorage.setItem('watcher-links', JSON.stringify(watcherLinks)); } catch(e) {}
-    // Persist to cloud so links survive across devices/browsers
-    saveData();
 }
 function loadWatcherLinks() {
     try {
@@ -8101,6 +8078,27 @@ function setTickerItem(priceId, chgId, price, chgPct) {
 
 // Fetch Yahoo Finance via multiple CORS proxies in parallel — resolve on first success
 async function fetchYahoo(ySymbol) {
+    function parseYahooMeta(meta) {
+        const price  = meta.regularMarketPrice || meta.previousClose;
+        const prev   = meta.chartPreviousClose || meta.previousClose;
+        const chgPct = prev ? ((price - prev) / prev) * 100 : null;
+        return { price, chgPct };
+    }
+
+    // 1. Own Vercel serverless proxy — fast, no third-party latency
+    if (location.protocol === 'https:') {
+        try {
+            const r = await fetch(`/api/yahoo?s=${ySymbol}&_=${Date.now()}`,
+                { signal: AbortSignal.timeout(5000), cache: 'no-store' });
+            if (r.ok) {
+                const d = await r.json();
+                const meta = d?.chart?.result?.[0]?.meta;
+                if (meta?.regularMarketPrice) return parseYahooMeta(meta);
+            }
+        } catch(e) {}
+    }
+
+    // 2. Fallback: race two third-party CORS proxies
     const base = `https://query1.finance.yahoo.com/v8/finance/chart/${ySymbol}?interval=1d&range=2d&_=${Date.now()}`;
     const proxies = [
         `https://corsproxy.io/?url=${encodeURIComponent(base)}`,
@@ -8118,13 +8116,9 @@ async function fetchYahoo(ySymbol) {
         if (!meta?.regularMarketPrice) throw new Error('no price');
         return meta;
     };
-    // Race both proxies; whichever responds first with valid data wins
     try {
         const meta = await Promise.any(proxies.map(tryProxy));
-        const price  = meta.regularMarketPrice || meta.previousClose;
-        const prev   = meta.chartPreviousClose || meta.previousClose;
-        const chgPct = prev ? ((price - prev) / prev) * 100 : null;
-        return { price, chgPct };
+        return parseYahooMeta(meta);
     } catch(e) { return null; }
 }
 
