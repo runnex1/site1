@@ -8078,6 +8078,28 @@ function setTickerItem(priceId, chgId, price, chgPct) {
 
 // Fetch Yahoo Finance via multiple CORS proxies in parallel — resolve on first success
 async function fetchYahoo(ySymbol) {
+    // Parse a Yahoo Finance JSON response into { price, chgPct }
+    function parseYahooMeta(meta) {
+        const price  = meta.regularMarketPrice || meta.previousClose;
+        const prev   = meta.chartPreviousClose || meta.previousClose;
+        const chgPct = prev ? ((price - prev) / prev) * 100 : null;
+        return { price, chgPct };
+    }
+
+    // 1. Try our own Vercel serverless proxy first — fast, no third-party latency
+    if (location.protocol === 'https:') {
+        try {
+            const r = await fetch(`/api/yahoo?s=${ySymbol}&_=${Date.now()}`,
+                { signal: AbortSignal.timeout(5000), cache: 'no-store' });
+            if (r.ok) {
+                const d = await r.json();
+                const meta = d?.chart?.result?.[0]?.meta;
+                if (meta?.regularMarketPrice) return parseYahooMeta(meta);
+            }
+        } catch(e) {}
+    }
+
+    // 2. Fallback: race two third-party CORS proxies
     const base = `https://query1.finance.yahoo.com/v8/finance/chart/${ySymbol}?interval=1d&range=2d&_=${Date.now()}`;
     const proxies = [
         `https://corsproxy.io/?url=${encodeURIComponent(base)}`,
@@ -8095,13 +8117,9 @@ async function fetchYahoo(ySymbol) {
         if (!meta?.regularMarketPrice) throw new Error('no price');
         return meta;
     };
-    // Race both proxies; whichever responds first with valid data wins
     try {
         const meta = await Promise.any(proxies.map(tryProxy));
-        const price  = meta.regularMarketPrice || meta.previousClose;
-        const prev   = meta.chartPreviousClose || meta.previousClose;
-        const chgPct = prev ? ((price - prev) / prev) * 100 : null;
-        return { price, chgPct };
+        return parseYahooMeta(meta);
     } catch(e) { return null; }
 }
 
