@@ -141,58 +141,60 @@ html { height: 100%; }
 .wl-add-bar input::placeholder { color: var(--t3); }
 
 .wl-grid {
-  display: flex; flex-direction: column; gap: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 1rem;
 }
 .wl-card {
   background: var(--surf-1);
   border: 1px solid var(--border);
   border-radius: var(--r);
-  padding: 1rem 1.25rem;
+  padding: 0.75rem 1rem;
   transition: border-color 0.15s;
 }
 .wl-card:hover { border-color: var(--border-mid); }
 .wl-card-top {
-  display: flex; align-items: flex-start; gap: 1rem;
+  display: flex; align-items: flex-start; gap: 0.75rem;
 }
 .wl-card-body { flex: 1; min-width: 0; }
 .wl-card-title {
-  font-size: 0.9rem; font-weight: 600; color: var(--t1);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  margin-bottom: 0.25rem;
+  font-size: 0.82rem; font-weight: 600; color: var(--t1);
+  white-space: normal; overflow: visible; text-overflow: unset;
+  margin-bottom: 0.2rem; line-height: 1.4;
 }
 .wl-card-meta {
-  display: flex; align-items: center; gap: 0.75rem;
-  font-size: 0.75rem; color: var(--t3);
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.7rem; color: var(--t3); flex-wrap: wrap;
 }
 .wl-outcome-pill {
-  padding: 2px 8px; border-radius: 100px;
+  padding: 1px 7px; border-radius: 100px;
   background: var(--surf-3); border: 1px solid var(--border);
-  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
+  font-size: 0.67rem; font-weight: 700; letter-spacing: 0.04em;
   color: var(--t1);
 }
 .wl-price-block {
   text-align: right; flex-shrink: 0;
 }
 .wl-price {
-  font-family: var(--ff-mono); font-size: 1.35rem; font-weight: 700;
+  font-family: var(--ff-mono); font-size: 1.15rem; font-weight: 700;
   color: var(--t1); line-height: 1;
 }
 .wl-price-change {
-  font-family: var(--ff-mono); font-size: 0.75rem; margin-top: 3px;
+  font-family: var(--ff-mono); font-size: 0.68rem; margin-top: 2px;
 }
 .wl-price-change.up   { color: var(--green); }
 .wl-price-change.down { color: var(--red); }
 .wl-price-change.flat { color: var(--t3); }
 
 .wl-chart-wrap {
-  margin-top: 0.75rem; height: 52px; position: relative;
+  margin-top: 0.5rem; height: 110px; position: relative;
 }
-.wl-chart-wrap canvas { width: 100% !important; height: 52px !important; }
+.wl-chart-wrap canvas { width: 100% !important; height: 110px !important; }
 
 .wl-alerts {
-  margin-top: 0.85rem;
+  margin-top: 0.5rem;
   border-top: 1px solid var(--border);
-  padding-top: 0.75rem;
+  padding-top: 0.5rem;
 }
 .wl-alert-row {
   display: flex; align-items: center; gap: 0.5rem;
@@ -5944,7 +5946,17 @@ function saveWatchlist() {
 function loadWatchlist() {
     try {
         const raw = localStorage.getItem('wl-data');
-        if (raw) watchlist = JSON.parse(raw);
+        if (raw) {
+            watchlist = JSON.parse(raw);
+            // Fix existing Opinion entries: if tokenIdNo is missing, re-derive
+            // pricesNo from pricesYes (1 - yesPrice) to correct any stale wrong data
+            watchlist.forEach(entry => {
+                if (entry.source === 'opinion' && !entry.tokenIdNo && entry.prices?.length > 0) {
+                    entry.pricesNo       = entry.prices.map(p => ({ t: p.t, p: parseFloat((1 - p.p).toFixed(4)) }));
+                    entry.currentPriceNo = entry.pricesNo[entry.pricesNo.length - 1].p;
+                }
+            });
+        }
     } catch(e) {}
 }
 
@@ -6405,6 +6417,12 @@ async function _doAddOpinionEntry(market, marketId, url) {
     if (tokenIdYes) pricesYes = await wlFetchOpinionPrices(tokenIdYes) || [];
     if (tokenIdNo)  pricesNo  = await wlFetchOpinionPrices(tokenIdNo)  || [];
 
+    // If NO token is missing or returned no data, derive NO prices as (1 - yesPrice)
+    // Opinion markets are binary: YES + NO = 1, so this is always correct
+    if (pricesYes.length > 0 && (!tokenIdNo || !pricesNo.length)) {
+        pricesNo = pricesYes.map(p => ({ t: p.t, p: parseFloat((1 - p.p).toFixed(4)) }));
+    }
+
     const currentPrice   = pricesYes.length ? pricesYes[pricesYes.length - 1].p : null;
     const currentPriceNo = pricesNo.length  ? pricesNo[pricesNo.length - 1].p   : null;
 
@@ -6820,6 +6838,11 @@ async function wlRefreshPrices() {
                 if (newPrices && newPrices.length > 0) {
                     entry.prices       = newPrices;
                     entry.currentPrice = newPrices[newPrices.length - 1].p;
+                    // Always re-derive NO prices from YES (1 - yesPrice) for accuracy
+                    if (!entry.tokenIdNo || !entry.pricesNo?.length) {
+                        entry.pricesNo       = newPrices.map(p => ({ t: p.t, p: parseFloat((1 - p.p).toFixed(4)) }));
+                        entry.currentPriceNo = entry.pricesNo[entry.pricesNo.length - 1].p;
+                    }
                 } else { anyFailed = true; }
             }
             if (entry.tokenIdNo) {
@@ -6956,9 +6979,9 @@ function wlDrawChart(entry, canvasId) {
         data: {
             labels,
             datasets: [{
-                data: vals, borderColor: color, borderWidth: 1.5,
+                data: vals, borderColor: color, borderWidth: 2,
                 pointRadius: 0, tension: 0.3, fill: true,
-                backgroundColor: isUp ? 'rgba(34,197,94,0.08)' : 'rgba(244,63,94,0.08)',
+                backgroundColor: isUp ? 'rgba(34,197,94,0.10)' : 'rgba(244,63,94,0.10)',
             }]
         },
         options: {
@@ -6976,7 +6999,7 @@ function wlDrawChart(entry, canvasId) {
             }},
             scales: {
                 x: { display: false },
-                y: { display: false, min: Math.max(0, Math.min(...vals) - 0.03), max: Math.min(1, Math.max(...vals) + 0.03) }
+                y: { display: false, min: Math.max(0, Math.min(...vals) - 0.015), max: Math.min(1, Math.max(...vals) + 0.015) }
             }
         }
     });
@@ -7059,7 +7082,7 @@ function wlCardHTML(entry) {
         <div class="wl-card" id="wl-card-${entry.id}" style="border-color:rgba(249,115,22,0.15);">
             <div class="wl-card-top">
                 <div class="wl-card-body">
-                    <div class="wl-card-title" title="${entry.title}">
+                    <div class="wl-card-title">
                         <a href="${entry.url}" target="_blank" style="color:inherit;text-decoration:none;"
                            onmouseover="this.style.color='var(--orange)'" onmouseout="this.style.color=''">${entry.title}</a>
                     </div>
@@ -7165,7 +7188,7 @@ function wlCardHTML(entry) {
     <div class="wl-card" id="wl-card-${entry.id}">
         <div class="wl-card-top">
             <div class="wl-card-body">
-                <div class="wl-card-title" title="${entry.title}">
+                <div class="wl-card-title">
                     <a href="${entry.url}" target="_blank" style="color:inherit;text-decoration:none;"
                        onmouseover="this.style.color='var(--teal)'" onmouseout="this.style.color=''">${entry.title}</a>
                 </div>
