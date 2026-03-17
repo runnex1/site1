@@ -8422,7 +8422,7 @@ async function fetchDailyNews() {
     const CACHE_KEY = 'vault_news_cache';
     const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
 
-    // ── Check cache first ────────────────────────────────────────────────────
+    // ── Check localStorage cache first ──────────────────────────────────────
     try {
         const cached = localStorage.getItem(CACHE_KEY);
         if (cached) {
@@ -8434,131 +8434,18 @@ async function fetchDailyNews() {
         }
     } catch(e) {}
 
-    // ── Step 1: fetch raw RSS headlines via CORS proxy ───────────────────────
-    async function fetchRSSHeadlines(rssUrl, maxItems) {
-        // On Vercel use server-side proxy to avoid CORS issues
-        const proxies = location.protocol === 'https:' ? [
-            `/api/rss?url=${encodeURIComponent(rssUrl)}`,
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}&_=${Date.now()}`,
-        ] : [
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}&_=${Date.now()}`,
-            `https://corsproxy.io/?url=${encodeURIComponent(rssUrl)}`,
-        ];
-        for (const proxy of proxies) {
-            try {
-                const r = await fetch(proxy, { signal: AbortSignal.timeout(10000), cache: 'no-store' });
-                if (!r.ok) continue;
-                let text = await r.text();
-                if (text.trimStart().startsWith('{')) {
-                    try { text = JSON.parse(text).contents || text; } catch(e) {}
-                }
-                const doc = new DOMParser().parseFromString(text, 'text/xml');
-                const items = Array.from(doc.querySelectorAll('item')).slice(0, maxItems);
-                if (!items.length) continue;
-                return items.map(item => {
-                    const t = s => (s?.textContent || '').replace(/<!\[CDATA\[|\]\]>/g,'').trim();
-                    let link = t(item.querySelector('link'));
-                    if (!link) link = item.querySelector('guid')?.textContent?.trim() || '#';
-                    return { title: t(item.querySelector('title')), link, pubDate: t(item.querySelector('pubDate')) };
-                });
-            } catch(e) {}
-        }
-        return [];
-    }
+    const labelMap = { crypto: 'Crypto', defi: 'DeFi', macro: 'Macro' };
 
-    const sources = [
-        // Crypto (broad)
-        { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', type: 'crypto', label: 'CoinDesk'      },
-        { url: 'https://cointelegraph.com/rss',                   type: 'crypto', label: 'CoinTelegraph' },
-        // DeFi-specific
-        { url: 'https://thedefiant.io/feed',                      type: 'defi',   label: 'The Defiant'  },
-        { url: 'https://blockworks.co/feed',                      type: 'defi',   label: 'Blockworks'   },
-        { url: 'https://dlnews.com/rss.xml',                      type: 'defi',   label: 'DL News'      },
-        // Macro
-        { url: 'https://feeds.reuters.com/reuters/businessNews',  type: 'macro',  label: 'Reuters'      },
-        { url: 'https://feeds.reuters.com/reuters/topNews',       type: 'macro',  label: 'Reuters'      },
-    ];
-
-    const settled = await Promise.allSettled(
-        sources.map(src => fetchRSSHeadlines(src.url, 4).then(items =>
-            items.map(i => ({ ...i, type: src.type, source: src.label }))
-        ))
-    );
-    const allHeadlines = settled.flatMap(s => s.status === 'fulfilled' ? s.value : []);
-
-    if (!allHeadlines.length) {
-        el.innerHTML = '<div class="brief-news-loading">Unable to fetch news feeds — check your connection.</div>';
-        return;
-    }
-
-    // ── Step 2: Groq/Llama ranks the headlines ───────────────────────────────
-    const GROQ_KEY = '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';
-    const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
-
-    // Truncate titles to 120 chars to keep token count low
-    const headlineList = allHeadlines.map((h, i) =>
-        `${i}|${h.type}|${h.source}|${h.title.slice(0, 120)}`
-    ).join('\n');
-
-    const prompt = `You are a financial news editor for a serious crypto/DeFi portfolio tracker. From the headlines below, select only genuinely important stories. Return at most: 3 crypto, 3 defi, 2 macro. Return fewer if fewer qualify. Return [] if nothing qualifies. Never pad.
-
-CRYPTO (type must stay "crypto") — include only: major exchange collapse/hack, significant regulatory decision (ETF approval/rejection, ban, new law passed), major stablecoin depeg, institutional/whale move >$500M. NEVER: BTC/ETH price moves, minor news, opinions.
-
-DEFI (type must stay "defi") — include only: major protocol hack or exploit, significant protocol upgrade or v2/v3 launch for a top-50 DeFi project, major tokenomics overhaul, new product launch by Uniswap/Aave/Curve/Compound/MakerDAO/Lido/Pendle/dYdX/GMX/Hyperliquid/EigenLayer or similar top protocols, governance vote that changes fundamental protocol parameters. NEVER: minor integrations, TVL updates, farming guides, price predictions, opinion pieces.
-
-MACRO (type must stay "macro") — include only stories directly affecting US or Japanese markets: Fed rate decision or emergency statement, Bank of Japan rate decision, US/Japan declaration of war or major military escalation, major US sanctions, US sovereign debt crisis, crash/surge >5% in NVDA/ARKK/QQQ. NEVER: ECB/BOE/SNB/RBA decisions, non-US/Japan geopolitics, PPI, earnings, index moves, analyst opinions.
-
-Headlines (index|type|source|title):
-${headlineList}
-
-Reply with ONLY a raw JSON array, no markdown:
-[{"index":0,"type":"defi","source":"Blockworks","title":"...","url":"..."}]`;
-
-    const linkMap = Object.fromEntries(allHeadlines.map((h, i) => [i, h.link]));
-
-    try {
-        const r = await fetch(GROQ_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${GROQ_KEY}`
-            },
-            signal: AbortSignal.timeout(20000),
-            body: JSON.stringify({
-                model: 'llama-3.1-8b-instant',
-                temperature: 0.1,
-                messages: [{ role: 'user', content: prompt }]
-            })
-        });
-
-        if (!r.ok) {
-            const errBody = await r.json().catch(() => ({}));
-            throw new Error(errBody?.error?.message || 'HTTP ' + r.status);
-        }
-
-        const data = await r.json();
-        const raw = data.choices?.[0]?.message?.content || '';
-        const clean = raw.replace(/```json|```/g, '').trim();
-        const start = clean.indexOf('['), end = clean.lastIndexOf(']');
-        if (start === -1) throw new Error('No JSON from Groq. Raw: ' + raw.slice(0, 300));
-
-        let items = JSON.parse(clean.slice(start, end + 1));
-        items = items.map(item => ({ ...item, url: linkMap[item.index] || item.url || '#' }));
-
-        if (!items.length) {
-            el.innerHTML = '<div class="brief-news-loading">No major market-moving news in the past 24h.</div>';
+    function renderItems(items) {
+        if (!items || !items.length) {
+            el.innerHTML = '<div class="brief-news-loading">No major market-moving news today.</div>';
             return;
         }
-
-        // Order: crypto → defi → macro
         const ordered = [
             ...items.filter(x => x.type === 'crypto'),
             ...items.filter(x => x.type === 'defi'),
             ...items.filter(x => x.type === 'macro'),
         ];
-
-        const labelMap = { crypto: 'Crypto', defi: 'DeFi', macro: 'Macro' };
-
         el.innerHTML = ordered.map(item => `
             <a class="brief-news-card" href="${item.url}" target="_blank" rel="noopener">
                 <span class="brief-news-card-tag ${item.type}">${labelMap[item.type] || item.type}</span>
@@ -8570,13 +8457,57 @@ Reply with ONLY a raw JSON array, no markdown:
                 </div>
             </a>
         `).join('');
-
-        // Save to cache for 2 hours
         try { localStorage.setItem(CACHE_KEY, JSON.stringify({ html: el.innerHTML, ts: Date.now() })); } catch(e) {}
+    }
 
+    // ── On Vercel: single call to /api/news (handles RSS + Groq server-side) ─
+    if (location.protocol === 'https:') {
+        try {
+            const r = await fetch('/api/news', { signal: AbortSignal.timeout(25000) });
+            if (r.ok) {
+                const data = await r.json();
+                renderItems(data.items);
+                return;
+            }
+        } catch(e) {
+            console.warn('[News] /api/news failed:', e.message);
+        }
+        el.innerHTML = '<div class="brief-news-loading">News unavailable — try again later.</div>';
+        return;
+    }
+
+    // ── On file:// fallback: fetch RSS directly with CORS proxies ────────────
+    // (no Groq ranking — just show raw headlines)
+    const SOURCES = [
+        { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', type: 'crypto', label: 'CoinDesk'      },
+        { url: 'https://cointelegraph.com/rss',                   type: 'crypto', label: 'CoinTelegraph' },
+        { url: 'https://thedefiant.io/feed',                      type: 'defi',   label: 'The Defiant'  },
+        { url: 'https://blockworks.co/feed',                      type: 'defi',   label: 'Blockworks'   },
+        { url: 'https://feeds.reuters.com/reuters/businessNews',  type: 'macro',  label: 'Reuters'      },
+    ];
+
+    async function fetchRSSLocal(src) {
+        const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(src.url)}&_=${Date.now()}`;
+        const r = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
+        if (!r.ok) throw new Error('proxy failed');
+        let text = await r.text();
+        if (text.trimStart().startsWith('{')) {
+            try { text = JSON.parse(text).contents || text; } catch(e) {}
+        }
+        const doc = new DOMParser().parseFromString(text, 'text/xml');
+        return Array.from(doc.querySelectorAll('item')).slice(0, 3).map(item => {
+            const t = s => (s?.textContent || '').replace(/<!\[CDATA\[|\]\]>/g,'').trim();
+            let link = t(item.querySelector('link')) || item.querySelector('guid')?.textContent?.trim() || '#';
+            return { title: t(item.querySelector('title')), url: link, type: src.type, source: src.label };
+        });
+    }
+
+    try {
+        const settled = await Promise.allSettled(SOURCES.map(fetchRSSLocal));
+        const items = settled.flatMap(s => s.status === 'fulfilled' ? s.value : []).slice(0, 8);
+        renderItems(items);
     } catch(e) {
-        console.error('Groq ranking error:', e);
-        el.innerHTML = `<div class="brief-news-loading">News error: ${e.message}</div>`;
+        el.innerHTML = `<div class="brief-news-loading">News unavailable (${e.message})</div>`;
     }
 }
 
