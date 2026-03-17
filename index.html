@@ -2661,7 +2661,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
             <button class="wtab-btn active" id="wtab-btn-wallets" onclick="switchWTab('wallets',this)">
               <span class="wtab-live-dot"></span>
               Wallet Watchlist
-              <span class="wtab-badge">3 watching</span>
+              <span class="wtab-badge" id="wtab-wallets-badge">0 wallets</span>
             </button>
             <button class="wtab-btn" id="wtab-btn-markets" onclick="switchWTab('markets',this)">
               <span class="wtab-live-dot"></span>
@@ -2677,87 +2677,46 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 
           <!-- ── SUB-TAB: Wallet Watchlist ──────────────────────── -->
           <div class="wtab-panel active" id="wtab-wallets">
-            <div class="wsec-header">
-              <span class="wsec-count">3 wallets</span>
-              <button class="wsec-add-btn" onclick="openModal('manageWallets')">
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                Add Wallet
-              </button>
+
+            <!-- Section: Yield Farming Wallets -->
+            <div style="margin-bottom:2rem;">
+              <div class="wsec-header" style="margin-bottom:0.85rem;">
+                <div style="display:flex;align-items:center;gap:0.6rem;">
+                  <span style="font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:var(--teal);">🌾 Yield Farming Wallets</span>
+                  <span id="wv-yield-count" style="font-size:0.62rem;font-weight:600;padding:1px 7px;border-radius:100px;background:var(--teal-10);border:1px solid rgba(0,212,170,0.2);color:var(--teal);font-family:var(--ff-mono);">0</span>
+                </div>
+                <button class="wsec-add-btn" onclick="openWatcherWalletModal('yield')">
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  Add Wallet
+                </button>
+              </div>
+              <div class="wv-grid" id="wv-yield-grid"></div>
             </div>
-            <div class="wv-grid">
 
-              <div class="wv-card" id="wv-card-1">
-                <div class="wv-top">
-                  <div class="wv-body">
-                    <div class="wv-label">Whale Alpha</div>
-                    <div class="wv-addr">0x3fC9…a4B2</div>
-                    <div class="wv-meta">
-                      <span class="wv-chain">ETH</span>
-                      <span class="wv-live"><span class="wv-live-dot"></span>Live</span>
-                      <span class="wv-ts">Updated 2m ago</span>
-                    </div>
-                  </div>
-                  <div class="wv-price-block">
-                    <div class="wv-balance">$4,218,330</div>
-                    <div class="wv-change up">+$84,200 (2.0%)</div>
-                  </div>
+            <!-- Section: Prediction Market Wallets -->
+            <div>
+              <div class="wsec-header" style="margin-bottom:0.85rem;">
+                <div style="display:flex;align-items:center;gap:0.6rem;">
+                  <span style="font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:var(--fuchsia);">🎯 Prediction Market Wallets</span>
+                  <span id="wv-pm-count" style="font-size:0.62rem;font-weight:600;padding:1px 7px;border-radius:100px;background:var(--fuchsia-10);border:1px solid rgba(217,70,239,0.2);color:var(--fuchsia);font-family:var(--ff-mono);">0</span>
                 </div>
-                <div class="wv-activity">
-                  <div class="wv-act-row"><span class="wv-act-type swap">Swap</span><span class="wv-act-amt">500K USDC → ETH</span><span class="wv-act-ts">2m ago</span></div>
-                  <div class="wv-act-row"><span class="wv-act-type recv">Recv</span><span class="wv-act-amt">12.4 ETH from 0x8a3…</span><span class="wv-act-ts">1h ago</span></div>
-                </div>
+                <button class="wsec-add-btn" style="border-color:rgba(217,70,239,0.25);background:var(--fuchsia-10);color:var(--fuchsia);"
+                  onmouseover="this.style.background='rgba(217,70,239,0.2)';this.style.borderColor='var(--fuchsia)'"
+                  onmouseout="this.style.background='var(--fuchsia-10)';this.style.borderColor='rgba(217,70,239,0.25)'"
+                  onclick="openWatcherWalletModal('pm')">
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                  Add Wallet
+                </button>
               </div>
-
-              <div class="wv-card">
-                <div class="wv-top">
-                  <div class="wv-body">
-                    <div class="wv-label">DeFi Dev</div>
-                    <div class="wv-addr">vitalik.eth</div>
-                    <div class="wv-meta">
-                      <span class="wv-chain">ETH</span>
-                      <span class="wv-live"><span class="wv-live-dot"></span>Live</span>
-                      <span class="wv-ts">Updated 14m ago</span>
-                    </div>
-                  </div>
-                  <div class="wv-price-block">
-                    <div class="wv-balance">$1,052,880</div>
-                    <div class="wv-change down">−$12,100 (−1.1%)</div>
-                  </div>
-                </div>
-                <div class="wv-activity">
-                  <div class="wv-act-row"><span class="wv-act-type send">Send</span><span class="wv-act-amt">2,000 DAI to 0x71f…</span><span class="wv-act-ts">14m ago</span></div>
-                </div>
-              </div>
-
-              <div class="wv-card">
-                <div class="wv-top">
-                  <div class="wv-body">
-                    <div class="wv-label">Arbitrage Bot</div>
-                    <div class="wv-addr">0xB91D…c3E7</div>
-                    <div class="wv-meta">
-                      <span class="wv-chain">ARB</span>
-                      <span class="wv-live"><span class="wv-live-dot"></span>Live</span>
-                      <span class="wv-ts">Updated 31m ago</span>
-                    </div>
-                  </div>
-                  <div class="wv-price-block">
-                    <div class="wv-balance">$228,450</div>
-                    <div class="wv-change up">+$3,400 (1.5%)</div>
-                  </div>
-                </div>
-              </div>
-
+              <div class="wv-grid" id="wv-pm-grid"></div>
             </div>
+
           </div>
 
           <!-- ── SUB-TAB: Prediction Markets (existing functionality) ── -->
           <div class="wtab-panel" id="wtab-markets">
             <div class="wsec-header">
               <span class="wsec-count" id="wtab-markets-count">0 markets</span>
-              <button class="wsec-add-btn" onclick="document.getElementById('wlUrlInput').focus()">
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                Add Market
-              </button>
             </div>
             <div class="wl-add-bar">
               <input type="text" id="wlUrlInput"
@@ -2831,11 +2790,11 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
             <div class="term-log" id="terminalLog">
               <div class="term-line tl-system">
                 <span class="tl-ts">--:--:--</span>
-                <span class="tl-body">AI-powered alert terminal. Describe any alert in plain English — set multiple at once.</span>
+                <span class="tl-body">Vault AI — ask about your portfolio, set alerts, or discuss crypto/DeFi strategy. Full portfolio context loaded.</span>
               </div>
               <div class="term-line tl-system">
                 <span class="tl-ts">--:--:--</span>
-                <span class="tl-body tl-hint">Examples — "alert when BTC hits 100k" · "notify if SPY drops below 550 and ETH falls under 2500" · "tell me when Trump wins Polymarket hits 65%" · "ping me if NVDA crashes below 900"</span>
+                <span class="tl-body tl-hint">Examples — "alert when BTC hits 100k" · "what's my biggest DeFi position?" · "how much do I have in prediction markets?" · "set alert if ETH drops below 2000 and BTC above 90k" · "what alerts are active?"</span>
               </div>
             </div>
 
@@ -2843,7 +2802,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               <div class="term-input-row">
                 <span class="term-ps1"><span class="term-ps1-user">vault</span><span class="term-ps1-sep">@</span><span class="term-ps1-host">alerts</span><span class="term-ps1-end"> ~ $</span></span>
                 <input class="term-input" id="terminalInput" type="text"
-                  placeholder="set alert when…"
+                  placeholder="Ask anything, or set an alert…"
                   onkeydown="if(event.key==='Enter') terminalSubmit()" autocomplete="off" spellcheck="false">
               </div>
               <div class="term-input-actions">
@@ -2913,6 +2872,30 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal('manageWallets')">Close</button>
       <button class="btn" style="background:var(--fuchsia);color:white" onclick="addNewWallet()">Add Wallet</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Watcher Wallet Add Modal ─────────────────────────────────────── -->
+<div id="watcherWalletModal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header" id="watcherWalletModalTitle">Add Wallet</div>
+    <div class="modal-sub" id="watcherWalletModalSub">Track any wallet. Opens a DeBank link for portfolio overview.</div>
+    <div id="watcherWalletList" style="display:flex;flex-direction:column;gap:0.45rem;margin-bottom:1rem;max-height:220px;overflow-y:auto;"></div>
+    <div class="form-group">
+      <label class="form-label">Address</label>
+      <input type="text" class="form-input" id="wwAddressInput" placeholder="0x… or ENS name"
+        onkeydown="if(event.key==='Enter') document.getElementById('wwLabelInput').focus()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Label <span style="color:var(--t3);font-weight:400;">(optional)</span></label>
+      <input type="text" class="form-input" id="wwLabelInput" placeholder="e.g. My Pendle Wallet"
+        onkeydown="if(event.key==='Enter') addWatcherWallet()">
+    </div>
+    <input type="hidden" id="wwCategoryInput" value="yield">
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('watcherWallet')">Close</button>
+      <button class="btn btn-primary" id="wwAddBtn" onclick="addWatcherWallet()">Add Wallet</button>
     </div>
   </div>
 </div>
@@ -3406,7 +3389,28 @@ async function loadData() {
                 if (!res.ok) return;
                 const cloudData = await res.json();
                 if (cloudData && cloudData.result) {
-                    data = JSON.parse(cloudData.result);
+                    const parsed = JSON.parse(cloudData.result);
+
+                    // Extract watcher-specific keys before assigning to data
+                    if (parsed._watcherLinks && Array.isArray(parsed._watcherLinks)) {
+                        watcherLinks = parsed._watcherLinks;
+                        localStorage.setItem('watcher-links', JSON.stringify(watcherLinks));
+                        renderWatcherLinks();
+                        delete parsed._watcherLinks;
+                    }
+                    if (parsed._watcherWallets && Array.isArray(parsed._watcherWallets)) {
+                        watcherWallets = parsed._watcherWallets;
+                        localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets));
+                        renderWatcherWallets();
+                        delete parsed._watcherWallets;
+                    }
+                    if (parsed._watchlist && Array.isArray(parsed._watchlist)) {
+                        watchlist = parsed._watchlist;
+                        localStorage.setItem('wl-data', JSON.stringify(watchlist));
+                        delete parsed._watchlist;
+                    }
+
+                    data = parsed;
                     saveData();
                     updateUI();
                 }
@@ -3430,6 +3434,7 @@ async function loadData() {
 
     loadWatchlist();
     loadWatcherLinks();
+    loadWatcherWallets();
 }
 
 async function saveData() {
@@ -3439,10 +3444,19 @@ async function saveData() {
 
         // Cloud sync only works when served via http/https (not file://)
         if (location.protocol === 'file:') return;
+
+        // Bundle all watcher data alongside portfolio data so everything
+        // is persisted to Vercel KV in one atomic write
+        const payload = {
+            ...data,
+            _watcherLinks:   (typeof watcherLinks   !== 'undefined' ? watcherLinks   : []),
+            _watcherWallets: (typeof watcherWallets !== 'undefined' ? watcherWallets : []),
+            _watchlist:      (typeof watchlist      !== 'undefined' ? watchlist      : []),
+        };
         await fetch('/api/sync', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
+            body: JSON.stringify(payload)
         });
     } catch(e) { if (location.protocol !== 'file:') console.error('Cloud save error:', e); }
 }
@@ -4266,11 +4280,16 @@ async function fetchOpinionMovers() {
             token_id: tokenId, interval: '1h', start_at: since24h
         });
 
-        const history = hist?.history || [];
+        const history = hist?.history || hist?.data || (Array.isArray(hist) ? hist : []);
         if (history.length < 2) return;
 
-        const price24hAgo = parseFloat(history[0].p);
-        const curPrice = parseFloat(history[history.length - 1].p);
+        const rawP = (item) => {
+            let v = parseFloat(item.p ?? item.price ?? item.last ?? item.close ?? 0);
+            if (v > 1) v = v / 100;
+            return v;
+        };
+        const price24hAgo = rawP(history[0]);
+        const curPrice = rawP(history[history.length - 1]);
         if (!price24hAgo || price24hAgo === 0) return;
 
         const pctChange = ((curPrice - price24hAgo) / price24hAgo) * 100;
@@ -5942,22 +5961,192 @@ let _wlCharts = {};          // chartjs instances keyed by id
 // ── Persist ───────────────────────────────────────────────────────────────────
 function saveWatchlist() {
     try { localStorage.setItem('wl-data', JSON.stringify(watchlist)); } catch(e) {}
+    saveData();
 }
 function loadWatchlist() {
     try {
         const raw = localStorage.getItem('wl-data');
         if (raw) {
             watchlist = JSON.parse(raw);
-            // Fix existing Opinion entries: if tokenIdNo is missing, re-derive
-            // pricesNo from pricesYes (1 - yesPrice) to correct any stale wrong data
+            // Fix existing Opinion entries:
+            // 1. Wipe any stale/wrong pricesYes so they get re-fetched fresh
+            // 2. Derive pricesNo as (1 - yesPrice) if tokenIdNo is absent
             watchlist.forEach(entry => {
-                if (entry.source === 'opinion' && !entry.tokenIdNo && entry.prices?.length > 0) {
-                    entry.pricesNo       = entry.prices.map(p => ({ t: p.t, p: parseFloat((1 - p.p).toFixed(4)) }));
-                    entry.currentPriceNo = entry.pricesNo[entry.pricesNo.length - 1].p;
+                if (entry.source === 'opinion') {
+                    // Clear cached prices so they are re-fetched with correct parsing
+                    entry.prices         = [];
+                    entry.pricesNo       = [];
+                    entry.currentPrice   = null;
+                    entry.currentPriceNo = null;
                 }
             });
         }
     } catch(e) {}
+}
+
+// ── Watcher Wallets ──────────────────────────────────────────────────────────
+// Each entry: { id, address, label, category: 'yield'|'pm', addedAt }
+let watcherWallets = [];
+
+function saveWatcherWallets() {
+    try { localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets)); } catch(e) {}
+    saveData();
+}
+
+function loadWatcherWallets() {
+    try {
+        const raw = localStorage.getItem('vault-watcher-wallets');
+        if (raw) watcherWallets = JSON.parse(raw);
+    } catch(e) {}
+    renderWatcherWallets();
+}
+
+function openWatcherWalletModal(category) {
+    const titleEl = document.getElementById('watcherWalletModalTitle');
+    const subEl   = document.getElementById('watcherWalletModalSub');
+    const addBtn  = document.getElementById('wwAddBtn');
+    const catEl   = document.getElementById('wwCategoryInput');
+    if (catEl) catEl.value = category;
+    if (titleEl) titleEl.textContent = category === 'yield' ? '🌾 Add Yield Farming Wallet' : '🎯 Add Prediction Market Wallet';
+    if (subEl)   subEl.textContent   = category === 'yield'
+        ? 'Track wallets active in DeFi protocols. DeBank link included.'
+        : 'Track wallets active on Polymarket or Opinion.trade.';
+    if (addBtn) {
+        addBtn.style.background = category === 'yield' ? 'var(--teal)' : 'var(--fuchsia)';
+        addBtn.style.borderColor = category === 'yield' ? 'var(--teal)' : 'var(--fuchsia)';
+    }
+    // Render existing wallets for this category in the list
+    renderWatcherWalletList(category);
+    document.getElementById('wwAddressInput').value = '';
+    document.getElementById('wwLabelInput').value   = '';
+    document.getElementById('watcherWalletModal').classList.add('active');
+    setTimeout(() => document.getElementById('wwAddressInput').focus(), 50);
+}
+
+function renderWatcherWalletList(category) {
+    const el = document.getElementById('watcherWalletList');
+    if (!el) return;
+    const filtered = watcherWallets.filter(w => w.category === category);
+    if (!filtered.length) {
+        el.innerHTML = '<div style="color:var(--t3);font-size:0.78rem;padding:0.25rem 0;">No wallets yet in this section.</div>';
+        return;
+    }
+    el.innerHTML = filtered.map(w => {
+        const display = w.label || (w.address.slice(0,8) + '…' + w.address.slice(-4));
+        const short   = w.address.slice(0,6) + '…' + w.address.slice(-4);
+        return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.65rem;
+            background:var(--surf-2);border:1px solid var(--border);border-radius:var(--r-sm);">
+            <span style="flex:1;font-size:0.82rem;font-weight:600;color:var(--t1);
+                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${display}</span>
+            <span style="font-family:var(--ff-mono);font-size:0.68rem;color:var(--t3);">${w.label ? short : ''}</span>
+            <button onclick="removeWatcherWallet('${w.id}')"
+                style="background:none;border:none;color:var(--t3);cursor:pointer;padding:2px;flex-shrink:0;"
+                onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--t3)'">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>`;
+    }).join('');
+}
+
+function addWatcherWallet() {
+    const addrEl  = document.getElementById('wwAddressInput');
+    const labelEl = document.getElementById('wwLabelInput');
+    const catEl   = document.getElementById('wwCategoryInput');
+    const address  = (addrEl?.value || '').trim();
+    const label    = (labelEl?.value || '').trim();
+    const category = catEl?.value || 'yield';
+
+    if (!address) { addrEl?.focus(); return; }
+    if (watcherWallets.find(w => w.address.toLowerCase() === address.toLowerCase() && w.category === category)) {
+        alert('Wallet already in this section.'); return;
+    }
+
+    watcherWallets.push({ id: Date.now().toString(), address, label, category, addedAt: Date.now() });
+    saveWatcherWallets();
+    if (addrEl) addrEl.value = '';
+    if (labelEl) labelEl.value = '';
+    renderWatcherWalletList(category);
+    renderWatcherWallets();
+}
+
+function removeWatcherWallet(id) {
+    const entry = watcherWallets.find(w => w.id === id);
+    watcherWallets = watcherWallets.filter(w => w.id !== id);
+    saveWatcherWallets();
+    if (entry) renderWatcherWalletList(entry.category);
+    renderWatcherWallets();
+}
+
+function renderWatcherWallets() {
+    renderWatcherWalletSection('yield', 'wv-yield-grid', 'wv-yield-count');
+    renderWatcherWalletSection('pm',    'wv-pm-grid',    'wv-pm-count');
+    // Update sub-tab badge
+    const badge = document.getElementById('wtab-wallets-badge');
+    if (badge) {
+        const total = watcherWallets.length;
+        badge.textContent = total + (total === 1 ? ' wallet' : ' wallets');
+    }
+}
+
+function renderWatcherWalletSection(category, gridId, countId) {
+    const grid  = document.getElementById(gridId);
+    const count = document.getElementById(countId);
+    if (!grid) return;
+
+    const wallets = watcherWallets.filter(w => w.category === category);
+    if (count) count.textContent = wallets.length;
+
+    if (!wallets.length) {
+        const emptyMsg = category === 'yield'
+            ? 'No yield farming wallets yet.<br><span style="font-size:0.72rem;opacity:0.6">Add wallets to track DeFi positions via DeBank.</span>'
+            : 'No prediction market wallets yet.<br><span style="font-size:0.72rem;opacity:0.6">Add wallets to track Polymarket / Opinion positions.</span>';
+        grid.innerHTML = `<div style="padding:1.5rem 0;color:var(--t3);font-size:0.82rem;grid-column:1/-1;">${emptyMsg}</div>`;
+        return;
+    }
+
+    const accentColor = category === 'yield' ? 'var(--teal)' : 'var(--fuchsia)';
+    const accentBg    = category === 'yield' ? 'rgba(0,212,170,0.1)' : 'rgba(217,70,239,0.1)';
+    const accentBdr   = category === 'yield' ? 'rgba(0,212,170,0.25)' : 'rgba(217,70,239,0.25)';
+    const debankLabel = category === 'yield' ? 'DeBank' : 'DeBank';
+
+    grid.innerHTML = wallets.map(w => {
+        const label    = w.label || (w.address.slice(0,6) + '…' + w.address.slice(-4));
+        const short    = w.address.slice(0,6) + '…' + w.address.slice(-4);
+        const isAddr   = w.address.startsWith('0x') || w.address.startsWith('0X');
+        const debankUrl = isAddr ? `https://debank.com/profile/${w.address}` : null;
+        const addedDate = new Date(w.addedAt).toLocaleDateString('en-US', { month:'short', day:'numeric' });
+
+        return `<div class="wv-card" style="border-color:rgba(255,255,255,0.06);">
+            <div class="wv-top">
+                <div class="wv-body">
+                    <div class="wv-label">${label}</div>
+                    ${w.label ? `<div class="wv-addr">${short}</div>` : ''}
+                    <div class="wv-meta" style="margin-top:0.4rem;display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
+                        ${debankUrl ? `
+                        <a href="${debankUrl}" target="_blank" rel="noopener"
+                            style="display:inline-flex;align-items:center;gap:0.25rem;padding:2px 8px;
+                                   border-radius:4px;background:${accentBg};border:1px solid ${accentBdr};
+                                   color:${accentColor};font-size:0.68rem;font-weight:700;text-decoration:none;white-space:nowrap;"
+                            onmouseover="this.style.opacity='0.75'" onmouseout="this.style.opacity='1'">
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                                <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                            ${debankLabel} ↗
+                        </a>` : ''}
+                        <span style="font-size:0.65rem;color:var(--t3);">Added ${addedDate}</span>
+                    </div>
+                </div>
+                <button onclick="removeWatcherWallet('${w.id}')" title="Remove wallet"
+                    style="background:none;border:none;color:var(--t3);cursor:pointer;padding:4px;
+                           align-self:flex-start;flex-shrink:0;border-radius:4px;transition:color 0.12s;"
+                    onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--t3)'">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+        </div>`;
+    }).join('');
 }
 
 // ── Watcher Links ─────────────────────────────────────────────────────────────
@@ -5965,6 +6154,7 @@ let watcherLinks = [];
 
 function saveWatcherLinks() {
     try { localStorage.setItem('watcher-links', JSON.stringify(watcherLinks)); } catch(e) {}
+    saveData();
 }
 function loadWatcherLinks() {
     try {
@@ -6276,13 +6466,68 @@ async function wlFetchOpinionMarket(marketId) {
 
 // ── Fetch Opinion price history for a tokenId ────────────────────────────────
 async function wlFetchOpinionPrices(tokenId) {
-    const startAt = Math.floor(Date.now() / 1000) - 365 * 86400; // 1 year back
-    const hist = await opinionFetch('/openapi/token/price-history', {
-        token_id: tokenId, interval: '1d', start_at: startAt
-    });
-    const history = hist?.history || (Array.isArray(hist) ? hist : []);
-    if (!history.length) return null;
-    return history.map(p => ({ t: p.t ?? p.timestamp, p: parseFloat(p.p ?? p.price) }));
+    if (!tokenId) return null;
+
+    // Try 1h for recent detail, then 1d for older markets
+    // start_at: 90 days back at 1h gives ~2160 points — enough for a smooth chart
+    const now = Math.floor(Date.now() / 1000);
+    const attempts = [
+        { interval: '1h',  start_at: now - 90  * 86400 },
+        { interval: '4h',  start_at: now - 180 * 86400 },
+        { interval: '1d',  start_at: now - 365 * 86400 },
+    ];
+
+    for (const params of attempts) {
+        const hist = await opinionFetch('/openapi/token/price-history', {
+            token_id: tokenId, ...params
+        });
+
+        const history = hist?.history || hist?.data || (Array.isArray(hist) ? hist : []);
+        if (!history.length) continue;
+
+        const mapped = history.map(p => {
+            let ts = p.t ?? p.ts ?? p.timestamp ?? p.time ?? p.date ?? p.createdAt ?? 0;
+            if (ts > 1e12) ts = Math.floor(ts / 1000); // ms → s
+            let price = parseFloat(p.p ?? p.price ?? p.last ?? p.lastPrice ?? p.close ?? p.value ?? 0);
+            if (price > 1) price = price / 100; // normalise 0-100 → 0-1
+            return { t: ts, p: price };
+        }).filter(p => p.t > 0 && p.p >= 0 && p.p <= 1);
+
+        if (!mapped.length) continue;
+
+        // Sort by timestamp ascending
+        mapped.sort((a, b) => a.t - b.t);
+
+        // Deduplicate: remove trailing run of identical prices (stale last-candle padding)
+        // Keep a point only if the price changed OR it's the very last real data point
+        const deduped = [];
+        for (let i = 0; i < mapped.length; i++) {
+            // Always keep first and last points
+            if (i === 0 || i === mapped.length - 1) { deduped.push(mapped[i]); continue; }
+            const prev = mapped[i - 1];
+            const next = mapped[i + 1];
+            // Drop point only if sandwiched between two identical prices (pure flat run)
+            // but keep it if price changed from previous OR changes to next
+            if (mapped[i].p !== prev.p || mapped[i].p !== next.p) {
+                deduped.push(mapped[i]);
+            }
+        }
+
+        // Trim trailing flat: if the last N points are all the same price, keep only the first of that run
+        if (deduped.length > 2) {
+            const lastPrice = deduped[deduped.length - 1].p;
+            let flatStart = deduped.length - 1;
+            while (flatStart > 0 && deduped[flatStart - 1].p === lastPrice) flatStart--;
+            // Only trim if the flat run is more than 20% of total points
+            const flatLen = deduped.length - flatStart;
+            if (flatLen > 3 && flatLen / deduped.length > 0.2) {
+                deduped.splice(flatStart + 1); // keep first of the flat run, remove the rest
+            }
+        }
+
+        return deduped;
+    }
+    return null;
 }
 
 // ── Add an Opinion.trade market to watchlist ──────────────────────────────────
@@ -7434,58 +7679,149 @@ function terminalParseNL(raw) {
     return { symbol: symbol.toUpperCase(), type: type || 'crypto', dir, target, label };
 }
 
-async function terminalParseWithAI(raw) {
+// ── Terminal conversation history (in-memory, not persisted) ─────────────────
+let _terminalHistory = [];   // [{ role: 'user'|'assistant', content: string }]
+
+// ── Build a context summary for the AI ───────────────────────────────────────
+function terminalBuildContext() {
+    const activeAlerts = terminalAlerts.filter(a => !a.triggered);
+    const firedAlerts  = terminalAlerts.filter(a =>  a.triggered);
+
+    const portfolioSummary = (() => {
+        const tw = (data.tokens||[]).reduce((s,t)=>s+t.value,0);
+        const tp = (data.protocols||[]).reduce((s,p)=>s+p.value,0);
+        const te = (data.etfs||[]).reduce((s,e)=>s+(e.shares*e.currentPrice),0);
+        const tpm= (data.predictionMarkets||[]).reduce((s,p)=>s+p.currentValue,0);
+        const top= (data.opinionMarkets||[]).reduce((s,p)=>s+p.currentValue,0);
+        const total = tw+tp+te+tpm+top;
+        const topTokens = [...(data.tokens||[])].sort((a,b)=>b.value-a.value).slice(0,5)
+            .map(t=>`${t.symbol} $${t.value.toFixed(0)}`).join(', ');
+        const topProtocols = [...(data.protocols||[])].sort((a,b)=>b.value-a.value).slice(0,5)
+            .map(p=>`${p.name} $${p.value.toFixed(0)}`).join(', ');
+        const topPM = [...(data.predictionMarkets||[]),...(data.opinionMarkets||[])]
+            .sort((a,b)=>b.currentValue-a.currentValue).slice(0,3)
+            .map(p=>`"${p.title.slice(0,40)}" ${p.outcome} $${p.currentValue.toFixed(0)}`).join('; ');
+        return `Total portfolio: $${total.toFixed(0)}. Wallet: $${tw.toFixed(0)}. DeFi: $${tp.toFixed(0)}. ETFs: $${te.toFixed(0)}. Prediction markets: $${(tpm+top).toFixed(0)}. Top tokens: ${topTokens||'none'}. Top protocols: ${topProtocols||'none'}. Top PM positions: ${topPM||'none'}.`;
+    })();
+
+    const alertsSummary = activeAlerts.length
+        ? activeAlerts.map(a => `${a.label} (now: ${a.currentPrice!=null ? terminalFmtPrice(a.currentPrice, a.type) : '?'})`).join(', ')
+        : 'none';
+
+    const firedSummary = firedAlerts.length
+        ? firedAlerts.slice(-3).map(a => a.label).join(', ')
+        : 'none';
+
+    return `You are Vault AI, an expert financial assistant embedded in a crypto/DeFi portfolio tracker called Vault.
+
+Current date: ${new Date().toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'})}.
+
+USER PORTFOLIO CONTEXT:
+${portfolioSummary}
+
+ACTIVE ALERTS (${activeAlerts.length}): ${alertsSummary}
+RECENTLY FIRED ALERTS: ${firedSummary}
+
+CAPABILITIES:
+- Answer questions about the user's portfolio, positions, PnL
+- Discuss crypto/DeFi/prediction market strategies and analysis
+- Set price alerts (respond with JSON when user wants an alert)
+- Explain what triggered alerts mean
+- General crypto/DeFi knowledge
+
+RESPONSE FORMAT:
+- If the user wants to SET A PRICE/MARKET ALERT: respond with ONLY a JSON array like [{"symbol":"BTC","type":"crypto","dir":"above","target":100000}]
+  Types: "crypto", "etf", "stock", "polymarket", "opinion"
+  For prediction markets, target is 0-1 decimal (e.g. 65% = 0.65)
+  Multiple alerts: return multiple objects in the array
+
+- If the user wants to SET A REAL-WORLD EVENT ALERT (e.g. "alert me when the war with Iran ends", "notify me if Trump is impeached", "ping me when the Fed cuts rates"): respond with ONLY a JSON array like [{"type":"event","condition":"The Iran-Israel war has officially ended or a ceasefire agreement has been signed","label":"Iran war ends"}]
+  The "condition" field must be a clear, verifiable statement that can be checked against news headlines.
+  The "label" field is a short human-readable name for the alert.
+
+- For ALL OTHER MESSAGES: respond in plain text, be concise (2-4 sentences max), use terminal-style language, no markdown headers or bullet lists.
+  Keep responses short — this is a terminal, not a chat window.`;
+}
+
+async function terminalAskAI(userMessage) {
     const GROQ_KEY = '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';
-    const prompt = `You are a financial alert parser. Parse the user's natural language alert request into structured JSON.
+    const systemPrompt = terminalBuildContext();
 
-Rules:
-- "type" must be one of: "crypto", "etf", "stock", "polymarket", "opinion"
-- "dir" must be "above" or "below"
-- "target" is always a plain number (no $ or %). For crypto prices use USD value. For Polymarket/prediction markets use decimal 0-1 (e.g. 65% → 0.65)
-- "symbol" is the ticker (e.g. BTC, ETH, SPY, AAPL) or a short market slug for polymarket/opinion
-- If the user sets multiple alerts in one message, return an array with multiple objects
-- If you cannot parse a valid alert, return []
-
-Examples:
-"alert me when BTC hits 100k" → [{"symbol":"BTC","type":"crypto","dir":"above","target":100000}]
-"notify if SPY drops below 550" → [{"symbol":"SPY","type":"etf","dir":"below","target":550}]
-"tell me when Trump wins Polymarket hits 65%" → [{"symbol":"trump-wins","type":"polymarket","dir":"above","target":0.65}]
-"ping me if ETH falls under 3000 and BTC above 120k" → [{"symbol":"ETH","type":"crypto","dir":"below","target":3000},{"symbol":"BTC","type":"crypto","dir":"above","target":120000}]
-
-User input: "${raw.replace(/"/g, "'")}"
-
-Reply with ONLY a raw JSON array, no markdown, no explanation.`;
+    // Add user message to history
+    _terminalHistory.push({ role: 'user', content: userMessage });
+    // Keep last 10 exchanges to avoid token limits
+    if (_terminalHistory.length > 20) _terminalHistory = _terminalHistory.slice(-20);
 
     const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
             model: 'llama-3.1-8b-instant',
-            temperature: 0,
-            messages: [{ role: 'user', content: prompt }]
+            temperature: 0.2,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                ..._terminalHistory
+            ]
         })
     });
     if (!r.ok) throw new Error('Groq HTTP ' + r.status);
-    const data = await r.json();
-    const text = data.choices?.[0]?.message?.content || '';
-    const clean = text.replace(/```json|```/g, '').trim();
-    const start = clean.indexOf('['), end = clean.lastIndexOf(']');
-    if (start === -1) return [];
-    const parsed = JSON.parse(clean.slice(start, end + 1));
+    const resp = await r.json();
+    const text = (resp.choices?.[0]?.message?.content || '').trim();
 
-    // Build label for each result
-    return parsed.map(p => {
-        const isPM = p.type === 'polymarket' || p.type === 'opinion';
-        const targetFmt = isPM
-            ? (p.target * 100).toFixed(0) + '¢'
-            : '$' + (p.target >= 1_000_000
-                ? (p.target / 1_000_000).toFixed(1) + 'M'
-                : p.target >= 1000
-                    ? (p.target / 1000).toFixed(0) + 'K'
-                    : p.target.toLocaleString('en-US'));
-        return { ...p, symbol: p.symbol.toUpperCase(), label: p.symbol.toUpperCase() + ' ' + p.dir + ' ' + targetFmt };
-    });
+    // Add assistant response to history
+    _terminalHistory.push({ role: 'assistant', content: text });
+
+    return text;
+}
+
+// Detect if the AI response is an alert JSON array or a plain text reply
+function terminalParseAIResponse(text) {
+    const clean = text.replace(/```json|```/g, '').trim();
+    const start = clean.indexOf('[');
+    const end   = clean.lastIndexOf(']');
+    if (start === -1) return { type: 'message', text };
+
+    try {
+        const parsed = JSON.parse(clean.slice(start, end + 1));
+        if (!Array.isArray(parsed) || !parsed.length) return { type: 'message', text };
+
+        // Event alert: { type: "event", condition: "...", label: "..." }
+        if (parsed[0].type === 'event' || parsed.every(p => p.condition)) {
+            const alerts = parsed.map(p => ({
+                type:      'event',
+                condition: p.condition,
+                label:     p.label || p.condition.slice(0, 60),
+                symbol:    '🌍',
+            }));
+            return { type: 'alerts', alerts };
+        }
+
+        // Price/market alert: { symbol, dir, target, type }
+        if (parsed[0].symbol && parsed[0].dir && parsed[0].target !== undefined) {
+            const alerts = parsed.map(p => {
+                const isPM = p.type === 'polymarket' || p.type === 'opinion';
+                const targetFmt = isPM
+                    ? (p.target * 100).toFixed(0) + '¢'
+                    : '$' + (p.target >= 1_000_000
+                        ? (p.target / 1_000_000).toFixed(1) + 'M'
+                        : p.target >= 1000
+                            ? (p.target / 1000).toFixed(0) + 'K'
+                            : p.target.toLocaleString('en-US'));
+                return { ...p, symbol: p.symbol.toUpperCase(), label: p.symbol.toUpperCase() + ' ' + p.dir + ' ' + targetFmt };
+            });
+            return { type: 'alerts', alerts };
+        }
+    } catch(e) {}
+    return { type: 'message', text };
+}
+
+// Legacy function kept for fallback only
+async function terminalParseWithAI(raw) {
+    const text = await terminalAskAI(raw);
+    const parsed = terminalParseAIResponse(text);
+    if (parsed.type === 'alerts') return parsed.alerts;
+    return []; // not an alert command — handled by terminalSubmit directly
 }
 
 async function terminalSubmit() {
@@ -7497,70 +7833,219 @@ async function terminalSubmit() {
     input.value = '';
     btn.disabled = true;
     terminalLog('> ' + raw, 'tl-cmd');
-    terminalSetStatus('thinking…', false);
+    terminalSetStatus('thinking…', true);
 
-    let parsedList = [];
-
-    // Try Groq AI first
+    // ── Ask the AI (conversational, with full portfolio + alert context) ──────
+    let aiText = null;
     try {
-        parsedList = await terminalParseWithAI(raw);
+        aiText = await terminalAskAI(raw);
     } catch(e) {
-        terminalLog('⚠ AI unavailable, using fallback parser', 'tl-warn');
+        terminalLog('⚠ AI offline: ' + e.message, 'tl-warn');
     }
 
-    // Fallback to regex parser if AI returned nothing
-    if (!parsedList.length) {
-        const fallback = terminalParseNL(raw);
-        if (fallback) parsedList = [fallback];
-    }
+    if (aiText) {
+        const parsed = terminalParseAIResponse(aiText);
 
-    if (!parsedList.length) {
-        terminalLog('Could not parse — try: "alert when BTC above 100k" or "notify if SPY drops below 550"', 'tl-error');
+        if (parsed.type === 'alerts') {
+            // ── AI decided this is an alert command ───────────────────────────
+            for (const p of parsed.alerts) {
+                const alert = {
+                    id: Date.now().toString() + Math.random().toString(36).slice(2,5),
+                    symbol:  p.symbol,
+                    type:    p.type,
+                    dir:     p.dir,
+                    target:  p.target,
+                    label:   p.label,
+                    currentPrice: null,
+                    triggered: false,
+                };
+                terminalAlerts.push(alert);
+                terminalSave();
+                terminalRenderAlerts();
+                terminalLog('✓ Alert set: ' + alert.label, 'tl-ok');
+
+                if (alert.type === 'event') {
+                    terminalLog('↳ Checking news now for: ' + (alert.condition || alert.label).slice(0, 80), 'tl-info');
+                    // Check immediately — don't wait for next poll
+                    terminalCheckEventAlert(alert);
+                } else {
+                    try {
+                        const price = await terminalFetchPrice(alert);
+                        if (price !== null) {
+                            alert.currentPrice = price;
+                            terminalSave();
+                            terminalRenderAlerts();
+                            terminalLog('↳ Current price: ' + terminalFmtPrice(price, alert.type), 'tl-info');
+                            terminalCheckAlert(alert);
+                        } else {
+                            terminalLog('↳ Price unavailable — will check on next poll', 'tl-warn');
+                        }
+                    } catch(err) {
+                        terminalLog('↳ Price fetch error: ' + err.message, 'tl-warn');
+                    }
+                }
+            }
+            terminalSetStatus(terminalAlerts.filter(a => !a.triggered).length + ' active', true);
+            terminalStartPolling();
+
+        } else {
+            // ── AI replied conversationally ───────────────────────────────────
+            // Split into lines so long responses wrap nicely in the terminal log
+            const lines = aiText.split('\n').filter(l => l.trim());
+            lines.forEach((line, i) => terminalLog(line.trim(), i === 0 ? 'tl-ok' : 'tl-info'));
+            const active = terminalAlerts.filter(a => !a.triggered).length;
+            terminalSetStatus(active > 0 ? active + ' active' : 'ready', active > 0);
+        }
+
         btn.disabled = false;
-        terminalSetStatus('idle', false);
         return;
     }
 
-    for (const parsed of parsedList) {
+    // ── Full AI fallback: try local regex parser ──────────────────────────────
+    const fallback = terminalParseNL(raw);
+    if (fallback) {
         const alert = {
             id: Date.now().toString() + Math.random().toString(36).slice(2,5),
-            symbol:  parsed.symbol,
-            type:    parsed.type,
-            dir:     parsed.dir,
-            target:  parsed.target,
-            label:   parsed.label,
+            symbol:  fallback.symbol,
+            type:    fallback.type,
+            dir:     fallback.dir,
+            target:  fallback.target,
+            label:   fallback.label,
             currentPrice: null,
             triggered: false,
         };
-
         terminalAlerts.push(alert);
         terminalSave();
         terminalRenderAlerts();
-        terminalLog('✓ Alert set: ' + alert.label, 'tl-ok');
-
-        // Fetch price immediately
+        terminalLog('✓ Alert set (offline parser): ' + alert.label, 'tl-ok');
         try {
             const price = await terminalFetchPrice(alert);
             if (price !== null) {
                 alert.currentPrice = price;
                 terminalSave();
                 terminalRenderAlerts();
-                terminalLog('Current price: ' + terminalFmtPrice(price, alert.type), 'tl-info');
+                terminalLog('↳ Current price: ' + terminalFmtPrice(price, alert.type), 'tl-info');
                 terminalCheckAlert(alert);
-            } else {
-                terminalLog('⚠ Could not fetch price for ' + alert.symbol + ' — will retry on next poll', 'tl-warn');
             }
-        } catch(err) {
-            terminalLog('Price fetch error: ' + err.message, 'tl-warn');
-        }
+        } catch(err) {}
+        terminalSetStatus(terminalAlerts.filter(a => !a.triggered).length + ' active', true);
+        terminalStartPolling();
+    } else {
+        terminalLog('Could not understand that. Try: "alert when BTC hits 100k", or ask me anything about your portfolio.', 'tl-error');
+        terminalSetStatus('idle', false);
     }
 
-    terminalSetStatus(terminalAlerts.filter(a => !a.triggered).length + ' active', true);
-    terminalStartPolling();
     btn.disabled = false;
 }
 
 // ── Price fetchers ────────────────────────────────────────────────────────────
+// ── Event alert checker — routes through /api/event-check on Vercel ─────────
+async function terminalCheckEventAlert(alert) {
+    if (alert.triggered) return;
+    const condition = alert.condition || alert.label;
+
+    function fireEventAlert() {
+        alert.triggered = true;
+        alert.currentPrice = 1;
+        terminalSave();
+        terminalRenderAlerts();
+        terminalLog('🔔 EVENT ALERT FIRED: ' + alert.label, 'tl-warn');
+        wlShowToast('🔔 Event Alert Triggered', alert.label, null);
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator(); const gain = ctx.createGain();
+            osc.connect(gain); gain.connect(ctx.destination);
+            osc.type = 'sine'; osc.frequency.setValueAtTime(660, ctx.currentTime);
+            gain.gain.setValueAtTime(0.3, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+            osc.start(); osc.stop(ctx.currentTime + 0.8);
+        } catch(e) {}
+        try {
+            if ('Notification' in window && Notification.permission === 'granted')
+                new Notification('Vault Alert 🔔', { body: alert.label });
+        } catch(e) {}
+    }
+
+    // ── On Vercel: use server-side /api/event-check (no CORS, Google News) ────
+    if (location.protocol === 'https:') {
+        try {
+            terminalLog('↳ Scanning news for: ' + alert.label, 'tl-system');
+            const r = await fetch('/api/event-check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ condition, label: alert.label }),
+                signal: AbortSignal.timeout(20000),
+            });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const data = await r.json();
+
+            terminalLog('↳ Verdict: ' + (data.verdict || '?') + (data.headlines?.length ? ' (' + data.headlines.length + '+ headlines checked)' : ''), 'tl-system');
+
+            if (data.verdict === 'NO_NEWS') {
+                terminalLog('⚠ No news found — will retry next poll', 'tl-warn');
+            } else if (data.triggered) {
+                fireEventAlert();
+            }
+        } catch(e) {
+            terminalLog('⚠ Event check failed: ' + e.message, 'tl-warn');
+        }
+        return;
+    }
+
+    // ── file:// fallback: try CORS proxies directly ────────────────────────────
+    const GROQ_KEY = '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';
+    const searchQ = encodeURIComponent(condition.slice(0, 80));
+    const SOURCES = [
+        `https://news.google.com/rss/search?q=${searchQ}&hl=en-US&gl=US&ceid=US:en`,
+        'https://feeds.reuters.com/reuters/topNews',
+        'https://feeds.reuters.com/reuters/worldNews',
+    ];
+
+    const headlines = [];
+    await Promise.allSettled(SOURCES.map(async (url) => {
+        for (const proxy of [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}&_=${Date.now()}`,
+            `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+        ]) {
+            try {
+                const r = await fetch(proxy, { signal: AbortSignal.timeout(7000) });
+                if (!r.ok) continue;
+                let raw = await r.text();
+                if (raw.trimStart().startsWith('{')) { try { raw = JSON.parse(raw).contents || raw; } catch(e) {} }
+                const titles = [...raw.matchAll(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/gi)];
+                titles.slice(1, 12).forEach(m => {
+                    const t = (m[1]||'').replace(/<[^>]+>/g,'').trim().slice(0,200);
+                    if (t.length > 10) headlines.push(t);
+                });
+                break;
+            } catch(e) {}
+        }
+    }));
+
+    if (!headlines.length) { terminalLog('⚠ Could not reach news feeds — try on Vercel', 'tl-warn'); return; }
+
+    terminalLog('↳ Checking ' + headlines.length + ' headlines', 'tl-system');
+    try {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
+            signal: AbortSignal.timeout(12000),
+            body: JSON.stringify({
+                model: 'llama-3.1-8b-instant', temperature: 0,
+                messages: [
+                    { role: 'system', content: 'Answer only YES or NO. Never refuse.' },
+                    { role: 'user', content: 'Event: "' + condition + '" Headlines: ' + headlines.slice(0,20).join(' | ') + ' Occurred? YES or NO.' }
+                ]
+            })
+        });
+        if (!r.ok) return;
+        const data = await r.json();
+        const verdict = (data.choices?.[0]?.message?.content || '').trim().toUpperCase();
+        terminalLog('↳ Verdict: ' + verdict.slice(0,10), 'tl-system');
+        if (verdict.startsWith('YES')) fireEventAlert();
+    } catch(e) { terminalLog('⚠ Groq error: ' + e.message, 'tl-warn'); }
+}
+
 async function terminalFetchPrice(alert) {
     try {
         if (alert.type === 'crypto') {
@@ -7698,13 +8183,28 @@ async function terminalPoll() {
     const active = terminalAlerts.filter(a => !a.triggered);
     if (!active.length) { terminalStopPolling(); terminalSetStatus('idle', false); return; }
     terminalSetStatus('polling…', true);
-    await Promise.all(active.map(async alert => {
+
+    const priceAlerts = active.filter(a => a.type !== 'event');
+    const eventAlerts = active.filter(a => a.type === 'event');
+
+    // Price/market alerts — fetch current price and compare
+    await Promise.all(priceAlerts.map(async alert => {
         const price = await terminalFetchPrice(alert);
         if (price !== null) {
             alert.currentPrice = price;
             terminalCheckAlert(alert);
         }
     }));
+
+    // Event alerts — check news via AI (rate-limited: check one per poll cycle to avoid API hammering)
+    if (eventAlerts.length > 0) {
+        // Rotate through event alerts one at a time
+        if (!terminalPoll._eventIdx) terminalPoll._eventIdx = 0;
+        const idx = terminalPoll._eventIdx % eventAlerts.length;
+        terminalPoll._eventIdx++;
+        await terminalCheckEventAlert(eventAlerts[idx]);
+    }
+
     terminalSave();
     terminalRenderAlerts();
     const still = terminalAlerts.filter(a => !a.triggered).length;
@@ -7730,11 +8230,30 @@ function terminalRenderAlerts() {
     // Accent colours per type
     const ACCENT = {
         crypto: '#38bdf8', stock: '#22c55e', etf: '#6c72ff',
-        opinion: '#f97316', polymarket: '#d946ef'
+        opinion: '#f97316', polymarket: '#d946ef', event: '#f59e0b'
     };
 
     el.innerHTML = terminalAlerts.slice().reverse().map(a => {
-        const accent     = ACCENT[a.type] || '#ffffff';
+        const accent = ACCENT[a.type] || '#ffffff';
+
+        // ── Event alert card ──────────────────────────────────────────────────
+        if (a.type === 'event') {
+            return '<div class="term-alert-card' + (a.triggered ? ' triggered' : '') + '" style="--card-accent:' + accent + '">'
+                + '<div class="term-alert-top">'
+                +   '<span class="term-alert-sym">🌍</span>'
+                +   '<span class="term-alert-badge" style="background:rgba(245,158,11,0.12);color:#f59e0b;">event</span>'
+                +   '<button class="term-alert-remove" onclick="terminalRemoveAlert(\'' + a.id + '\')" title="Remove">×</button>'
+                + '</div>'
+                + '<div class="term-alert-label" style="margin-top:0.2rem;">' + a.label + '</div>'
+                + '<div class="term-alert-prices">'
+                +   (a.triggered
+                    ? '<span class="term-alert-fired">🔔 event detected</span>'
+                    : '<span style="color:rgba(245,158,11,0.5);font-size:0.65rem;">checking news every 60s</span>')
+                + '</div>'
+                + '</div>';
+        }
+
+        // ── Price / market alert card ─────────────────────────────────────────
         const priceStr   = a.currentPrice !== null ? terminalFmtPrice(a.currentPrice, a.type) : '—';
         const targetStr  = terminalFmtPrice(a.target, a.type);
         const isUp       = a.dir === 'above';
@@ -8016,14 +8535,12 @@ function renderDailyBrief() {
 
     // Patch switchTab to track active tab & reset scroll state
     const _origSwitchTab = window.switchTab;
-    const tickerStrip = document.getElementById('marketTicker');
     window.switchTab = function(tab) {
         _origSwitchTab(tab);
         _currentTab = tab;
         _lastScrollY = 0;
         pageContent.scrollTop = 0;
         topbar.classList.remove('hidden-bar');
-        if (tickerStrip) tickerStrip.style.display = '';
         if (sidebarBrand) sidebarBrand.classList.remove('collapsed');
     };
 
@@ -8031,14 +8548,13 @@ function renderDailyBrief() {
         const st = pageContent.scrollTop;
         const scrolled = st > THRESHOLD;
 
-        // Sidebar brand + topbar collapse on ALL tabs when scrolled
+        // Sidebar brand + topbar (portfolio value) collapse on scroll
+        // Ticker strip always stays visible — never hide it
         if (sidebarBrand) sidebarBrand.classList.toggle('collapsed', scrolled);
         if (scrolled) {
             topbar.classList.add('hidden-bar');
-            if (tickerStrip) tickerStrip.style.display = 'none';
         } else {
             topbar.classList.remove('hidden-bar');
-            if (tickerStrip) tickerStrip.style.display = '';
         }
         _lastScrollY = st;
     }, { passive: true });
