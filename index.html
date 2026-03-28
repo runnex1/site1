@@ -2429,6 +2429,12 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
                 Import Text
               </button>
+              <button class="btn-base" onclick="openModal('jupiterPortfolio')"
+                style="background:rgba(155,93,255,0.12);color:#9b5dff;border-color:rgba(155,93,255,0.3);"
+                title="Fetch positions from Jupiter Portfolio API">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+                Jupiter
+              </button>
               <button onclick="setCurrentAsFirstSnapshot()"
                 title="Save current positions as First Snapshot for APR baseline"
                 style="font-size:0.7rem;padding:3px 8px;background:rgba(245,158,11,0.12);color:var(--amber);border:1px solid rgba(245,158,11,0.25);border-radius:6px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:4px;height:28px;">
@@ -2910,6 +2916,37 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal('importTokens')">Cancel</button>
       <button class="btn btn-primary" onclick="processTokensImport()">Import Tokens</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Jupiter Portfolio Modal ─────────────────────────────────────── -->
+<div id="jupiterPortfolioModal" class="modal">
+  <div class="modal-content" style="max-width:520px;">
+    <div class="modal-header">🪐 Jupiter Portfolio</div>
+    <div class="modal-sub" style="margin-bottom:1rem;">Fetch your Solana positions from the Jupiter Portfolio API and add them to Protocol Positions.</div>
+
+    <div class="form-group">
+      <label class="form-label">Wallet Addresses <span style="color:var(--t3);font-weight:400;">(one per line)</span></label>
+      <textarea id="jupiterWalletInput"
+        style="width:100%;min-height:90px;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:var(--r-sm);color:var(--t1);font-family:var(--ff-mono);font-size:0.8rem;padding:8px 12px;resize:vertical;outline:none;"
+        placeholder="Paste Solana wallet address(es), one per line…"></textarea>
+    </div>
+
+    <div id="jupiterFetchStatus" style="display:none;margin-bottom:0.75rem;padding:0.55rem 0.85rem;border-radius:var(--r-sm);font-size:0.8rem;"></div>
+
+    <div id="jupiterResultsPreview" style="display:none;margin-bottom:1rem;">
+      <div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:var(--t3);margin-bottom:0.5rem;">Positions Found</div>
+      <div id="jupiterPositionsList" style="display:flex;flex-direction:column;gap:0.4rem;max-height:260px;overflow-y:auto;"></div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('jupiterPortfolio')">Cancel</button>
+      <button class="btn" id="jupiterFetchBtn"
+        style="background:#9b5dff;color:white;"
+        onclick="fetchJupiterPositions()">Fetch Positions</button>
+      <button class="btn btn-primary" id="jupiterAddBtn" style="display:none;"
+        onclick="addJupiterPositionsToProtocols()">Add to Portfolio</button>
     </div>
   </div>
 </div>
@@ -4902,6 +4939,169 @@ function addProtocol() {
         ['protocolName','protocolValue','protocolChain'].forEach(id => document.getElementById(id).value = '');
     }
 }
+
+// =============================================================================
+// JUPITER PORTFOLIO INTEGRATION
+// =============================================================================
+const JUPITER_API_KEY = 'a40fe1c9-d11c-4fb9-a753-24ffb96b21e6';
+const JUPITER_BASE    = 'https://api.jup.ag/portfolio/v1';
+
+let _jupiterParsedPositions = [];
+
+function openJupiterModal() {
+    _jupiterParsedPositions = [];
+    document.getElementById('jupiterWalletInput').value = '';
+    document.getElementById('jupiterFetchStatus').style.display = 'none';
+    document.getElementById('jupiterResultsPreview').style.display = 'none';
+    document.getElementById('jupiterAddBtn').style.display = 'none';
+    document.getElementById('jupiterFetchBtn').style.display = '';
+    openModal('jupiterPortfolio');
+}
+
+function jupiterStatus(msg, type) {
+    const el = document.getElementById('jupiterFetchStatus');
+    el.style.display = '';
+    el.style.background = type === 'error'   ? 'rgba(244,63,94,0.12)'
+                        : type === 'success'  ? 'rgba(34,197,94,0.12)'
+                        :                       'rgba(155,93,255,0.12)';
+    el.style.border     = type === 'error'   ? '1px solid rgba(244,63,94,0.3)'
+                        : type === 'success'  ? '1px solid rgba(34,197,94,0.3)'
+                        :                       '1px solid rgba(155,93,255,0.3)';
+    el.style.color      = type === 'error'   ? 'var(--red)'
+                        : type === 'success'  ? 'var(--green)'
+                        :                       '#9b5dff';
+    el.textContent = msg;
+}
+
+async function fetchJupiterPositions() {
+    const raw = document.getElementById('jupiterWalletInput').value.trim();
+    const wallets = raw.split('\n').map(w => w.trim()).filter(w => w.length > 0);
+    if (!wallets.length) { jupiterStatus('⚠️ Please enter at least one wallet address.', 'error'); return; }
+
+    document.getElementById('jupiterFetchBtn').disabled = true;
+    document.getElementById('jupiterAddBtn').style.display = 'none';
+    document.getElementById('jupiterResultsPreview').style.display = 'none';
+    jupiterStatus('⏳ Fetching positions from Jupiter…', 'info');
+    _jupiterParsedPositions = [];
+
+    try {
+        const allPositions = [];
+
+        for (const wallet of wallets) {
+            const url = `${JUPITER_BASE}/positions/${encodeURIComponent(wallet)}`;
+            const res = await fetch(url, {
+                headers: { 'x-api-key': JUPITER_API_KEY, 'Content-Type': 'application/json' }
+            });
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`API error for ${wallet.slice(0,8)}…: ${res.status} ${errText.slice(0,120)}`);
+            }
+            const json = await res.json();
+
+            // The response is an array of platform position groups
+            const items = Array.isArray(json) ? json : (json.positions || json.data || []);
+            for (const item of items) {
+                const platform  = item.label || item.platformId || item.type || 'Unknown';
+                const posType   = item.type  || 'Yield';
+                const fetchData = item.data  || {};
+
+                // Aggregate total USD value from known fields
+                let totalValue = 0;
+                if (typeof fetchData.totalValue === 'number')   totalValue = fetchData.totalValue;
+                else if (typeof fetchData.value  === 'number')  totalValue = fetchData.value;
+                else if (typeof item.value       === 'number')  totalValue = item.value;
+                else if (Array.isArray(fetchData.positions)) {
+                    for (const p of fetchData.positions) {
+                        totalValue += typeof p.value === 'number' ? p.value
+                                   : typeof p.usdValue === 'number' ? p.usdValue : 0;
+                    }
+                }
+
+                if (totalValue <= 0) continue; // skip zero-value entries
+
+                // Map Jupiter type → vault type
+                const typeMap = {
+                    'multiple':     'Yield',
+                    'liquidity':    'DEX',
+                    'leverage':     'Lending',
+                    'borrowlend':   'Lending',
+                    'trade':        'DEX',
+                    'staking':      'Staking',
+                };
+                const mappedType = typeMap[posType.toLowerCase()] || 'Yield';
+
+                allPositions.push({
+                    name:  platform,
+                    type:  mappedType,
+                    value: totalValue,
+                    chain: `Solana · ${wallet.slice(0,6)}…${wallet.slice(-4)}`,
+                    _raw:  item,
+                });
+            }
+        }
+
+        if (!allPositions.length) {
+            jupiterStatus('ℹ️ No positions with value > 0 found for the provided wallet(s).', 'info');
+            document.getElementById('jupiterFetchBtn').disabled = false;
+            return;
+        }
+
+        _jupiterParsedPositions = allPositions;
+
+        // Render preview
+        const listEl = document.getElementById('jupiterPositionsList');
+        listEl.innerHTML = allPositions.map((p, i) => `
+            <div style="display:flex;align-items:center;gap:0.65rem;background:var(--surf-2);
+                        border:1px solid var(--border);border-radius:var(--r-sm);padding:0.5rem 0.75rem;">
+              <input type="checkbox" id="jup-chk-${i}" checked
+                style="width:15px;height:15px;accent-color:#9b5dff;cursor:pointer;flex-shrink:0;">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:0.82rem;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${p.name}</div>
+                <div style="font-size:0.68rem;color:var(--t3);">${p.type} · ${p.chain}</div>
+              </div>
+              <div style="font-family:var(--ff-mono);font-size:0.82rem;font-weight:700;color:var(--t2);flex-shrink:0;">
+                $${p.value.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+              </div>
+            </div>`).join('');
+
+        document.getElementById('jupiterResultsPreview').style.display = '';
+        jupiterStatus(`✅ Found ${allPositions.length} position(s). Select which to add.`, 'success');
+        document.getElementById('jupiterAddBtn').style.display = '';
+
+    } catch (err) {
+        console.error('[Jupiter]', err);
+        jupiterStatus(`❌ ${err.message}`, 'error');
+    }
+
+    document.getElementById('jupiterFetchBtn').disabled = false;
+}
+
+function addJupiterPositionsToProtocols() {
+    let added = 0;
+    _jupiterParsedPositions.forEach((p, i) => {
+        const chk = document.getElementById(`jup-chk-${i}`);
+        if (chk && chk.checked) {
+            data.protocols.push({ name: p.name, type: p.type, value: p.value, chain: p.chain });
+            added++;
+        }
+    });
+    if (added) {
+        saveData(); updateUI();
+        jupiterStatus(`✅ Added ${added} position(s) to Protocol Positions.`, 'success');
+        document.getElementById('jupiterAddBtn').style.display = 'none';
+        document.getElementById('jupiterResultsPreview').style.display = 'none';
+        setTimeout(() => closeModal('jupiterPortfolio'), 1200);
+    } else {
+        jupiterStatus('⚠️ No positions selected.', 'error');
+    }
+}
+
+// Patch openModal to wire up Jupiter modal
+const _origOpenModal = window.openModal;
+window.openModal = function(type) {
+    if (type === 'jupiterPortfolio') { openJupiterModal(); return; }
+    if (_origOpenModal) _origOpenModal(type);
+};
 
 function addETF() {
     const ticker = document.getElementById('etfTicker').value;
