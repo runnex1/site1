@@ -2924,13 +2924,13 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 <div id="jupiterPortfolioModal" class="modal">
   <div class="modal-content" style="max-width:520px;">
     <div class="modal-header">🪐 Jupiter Portfolio</div>
-    <div class="modal-sub" style="margin-bottom:1rem;">Fetch your Solana positions from the Jupiter Portfolio API and add them to Protocol Positions.</div>
+    <div class="modal-sub" style="margin-bottom:1rem;">Fetch all your Solana positions — including <strong style="color:var(--teal)">Kamino</strong>, <strong style="color:var(--teal)">Loopscale</strong>, and more — via the same backend that powers jup.ag/portfolio.</div>
 
     <div class="form-group">
       <label class="form-label">Wallet Addresses <span style="color:var(--t3);font-weight:400;">(one per line)</span></label>
       <textarea id="jupiterWalletInput"
         style="width:100%;min-height:90px;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:var(--r-sm);color:var(--t1);font-family:var(--ff-mono);font-size:0.8rem;padding:8px 12px;resize:vertical;outline:none;"
-        placeholder="Paste Solana wallet address(es), one per line…">FuzwwLMkp8KU3NEGykHhKz56YR4u6SWghdAmB447hxA1</textarea>
+        placeholder="Paste Solana wallet address(es), one per line…"></textarea>
     </div>
 
     <div id="jupiterFetchStatus" style="display:none;margin-bottom:0.75rem;padding:0.55rem 0.85rem;border-radius:var(--r-sm);font-size:0.8rem;"></div>
@@ -2940,37 +2940,11 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
       <div id="jupiterPositionsList" style="display:flex;flex-direction:column;gap:0.4rem;max-height:260px;overflow-y:auto;"></div>
     </div>
 
-    <!-- ── Debug Panel ──────────────────────────────────────────── -->
-    <div id="jupiterDebugPanel" style="display:none;margin-bottom:0.75rem;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem;">
-        <span style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#f59e0b;">🔍 Raw API Debug</span>
-        <div style="display:flex;gap:0.4rem;">
-          <button onclick="jupiterDebugCopy()"
-            style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#f59e0b;
-                   border-radius:4px;padding:3px 8px;font-size:0.7rem;cursor:pointer;">Copy JSON</button>
-          <button onclick="document.getElementById('jupiterDebugPanel').style.display='none'"
-            style="background:var(--surf-3);border:1px solid var(--border-mid);color:var(--t3);
-                   border-radius:4px;padding:3px 8px;font-size:0.7rem;cursor:pointer;">Hide</button>
-        </div>
-      </div>
-      <!-- Summary chips -->
-      <div id="jupiterDebugSummary" style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.5rem;"></div>
-      <!-- Fetcher report table -->
-      <div id="jupiterDebugFetchers" style="margin-bottom:0.5rem;"></div>
-      <!-- Raw JSON -->
-      <pre id="jupiterDebugRaw"
-        style="background:var(--surf-3);border:1px solid var(--border-mid);border-radius:var(--r-sm);
-               padding:0.6rem 0.75rem;font-family:var(--ff-mono);font-size:0.68rem;color:var(--t1);
-               max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0;"></pre>
-    </div>
-
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal('jupiterPortfolio')">Cancel</button>
       <button class="btn" id="jupiterFetchBtn"
         style="background:#9b5dff;color:white;"
         onclick="fetchJupiterPositions()">Fetch Positions</button>
-      <button class="btn" id="jupiterDebugBtn" style="display:none;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);"
-        onclick="document.getElementById('jupiterDebugPanel').style.display=''">Show Debug</button>
       <button class="btn btn-primary" id="jupiterAddBtn" style="display:none;"
         onclick="addJupiterPositionsToProtocols()">Add to Portfolio</button>
     </div>
@@ -4978,75 +4952,11 @@ function addProtocol() {
 // =============================================================================
 // JUPITER PORTFOLIO INTEGRATION
 // =============================================================================
-const JUPITER_API_KEY = 'a40fe1c9-d11c-4fb9-a753-24ffb96b21e6';
-const JUPITER_BASE    = 'https://api.jup.ag/portfolio/v1';
+// Sonarwatch Jupiter endpoint — same backend that powers jup.ag/portfolio
+// Includes Kamino, Loopscale, and all other third-party Solana protocols
+const SONARWATCH_JUP_BASE = 'https://portfolio-api-jup.sonar.watch/v1/portfolio/fetch';
 
 let _jupiterParsedPositions = [];
-let _jupiterLastRawJson = null; // stored for debug copy
-
-function jupiterDebugCopy() {
-    if (!_jupiterLastRawJson) return;
-    navigator.clipboard.writeText(JSON.stringify(_jupiterLastRawJson, null, 2))
-        .then(() => alert('JSON copied to clipboard!'))
-        .catch(() => alert('Copy failed — use the raw panel to manually copy.'));
-}
-
-function jupiterRenderDebug(json) {
-    _jupiterLastRawJson = json;
-    const panel    = document.getElementById('jupiterDebugPanel');
-    const summary  = document.getElementById('jupiterDebugSummary');
-    const fetchers = document.getElementById('jupiterDebugFetchers');
-    const raw      = document.getElementById('jupiterDebugRaw');
-
-    const elements = json.elements || [];
-    const reports  = json.fetcherReports || [];
-
-    // ── Summary chips ──────────────────────────────────────────────
-    const chips = [
-        { label: `${elements.length} elements`, color: '#00D4AA' },
-        { label: `${reports.length} fetchers`, color: '#6C72FF' },
-    ];
-    const kaminoEl = elements.find(e => (e.platformId||'').toLowerCase().includes('kamino'));
-    const loopEl   = elements.find(e => (e.platformId||'').toLowerCase().includes('loopscale'));
-    if (kaminoEl)  chips.push({ label: '✅ Kamino in elements',    color: '#22C55E' });
-    else           chips.push({ label: '❌ Kamino NOT in elements', color: '#F43F5E' });
-    if (loopEl)    chips.push({ label: '✅ Loopscale in elements',    color: '#22C55E' });
-    else           chips.push({ label: '❌ Loopscale NOT in elements', color: '#F43F5E' });
-
-    summary.innerHTML = chips.map(c =>
-        `<span style="font-size:0.67rem;font-weight:700;padding:2px 8px;border-radius:100px;
-                      background:${c.color}18;border:1px solid ${c.color}44;color:${c.color};">${c.label}</span>`
-    ).join('');
-
-    // ── Fetcher report table ────────────────────────────────────────
-    if (reports.length) {
-        const statusColor = s => s === 'success' ? '#22C55E' : s === 'error' || s === 'failed' ? '#F43F5E' : '#F59E0B';
-        fetchers.innerHTML = `
-          <div style="font-size:0.68rem;color:var(--t3);margin-bottom:0.3rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Fetcher Reports</div>
-          <div style="display:flex;flex-direction:column;gap:2px;">
-            ${reports.map(r => `
-              <div style="display:flex;align-items:center;gap:0.5rem;background:var(--surf-2);
-                          border:1px solid var(--border);border-radius:4px;padding:3px 8px;">
-                <span style="font-family:var(--ff-mono);font-size:0.7rem;color:var(--t1);flex:1;">${r.platformId || r.fetcher || '?'}</span>
-                <span style="font-size:0.65rem;font-weight:700;padding:1px 6px;border-radius:3px;
-                             background:${statusColor(r.status)}18;color:${statusColor(r.status)};
-                             border:1px solid ${statusColor(r.status)}44;">${r.status || '?'}</span>
-                ${r.error ? `<span style="font-size:0.65rem;color:#F43F5E;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.error}">${r.error}</span>` : ''}
-              </div>`).join('')}
-          </div>`;
-    } else {
-        fetchers.innerHTML = `<div style="font-size:0.72rem;color:var(--t3);">No fetcherReports in response.</div>`;
-    }
-
-    // ── Raw JSON (focused on Kamino/Loopscale if found, else full) ──
-    const focus = kaminoEl || loopEl;
-    raw.textContent = focus
-        ? `// Kamino/Loopscale element:\n` + JSON.stringify(focus, null, 2)
-        : `// Full response (no Kamino/Loopscale found):\n` + JSON.stringify(json, null, 2).slice(0, 4000);
-
-    panel.style.display = '';
-    document.getElementById('jupiterDebugBtn').style.display = 'none';
-}
 
 function jupiterStatus(msg, type) {
     const el = document.getElementById('jupiterFetchStatus');
@@ -5071,74 +4981,54 @@ async function fetchJupiterPositions() {
     document.getElementById('jupiterFetchBtn').disabled = true;
     document.getElementById('jupiterAddBtn').style.display = 'none';
     document.getElementById('jupiterResultsPreview').style.display = 'none';
-    jupiterStatus('⏳ Fetching positions from Jupiter… (may take ~10s)', 'info');
+    jupiterStatus('⏳ Fetching all positions via Sonarwatch (Kamino, Loopscale + more)…', 'info');
     _jupiterParsedPositions = [];
 
     try {
         const allPositions = [];
 
         for (const wallet of wallets) {
-            const url = `${JUPITER_BASE}/positions/${encodeURIComponent(wallet)}`;
+            const url = `${SONARWATCH_JUP_BASE}?address=${encodeURIComponent(wallet)}&addressSystem=solana`;
+            jupiterStatus(`⏳ Fetching wallet ${wallet.slice(0,6)}…${wallet.slice(-4)}`, 'info');
 
-            // Poll until fetcherReports shows all fetchers done (or timeout after 20s)
-            let json = null;
-            const deadline = Date.now() + 20000;
-            let attempt = 0;
-
-            while (Date.now() < deadline) {
-                attempt++;
-                jupiterStatus(`⏳ Fetching… attempt ${attempt} (waiting for all platforms)`, 'info');
-                const res = await fetch(url, { headers: { 'x-api-key': JUPITER_API_KEY } });
-                if (!res.ok) {
-                    const errText = await res.text();
-                    throw new Error(`API error (${res.status}): ${errText.slice(0, 200)}`);
-                }
-                json = await res.json();
-                console.log('[Jupiter] attempt', attempt, '– elements:', json.elements?.length,
-                    'fetcherReports:', json.fetcherReports?.length,
-                    JSON.stringify(json.fetcherReports));
-
-                const reports  = json.fetcherReports || [];
-                const elements = json.elements || [];
-
-                // Done if we have fetcher reports AND all succeeded (or failed), or if we have elements and reports are stable
-                const pending = reports.filter(r => r.status === 'pending' || r.status === 'loading' || r.status === 'fetching');
-                if (reports.length > 0 && pending.length === 0) break;
-
-                // Also break if we got elements and fetcher reports stopped changing (some APIs return empty reports when done)
-                if (attempt >= 2 && elements.length > 0 && reports.length === 0) break;
-
-                await new Promise(r => setTimeout(r, 3000));
+            const res = await fetch(url);
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`API error (${res.status}): ${errText.slice(0, 200)}`);
             }
+            const json = await res.json();
+            console.log('[Sonarwatch] raw response:', json);
 
+            // Sonarwatch returns { elements: [...] } where each element has platformId + value
             const items = Array.isArray(json)
                 ? json
                 : Array.isArray(json.elements)
                     ? json.elements
-                    : Array.isArray(json.positions)
-                        ? json.positions
-                        : Object.values(json).find(v => Array.isArray(v)) || [];
+                    : Object.values(json).find(v => Array.isArray(v)) || [];
 
-            console.log('[Jupiter] final items count:', items.length, items.map(i => i.platformId || i.label));
-
-            // ── Render debug panel with the raw response ──
-            jupiterRenderDebug(json);
+            console.log('[Sonarwatch] elements count:', items.length,
+                items.map(i => `${i.platformId}=$${i.value}`));
 
             const typeMap = {
                 'multiple': 'Yield', 'liquidity': 'DEX', 'leverage': 'Lending',
                 'borrowlend': 'Lending', 'trade': 'DEX', 'staking': 'Staking',
+                'wallet': 'Wallet',
             };
             const walletTag = `Solana · ${wallet.slice(0,6)}…${wallet.slice(-4)}`;
 
             for (const item of items) {
-                const rawName  = item.platformId || item.label || item.type || 'Unknown';
-                const platform = rawName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                const posType  = item.type  || 'Yield';
+                // Skip plain wallet token balances — only want DeFi protocol positions
+                if (item.type === 'wallet' || item.label === 'Wallet') continue;
+
+                const rawName    = item.platformId || item.label || item.type || 'Unknown';
+                const platform   = rawName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                const posType    = item.type || 'Yield';
                 const mappedType = typeMap[posType.toLowerCase()] || 'Yield';
                 const totalValue = jupiterExtractValue(item);
-                console.log('[Jupiter]', platform, '→ value:', totalValue, JSON.stringify(item).slice(0,200));
+
+                console.log('[Sonarwatch]', platform, '→ value:', totalValue);
                 if (totalValue <= 0) {
-                    console.warn('[Jupiter] ⚠️ Could not extract value for:', platform, JSON.stringify(item).slice(0,400));
+                    console.warn('[Sonarwatch] Could not extract value for:', platform, JSON.stringify(item).slice(0, 300));
                     continue;
                 }
                 allPositions.push({ name: platform, type: mappedType, value: totalValue, chain: walletTag });
@@ -5146,7 +5036,7 @@ async function fetchJupiterPositions() {
         }
 
         if (!allPositions.length) {
-            jupiterStatus('ℹ️ No positions with value > $0 found. See debug panel below for raw API response.', 'info');
+            jupiterStatus('ℹ️ No DeFi positions with value > $0 found. Check browser console for raw response.', 'info');
             document.getElementById('jupiterFetchBtn').disabled = false;
             return;
         }
@@ -5169,54 +5059,64 @@ async function fetchJupiterPositions() {
             </div>`).join('');
 
         document.getElementById('jupiterResultsPreview').style.display = '';
-        jupiterStatus(`✅ Found ${allPositions.length} position(s). Select which to add.`, 'success');
+        jupiterStatus(`✅ Found ${allPositions.length} position(s) including Kamino & Loopscale. Select which to add.`, 'success');
         document.getElementById('jupiterAddBtn').style.display = '';
-        document.getElementById('jupiterDebugBtn').style.display = '';
 
     } catch (err) {
-        console.error('[Jupiter]', err);
+        console.error('[Sonarwatch]', err);
         jupiterStatus(`❌ ${err.message}`, 'error');
     }
 
     document.getElementById('jupiterFetchBtn').disabled = false;
 }
 
-// Recursively search an object for USD value fields
-function jupiterExtractValue(obj) {
-    if (!obj || typeof obj !== 'object') return 0;
+// Recursively extract USD value from a Sonarwatch/Jupiter element
+function jupiterExtractValue(obj, depth = 0) {
+    if (!obj || typeof obj !== 'object' || depth > 6) return 0;
 
-    // Per Jupiter API: value is directly on the element
-    if (typeof obj.value === 'number' && obj.value > 0) return obj.value;
+    const valueKeys = [
+        'value', 'totalValue', 'usdValue', 'valueUsd', 'value_usd',
+        'totalUsd', 'total_value', 'netValue', 'net_value',
+        'positionValue', 'position_value',
+        'suppliedValue', 'borrowedValue', 'supplyValue', 'borrowValue',
+        'depositedValue', 'totalSupplyValue', 'totalBorrowValue',
+    ];
 
-    // Also check common aliased field names
-    const valueKeys = ['totalValue','usdValue','valueUsd','value_usd','totalUsd',
-                       'total_value','netValue','net_value','positionValue','position_value'];
+    // Direct value on this object
     for (const k of valueKeys) {
         if (typeof obj[k] === 'number' && obj[k] > 0) return obj[k];
     }
 
-    // Recurse one level into data
-    if (obj.data && typeof obj.data === 'object') {
-        const sub = jupiterExtractValue(obj.data);
-        if (sub > 0) return sub;
+    // Recurse into known sub-objects
+    for (const k of ['data', 'position', 'details']) {
+        if (obj[k] && typeof obj[k] === 'object' && !Array.isArray(obj[k])) {
+            const sub = jupiterExtractValue(obj[k], depth + 1);
+            if (sub > 0) return sub;
+        }
     }
 
-    // Sum across arrays of positions/assets
-    let total = 0;
-    for (const k of Object.keys(obj)) {
-        const v = obj[k];
-        if (Array.isArray(v)) {
-            for (const el of v) {
-                if (el && typeof el === 'object') {
-                    for (const vk of ['value', ...valueKeys]) {
-                        if (typeof el[vk] === 'number' && el[vk] > 0) { total += el[vk]; break; }
-                    }
-                }
+    // Sum across known asset arrays (Kamino/Loopscale pattern)
+    for (const k of ['assets', 'suppliedAssets', 'borrowedAssets', 'rewardAssets', 'positions', 'items']) {
+        if (Array.isArray(obj[k])) {
+            let total = 0;
+            for (const el of obj[k]) {
+                total += jupiterExtractValue(el, depth + 1);
             }
             if (total > 0) return total;
         }
     }
-    return total;
+
+    // Last resort: walk all object values one level deeper
+    if (depth < 3) {
+        for (const v of Object.values(obj)) {
+            if (v && typeof v === 'object' && !Array.isArray(v)) {
+                const sub = jupiterExtractValue(v, depth + 1);
+                if (sub > 0) return sub;
+            }
+        }
+    }
+
+    return 0;
 }
 
 function addJupiterPositionsToProtocols() {
