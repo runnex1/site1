@@ -2930,7 +2930,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
       <label class="form-label">Wallet Addresses <span style="color:var(--t3);font-weight:400;">(one per line)</span></label>
       <textarea id="jupiterWalletInput"
         style="width:100%;min-height:90px;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:var(--r-sm);color:var(--t1);font-family:var(--ff-mono);font-size:0.8rem;padding:8px 12px;resize:vertical;outline:none;"
-        placeholder="Paste Solana wallet address(es), one per line…"></textarea>
+        placeholder="Paste Solana wallet address(es), one per line…">FuzwwLMkp8KU3NEGykHhKz56YR4u6SWghdAmB447hxA1</textarea>
     </div>
 
     <div id="jupiterFetchStatus" style="display:none;margin-bottom:0.75rem;padding:0.55rem 0.85rem;border-radius:var(--r-sm);font-size:0.8rem;"></div>
@@ -2940,11 +2940,37 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
       <div id="jupiterPositionsList" style="display:flex;flex-direction:column;gap:0.4rem;max-height:260px;overflow-y:auto;"></div>
     </div>
 
+    <!-- ── Debug Panel ──────────────────────────────────────────── -->
+    <div id="jupiterDebugPanel" style="display:none;margin-bottom:0.75rem;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem;">
+        <span style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#f59e0b;">🔍 Raw API Debug</span>
+        <div style="display:flex;gap:0.4rem;">
+          <button onclick="jupiterDebugCopy()"
+            style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#f59e0b;
+                   border-radius:4px;padding:3px 8px;font-size:0.7rem;cursor:pointer;">Copy JSON</button>
+          <button onclick="document.getElementById('jupiterDebugPanel').style.display='none'"
+            style="background:var(--surf-3);border:1px solid var(--border-mid);color:var(--t3);
+                   border-radius:4px;padding:3px 8px;font-size:0.7rem;cursor:pointer;">Hide</button>
+        </div>
+      </div>
+      <!-- Summary chips -->
+      <div id="jupiterDebugSummary" style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.5rem;"></div>
+      <!-- Fetcher report table -->
+      <div id="jupiterDebugFetchers" style="margin-bottom:0.5rem;"></div>
+      <!-- Raw JSON -->
+      <pre id="jupiterDebugRaw"
+        style="background:var(--surf-3);border:1px solid var(--border-mid);border-radius:var(--r-sm);
+               padding:0.6rem 0.75rem;font-family:var(--ff-mono);font-size:0.68rem;color:var(--t1);
+               max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0;"></pre>
+    </div>
+
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal('jupiterPortfolio')">Cancel</button>
       <button class="btn" id="jupiterFetchBtn"
         style="background:#9b5dff;color:white;"
         onclick="fetchJupiterPositions()">Fetch Positions</button>
+      <button class="btn" id="jupiterDebugBtn" style="display:none;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);"
+        onclick="document.getElementById('jupiterDebugPanel').style.display=''">Show Debug</button>
       <button class="btn btn-primary" id="jupiterAddBtn" style="display:none;"
         onclick="addJupiterPositionsToProtocols()">Add to Portfolio</button>
     </div>
@@ -4956,6 +4982,71 @@ const JUPITER_API_KEY = 'a40fe1c9-d11c-4fb9-a753-24ffb96b21e6';
 const JUPITER_BASE    = 'https://api.jup.ag/portfolio/v1';
 
 let _jupiterParsedPositions = [];
+let _jupiterLastRawJson = null; // stored for debug copy
+
+function jupiterDebugCopy() {
+    if (!_jupiterLastRawJson) return;
+    navigator.clipboard.writeText(JSON.stringify(_jupiterLastRawJson, null, 2))
+        .then(() => alert('JSON copied to clipboard!'))
+        .catch(() => alert('Copy failed — use the raw panel to manually copy.'));
+}
+
+function jupiterRenderDebug(json) {
+    _jupiterLastRawJson = json;
+    const panel    = document.getElementById('jupiterDebugPanel');
+    const summary  = document.getElementById('jupiterDebugSummary');
+    const fetchers = document.getElementById('jupiterDebugFetchers');
+    const raw      = document.getElementById('jupiterDebugRaw');
+
+    const elements = json.elements || [];
+    const reports  = json.fetcherReports || [];
+
+    // ── Summary chips ──────────────────────────────────────────────
+    const chips = [
+        { label: `${elements.length} elements`, color: '#00D4AA' },
+        { label: `${reports.length} fetchers`, color: '#6C72FF' },
+    ];
+    const kaminoEl = elements.find(e => (e.platformId||'').toLowerCase().includes('kamino'));
+    const loopEl   = elements.find(e => (e.platformId||'').toLowerCase().includes('loopscale'));
+    if (kaminoEl)  chips.push({ label: '✅ Kamino in elements',    color: '#22C55E' });
+    else           chips.push({ label: '❌ Kamino NOT in elements', color: '#F43F5E' });
+    if (loopEl)    chips.push({ label: '✅ Loopscale in elements',    color: '#22C55E' });
+    else           chips.push({ label: '❌ Loopscale NOT in elements', color: '#F43F5E' });
+
+    summary.innerHTML = chips.map(c =>
+        `<span style="font-size:0.67rem;font-weight:700;padding:2px 8px;border-radius:100px;
+                      background:${c.color}18;border:1px solid ${c.color}44;color:${c.color};">${c.label}</span>`
+    ).join('');
+
+    // ── Fetcher report table ────────────────────────────────────────
+    if (reports.length) {
+        const statusColor = s => s === 'success' ? '#22C55E' : s === 'error' || s === 'failed' ? '#F43F5E' : '#F59E0B';
+        fetchers.innerHTML = `
+          <div style="font-size:0.68rem;color:var(--t3);margin-bottom:0.3rem;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;">Fetcher Reports</div>
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            ${reports.map(r => `
+              <div style="display:flex;align-items:center;gap:0.5rem;background:var(--surf-2);
+                          border:1px solid var(--border);border-radius:4px;padding:3px 8px;">
+                <span style="font-family:var(--ff-mono);font-size:0.7rem;color:var(--t1);flex:1;">${r.platformId || r.fetcher || '?'}</span>
+                <span style="font-size:0.65rem;font-weight:700;padding:1px 6px;border-radius:3px;
+                             background:${statusColor(r.status)}18;color:${statusColor(r.status)};
+                             border:1px solid ${statusColor(r.status)}44;">${r.status || '?'}</span>
+                ${r.error ? `<span style="font-size:0.65rem;color:#F43F5E;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.error}">${r.error}</span>` : ''}
+              </div>`).join('')}
+          </div>`;
+    } else {
+        fetchers.innerHTML = `<div style="font-size:0.72rem;color:var(--t3);">No fetcherReports in response.</div>`;
+    }
+
+    // ── Raw JSON (focused on Kamino/Loopscale if found, else full) ──
+    const focus = kaminoEl || loopEl;
+    raw.textContent = focus
+        ? `// Kamino/Loopscale element:\n` + JSON.stringify(focus, null, 2)
+        : `// Full response (no Kamino/Loopscale found):\n` + JSON.stringify(json, null, 2).slice(0, 4000);
+
+    panel.style.display = '';
+    document.getElementById('jupiterDebugBtn').style.display = 'none';
+}
 
 function jupiterStatus(msg, type) {
     const el = document.getElementById('jupiterFetchStatus');
@@ -5030,6 +5121,9 @@ async function fetchJupiterPositions() {
 
             console.log('[Jupiter] final items count:', items.length, items.map(i => i.platformId || i.label));
 
+            // ── Render debug panel with the raw response ──
+            jupiterRenderDebug(json);
+
             const typeMap = {
                 'multiple': 'Yield', 'liquidity': 'DEX', 'leverage': 'Lending',
                 'borrowlend': 'Lending', 'trade': 'DEX', 'staking': 'Staking',
@@ -5042,14 +5136,17 @@ async function fetchJupiterPositions() {
                 const posType  = item.type  || 'Yield';
                 const mappedType = typeMap[posType.toLowerCase()] || 'Yield';
                 const totalValue = jupiterExtractValue(item);
-                console.log('[Jupiter]', platform, '→ value:', totalValue);
-                if (totalValue <= 0) continue;
+                console.log('[Jupiter]', platform, '→ value:', totalValue, JSON.stringify(item).slice(0,200));
+                if (totalValue <= 0) {
+                    console.warn('[Jupiter] ⚠️ Could not extract value for:', platform, JSON.stringify(item).slice(0,400));
+                    continue;
+                }
                 allPositions.push({ name: platform, type: mappedType, value: totalValue, chain: walletTag });
             }
         }
 
         if (!allPositions.length) {
-            jupiterStatus('ℹ️ No positions with value > $0 found. Check browser console (F12) for raw API response.', 'info');
+            jupiterStatus('ℹ️ No positions with value > $0 found. See debug panel below for raw API response.', 'info');
             document.getElementById('jupiterFetchBtn').disabled = false;
             return;
         }
@@ -5074,6 +5171,7 @@ async function fetchJupiterPositions() {
         document.getElementById('jupiterResultsPreview').style.display = '';
         jupiterStatus(`✅ Found ${allPositions.length} position(s). Select which to add.`, 'success');
         document.getElementById('jupiterAddBtn').style.display = '';
+        document.getElementById('jupiterDebugBtn').style.display = '';
 
     } catch (err) {
         console.error('[Jupiter]', err);
