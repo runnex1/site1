@@ -4998,13 +4998,14 @@ async function fetchJupiterPositions() {
             const json = await res.json();
             console.log('[Jupiter] raw response:', JSON.stringify(json).slice(0, 2000));
 
-            // Response is { positions: [ { type, label, platformId, data: {...} }, ... ] }
-            // OR it may be a plain array
+            // Response shape: { elements: [ { type, label, value, data, ... } ] }
             const items = Array.isArray(json)
                 ? json
-                : Array.isArray(json.positions)
-                    ? json.positions
-                    : Object.values(json).find(v => Array.isArray(v)) || [];
+                : Array.isArray(json.elements)
+                    ? json.elements
+                    : Array.isArray(json.positions)
+                        ? json.positions
+                        : Object.values(json).find(v => Array.isArray(v)) || [];
 
             const typeMap = {
                 'multiple': 'Yield', 'liquidity': 'DEX', 'leverage': 'Lending',
@@ -5014,7 +5015,10 @@ async function fetchJupiterPositions() {
 
             for (const item of items) {
                 console.log('[Jupiter] item:', JSON.stringify(item).slice(0, 500));
-                const platform = item.label || item.platformId || item.type || 'Unknown';
+                // name: prefer platformId (e.g. "jupiter-exchange"), fall back to label
+                const rawName = item.platformId || item.label || item.type || 'Unknown';
+                // Prettify: "jupiter-exchange" → "Jupiter Exchange"
+                const platform = rawName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
                 const posType  = item.type  || 'Yield';
                 const mappedType = typeMap[posType.toLowerCase()] || 'Yield';
 
@@ -5072,15 +5076,21 @@ async function fetchJupiterPositions() {
 function jupiterExtractValue(obj) {
     if (!obj || typeof obj !== 'object') return 0;
 
-    // Direct numeric fields that clearly mean USD value
+    // Per Jupiter API: value is directly on the element
+    if (typeof obj.value === 'number' && obj.value > 0) return obj.value;
+
+    // Also check common aliased field names
     const valueKeys = ['totalValue','usdValue','valueUsd','value_usd','totalUsd',
                        'total_value','netValue','net_value','positionValue','position_value'];
     for (const k of valueKeys) {
         if (typeof obj[k] === 'number' && obj[k] > 0) return obj[k];
     }
 
-    // If there's a `value` field at top level of item use it (but avoid false positives from deep)
-    if (typeof obj.value === 'number' && obj.value > 0) return obj.value;
+    // Recurse one level into data
+    if (obj.data && typeof obj.data === 'object') {
+        const sub = jupiterExtractValue(obj.data);
+        if (sub > 0) return sub;
+    }
 
     // Sum across arrays of positions/assets
     let total = 0;
@@ -5089,17 +5099,12 @@ function jupiterExtractValue(obj) {
         if (Array.isArray(v)) {
             for (const el of v) {
                 if (el && typeof el === 'object') {
-                    // look for value on each element
-                    for (const vk of [...valueKeys, 'value']) {
+                    for (const vk of ['value', ...valueKeys]) {
                         if (typeof el[vk] === 'number' && el[vk] > 0) { total += el[vk]; break; }
                     }
                 }
             }
             if (total > 0) return total;
-        } else if (v && typeof v === 'object' && k === 'data') {
-            // recurse one level into data
-            const sub = jupiterExtractValue(v);
-            if (sub > 0) return sub;
         }
     }
     return total;
