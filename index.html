@@ -3754,6 +3754,15 @@ function openModal(type) {
         if (existing.length > 0) existing.forEach(addr => opinionAddWalletRow(addr));
         else opinionAddWalletRow();
     }
+    if (type === 'jupiterPortfolio') {
+        _jupiterParsedPositions = [];
+        document.getElementById('jupiterWalletInput').value = '';
+        document.getElementById('jupiterFetchStatus').style.display = 'none';
+        document.getElementById('jupiterResultsPreview').style.display = 'none';
+        document.getElementById('jupiterAddBtn').style.display = 'none';
+        document.getElementById('jupiterFetchBtn').style.display = '';
+        document.getElementById('jupiterFetchBtn').disabled = false;
+    }
     document.getElementById(`${type}Modal`).classList.add('active'); 
 }
 function closeModal(type) { document.getElementById(`${type}Modal`).classList.remove('active'); }
@@ -4948,16 +4957,6 @@ const JUPITER_BASE    = 'https://api.jup.ag/portfolio/v1';
 
 let _jupiterParsedPositions = [];
 
-function openJupiterModal() {
-    _jupiterParsedPositions = [];
-    document.getElementById('jupiterWalletInput').value = '';
-    document.getElementById('jupiterFetchStatus').style.display = 'none';
-    document.getElementById('jupiterResultsPreview').style.display = 'none';
-    document.getElementById('jupiterAddBtn').style.display = 'none';
-    document.getElementById('jupiterFetchBtn').style.display = '';
-    openModal('jupiterPortfolio');
-}
-
 function jupiterStatus(msg, type) {
     const el = document.getElementById('jupiterFetchStatus');
     el.style.display = '';
@@ -5096,12 +5095,6 @@ function addJupiterPositionsToProtocols() {
     }
 }
 
-// Patch openModal to wire up Jupiter modal
-const _origOpenModal = window.openModal;
-window.openModal = function(type) {
-    if (type === 'jupiterPortfolio') { openJupiterModal(); return; }
-    if (_origOpenModal) _origOpenModal(type);
-};
 
 function addETF() {
     const ticker = document.getElementById('etfTicker').value;
