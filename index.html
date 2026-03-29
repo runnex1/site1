@@ -4989,65 +4989,58 @@ async function fetchJupiterPositions() {
         for (const wallet of wallets) {
             const url = `${JUPITER_BASE}/positions/${encodeURIComponent(wallet)}`;
             const res = await fetch(url, {
-                headers: { 'x-api-key': JUPITER_API_KEY, 'Content-Type': 'application/json' }
+                headers: { 'x-api-key': JUPITER_API_KEY }
             });
             if (!res.ok) {
                 const errText = await res.text();
-                throw new Error(`API error for ${wallet.slice(0,8)}…: ${res.status} ${errText.slice(0,120)}`);
+                throw new Error(`API error (${res.status}): ${errText.slice(0, 200)}`);
             }
             const json = await res.json();
+            console.log('[Jupiter] raw response:', JSON.stringify(json).slice(0, 2000));
 
-            // The response is an array of platform position groups
-            const items = Array.isArray(json) ? json : (json.positions || json.data || []);
+            // Response is { positions: [ { type, label, platformId, data: {...} }, ... ] }
+            // OR it may be a plain array
+            const items = Array.isArray(json)
+                ? json
+                : Array.isArray(json.positions)
+                    ? json.positions
+                    : Object.values(json).find(v => Array.isArray(v)) || [];
+
+            const typeMap = {
+                'multiple': 'Yield', 'liquidity': 'DEX', 'leverage': 'Lending',
+                'borrowlend': 'Lending', 'trade': 'DEX', 'staking': 'Staking',
+            };
+            const walletTag = `Solana · ${wallet.slice(0,6)}…${wallet.slice(-4)}`;
+
             for (const item of items) {
-                const platform  = item.label || item.platformId || item.type || 'Unknown';
-                const posType   = item.type  || 'Yield';
-                const fetchData = item.data  || {};
-
-                // Aggregate total USD value from known fields
-                let totalValue = 0;
-                if (typeof fetchData.totalValue === 'number')   totalValue = fetchData.totalValue;
-                else if (typeof fetchData.value  === 'number')  totalValue = fetchData.value;
-                else if (typeof item.value       === 'number')  totalValue = item.value;
-                else if (Array.isArray(fetchData.positions)) {
-                    for (const p of fetchData.positions) {
-                        totalValue += typeof p.value === 'number' ? p.value
-                                   : typeof p.usdValue === 'number' ? p.usdValue : 0;
-                    }
-                }
-
-                if (totalValue <= 0) continue; // skip zero-value entries
-
-                // Map Jupiter type → vault type
-                const typeMap = {
-                    'multiple':     'Yield',
-                    'liquidity':    'DEX',
-                    'leverage':     'Lending',
-                    'borrowlend':   'Lending',
-                    'trade':        'DEX',
-                    'staking':      'Staking',
-                };
+                console.log('[Jupiter] item:', JSON.stringify(item).slice(0, 500));
+                const platform = item.label || item.platformId || item.type || 'Unknown';
+                const posType  = item.type  || 'Yield';
                 const mappedType = typeMap[posType.toLowerCase()] || 'Yield';
+
+                // Deep-search the entire item for any numeric USD value fields
+                const totalValue = jupiterExtractValue(item);
+                console.log('[Jupiter]', platform, '→ value:', totalValue);
+
+                if (totalValue <= 0) continue;
 
                 allPositions.push({
                     name:  platform,
                     type:  mappedType,
                     value: totalValue,
-                    chain: `Solana · ${wallet.slice(0,6)}…${wallet.slice(-4)}`,
-                    _raw:  item,
+                    chain: walletTag,
                 });
             }
         }
 
         if (!allPositions.length) {
-            jupiterStatus('ℹ️ No positions with value > 0 found for the provided wallet(s).', 'info');
+            jupiterStatus('ℹ️ No positions with value > $0 found. Check the browser console (F12) for the raw API response.', 'info');
             document.getElementById('jupiterFetchBtn').disabled = false;
             return;
         }
 
         _jupiterParsedPositions = allPositions;
 
-        // Render preview
         const listEl = document.getElementById('jupiterPositionsList');
         listEl.innerHTML = allPositions.map((p, i) => `
             <div style="display:flex;align-items:center;gap:0.65rem;background:var(--surf-2);
@@ -5073,6 +5066,43 @@ async function fetchJupiterPositions() {
     }
 
     document.getElementById('jupiterFetchBtn').disabled = false;
+}
+
+// Recursively search an object for USD value fields
+function jupiterExtractValue(obj) {
+    if (!obj || typeof obj !== 'object') return 0;
+
+    // Direct numeric fields that clearly mean USD value
+    const valueKeys = ['totalValue','usdValue','valueUsd','value_usd','totalUsd',
+                       'total_value','netValue','net_value','positionValue','position_value'];
+    for (const k of valueKeys) {
+        if (typeof obj[k] === 'number' && obj[k] > 0) return obj[k];
+    }
+
+    // If there's a `value` field at top level of item use it (but avoid false positives from deep)
+    if (typeof obj.value === 'number' && obj.value > 0) return obj.value;
+
+    // Sum across arrays of positions/assets
+    let total = 0;
+    for (const k of Object.keys(obj)) {
+        const v = obj[k];
+        if (Array.isArray(v)) {
+            for (const el of v) {
+                if (el && typeof el === 'object') {
+                    // look for value on each element
+                    for (const vk of [...valueKeys, 'value']) {
+                        if (typeof el[vk] === 'number' && el[vk] > 0) { total += el[vk]; break; }
+                    }
+                }
+            }
+            if (total > 0) return total;
+        } else if (v && typeof v === 'object' && k === 'data') {
+            // recurse one level into data
+            const sub = jupiterExtractValue(v);
+            if (sub > 0) return sub;
+        }
+    }
+    return total;
 }
 
 function addJupiterPositionsToProtocols() {
