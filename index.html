@@ -4980,7 +4980,7 @@ async function fetchJupiterPositions() {
     document.getElementById('jupiterFetchBtn').disabled = true;
     document.getElementById('jupiterAddBtn').style.display = 'none';
     document.getElementById('jupiterResultsPreview').style.display = 'none';
-    jupiterStatus('⏳ Fetching positions from Jupiter…', 'info');
+    jupiterStatus('⏳ Fetching positions from Jupiter… (may take ~10s)', 'info');
     _jupiterParsedPositions = [];
 
     try {
@@ -4988,17 +4988,38 @@ async function fetchJupiterPositions() {
 
         for (const wallet of wallets) {
             const url = `${JUPITER_BASE}/positions/${encodeURIComponent(wallet)}`;
-            const res = await fetch(url, {
-                headers: { 'x-api-key': JUPITER_API_KEY }
-            });
-            if (!res.ok) {
-                const errText = await res.text();
-                throw new Error(`API error (${res.status}): ${errText.slice(0, 200)}`);
-            }
-            const json = await res.json();
-            console.log('[Jupiter] raw response:', JSON.stringify(json).slice(0, 2000));
 
-            // Response shape: { elements: [ { type, label, value, data, ... } ] }
+            // Poll until fetcherReports shows all fetchers done (or timeout after 20s)
+            let json = null;
+            const deadline = Date.now() + 20000;
+            let attempt = 0;
+
+            while (Date.now() < deadline) {
+                attempt++;
+                jupiterStatus(`⏳ Fetching… attempt ${attempt} (waiting for all platforms)`, 'info');
+                const res = await fetch(url, { headers: { 'x-api-key': JUPITER_API_KEY } });
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(`API error (${res.status}): ${errText.slice(0, 200)}`);
+                }
+                json = await res.json();
+                console.log('[Jupiter] attempt', attempt, '– elements:', json.elements?.length,
+                    'fetcherReports:', json.fetcherReports?.length,
+                    JSON.stringify(json.fetcherReports));
+
+                const reports  = json.fetcherReports || [];
+                const elements = json.elements || [];
+
+                // Done if we have fetcher reports AND all succeeded (or failed), or if we have elements and reports are stable
+                const pending = reports.filter(r => r.status === 'pending' || r.status === 'loading' || r.status === 'fetching');
+                if (reports.length > 0 && pending.length === 0) break;
+
+                // Also break if we got elements and fetcher reports stopped changing (some APIs return empty reports when done)
+                if (attempt >= 2 && elements.length > 0 && reports.length === 0) break;
+
+                await new Promise(r => setTimeout(r, 3000));
+            }
+
             const items = Array.isArray(json)
                 ? json
                 : Array.isArray(json.elements)
@@ -5007,6 +5028,8 @@ async function fetchJupiterPositions() {
                         ? json.positions
                         : Object.values(json).find(v => Array.isArray(v)) || [];
 
+            console.log('[Jupiter] final items count:', items.length, items.map(i => i.platformId || i.label));
+
             const typeMap = {
                 'multiple': 'Yield', 'liquidity': 'DEX', 'leverage': 'Lending',
                 'borrowlend': 'Lending', 'trade': 'DEX', 'staking': 'Staking',
@@ -5014,31 +5037,19 @@ async function fetchJupiterPositions() {
             const walletTag = `Solana · ${wallet.slice(0,6)}…${wallet.slice(-4)}`;
 
             for (const item of items) {
-                console.log('[Jupiter] item:', JSON.stringify(item).slice(0, 500));
-                // name: prefer platformId (e.g. "jupiter-exchange"), fall back to label
-                const rawName = item.platformId || item.label || item.type || 'Unknown';
-                // Prettify: "jupiter-exchange" → "Jupiter Exchange"
+                const rawName  = item.platformId || item.label || item.type || 'Unknown';
                 const platform = rawName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
                 const posType  = item.type  || 'Yield';
                 const mappedType = typeMap[posType.toLowerCase()] || 'Yield';
-
-                // Deep-search the entire item for any numeric USD value fields
                 const totalValue = jupiterExtractValue(item);
                 console.log('[Jupiter]', platform, '→ value:', totalValue);
-
                 if (totalValue <= 0) continue;
-
-                allPositions.push({
-                    name:  platform,
-                    type:  mappedType,
-                    value: totalValue,
-                    chain: walletTag,
-                });
+                allPositions.push({ name: platform, type: mappedType, value: totalValue, chain: walletTag });
             }
         }
 
         if (!allPositions.length) {
-            jupiterStatus('ℹ️ No positions with value > $0 found. Check the browser console (F12) for the raw API response.', 'info');
+            jupiterStatus('ℹ️ No positions with value > $0 found. Check browser console (F12) for raw API response.', 'info');
             document.getElementById('jupiterFetchBtn').disabled = false;
             return;
         }
