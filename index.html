@@ -2033,6 +2033,48 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 .brief-news-card-tag.conc    { background: rgba(249,115,22,0.12); color: var(--orange); border: 1px solid rgba(249,115,22,0.25); }
 .brief-news-card-tag.vest    { background: rgba(108,114,255,0.12);color: var(--indigo); border: 1px solid rgba(108,114,255,0.25); }
 .brief-news-card-tag.expired { background: rgba(255,255,255,0.06);color: var(--t3);     border: 1px solid var(--border); }
+.brief-news-card-tag.x       { background: rgba(56,189,248,0.12);  color: var(--sky);    border: 1px solid rgba(56,189,248,0.25); }
+
+/* ─── X ACCOUNTS MANAGER ─────────────────────────────────── */
+.x-accounts-bar {
+  display: flex; align-items: center; gap: 0.55rem;
+  margin-bottom: 0.75rem; flex-wrap: wrap;
+}
+.x-accounts-bar input {
+  flex: 1; min-width: 160px;
+  background: var(--surf-2); border: 1px solid var(--border-mid);
+  border-radius: var(--r-sm); color: var(--t1);
+  font-family: var(--ff-mono); font-size: 0.8rem;
+  padding: 6px 10px; outline: none; transition: border-color 0.15s;
+}
+.x-accounts-bar input:focus { border-color: var(--border-hi); }
+.x-accounts-bar input::placeholder { color: var(--t3); }
+.x-accounts-bar button {
+  background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.3);
+  border-radius: var(--r-sm); color: var(--sky);
+  font-family: var(--ff-body); font-size: 0.78rem; font-weight: 600;
+  padding: 6px 12px; cursor: pointer; white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.x-accounts-bar button:hover { background: rgba(56,189,248,0.2); border-color: rgba(56,189,248,0.5); }
+.x-handles-list {
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+.x-handle-pill {
+  display: flex; align-items: center; gap: 0.35rem;
+  background: var(--surf-2); border: 1px solid var(--border-mid);
+  border-radius: 100px; padding: 3px 10px 3px 8px;
+  font-size: 0.72rem; color: var(--sky); font-family: var(--ff-mono);
+  transition: border-color 0.15s;
+}
+.x-handle-pill:hover { border-color: var(--border-hi); }
+.x-handle-pill-remove {
+  background: none; border: none; color: var(--t3);
+  cursor: pointer; font-size: 0.7rem; line-height: 1; padding: 0;
+  transition: color 0.12s;
+}
+.x-handle-pill-remove:hover { color: var(--red); }
 .brief-news-card-body { flex: 1; min-width: 0; }
 .brief-news-card-title {
   font-size: 0.82rem; font-weight: 500; color: var(--t1);
@@ -2367,6 +2409,12 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
           <!-- NEWS FEED -->
           <div class="brief-news-section">
             <div class="brief-section-label" style="margin-bottom:0.6rem">📰 Top Stories Today</div>
+            <!-- X ACCOUNTS MANAGER -->
+            <div class="x-accounts-bar">
+              <input type="text" id="xHandleInput" placeholder="@handle or handle" maxlength="50">
+              <button onclick="xHandleAdd()">＋ Add X Account</button>
+            </div>
+            <div class="x-handles-list" id="xHandlesList"></div>
             <div class="brief-news-grid" id="briefNewsGrid">
               <div class="brief-news-loading">Loading latest news…</div>
             </div>
@@ -9189,6 +9237,60 @@ fetchMarketTicker();
 setInterval(fetchMarketTicker, TICKER_REFRESH_MS);
 
 // =============================================================================
+// =============================================================================
+// X ACCOUNTS MANAGER
+// =============================================================================
+const X_HANDLES_KEY = 'vault_x_handles';
+
+function xHandleLoad() {
+    try { return JSON.parse(localStorage.getItem(X_HANDLES_KEY)) || []; } catch(e) { return []; }
+}
+function xHandleSave(handles) {
+    try { localStorage.setItem(X_HANDLES_KEY, JSON.stringify(handles)); } catch(e) {}
+}
+function xHandleRender() {
+    const list = document.getElementById('xHandlesList');
+    if (!list) return;
+    const handles = xHandleLoad();
+    if (!handles.length) { list.innerHTML = ''; return; }
+    list.innerHTML = handles.map(h => `
+        <span class="x-handle-pill">
+            𝕏 @${h}
+            <button class="x-handle-pill-remove" onclick="xHandleRemove('${h}')" title="Remove">✕</button>
+        </span>
+    `).join('');
+}
+function xHandleAdd() {
+    const input = document.getElementById('xHandleInput');
+    if (!input) return;
+    const raw = input.value.trim().replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, '');
+    if (!raw) return;
+    const handles = xHandleLoad();
+    if (handles.includes(raw)) { input.value = ''; return; }
+    if (handles.length >= 10) { alert('Maximum 10 X accounts supported.'); return; }
+    handles.push(raw);
+    xHandleSave(handles);
+    xHandleRender();
+    input.value = '';
+    // Clear cache and refresh so new handle's posts appear immediately
+    try { localStorage.removeItem('vault_news_cache'); } catch(e) {}
+    fetchDailyNews();
+}
+function xHandleRemove(handle) {
+    const handles = xHandleLoad().filter(h => h !== handle);
+    xHandleSave(handles);
+    xHandleRender();
+    try { localStorage.removeItem('vault_news_cache'); } catch(e) {}
+    fetchDailyNews();
+}
+// Allow pressing Enter in the X handle input
+document.addEventListener('DOMContentLoaded', () => {
+    const inp = document.getElementById('xHandleInput');
+    if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') xHandleAdd(); });
+    xHandleRender();
+});
+
+// =============================================================================
 // DAILY BRIEF — NEWS FEED (RSS fetch → Groq/Llama ranking)
 // =============================================================================
 async function fetchDailyNews() {
@@ -9198,19 +9300,23 @@ async function fetchDailyNews() {
     const CACHE_KEY = 'vault_news_cache';
     const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
 
+    const xHandles = xHandleLoad();
+
     // ── Check localStorage cache first ──────────────────────────────────────
     try {
         const cached = localStorage.getItem(CACHE_KEY);
         if (cached) {
-            const { html, ts } = JSON.parse(cached);
-            if (Date.now() - ts < CACHE_TTL && html) {
+            const { html, ts, handles } = JSON.parse(cached);
+            // Invalidate cache if handle list changed
+            const same = JSON.stringify(handles || []) === JSON.stringify(xHandles);
+            if (Date.now() - ts < CACHE_TTL && html && same) {
                 el.innerHTML = html;
                 return;
             }
         }
     } catch(e) {}
 
-    const labelMap = { crypto: 'Crypto', defi: 'DeFi', macro: 'Macro' };
+    const labelMap = { crypto: 'Crypto', defi: 'DeFi', macro: 'Macro', x: '𝕏' };
 
     function renderItems(items) {
         if (!items || !items.length) {
@@ -9218,9 +9324,10 @@ async function fetchDailyNews() {
             return;
         }
         const ordered = [
-            ...items.filter(x => x.type === 'crypto'),
-            ...items.filter(x => x.type === 'defi'),
-            ...items.filter(x => x.type === 'macro'),
+            ...items.filter(i => i.type === 'x'),
+            ...items.filter(i => i.type === 'crypto'),
+            ...items.filter(i => i.type === 'defi'),
+            ...items.filter(i => i.type === 'macro'),
         ];
         el.innerHTML = ordered.map(item => `
             <a class="brief-news-card" href="${item.url}" target="_blank" rel="noopener">
@@ -9233,13 +9340,16 @@ async function fetchDailyNews() {
                 </div>
             </a>
         `).join('');
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ html: el.innerHTML, ts: Date.now() })); } catch(e) {}
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ html: el.innerHTML, ts: Date.now(), handles: xHandles })); } catch(e) {}
     }
 
     // ── On Vercel: single call to /api/news (handles RSS + Groq server-side) ─
     if (location.protocol === 'https:') {
         try {
-            const r = await fetch('/api/news', { signal: AbortSignal.timeout(25000) });
+            const url = xHandles.length
+                ? `/api/news?x=${encodeURIComponent(xHandles.join(','))}`
+                : '/api/news';
+            const r = await fetch(url, { signal: AbortSignal.timeout(25000) });
             if (r.ok) {
                 const data = await r.json();
                 renderItems(data.items);
@@ -9254,6 +9364,12 @@ async function fetchDailyNews() {
 
     // ── On file:// fallback: fetch RSS directly with CORS proxies ────────────
     // (no Groq ranking — just show raw headlines)
+    const NITTER_INSTANCES = [
+        'https://nitter.net',
+        'https://nitter.privacydev.net',
+        'https://nitter.poast.org',
+    ];
+
     const SOURCES = [
         { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', type: 'crypto', label: 'CoinDesk'      },
         { url: 'https://cointelegraph.com/rss',                   type: 'crypto', label: 'CoinTelegraph' },
@@ -9261,6 +9377,13 @@ async function fetchDailyNews() {
         { url: 'https://blockworks.co/feed',                      type: 'defi',   label: 'Blockworks'   },
         { url: 'https://feeds.reuters.com/reuters/businessNews',  type: 'macro',  label: 'Reuters'      },
     ];
+
+    // Add Nitter RSS sources for each saved X handle
+    const xSources = xHandles.map(handle => ({
+        url: `${NITTER_INSTANCES[0]}/${handle}/rss`,
+        type: 'x',
+        label: `@${handle}`,
+    }));
 
     async function fetchRSSLocal(src) {
         const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(src.url)}&_=${Date.now()}`;
@@ -9274,13 +9397,16 @@ async function fetchDailyNews() {
         return Array.from(doc.querySelectorAll('item')).slice(0, 3).map(item => {
             const t = s => (s?.textContent || '').replace(/<!\[CDATA\[|\]\]>/g,'').trim();
             let link = t(item.querySelector('link')) || item.querySelector('guid')?.textContent?.trim() || '#';
+            // For Nitter links, rewrite to twitter.com so users land on real X
+            link = link.replace(/^https?:\/\/nitter\.[^/]+\//, 'https://x.com/');
             return { title: t(item.querySelector('title')), url: link, type: src.type, source: src.label };
         });
     }
 
     try {
-        const settled = await Promise.allSettled(SOURCES.map(fetchRSSLocal));
-        const items = settled.flatMap(s => s.status === 'fulfilled' ? s.value : []).slice(0, 8);
+        const allSources = [...xSources, ...SOURCES];
+        const settled = await Promise.allSettled(allSources.map(fetchRSSLocal));
+        const items = settled.flatMap(s => s.status === 'fulfilled' ? s.value : []).slice(0, 12);
         renderItems(items);
     } catch(e) {
         el.innerHTML = `<div class="brief-news-loading">News unavailable (${e.message})</div>`;
