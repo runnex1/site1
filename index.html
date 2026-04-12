@@ -9346,10 +9346,15 @@ async function fetchDailyNews() {
     // ── On Vercel: single call to /api/news (handles RSS + Groq server-side) ─
     if (location.protocol === 'https:') {
         try {
-            const url = xHandles.length
+            // cache:'no-store' bypasses the browser disk cache entirely, so adding/
+            // removing X handles always hits the live function rather than a stale entry.
+            const base = xHandles.length
                 ? `/api/news?x=${encodeURIComponent(xHandles.join(','))}`
                 : '/api/news';
-            const r = await fetch(url, { signal: AbortSignal.timeout(25000) });
+            const r = await fetch(base, {
+                cache: 'no-store',
+                signal: AbortSignal.timeout(25000),
+            });
             if (r.ok) {
                 const data = await r.json();
                 renderItems(data.items);
