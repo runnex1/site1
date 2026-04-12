@@ -2,7 +2,14 @@
 // GET /api/news?x=handle1,handle2  — returns pre-ranked news JSON, cached 2h on CDN edge
 export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 's-maxage=7200, stale-while-revalidate=3600');
+    // Do NOT use s-maxage — Vercel's CDN would cache /api/news and serve that
+    // same response for /api/news?x=handle1, ignoring the query string entirely.
+    // Per-handle responses are marked private so Vercel's CDN never coalesces them.
+    const xParam = req.query?.x || '';
+    res.setHeader(
+        'Cache-Control',
+        xParam ? 'private, max-age=300' : 'public, max-age=7200'
+    );
 
     const GROQ_KEY = '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';
 
@@ -17,7 +24,6 @@ export default async function handler(req, res) {
     ];
 
     // ── Parse X handles from ?x= query param ───────────────────────────────
-    const xParam = req.query?.x || '';
     const xHandles = xParam
         .split(',')
         .map(h => h.trim().replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, ''))
