@@ -8,8 +8,6 @@
 
 export const maxDuration = 60;
 
-// Public Nitter instances — update this list if instances go down.
-// Current status: https://status.d420.de/
 // Verified working as of April 2026 — source: github.com/zedeus/nitter/wiki/Instances
 const NITTER_INSTANCES = [
   'https://xcancel.com',
@@ -57,22 +55,23 @@ export default async function handler(req, res) {
       }
 
       const tweets = items.slice(0, 3).map(m => {
-        const block   = m[1];
-        const title   = (block.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/)  || [])[1] || '';
-        const link    = (block.match(/<link>(.*?)<\/link>/)                          || [])[1] || '';
-        const pubDate = (block.match(/<pubDate>(.*?)<\/pubDate>/)                    || [])[1] || '';
+        const block = m[1];
 
-        // Convert nitter domain back to x.com
-        const url  = link.replace(/^https?:\/\/[^/]+/, 'https://x.com');
+        // Title: try CDATA first, fall back to plain text
+        const titleCdata = (block.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || [])[1];
+        const titlePlain = (block.match(/<title>([\s\S]*?)<\/title>/)                  || [])[1];
+        const text = (titleCdata || titlePlain || '').replace(/\s+/g, ' ').trim();
+
+        // URL: Nitter puts the tweet permalink in <guid>, not <link>
+        const guid    = (block.match(/<guid[^>]*>([\s\S]*?)<\/guid>/) || [])[1] || '';
+        const pubDate = (block.match(/<pubDate>(.*?)<\/pubDate>/)      || [])[1] || '';
+
+        const url  = guid.trim().replace(/^https?:\/\/[^/]+/, 'https://x.com');
         const date = pubDate
           ? new Date(pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
           : '';
 
-        return {
-          text: title.replace(/\s+/g, ' ').trim(),
-          url,
-          date,
-        };
+        return { text, url, date };
       });
 
       console.log(`[tweets] Success via ${base} — ${tweets.length} tweet(s) for @${handle}`);
