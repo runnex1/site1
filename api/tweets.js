@@ -1,9 +1,42 @@
 // =============================================================================
 // /api/tweets.js
 // GET /api/tweets?handle=justinsuntron
+//
+// Two-step approach:
+//   Step 1 — compound-beta-mini searches x.com and returns raw text
+//   Step 2 — llama-3.3-70b-versatile structures that text into clean JSON
+//
+// Requires: GROQ_API_KEY in Vercel Environment Variables
 // =============================================================================
 
 export const maxDuration = 60;
+
+const GROQ_BASE = 'https://api.groq.com/openai/v1/chat/completions';
+
+async function groq(apiKey, model, prompt, timeoutMs = 30000) {
+    const res = await fetch(GROQ_BASE, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+        },
+        signal: AbortSignal.timeout(timeoutMs),
+        body: JSON.stringify({
+            model,
+            max_tokens: 1024,
+            temperature: 0,
+            messages: [{ role: 'user', content: prompt }],
+        }),
+    });
+
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error?.message || `Groq HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content?.trim() || '';
+}
 
 export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -23,83 +56,83 @@ export default async function handler(req, res) {
         return res.status(200).json({ handle, tweets: [], error: 'GROQ_API_KEY env var not set' });
     }
 
-    // Two-attempt strategy: first a targeted URL search, then a broader fallback
-    const attempts = [
-        {
-            model: 'compound-beta-mini',
-            prompt: `Go to https://x.com/${handle} and list the 3 most recent posts you find there.
+    try {
+        // ── Step 1: Search ────────────────────────────────────────────────────
+        // compound-beta-mini has built-in web search. We ask it to simply find
+        // and describe recent posts — no JSON formatting pressure, just retrieval.
+        const searchResult = await groq(
+            GROQ_KEY,
+            'compound-beta-mini',
+            `Search the web and visit x.com/${handle} to find their 3 most recent posts.
 
-Respond with ONLY a JSON array and nothing else — no markdown, no explanation:
-[{"text":"exact post text","url":"https://x.com/${handle}/status/TWEET_ID","date":"Apr 13"}]
+For each post you find, write it out like this:
+TEXT: <the full post text>
+URL: <the full x.com URL including the status ID>
+DATE: <the post date like "Apr 13">
+---
 
-Skip any retweets. Return [] only if the account is private or has no posts.`,
-        },
-        {
-            model: 'compound-beta-mini',
-            prompt: `Search the web for: "${handle} twitter posts site:x.com"
+Do not skip any post. Do not summarise. Write the full text of each post exactly as it appears.
+If you cannot find any posts, write: NO POSTS FOUND`,
+            55000
+        );
 
-Find the 3 most recent tweets by the X/Twitter account @${handle} from those results.
+        console.log(`[tweets] Step 1 raw result for @${handle}:`, searchResult.slice(0, 500));
 
-Respond with ONLY a JSON array, nothing else:
-[{"text":"exact post text","url":"https://x.com/${handle}/status/TWEET_ID","date":"Apr 13"}]
-
-Return [] if nothing is found.`,
-        },
-    ];
-
-    for (const attempt of attempts) {
-        try {
-            const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${GROQ_KEY}`,
-                },
-                signal: AbortSignal.timeout(55000),
-                body: JSON.stringify({
-                    model: attempt.model,
-                    max_tokens: 1024,
-                    temperature: 0,
-                    messages: [{ role: 'user', content: attempt.prompt }],
-                }),
-            });
-
-            if (!groqRes.ok) {
-                const err = await groqRes.json().catch(() => ({}));
-                console.warn(`[tweets] Groq ${groqRes.status} for @${handle}:`, err?.error?.message);
-                continue; // try next attempt
-            }
-
-            const groqData = await groqRes.json();
-            const raw      = groqData.choices?.[0]?.message?.content || '';
-            const clean    = raw.replace(/```json|```/gi, '').trim();
-            const start    = clean.indexOf('[');
-            const end      = clean.lastIndexOf(']');
-
-            if (start === -1 || end === -1) {
-                console.warn(`[tweets] No JSON array in response for @${handle}:`, raw.slice(0, 200));
-                continue;
-            }
-
-            const tweets = JSON.parse(clean.slice(start, end + 1));
-
-            if (!Array.isArray(tweets) || tweets.length === 0) {
-                console.warn(`[tweets] Empty array from Groq for @${handle}`);
-                continue;
-            }
-
-            const cleaned = tweets.slice(0, 3).map(t => ({
-                ...t,
-                text: (t.text || '').replace(/https?:\/\/t\.co\/\S+/g, '').replace(/\s+/g, ' ').trim(),
-            }));
-
-            return res.status(200).json({ handle, tweets: cleaned });
-
-        } catch (err) {
-            console.warn(`[tweets] Attempt error for @${handle}:`, err.message);
-            continue;
+        if (!searchResult || searchResult.includes('NO POSTS FOUND') || searchResult.trim() === '') {
+            return res.status(200).json({ handle, tweets: [], error: 'No posts found by search step' });
         }
-    }
 
-    return res.status(200).json({ handle, tweets: [], error: 'Could not retrieve tweets after all attempts' });
+        // ── Step 2: Structure ─────────────────────────────────────────────────
+        // A fast llama model parses the raw text into clean JSON.
+        // No web search needed here — pure text transformation.
+        const jsonResult = await groq(
+            GROQ_KEY,
+            'llama-3.3-70b-versatile',
+            `Convert the following tweet listing into a JSON array.
+
+Return ONLY the raw JSON array — no markdown fences, no explanation, nothing else:
+[{"text":"full post text","url":"https://x.com/${handle}/status/NUMERIC_ID","date":"Apr 13"},...]
+
+Rules:
+- Maximum 3 items, newest first
+- Use the exact tweet text provided — do not paraphrase
+- If a URL contains a real numeric status ID, keep it exactly as-is
+- Strip any t.co tracking URLs from the text field
+- If date is missing, use ""
+
+Tweet listing to convert:
+${searchResult}`,
+            15000
+        );
+
+        console.log(`[tweets] Step 2 JSON for @${handle}:`, jsonResult.slice(0, 500));
+
+        const clean = jsonResult.replace(/```json|```/gi, '').trim();
+        const start = clean.indexOf('[');
+        const end   = clean.lastIndexOf(']');
+
+        if (start === -1 || end === -1) {
+            return res.status(200).json({
+                handle, tweets: [], error: 'JSON formatting step failed', raw: jsonResult.slice(0, 300)
+            });
+        }
+
+        const tweets = JSON.parse(clean.slice(start, end + 1));
+
+        if (!Array.isArray(tweets) || tweets.length === 0) {
+            return res.status(200).json({ handle, tweets: [], error: 'Empty array after formatting' });
+        }
+
+        const cleaned = tweets.slice(0, 3).map(t => ({
+            text: (t.text || '').replace(/https?:\/\/t\.co\/\S+/g, '').replace(/\s+/g, ' ').trim(),
+            url:  t.url  || `https://x.com/${handle}`,
+            date: t.date || '',
+        }));
+
+        return res.status(200).json({ handle, tweets: cleaned });
+
+    } catch (err) {
+        console.error(`[tweets] Error for @${handle}:`, err.message);
+        return res.status(200).json({ handle, tweets: [], error: err.message });
+    }
 }
