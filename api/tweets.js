@@ -1,110 +1,100 @@
 // =============================================================================
 // /api/tweets.js
-// GET /api/tweets?handle=justinsuntron
+// GET /api/tweets?channel=kobeissiletters
 //
-// Uses Twitter's Syndication API (the same one powering embedded timelines).
-// Requires X session cookies stored as Vercel env vars — no paid API key needed.
-//
-// Setup:
-//   1. Log into x.com in Chrome → F12 → Application → Cookies → x.com
-//   2. Copy auth_token, ct0, guest_id, kdt
-//   3. Add to Vercel: Settings → Environment Variables
+// Fetches the 3 latest posts from a public Telegram channel.
+// No API key, no cookies, no authentication required.
+// Uses Telegram's public web view (t.me/s/channelname).
 // =============================================================================
 
-export const maxDuration = 60;
-
-const SYNDICATION_URL = 'https://syndication.twitter.com/srv/timeline-profile/screen-name';
+export const maxDuration = 15;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'public, s-maxage=120, stale-while-revalidate=300');
+  res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
 
-  const handle = (req.query?.handle || '')
+  const channel = (req.query?.channel || req.query?.handle || '')
     .trim()
     .replace(/^@/, '')
     .replace(/[^a-zA-Z0-9_]/g, '');
 
-  if (!handle) {
-    return res.status(400).json({ error: 'Missing or invalid handle param' });
+  if (!channel) {
+    return res.status(400).json({ error: 'Missing or invalid channel param' });
   }
-
-  const { X_AUTH_TOKEN, X_CT0, X_GUEST_ID, X_KDT } = process.env;
-
-  if (!X_AUTH_TOKEN || !X_CT0) {
-    return res.status(500).json({
-      error: 'Missing X_AUTH_TOKEN or X_CT0 env vars. See setup instructions in tweets.js.',
-    });
-  }
-
-  const cookie = [
-    `auth_token=${X_AUTH_TOKEN}`,
-    `ct0=${X_CT0}`,
-    X_GUEST_ID ? `guest_id=${X_GUEST_ID}` : '',
-    X_KDT      ? `kdt=${X_KDT}`           : '',
-  ].filter(Boolean).join('; ');
 
   try {
-    const url = `${SYNDICATION_URL}/${handle}`;
-    console.log(`[tweets] Fetching syndication for @${handle}`);
+    const url = `https://t.me/s/${channel}`;
+    console.log(`[telegram] Fetching ${url}`);
 
     const r = await fetch(url, {
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(10000),
       headers: {
-        'User-Agent':  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept':      'application/json, text/javascript, */*; q=0.01',
-        'Referer':     'https://platform.twitter.com/',
-        'Origin':      'https://platform.twitter.com',
-        'Cookie':      cookie,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
     });
 
     if (!r.ok) {
-      const body = await r.text().catch(() => '');
-      console.error(`[tweets] Syndication HTTP ${r.status}:`, body.slice(0, 200));
-      return res.status(200).json({ handle, tweets: [], error: `Syndication API returned ${r.status}` });
+      return res.status(200).json({ channel, posts: [], error: `Telegram returned HTTP ${r.status}` });
     }
 
-    const data = await r.json();
+    const html = await r.text();
 
-    // The syndication response wraps tweets under data.timeline.instructions
-    const entries = data?.timeline?.instructions
-      ?.flatMap(i => i.entries ?? [])
-      ?.filter(e => e?.entryId?.startsWith('profile-grid-0-tweet-') || e?.entryId?.startsWith('tweet-'))
-      ?? [];
+    // Extract all message blocks
+    const messageBlocks = [...html.matchAll(
+      /<div class="tgme_widget_message_wrap[^"]*">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g
+    )].map(m => m[0]);
 
-    if (!entries.length) {
-      console.warn('[tweets] No tweet entries in syndication response');
-      return res.status(200).json({ handle, tweets: [], error: 'No tweets found in syndication response' });
+    if (!messageBlocks.length) {
+      return res.status(200).json({ channel, posts: [], error: 'No messages found' });
     }
 
-    const tweets = entries.slice(0, 3).map(entry => {
-      const result  = entry?.content?.itemContent?.tweet_results?.result;
-      const core    = result?.core?.user_results?.result?.legacy;
-      const legacy  = result?.legacy ?? result?.tweet?.legacy;
+    const posts = messageBlocks
+      .slice(-20) // work from the most recent end
+      .reverse()
+      .reduce((acc, block) => {
+        if (acc.length >= 3) return acc;
 
-      const text    = (legacy?.full_text ?? '')
-        .replace(/https?:\/\/t\.co\/\S+/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
+        // Extract text — strip all HTML tags
+        const textMatch = block.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+        if (!textMatch) return acc; // skip forwarded/media-only posts
 
-      const tweetId = legacy?.id_str ?? '';
-      const url     = tweetId
-        ? `https://x.com/${handle}/status/${tweetId}`
-        : `https://x.com/${handle}`;
+        const rawText = textMatch[1]
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<[^>]+>/g, '')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
 
-      const rawDate = legacy?.created_at ?? '';
-      const date    = rawDate
-        ? new Date(rawDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-        : '';
+        if (!rawText) return acc;
 
-      return { text, url, date };
-    }).filter(t => t.text); // drop empty
+        // Extract URL from the message date/time link
+        const urlMatch = block.match(/href="(https:\/\/t\.me\/[^"]+\/(\d+))"/);
+        const postUrl  = urlMatch ? urlMatch[1] : `https://t.me/${channel}`;
 
-    console.log(`[tweets] Returning ${tweets.length} tweet(s) for @${handle}`);
-    return res.status(200).json({ handle, tweets });
+        // Extract date from <time datetime="...">
+        const dateMatch = block.match(/<time[^>]*datetime="([^"]+)"/);
+        const date = dateMatch
+          ? new Date(dateMatch[1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          : '';
+
+        acc.push({ text: rawText, url: postUrl, date });
+        return acc;
+      }, []);
+
+    if (!posts.length) {
+      return res.status(200).json({ channel, posts: [], error: 'Could not parse any posts' });
+    }
+
+    console.log(`[telegram] Returning ${posts.length} post(s) for @${channel}`);
+    return res.status(200).json({ channel, posts });
 
   } catch (err) {
-    console.error(`[tweets] Error for @${handle}:`, err.message);
-    return res.status(200).json({ handle, tweets: [], error: err.message });
+    console.error(`[telegram] Error for ${channel}:`, err.message);
+    return res.status(200).json({ channel, posts: [], error: err.message });
   }
 }
