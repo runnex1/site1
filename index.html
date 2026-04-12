@@ -2075,6 +2075,47 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   transition: color 0.12s;
 }
 .x-handle-pill-remove:hover { color: var(--red); }
+.x-handle-pill.active { border-color: var(--sky); background: rgba(56,189,248,0.08); }
+
+/* ─── TWEET PREVIEW PANEL ────────────────────────────────── */
+.x-preview-panel {
+  margin-bottom: 0.85rem;
+  background: var(--surf-2); border: 1px solid var(--border-mid);
+  border-radius: var(--r); overflow: hidden;
+  animation: xPreviewIn 0.18s ease;
+}
+@keyframes xPreviewIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.x-preview-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+.x-preview-header-title {
+  font-size: 0.72rem; font-weight: 700; color: var(--sky);
+  font-family: var(--ff-mono); letter-spacing: 0.04em;
+}
+.x-preview-close {
+  background: none; border: none; color: var(--t3);
+  cursor: pointer; font-size: 0.75rem; padding: 0;
+  transition: color 0.12s;
+}
+.x-preview-close:hover { color: var(--t1); }
+.x-preview-body {
+  padding: 0.5rem 0.75rem 0.75rem;
+  /* Constrain the X embed widget width & override its background */
+  --tweet-bg: transparent;
+}
+.x-preview-body .twitter-timeline {
+  border-radius: var(--r-sm) !important;
+}
+.x-preview-loading {
+  padding: 1.25rem; text-align: center;
+  font-size: 0.78rem; color: var(--t3);
+}
+
 .brief-news-card-body { flex: 1; min-width: 0; }
 .brief-news-card-title {
   font-size: 0.82rem; font-weight: 500; color: var(--t1);
@@ -2415,6 +2456,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               <button onclick="xHandleAdd()">＋ Add X Account</button>
             </div>
             <div class="x-handles-list" id="xHandlesList"></div>
+            <div id="xPreviewPanel"></div>
             <div class="brief-news-grid" id="briefNewsGrid">
               <div class="brief-news-loading">Loading latest news…</div>
             </div>
@@ -9248,17 +9290,83 @@ function xHandleLoad() {
 function xHandleSave(handles) {
     try { localStorage.setItem(X_HANDLES_KEY, JSON.stringify(handles)); } catch(e) {}
 }
+let xActivePreview = null; // handle currently being previewed
+
 function xHandleRender() {
     const list = document.getElementById('xHandlesList');
     if (!list) return;
     const handles = xHandleLoad();
-    if (!handles.length) { list.innerHTML = ''; return; }
+    if (!handles.length) {
+        list.innerHTML = '';
+        xPreviewClose();
+        return;
+    }
     list.innerHTML = handles.map(h => `
-        <span class="x-handle-pill">
+        <span class="x-handle-pill ${xActivePreview === h ? 'active' : ''}"
+              onclick="xPreviewToggle('${h}')" style="cursor:pointer" title="Preview latest tweets">
             𝕏 @${h}
-            <button class="x-handle-pill-remove" onclick="xHandleRemove('${h}')" title="Remove">✕</button>
+            <button class="x-handle-pill-remove" onclick="event.stopPropagation();xHandleRemove('${h}')" title="Remove">✕</button>
         </span>
     `).join('');
+}
+
+function xPreviewToggle(handle) {
+    if (xActivePreview === handle) {
+        xPreviewClose();
+    } else {
+        xActivePreview = handle;
+        xHandleRender(); // re-render pills to update active state
+        xPreviewShow(handle);
+    }
+}
+
+function xPreviewClose() {
+    xActivePreview = null;
+    const panel = document.getElementById('xPreviewPanel');
+    if (panel) panel.innerHTML = '';
+    xHandleRender();
+}
+
+function xPreviewShow(handle) {
+    const panel = document.getElementById('xPreviewPanel');
+    if (!panel) return;
+
+    panel.innerHTML = `
+        <div class="x-preview-panel">
+            <div class="x-preview-header">
+                <span class="x-preview-header-title">𝕏 @${handle} — latest tweets</span>
+                <button class="x-preview-close" onclick="xPreviewClose()" title="Close">✕</button>
+            </div>
+            <div class="x-preview-body" id="xPreviewBody_${handle}">
+                <div class="x-preview-loading">Loading tweets…</div>
+            </div>
+        </div>
+    `;
+
+    // X's embedded timeline widget — data-tweet-limit caps at 3 tweets
+    const body = document.getElementById(`xPreviewBody_${handle}`);
+    if (!body) return;
+
+    body.innerHTML = `
+        <a class="twitter-timeline"
+           data-theme="dark"
+           data-chrome="noheader nofooter noborders transparent"
+           data-tweet-limit="3"
+           data-dnt="true"
+           href="https://twitter.com/${handle}">
+        </a>
+    `;
+
+    // Load (or re-run) X's widget script
+    if (window.twttr && window.twttr.widgets) {
+        window.twttr.widgets.load(body);
+    } else {
+        const s = document.createElement('script');
+        s.src = 'https://platform.twitter.com/widgets.js';
+        s.async = true;
+        s.charset = 'utf-8';
+        document.head.appendChild(s);
+    }
 }
 function xHandleAdd() {
     const input = document.getElementById('xHandleInput');
