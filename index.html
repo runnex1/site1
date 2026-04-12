@@ -9318,7 +9318,11 @@ function xHandleRender() {
     const handles = xHandleLoad();
     if (!handles.length) {
         list.innerHTML = '';
-        xPreviewClose();
+        // Inline close logic here — calling xPreviewClose() would cause infinite
+        // recursion because xPreviewClose() always calls xHandleRender() at the end.
+        xActivePreview = null;
+        const panel = document.getElementById('xPreviewPanel');
+        if (panel) panel.innerHTML = '';
         return;
     }
     list.innerHTML = handles.map(h => `
