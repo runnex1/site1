@@ -10,11 +10,14 @@ export const maxDuration = 60;
 
 // Public Nitter instances — update this list if instances go down.
 // Current status: https://status.d420.de/
+// Verified working as of April 2026 — source: github.com/zedeus/nitter/wiki/Instances
 const NITTER_INSTANCES = [
-  'https://nitter.privacydev.net',
+  'https://xcancel.com',
   'https://nitter.poast.org',
-  'https://nitter.lucabased.xyz',
-  'https://nitter.net',
+  'https://nitter.privacyredirect.com',
+  'https://nitter.tiekoetter.com',
+  'https://nitter.catsarch.com',
+  'https://nuku.trabun.org',
 ];
 
 export default async function handler(req, res) {
