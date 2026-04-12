@@ -2,21 +2,18 @@
 // /api/tweets.js
 // GET /api/tweets?handle=justinsuntron
 //
-// Fetches the 3 latest tweets via Nitter RSS — no API key required.
-// Falls back through multiple public Nitter instances automatically.
+// Uses Twitter's Syndication API (the same one powering embedded timelines).
+// Requires X session cookies stored as Vercel env vars — no paid API key needed.
+//
+// Setup:
+//   1. Log into x.com in Chrome → F12 → Application → Cookies → x.com
+//   2. Copy auth_token, ct0, guest_id, kdt
+//   3. Add to Vercel: Settings → Environment Variables
 // =============================================================================
 
 export const maxDuration = 60;
 
-// Verified working as of April 2026 — source: github.com/zedeus/nitter/wiki/Instances
-const NITTER_INSTANCES = [
-  'https://xcancel.com',
-  'https://nitter.poast.org',
-  'https://nitter.privacyredirect.com',
-  'https://nitter.tiekoetter.com',
-  'https://nitter.catsarch.com',
-  'https://nuku.trabun.org',
-];
+const SYNDICATION_URL = 'https://syndication.twitter.com/srv/timeline-profile/screen-name';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -31,60 +28,83 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing or invalid handle param' });
   }
 
-  for (const base of NITTER_INSTANCES) {
-    try {
-      const rssUrl = `${base}/${handle}/rss`;
-      console.log(`[tweets] Trying ${rssUrl}`);
+  const { X_AUTH_TOKEN, X_CT0, X_GUEST_ID, X_KDT } = process.env;
 
-      const r = await fetch(rssUrl, {
-        signal: AbortSignal.timeout(8000),
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-      });
-
-      if (!r.ok) {
-        console.warn(`[tweets] ${base} responded ${r.status}, trying next`);
-        continue;
-      }
-
-      const xml = await r.text();
-      const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
-
-      if (!items.length) {
-        console.warn(`[tweets] ${base} returned no items, trying next`);
-        continue;
-      }
-
-      const tweets = items.slice(0, 3).map(m => {
-        const block = m[1];
-
-        // Title: try CDATA first, fall back to plain text
-        const titleCdata = (block.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || [])[1];
-        const titlePlain = (block.match(/<title>([\s\S]*?)<\/title>/)                  || [])[1];
-        const text = (titleCdata || titlePlain || '').replace(/\s+/g, ' ').trim();
-
-        // URL: Nitter puts the tweet permalink in <guid>, not <link>
-        const guid    = (block.match(/<guid[^>]*>([\s\S]*?)<\/guid>/) || [])[1] || '';
-        const pubDate = (block.match(/<pubDate>(.*?)<\/pubDate>/)      || [])[1] || '';
-
-        const url  = guid.trim().replace(/^https?:\/\/[^/]+/, 'https://x.com');
-        const date = pubDate
-          ? new Date(pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-          : '';
-
-        return { text, url, date };
-      });
-
-      console.log(`[tweets] Success via ${base} — ${tweets.length} tweet(s) for @${handle}`);
-      return res.status(200).json({ handle, tweets });
-
-    } catch (e) {
-      console.warn(`[tweets] ${base} failed: ${e.message}`);
-    }
+  if (!X_AUTH_TOKEN || !X_CT0) {
+    return res.status(500).json({
+      error: 'Missing X_AUTH_TOKEN or X_CT0 env vars. See setup instructions in tweets.js.',
+    });
   }
 
-  return res.status(200).json({
-    handle,
-    tweets: [],
-    error: 'All Nitter instances failed. Try updating the NITTER_INSTANCES list.',
-  });
+  const cookie = [
+    `auth_token=${X_AUTH_TOKEN}`,
+    `ct0=${X_CT0}`,
+    X_GUEST_ID ? `guest_id=${X_GUEST_ID}` : '',
+    X_KDT      ? `kdt=${X_KDT}`           : '',
+  ].filter(Boolean).join('; ');
+
+  try {
+    const url = `${SYNDICATION_URL}/${handle}`;
+    console.log(`[tweets] Fetching syndication for @${handle}`);
+
+    const r = await fetch(url, {
+      signal: AbortSignal.timeout(15000),
+      headers: {
+        'User-Agent':  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept':      'application/json, text/javascript, */*; q=0.01',
+        'Referer':     'https://platform.twitter.com/',
+        'Origin':      'https://platform.twitter.com',
+        'Cookie':      cookie,
+      },
+    });
+
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      console.error(`[tweets] Syndication HTTP ${r.status}:`, body.slice(0, 200));
+      return res.status(200).json({ handle, tweets: [], error: `Syndication API returned ${r.status}` });
+    }
+
+    const data = await r.json();
+
+    // The syndication response wraps tweets under data.timeline.instructions
+    const entries = data?.timeline?.instructions
+      ?.flatMap(i => i.entries ?? [])
+      ?.filter(e => e?.entryId?.startsWith('profile-grid-0-tweet-') || e?.entryId?.startsWith('tweet-'))
+      ?? [];
+
+    if (!entries.length) {
+      console.warn('[tweets] No tweet entries in syndication response');
+      return res.status(200).json({ handle, tweets: [], error: 'No tweets found in syndication response' });
+    }
+
+    const tweets = entries.slice(0, 3).map(entry => {
+      const result  = entry?.content?.itemContent?.tweet_results?.result;
+      const core    = result?.core?.user_results?.result?.legacy;
+      const legacy  = result?.legacy ?? result?.tweet?.legacy;
+
+      const text    = (legacy?.full_text ?? '')
+        .replace(/https?:\/\/t\.co\/\S+/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const tweetId = legacy?.id_str ?? '';
+      const url     = tweetId
+        ? `https://x.com/${handle}/status/${tweetId}`
+        : `https://x.com/${handle}`;
+
+      const rawDate = legacy?.created_at ?? '';
+      const date    = rawDate
+        ? new Date(rawDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : '';
+
+      return { text, url, date };
+    }).filter(t => t.text); // drop empty
+
+    console.log(`[tweets] Returning ${tweets.length} tweet(s) for @${handle}`);
+    return res.status(200).json({ handle, tweets });
+
+  } catch (err) {
+    console.error(`[tweets] Error for @${handle}:`, err.message);
+    return res.status(200).json({ handle, tweets: [], error: err.message });
+  }
 }
