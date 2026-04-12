@@ -2115,6 +2115,26 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   padding: 1.25rem; text-align: center;
   font-size: 0.78rem; color: var(--t3);
 }
+.x-tweet-card {
+  display: block; text-decoration: none;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.12s;
+}
+.x-tweet-card:last-child { border-bottom: none; }
+.x-tweet-card:hover { background: rgba(56,189,248,0.04); }
+.x-tweet-text {
+  font-size: 0.83rem; color: var(--t1); line-height: 1.55;
+  margin-bottom: 0.4rem;
+}
+.x-tweet-meta {
+  display: flex; align-items: center; gap: 0.6rem;
+  font-size: 0.68rem;
+}
+.x-tweet-handle { color: var(--sky); font-weight: 600; font-family: var(--ff-mono); }
+.x-tweet-date   { color: var(--t3); }
+.x-tweet-link   { color: var(--t3); margin-left: auto; opacity: 0.6; transition: opacity 0.12s; }
+.x-tweet-card:hover .x-tweet-link { opacity: 1; color: var(--sky); }
 
 .brief-news-card-body { flex: 1; min-width: 0; }
 .brief-news-card-title {
@@ -9327,7 +9347,7 @@ function xPreviewClose() {
     xHandleRender();
 }
 
-function xPreviewShow(handle) {
+async function xPreviewShow(handle) {
     const panel = document.getElementById('xPreviewPanel');
     if (!panel) return;
 
@@ -9338,34 +9358,38 @@ function xPreviewShow(handle) {
                 <button class="x-preview-close" onclick="xPreviewClose()" title="Close">✕</button>
             </div>
             <div class="x-preview-body" id="xPreviewBody_${handle}">
-                <div class="x-preview-loading">Loading tweets…</div>
+                <div class="x-preview-loading">Fetching tweets…</div>
             </div>
         </div>
     `;
 
-    // X's embedded timeline widget — data-tweet-limit caps at 3 tweets
     const body = document.getElementById(`xPreviewBody_${handle}`);
     if (!body) return;
 
-    body.innerHTML = `
-        <a class="twitter-timeline"
-           data-theme="dark"
-           data-chrome="noheader nofooter noborders transparent"
-           data-tweet-limit="3"
-           data-dnt="true"
-           href="https://twitter.com/${handle}">
-        </a>
-    `;
+    try {
+        const r = await fetch(`/api/tweets?handle=${encodeURIComponent(handle)}`, {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(15000),
+        });
+        const data = await r.json();
 
-    // Load (or re-run) X's widget script
-    if (window.twttr && window.twttr.widgets) {
-        window.twttr.widgets.load(body);
-    } else {
-        const s = document.createElement('script');
-        s.src = 'https://platform.twitter.com/widgets.js';
-        s.async = true;
-        s.charset = 'utf-8';
-        document.head.appendChild(s);
+        if (!data.tweets || !data.tweets.length) {
+            body.innerHTML = `<div class="x-preview-loading">No tweets found for @${handle}. The account may be private or the fetch failed.</div>`;
+            return;
+        }
+
+        body.innerHTML = data.tweets.map(t => `
+            <a class="x-tweet-card" href="${t.url}" target="_blank" rel="noopener">
+                <div class="x-tweet-text">${t.text}</div>
+                <div class="x-tweet-meta">
+                    <span class="x-tweet-handle">@${handle}</span>
+                    ${t.date ? `<span class="x-tweet-date">${t.date}</span>` : ''}
+                    <span class="x-tweet-link">↗ View on X</span>
+                </div>
+            </a>
+        `).join('');
+    } catch(e) {
+        body.innerHTML = `<div class="x-preview-loading">Failed to load tweets — ${e.message}</div>`;
     }
 }
 function xHandleAdd() {
