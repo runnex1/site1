@@ -1,6 +1,8 @@
 // Vercel serverless function: fetch latest 3 tweets for a given X handle
 // GET /api/tweets?handle=KobeissiLetter
-// Uses Groq with web search to retrieve real recent tweets — no X API key needed
+// Uses Groq compound-beta-mini (built-in web search) — no X API key needed
+export const maxDuration = 60;
+
 export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'private, max-age=120');
@@ -16,21 +18,12 @@ export default async function handler(req, res) {
 
     const GROQ_KEY = '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';
 
-    const prompt = `Search for the 3 most recent tweets posted by @${handle} on X (Twitter).
+    const prompt = `Search x.com/twitter.com for the 3 most recent posts by @${handle}.
 
-Return ONLY a raw JSON array with exactly this shape — no markdown, no explanation, nothing else:
-[
-  { "text": "full tweet text here", "url": "https://x.com/${handle}/status/TWEET_ID", "date": "Apr 12" },
-  { "text": "...", "url": "...", "date": "..." },
-  { "text": "...", "url": "...", "date": "..." }
-]
+Reply with ONLY a raw JSON array, no markdown, no explanation:
+[{"text":"full post text","url":"https://x.com/${handle}/status/ID_IF_KNOWN","date":"Apr 12"},...]
 
-Rules:
-- Use real tweet IDs in the URLs if you can find them, otherwise use https://x.com/${handle}
-- date format: "Mon D" e.g. "Apr 12"
-- text should be the full tweet content, no truncation
-- newest tweet first
-- if you cannot find any real recent tweets, return []`;
+Rules: newest first. Real tweet IDs in URLs if found. Return [] if nothing found.`;
 
     try {
         const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -39,9 +32,10 @@ Rules:
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${GROQ_KEY}`,
             },
-            signal: AbortSignal.timeout(20000),
+            signal: AbortSignal.timeout(55000),
             body: JSON.stringify({
-                model: 'compound-beta',   // Groq's model with built-in web search
+                model: 'compound-beta-mini',
+                max_tokens: 1024,
                 temperature: 0.1,
                 messages: [{ role: 'user', content: prompt }],
             }),
@@ -61,16 +55,11 @@ Rules:
         if (start === -1) throw new Error('No JSON array in response');
 
         const tweets = JSON.parse(clean.slice(start, end + 1));
-
-        if (!Array.isArray(tweets)) throw new Error('Response is not an array');
+        if (!Array.isArray(tweets)) throw new Error('Not an array');
 
         return res.status(200).json({ handle, tweets: tweets.slice(0, 3) });
 
     } catch (err) {
-        return res.status(200).json({
-            handle,
-            tweets: [],
-            error: err.message,
-        });
+        return res.status(200).json({ handle, tweets: [], error: err.message });
     }
 }
