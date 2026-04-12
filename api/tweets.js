@@ -3,7 +3,7 @@
 // Returns { handle, tweets: [{ text, url, date }] }
 export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'private, max-age=120'); // 2-min browser cache
+    res.setHeader('Cache-Control', 'private, max-age=120');
 
     const handle = (req.query?.handle || '')
         .trim()
@@ -14,9 +14,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: 'Missing handle param' });
     }
 
-    // ── Strategy 1: syndication.twitter.com iframe HTML ────────────────────
-    // This is the actual page X loads inside embedded timeline iframes.
-    // It contains rendered tweet HTML with full text, no JS required.
+    // ── Strategy 1: syndication.twitter.com ────────────────────────────────
     async function fetchViaSyndication() {
         const url = `https://syndication.twitter.com/srv/timeline-profile/screen-name/${handle}?suppressResponseCodes=true&pc=false&lang=en`;
         const r = await fetch(url, {
@@ -31,59 +29,94 @@ export default async function handler(req, res) {
         if (!r.ok) throw new Error(`syndication HTTP ${r.status}`);
         const html = await r.text();
 
-        // Tweet text lives in <p> tags with class containing "tweet-text"
-        // and links are in data-tweet-id attributes
-        const tweets = [];
-
-        // Extract JSON from the __NEXT_DATA__ / window.__INITIAL_STATE__ blob if present
+        // ── Path A: parse __NEXT_DATA__ JSON blob ───────────────────────────
         const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
         if (nextDataMatch) {
             try {
                 const nextData = JSON.parse(nextDataMatch[1]);
-                // Navigate the Next.js page props to find tweets
                 const timeline = nextData?.props?.pageProps?.timeline;
-                const entries = timeline?.entries || timeline?.items || [];
+                const entries  = timeline?.entries || timeline?.items || [];
+
+                const all = [];
                 for (const entry of entries) {
                     const tweet = entry?.content?.tweet || entry?.tweet || entry;
-                    const text = tweet?.full_text || tweet?.text;
-                    const id   = tweet?.id_str || tweet?.id;
+                    const text  = tweet?.full_text || tweet?.text;
+                    const id    = tweet?.id_str || tweet?.id;
                     const created = tweet?.created_at;
                     if (text && id) {
-                        tweets.push({
+                        all.push({
+                            id:   BigInt(id),          // use BigInt for safe 64-bit compare
                             text: text.replace(/https:\/\/t\.co\/\S+/g, '').trim(),
-                            url: `https://x.com/${handle}/status/${id}`,
+                            url:  `https://x.com/${handle}/status/${id}`,
                             date: created ? new Date(created).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '',
                         });
-                        if (tweets.length >= 3) break;
                     }
                 }
-                if (tweets.length) return tweets;
-            } catch(e) { /* fall through to regex */ }
+
+                if (all.length) {
+                    // Sort newest-first by tweet ID (higher = newer)
+                    all.sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+                    return all.slice(0, 3).map(({ id, ...rest }) => rest);
+                }
+            } catch(e) { /* fall through to regex path */ }
         }
 
-        // Fallback: regex scrape tweet text blocks from rendered HTML
-        // Syndication page wraps tweet text in <div data-testid="tweetText"> or similar
-        const tweetBlocks = [...html.matchAll(/data-testid="tweetText"[^>]*>([\s\S]*?)<\/div>/gi)];
-        const idMatches   = [...html.matchAll(/\/status\/(\d+)/g)];
-        const dateMatches = [...html.matchAll(/datetime="([^"]+)"/g)];
+        // ── Path B: regex scrape — pair each tweetText block with its own status ID ──
+        // Strategy: find every tweet container by locating status URLs that appear
+        // *immediately before* a tweetText block in document order.
+        //
+        // We walk the HTML once, collecting (statusId, datetime, textBlock) triples
+        // by scanning for the three markers in order.
+        const all = [];
+        // Match all status IDs with their position in the string
+        const statusRe  = /href="https:\/\/twitter\.com\/[^/]+\/status\/(\d+)/g;
+        const datetimeRe = /datetime="([^"]+)"/g;
+        const textRe    = /data-testid="tweetText"[^>]*>([\s\S]*?)<\/div>/gi;
 
-        for (let i = 0; i < Math.min(tweetBlocks.length, 3); i++) {
-            // Strip inner HTML tags to get plain text
-            const raw = tweetBlocks[i][1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-            const id  = idMatches[i]?.[1] || '';
-            const dt  = dateMatches[i]?.[1] || '';
-            if (raw) {
-                tweets.push({
-                    text: raw,
-                    url: id ? `https://x.com/${handle}/status/${id}` : `https://x.com/${handle}`,
-                    date: dt ? new Date(dt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '',
+        const statusHits  = [...html.matchAll(statusRe)].map(m => ({ id: m[1], pos: m.index }));
+        const datetimeHits = [...html.matchAll(datetimeRe)].map(m => ({ dt: m[1], pos: m.index }));
+        const textHits    = [...html.matchAll(textRe)].map(m => ({
+            text: m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+            pos: m.index,
+        }));
+
+        for (const textHit of textHits) {
+            // Find the nearest status ID that appears before this text block
+            const nearestId = statusHits
+                .filter(s => s.pos < textHit.pos)
+                .at(-1);
+            // Find the nearest datetime that appears before this text block
+            const nearestDt = datetimeHits
+                .filter(d => d.pos < textHit.pos)
+                .at(-1);
+
+            if (textHit.text && nearestId) {
+                all.push({
+                    id:   BigInt(nearestId.id),
+                    text: textHit.text,
+                    url:  `https://x.com/${handle}/status/${nearestId.id}`,
+                    date: nearestDt?.dt
+                        ? new Date(nearestDt.dt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                        : '',
                 });
             }
         }
-        return tweets;
+
+        if (!all.length) throw new Error('No tweets parsed from syndication HTML');
+
+        // Sort newest-first and dedupe by ID
+        const seen = new Set();
+        const deduped = all.filter(t => {
+            const k = t.id.toString();
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+        });
+        deduped.sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+        return deduped.slice(0, 3).map(({ id, ...rest }) => rest);
     }
 
-    // ── Strategy 2: Nitter RSS (fallback) ──────────────────────────────────
+    // ── Strategy 2: Nitter RSS fallback ────────────────────────────────────
     async function fetchViaNitter() {
         const instances = [
             'https://nitter.net',
@@ -98,45 +131,47 @@ export default async function handler(req, res) {
                 });
                 if (!r.ok) continue;
                 const xml = await r.text();
-                const tweets = [];
+
+                const all = [];
                 const itemRe = /<item>([\s\S]*?)<\/item>/gi;
                 let m;
-                while ((m = itemRe.exec(xml)) !== null && tweets.length < 3) {
+                while ((m = itemRe.exec(xml)) !== null) {
                     const block = m[1];
                     const tag = n => {
                         const t = block.match(new RegExp(`<${n}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${n}>`, 'i'))
                                || block.match(new RegExp(`<${n}[^>]*>([^<]*)<\\/${n}>`, 'i'));
                         return t ? t[1].trim() : '';
                     };
-                    // Nitter puts full tweet text in <description>, title is often truncated
-                    const desc = tag('description').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-                    const title = tag('title');
-                    let link = tag('link') || tag('guid');
+                    const desc    = tag('description').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                    const title   = tag('title');
+                    let link      = tag('link') || tag('guid');
                     if (link) link = link.replace(/^https?:\/\/nitter\.[^/]+\//, 'https://x.com/');
                     const pubDate = tag('pubDate');
-                    const date = pubDate ? new Date(pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
-                    const text = desc.length > 20 ? desc : title;
-                    if (text && link) tweets.push({ text, url: link, date });
+                    const date    = pubDate ? new Date(pubDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+                    // Extract tweet ID from link for sorting
+                    const idMatch = link?.match(/\/status\/(\d+)/);
+                    const id      = idMatch ? BigInt(idMatch[1]) : 0n;
+                    const text    = desc.length > 20 ? desc : title;
+                    if (text && link) all.push({ id, text, url: link, date });
                 }
-                if (tweets.length) return tweets;
-            } catch(e) { /* try next */ }
+
+                if (all.length) {
+                    all.sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+                    return all.slice(0, 3).map(({ id, ...rest }) => rest);
+                }
+            } catch(e) { /* try next instance */ }
         }
         return [];
     }
 
-    // ── Try both strategies ─────────────────────────────────────────────────
+    // ── Try strategies in order ─────────────────────────────────────────────
     let tweets = [];
-    try {
-        tweets = await fetchViaSyndication();
-    } catch(e) {
-        console.warn('[tweets] syndication failed:', e.message);
-    }
+    try   { tweets = await fetchViaSyndication(); }
+    catch (e) { console.warn('[tweets] syndication failed:', e.message); }
+
     if (!tweets.length) {
-        try {
-            tweets = await fetchViaNitter();
-        } catch(e) {
-            console.warn('[tweets] nitter failed:', e.message);
-        }
+        try   { tweets = await fetchViaNitter(); }
+        catch (e) { console.warn('[tweets] nitter failed:', e.message); }
     }
 
     if (!tweets.length) {
