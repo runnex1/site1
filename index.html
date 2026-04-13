@@ -2134,19 +2134,6 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   font-size: 0.83rem; color: var(--t1); line-height: 1.55;
   margin-bottom: 0.4rem;
 }
-.x-tweet-text.collapsed {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.x-tweet-expand {
-  background: none; border: none; padding: 0;
-  font-size: 0.72rem; color: var(--teal); cursor: pointer;
-  font-family: var(--ff-body); margin-bottom: 0.4rem;
-  opacity: 0.8; transition: opacity 0.12s;
-}
-.x-tweet-expand:hover { opacity: 1; }
 .x-tweet-meta {
   display: flex; align-items: center; gap: 0.6rem;
   font-size: 0.68rem;
@@ -9403,18 +9390,23 @@ async function xPreviewShow(handle) {
             return;
         }
 
-        const LIMIT = 160; // chars before truncating
-        body.innerHTML = posts.map((t, i) => {
-            const long  = t.text.length > LIMIT;
-            const short = long ? t.text.slice(0, LIMIT).trimEnd() + '…' : t.text;
-            // newlines → <br> for display
-            const fmt   = s => s.replace(/\n/g, '<br>');
+        // Extract 1 sentence, or 2 if the first ends with ":"
+        function summarise(text) {
+            // Split on sentence-ending punctuation followed by whitespace/end
+            const sentences = text.split(/(?<=[.!?])\s+/);
+            if (!sentences.length) return text;
+            const first = sentences[0].trimEnd();
+            if (first.endsWith(':') && sentences[1]) {
+                return first + ' ' + sentences[1].trimEnd();
+            }
+            return first;
+        }
+
+        body.innerHTML = posts.map(t => {
+            const summary = summarise(t.text);
             return `
             <div class="x-tweet-card">
-                <div class="x-tweet-text collapsed" id="xTxt_${handle}_${i}">${fmt(short)}</div>
-                ${long ? `<button class="x-tweet-expand" id="xExp_${handle}_${i}"
-                    onclick="xTweetToggle('${handle}',${i},${JSON.stringify(fmt(t.text))},${JSON.stringify(fmt(short))})">
-                    Show more ↓</button>` : ''}
+                <div class="x-tweet-text">${summary}</div>
                 <div class="x-tweet-meta">
                     <span class="x-tweet-handle">✈ ${handle}</span>
                     ${t.date ? `<span class="x-tweet-date">${t.date}</span>` : ''}
@@ -9427,15 +9419,6 @@ async function xPreviewShow(handle) {
     }
 }
 
-function xTweetToggle(handle, i, full, short) {
-    const txt = document.getElementById(`xTxt_${handle}_${i}`);
-    const btn = document.getElementById(`xExp_${handle}_${i}`);
-    if (!txt || !btn) return;
-    const expanded = btn.textContent.startsWith('Show less');
-    txt.innerHTML = expanded ? short : full;
-    txt.classList.toggle('collapsed', expanded);
-    btn.textContent = expanded ? 'Show more ↓' : 'Show less ↑';
-}
 function xHandleAdd() {
     const input = document.getElementById('xHandleInput');
     if (!input) return;
