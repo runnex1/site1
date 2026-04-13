@@ -882,7 +882,7 @@ body::after {
   border-bottom: 1px solid var(--border);
   font-family: var(--ff-display);
 }
-.tokens-header   { grid-template-columns: 2fr 1.5fr 1.5fr 1fr; }
+.tokens-header   { grid-template-columns: 2fr 1fr 1fr 1fr 0.8fr; }
 .protocols-header{ grid-template-columns: 2fr 1fr 1.5fr 0.8fr 1fr; }
 .etf-header      { grid-template-columns: 1fr 1.5fr 1fr 1fr 1.5fr 1fr; }
 /* Updated PM Header for 8 Columns */
@@ -909,7 +909,7 @@ body::after {
 .table-row:hover::before { transform: scaleY(1); opacity: 1; }
 .table-row:last-child { border-bottom: none; }
 
-.tokens-row    { grid-template-columns: 2fr 1.5fr 1.5fr 1fr; }
+.tokens-row    { grid-template-columns: 2fr 1fr 1fr 1fr 0.8fr; }
 .protocols-row { grid-template-columns: 2fr 1fr 1.5fr 0.8fr 1fr; }
 .etf-row       { grid-template-columns: 1fr 1.5fr 1fr 1fr 1.5fr 1fr; }
 /* Updated PM Row for 8 Columns */
@@ -2524,7 +2524,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
           </div>
           <div class="data-table">
             <div class="table-header tokens-header">
-              <div>Token</div><div>Amount</div><div>Value</div><div>Share</div>
+              <div>Token</div><div>Amount</div><div>Price</div><div>Value</div><div>Share</div>
             </div>
             <div id="tokensTable"></div>
           </div>
@@ -5366,6 +5366,7 @@ function renderTokens() {
                 <div class="token-name">${t.symbol}</div>
             </div>
             <div class="token-amount">${t.amount.toLocaleString('en-US',{minimumFractionDigits:4})}</div>
+            <div class="value">${t.amount > 0 ? '$' + (t.value / t.amount).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4}) : '—'}</div>
             <div class="value">$${t.value.toLocaleString('en-US',{minimumFractionDigits:2})}</div>
             <div class="percentage">${pct}%</div>
         </div>`;
@@ -5376,6 +5377,7 @@ function renderTokens() {
 // LIVE TOKEN PRICES  (CoinGecko simple/price, refreshes every 60s)
 // =============================================================================
 let _tokenPriceTimer = null;
+let livePrices = {}; // symbol.toUpperCase() → USD price
 
 async function fetchLiveTokenPrices() {
     if (!data.tokens.length) return;
@@ -5394,18 +5396,21 @@ async function fetchLiveTokenPrices() {
     const uniqueIds = [...new Set(geckoIds)];
 
     try {
-        const url = `/api/prices?ids=${uniqueIds.join(',')}`;
+        const url = `https://api.coingecko.com/api/v3/simple/price?ids=${uniqueIds.join(',')}&vs_currencies=usd`;
         const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-        if (!res.ok) throw new Error('Price API ' + res.status);
+        if (!res.ok) throw new Error('CoinGecko ' + res.status);
         const prices = await res.json();
 
         let anyUpdated = false;
         data.tokens.forEach(t => {
             const geckoId = CRYPTO_GECKO_IDS[t.symbol.toUpperCase()] || t.symbol.toLowerCase();
             const usd = prices[geckoId]?.usd;
-            if (usd && t.amount > 0) {
-                t.value = t.amount * usd;
-                anyUpdated = true;
+            if (usd) {
+                livePrices[t.symbol.toUpperCase()] = usd;
+                if (usd && t.amount > 0) {
+                    t.value = t.amount * usd;
+                    anyUpdated = true;
+                }
             }
         });
 
@@ -5565,7 +5570,14 @@ function renderProtocols() {
                         }
                     }
                     const tokensHtml = pos.tokens.length
-                        ? pos.tokens.map(t => `<div>${t}</div>`).join('')
+                        ? pos.tokens.map(t => {
+                            const sym = t.trim().toUpperCase();
+                            const price = livePrices[sym];
+                            const priceTag = price
+                                ? ` <span style="color:var(--t3);font-size:0.68rem;font-family:var(--ff-mono)">$${price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4})}</span>`
+                                : '';
+                            return `<div>${t}${priceTag}</div>`;
+                        }).join('')
                         : '<div style="color:var(--t3);font-style:italic">—</div>';
                     const posKey = `${p.name}|||${_secType}${_secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
                     const aprHtml = aprBadgeHtml(posKey, pos.sub);
@@ -7578,27 +7590,50 @@ function wlDrawChart(entry, canvasId) {
         data: {
             labels,
             datasets: [{
-                data: vals, borderColor: color, borderWidth: 2,
-                pointRadius: 0, tension: 0.3, fill: true,
-                backgroundColor: isUp ? 'rgba(34,197,94,0.10)' : 'rgba(244,63,94,0.10)',
+                data: vals, borderColor: '#38BDF8', borderWidth: 2,
+                pointRadius: 0, pointHoverRadius: 4,
+                pointHoverBackgroundColor: '#38BDF8',
+                tension: 0.1, fill: false,
             }]
         },
         options: {
             responsive: true, maintainAspectRatio: false,
             animation: false,
             plugins: { legend: { display: false }, tooltip: {
+                backgroundColor: '#14151E',
+                borderColor: 'rgba(56,189,248,0.3)',
+                borderWidth: 1,
+                padding: 10,
+                displayColors: false,
                 callbacks: {
-                    label: ctx => ' ' + (ctx.parsed.y * 100).toFixed(1) + '¢',
+                    label: ctx => ' ' + (ctx.parsed.y * 100).toFixed(1) + '%',
                     title: ctx => {
                         const ts = ctx[0].label;
                         return new Date(ts * 1000).toLocaleDateString([], { month:'short', day:'numeric', year:'numeric' });
                     }
                 },
-                displayColors: false,
             }},
             scales: {
                 x: { display: false },
-                y: { display: false, min: Math.max(0, Math.min(...vals) - 0.015), max: Math.min(1, Math.max(...vals) + 0.015) }
+                y: {
+                    display: true,
+                    position: 'right',
+                    min: Math.max(0, Math.min(...vals) - 0.02),
+                    max: Math.min(1, Math.max(...vals) + 0.02),
+                    ticks: {
+                        color: 'rgba(255,255,255,0.3)',
+                        font: { size: 9, family: 'JetBrains Mono, monospace' },
+                        callback: v => (v * 100).toFixed(0) + '%',
+                        maxTicksLimit: 5,
+                    },
+                    grid: {
+                        color: 'rgba(255,255,255,0.06)',
+                        lineWidth: 1,
+                        borderDash: [3, 4],
+                        drawBorder: false,
+                    },
+                    border: { display: false },
+                }
             }
         }
     });
@@ -7614,12 +7649,11 @@ function wlRedrawChart(entry) {
     }
     const chart = _wlCharts[entry.id];
     const vals  = series.map(p => p.p);
-    const isUp  = vals.length > 1 && vals[vals.length - 1] >= vals[0];
-    const color = isUp ? '#22C55E' : '#F43F5E';
     chart.data.labels                       = series.map(p => p.t);
     chart.data.datasets[0].data            = vals;
-    chart.data.datasets[0].borderColor     = color;
-    chart.data.datasets[0].backgroundColor = isUp ? 'rgba(34,197,94,0.08)' : 'rgba(244,63,94,0.08)';
+    chart.data.datasets[0].borderColor     = '#38BDF8';
+    chart.options.scales.y.min = Math.max(0, Math.min(...vals) - 0.02);
+    chart.options.scales.y.max = Math.min(1, Math.max(...vals) + 0.02);
     chart.update('none');
 }
 
