@@ -2027,6 +2027,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 .brief-news-card-tag.crypto { background: rgba(0,212,170,0.12); color: var(--teal); border: 1px solid rgba(0,212,170,0.25); }
 .brief-news-card-tag.macro  { background: rgba(108,114,255,0.12); color: var(--indigo); border: 1px solid rgba(108,114,255,0.25); }
 .brief-news-card-tag.defi   { background: rgba(217,70,239,0.12); color: var(--fuchsia); border: 1px solid rgba(217,70,239,0.25); }
+.brief-news-card-tag.kobeissi { background: rgba(245,158,11,0.15); color: var(--amber); border: 1px solid rgba(245,158,11,0.35); font-weight: 800; }
 .brief-news-card-tag.expiry  { background: rgba(244,63,94,0.12);  color: var(--red);    border: 1px solid rgba(244,63,94,0.25); }
 .brief-news-card-tag.warning-tag { background: rgba(245,158,11,0.12); color: var(--amber);  border: 1px solid rgba(245,158,11,0.25); }
 .brief-news-card-tag.ok-tag  { background: rgba(34,197,94,0.12);  color: var(--green);  border: 1px solid rgba(34,197,94,0.25); }
@@ -5396,9 +5397,9 @@ async function fetchLiveTokenPrices() {
     const uniqueIds = [...new Set(geckoIds)];
 
     try {
-        const url = `https://api.coingecko.com/api/v3/simple/price?ids=${uniqueIds.join(',')}&vs_currencies=usd`;
+        const url = `/api/prices?ids=${uniqueIds.join(',')}`;
         const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
-        if (!res.ok) throw new Error('CoinGecko ' + res.status);
+        if (!res.ok) throw new Error('Price API ' + res.status);
         const prices = await res.json();
 
         let anyUpdated = false;
@@ -5407,10 +5408,7 @@ async function fetchLiveTokenPrices() {
             const usd = prices[geckoId]?.usd;
             if (usd) {
                 livePrices[t.symbol.toUpperCase()] = usd;
-                if (usd && t.amount > 0) {
-                    t.value = t.amount * usd;
-                    anyUpdated = true;
-                }
+                if (t.amount > 0) { t.value = t.amount * usd; anyUpdated = true; }
             }
         });
 
@@ -9516,7 +9514,28 @@ async function fetchDailyNews() {
         }
     } catch(e) {}
 
-    const labelMap = { crypto: 'Crypto', defi: 'DeFi', macro: 'Macro', x: '𝕏' };
+    const labelMap = { crypto: 'Crypto', defi: 'DeFi', macro: 'Macro', x: '𝕏', kobeissi: '⚡ Kobeissi' };
+
+    // Fetch latest BREAKING post from @KobeissiLetters via /api/tweets
+    async function fetchKobeissiBreaking() {
+        try {
+            const r = await fetch('/api/tweets?channel=KobeissiLetters', {
+                cache: 'no-store',
+                signal: AbortSignal.timeout(10000),
+            });
+            if (!r.ok) return null;
+            const d = await r.json();
+            const posts = d.posts || [];
+            // Find the most recent post containing BREAKING
+            const hit = posts.find(p => /breaking/i.test(p.text));
+            if (!hit) return null;
+            // Use just the first sentence as the headline
+            const headline = hit.text.split(/(?<=[.!?])\s+/)[0].trim();
+            return { title: headline, url: hit.url, type: 'kobeissi', source: 'KobeissiLetters · ' + (hit.date || '') };
+        } catch(e) {
+            return null;
+        }
+    }
 
     function renderItems(items) {
         if (!items || !items.length) {
@@ -9524,6 +9543,7 @@ async function fetchDailyNews() {
             return;
         }
         const ordered = [
+            ...items.filter(i => i.type === 'kobeissi'),
             ...items.filter(i => i.type === 'x'),
             ...items.filter(i => i.type === 'crypto'),
             ...items.filter(i => i.type === 'defi'),
@@ -9546,18 +9566,18 @@ async function fetchDailyNews() {
     // ── On Vercel: single call to /api/news (handles RSS + Groq server-side) ─
     if (location.protocol === 'https:') {
         try {
-            // cache:'no-store' bypasses the browser disk cache entirely, so adding/
-            // removing X handles always hits the live function rather than a stale entry.
             const base = tgChannels.length
                 ? `/api/news?tg=${encodeURIComponent(tgChannels.join(','))}`
                 : '/api/news';
-            const r = await fetch(base, {
-                cache: 'no-store',
-                signal: AbortSignal.timeout(25000),
-            });
-            if (r.ok) {
-                const data = await r.json();
-                renderItems(data.items);
+            const [newsRes, kobeissiItem] = await Promise.all([
+                fetch(base, { cache: 'no-store', signal: AbortSignal.timeout(25000) }),
+                fetchKobeissiBreaking(),
+            ]);
+            if (newsRes.ok) {
+                const newsData = await newsRes.json();
+                const items = newsData.items || [];
+                if (kobeissiItem) items.unshift(kobeissiItem);
+                renderItems(items);
                 return;
             }
         } catch(e) {
@@ -9606,8 +9626,12 @@ async function fetchDailyNews() {
 
     try {
         const allSources = [...xSources, ...SOURCES];
-        const settled = await Promise.allSettled(allSources.map(fetchRSSLocal));
+        const [settled, kobeissiItem] = await Promise.all([
+            Promise.allSettled(allSources.map(fetchRSSLocal)),
+            fetchKobeissiBreaking(),
+        ]);
         const items = settled.flatMap(s => s.status === 'fulfilled' ? s.value : []).slice(0, 12);
+        if (kobeissiItem) items.unshift(kobeissiItem);
         renderItems(items);
     } catch(e) {
         el.innerHTML = `<div class="brief-news-loading">News unavailable (${e.message})</div>`;
