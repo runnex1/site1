@@ -2105,9 +2105,16 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 .x-preview-close:hover { color: var(--t1); }
 .x-preview-body {
   padding: 0.5rem 0.75rem 0.75rem;
+  max-height: 420px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-mid) transparent;
   /* Constrain the X embed widget width & override its background */
   --tweet-bg: transparent;
 }
+.x-preview-body::-webkit-scrollbar { width: 4px; }
+.x-preview-body::-webkit-scrollbar-track { background: transparent; }
+.x-preview-body::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 4px; }
 .x-preview-body .twitter-timeline {
   border-radius: var(--r-sm) !important;
 }
@@ -2127,6 +2134,19 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   font-size: 0.83rem; color: var(--t1); line-height: 1.55;
   margin-bottom: 0.4rem;
 }
+.x-tweet-text.collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.x-tweet-expand {
+  background: none; border: none; padding: 0;
+  font-size: 0.72rem; color: var(--teal); cursor: pointer;
+  font-family: var(--ff-body); margin-bottom: 0.4rem;
+  opacity: 0.8; transition: opacity 0.12s;
+}
+.x-tweet-expand:hover { opacity: 1; }
 .x-tweet-meta {
   display: flex; align-items: center; gap: 0.6rem;
   font-size: 0.68rem;
@@ -9383,24 +9403,50 @@ async function xPreviewShow(handle) {
             return;
         }
 
-        body.innerHTML = posts.map(t => `
-            <a class="x-tweet-card" href="${t.url}" target="_blank" rel="noopener">
-                <div class="x-tweet-text">${t.text}</div>
+        const LIMIT = 160; // chars before truncating
+        body.innerHTML = posts.map((t, i) => {
+            const long  = t.text.length > LIMIT;
+            const short = long ? t.text.slice(0, LIMIT).trimEnd() + '…' : t.text;
+            // newlines → <br> for display
+            const fmt   = s => s.replace(/\n/g, '<br>');
+            return `
+            <div class="x-tweet-card">
+                <div class="x-tweet-text collapsed" id="xTxt_${handle}_${i}">${fmt(short)}</div>
+                ${long ? `<button class="x-tweet-expand" id="xExp_${handle}_${i}"
+                    onclick="xTweetToggle('${handle}',${i},${JSON.stringify(fmt(t.text))},${JSON.stringify(fmt(short))})">
+                    Show more ↓</button>` : ''}
                 <div class="x-tweet-meta">
                     <span class="x-tweet-handle">✈ ${handle}</span>
                     ${t.date ? `<span class="x-tweet-date">${t.date}</span>` : ''}
-                    <span class="x-tweet-link">↗ View on Telegram</span>
+                    <a class="x-tweet-link" href="${t.url}" target="_blank" rel="noopener">↗ View on Telegram</a>
                 </div>
-            </a>
-        `).join('');
+            </div>`;
+        }).join('');
     } catch(e) {
-        body.innerHTML = `<div class="x-preview-loading">Failed to load tweets — ${e.message}</div>`;
+        body.innerHTML = `<div class="x-preview-loading">Failed to load posts — ${e.message}</div>`;
     }
+}
+
+function xTweetToggle(handle, i, full, short) {
+    const txt = document.getElementById(`xTxt_${handle}_${i}`);
+    const btn = document.getElementById(`xExp_${handle}_${i}`);
+    if (!txt || !btn) return;
+    const expanded = btn.textContent.startsWith('Show less');
+    txt.innerHTML = expanded ? short : full;
+    txt.classList.toggle('collapsed', expanded);
+    btn.textContent = expanded ? 'Show more ↓' : 'Show less ↑';
 }
 function xHandleAdd() {
     const input = document.getElementById('xHandleInput');
     if (!input) return;
-    const raw = input.value.trim().replace(/^https?:\/\/t\.me\//i, '').replace(/^\//, '').replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, '');
+    // Extract channel name from any t.me URL format:
+    // https://t.me/kobeissiletters
+    // https://t.me/s/kobeissiletters
+    // https://t.me/s/kobeissiletters/942
+    // kobeissiletters  (bare name)
+    let val = input.value.trim();
+    const tmeMatch = val.match(/t\.me\/(?:s\/)?([a-zA-Z0-9_]+)/i);
+    const raw = tmeMatch ? tmeMatch[1] : val.replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, '');
     if (!raw) return;
     const handles = xHandleLoad();
     if (handles.includes(raw)) { input.value = ''; return; }
