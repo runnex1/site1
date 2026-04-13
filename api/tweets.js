@@ -2,7 +2,7 @@
 // /api/tweets.js
 // GET /api/tweets?channel=kobeissiletters
 //
-// Fetches the 3 latest posts from a public Telegram channel.
+// Fetches the 10 latest posts from a public Telegram channel.
 // No API key, no cookies, no authentication required.
 // Uses Telegram's public web view (t.me/s/channelname).
 // =============================================================================
@@ -50,10 +50,10 @@ export default async function handler(req, res) {
     }
 
     const posts = messageBlocks
-      .slice(-20) // work from the most recent end
+      .slice(-30) // work from the most recent end
       .reverse()
       .reduce((acc, block) => {
-        if (acc.length >= 3) return acc;
+        if (acc.length >= 10) return acc;
 
         // Extract text — strip all HTML tags
         const textMatch = block.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/);
