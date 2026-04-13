@@ -9495,28 +9495,13 @@ async function fetchDailyNews() {
     const el = document.getElementById('briefNewsGrid');
     if (!el) return;
 
-    const CACHE_KEY = 'vault_news_cache';
-    const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
-
+    const CACHE_KEY  = 'vault_news_cache';
+    const CACHE_TTL  = 2 * 60 * 60 * 1000; // 2 hours
     const tgChannels = xHandleLoad();
-
-    // ── Check localStorage cache first ──────────────────────────────────────
-    try {
-        const cached = localStorage.getItem(CACHE_KEY);
-        if (cached) {
-            const { html, ts, handles } = JSON.parse(cached);
-            // Invalidate cache if handle list changed
-            const same = JSON.stringify(handles || []) === JSON.stringify(tgChannels);
-            if (Date.now() - ts < CACHE_TTL && html && same) {
-                el.innerHTML = html;
-                return;
-            }
-        }
-    } catch(e) {}
 
     const labelMap = { crypto: 'Crypto', defi: 'DeFi', macro: 'Macro', x: '𝕏', kobeissi: '⚡ Kobeissi' };
 
-    // Fetch latest BREAKING post from @KobeissiLetters via /api/tweets
+    // ── Always fetch Kobeissi fresh (fast, independent of main news cache) ────
     async function fetchKobeissiBreaking() {
         try {
             const r = await fetch('/api/tweets?channel=KobeissiLetters', {
@@ -9526,28 +9511,25 @@ async function fetchDailyNews() {
             if (!r.ok) return null;
             const d = await r.json();
             const posts = d.posts || [];
-            // Find the most recent post containing BREAKING
             const hit = posts.find(p => /breaking/i.test(p.text));
             if (!hit) return null;
-            // Use just the first sentence as the headline
             const headline = hit.text.split(/(?<=[.!?])\s+/)[0].trim();
             return { title: headline, url: hit.url, type: 'kobeissi', source: 'KobeissiLetters · ' + (hit.date || '') };
-        } catch(e) {
-            return null;
-        }
+        } catch(e) { return null; }
     }
 
-    function renderItems(items) {
-        if (!items || !items.length) {
+    function renderItems(items, kobeissiItem) {
+        const allItems = kobeissiItem ? [kobeissiItem, ...items] : items;
+        if (!allItems.length) {
             el.innerHTML = '<div class="brief-news-loading">No major market-moving news today.</div>';
             return;
         }
         const ordered = [
-            ...items.filter(i => i.type === 'kobeissi'),
-            ...items.filter(i => i.type === 'x'),
-            ...items.filter(i => i.type === 'crypto'),
-            ...items.filter(i => i.type === 'defi'),
-            ...items.filter(i => i.type === 'macro'),
+            ...allItems.filter(i => i.type === 'kobeissi'),
+            ...allItems.filter(i => i.type === 'x'),
+            ...allItems.filter(i => i.type === 'crypto'),
+            ...allItems.filter(i => i.type === 'defi'),
+            ...allItems.filter(i => i.type === 'macro'),
         ];
         el.innerHTML = ordered.map(item => `
             <a class="brief-news-card" href="${item.url}" target="_blank" rel="noopener">
@@ -9560,8 +9542,26 @@ async function fetchDailyNews() {
                 </div>
             </a>
         `).join('');
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ html: el.innerHTML, ts: Date.now(), handles: tgChannels })); } catch(e) {}
+        // Cache the news items (not HTML) so Kobeissi is always re-fetched fresh
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items, ts: Date.now(), handles: tgChannels })); } catch(e) {}
     }
+
+    // ── Always fetch Kobeissi in parallel with everything else ────────────────
+    const kobeissiPromise = fetchKobeissiBreaking();
+
+    // ── Check localStorage cache for the non-Kobeissi news ───────────────────
+    try {
+        const cached = localStorage.getItem(CACHE_KEY);
+        if (cached) {
+            const { items, ts, handles } = JSON.parse(cached);
+            const same = JSON.stringify(handles || []) === JSON.stringify(tgChannels);
+            if (Date.now() - ts < CACHE_TTL && items && same) {
+                const kobeissiItem = await kobeissiPromise;
+                renderItems(items, kobeissiItem);
+                return;
+            }
+        }
+    } catch(e) {}
 
     // ── On Vercel: single call to /api/news (handles RSS + Groq server-side) ─
     if (location.protocol === 'https:') {
@@ -9571,13 +9571,11 @@ async function fetchDailyNews() {
                 : '/api/news';
             const [newsRes, kobeissiItem] = await Promise.all([
                 fetch(base, { cache: 'no-store', signal: AbortSignal.timeout(25000) }),
-                fetchKobeissiBreaking(),
+                kobeissiPromise,
             ]);
             if (newsRes.ok) {
                 const newsData = await newsRes.json();
-                const items = newsData.items || [];
-                if (kobeissiItem) items.unshift(kobeissiItem);
-                renderItems(items);
+                renderItems(newsData.items || [], kobeissiItem);
                 return;
             }
         } catch(e) {
@@ -9588,7 +9586,6 @@ async function fetchDailyNews() {
     }
 
     // ── On file:// fallback: fetch RSS directly with CORS proxies ────────────
-    // (no Groq ranking — just show raw headlines)
     const NITTER_INSTANCES = [
         'https://nitter.net',
         'https://nitter.privacydev.net',
@@ -9618,7 +9615,6 @@ async function fetchDailyNews() {
         return Array.from(doc.querySelectorAll('item')).slice(0, 3).map(item => {
             const t = s => (s?.textContent || '').replace(/<!\[CDATA\[|\]\]>/g,'').trim();
             let link = t(item.querySelector('link')) || item.querySelector('guid')?.textContent?.trim() || '#';
-            // For Nitter links, rewrite to twitter.com so users land on real X
             link = link.replace(/^https?:\/\/nitter\.[^/]+\//, 'https://x.com/');
             return { title: t(item.querySelector('title')), url: link, type: src.type, source: src.label };
         });
@@ -9628,11 +9624,10 @@ async function fetchDailyNews() {
         const allSources = [...xSources, ...SOURCES];
         const [settled, kobeissiItem] = await Promise.all([
             Promise.allSettled(allSources.map(fetchRSSLocal)),
-            fetchKobeissiBreaking(),
+            kobeissiPromise,
         ]);
         const items = settled.flatMap(s => s.status === 'fulfilled' ? s.value : []).slice(0, 12);
-        if (kobeissiItem) items.unshift(kobeissiItem);
-        renderItems(items);
+        renderItems(items, kobeissiItem);
     } catch(e) {
         el.innerHTML = `<div class="brief-news-loading">News unavailable (${e.message})</div>`;
     }
