@@ -2050,13 +2050,13 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 .x-accounts-bar input:focus { border-color: var(--border-hi); }
 .x-accounts-bar input::placeholder { color: var(--t3); }
 .x-accounts-bar button {
-  background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.3);
-  border-radius: var(--r-sm); color: var(--sky);
+  background: rgba(0,212,170,0.12); border: 1px solid rgba(0,212,170,0.3);
+  border-radius: var(--r-sm); color: var(--teal);
   font-family: var(--ff-body); font-size: 0.78rem; font-weight: 600;
   padding: 6px 12px; cursor: pointer; white-space: nowrap;
   transition: background 0.15s, border-color 0.15s;
 }
-.x-accounts-bar button:hover { background: rgba(56,189,248,0.2); border-color: rgba(56,189,248,0.5); }
+.x-accounts-bar button:hover { background: rgba(0,212,170,0.2); border-color: rgba(0,212,170,0.5); }
 .x-handles-list {
   display: flex; flex-wrap: wrap; gap: 0.4rem;
   margin-bottom: 0.75rem;
@@ -2065,7 +2065,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   display: flex; align-items: center; gap: 0.35rem;
   background: var(--surf-2); border: 1px solid var(--border-mid);
   border-radius: 100px; padding: 3px 10px 3px 8px;
-  font-size: 0.72rem; color: var(--sky); font-family: var(--ff-mono);
+  font-size: 0.72rem; color: var(--teal); font-family: var(--ff-mono);
   transition: border-color 0.15s;
 }
 .x-handle-pill:hover { border-color: var(--border-hi); }
@@ -2075,7 +2075,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   transition: color 0.12s;
 }
 .x-handle-pill-remove:hover { color: var(--red); }
-.x-handle-pill.active { border-color: var(--sky); background: rgba(56,189,248,0.08); }
+.x-handle-pill.active { border-color: var(--teal); background: rgba(0,212,170,0.08); }
 
 /* ─── TWEET PREVIEW PANEL ────────────────────────────────── */
 .x-preview-panel {
@@ -2094,7 +2094,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   border-bottom: 1px solid var(--border);
 }
 .x-preview-header-title {
-  font-size: 0.72rem; font-weight: 700; color: var(--sky);
+  font-size: 0.72rem; font-weight: 700; color: var(--teal);
   font-family: var(--ff-mono); letter-spacing: 0.04em;
 }
 .x-preview-close {
@@ -2122,7 +2122,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   transition: background 0.12s;
 }
 .x-tweet-card:last-child { border-bottom: none; }
-.x-tweet-card:hover { background: rgba(56,189,248,0.04); }
+.x-tweet-card:hover { background: rgba(0,212,170,0.04); }
 .x-tweet-text {
   font-size: 0.83rem; color: var(--t1); line-height: 1.55;
   margin-bottom: 0.4rem;
@@ -2131,10 +2131,10 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   display: flex; align-items: center; gap: 0.6rem;
   font-size: 0.68rem;
 }
-.x-tweet-handle { color: var(--sky); font-weight: 600; font-family: var(--ff-mono); }
+.x-tweet-handle { color: var(--teal); font-weight: 600; font-family: var(--ff-mono); }
 .x-tweet-date   { color: var(--t3); }
 .x-tweet-link   { color: var(--t3); margin-left: auto; opacity: 0.6; transition: opacity 0.12s; }
-.x-tweet-card:hover .x-tweet-link { opacity: 1; color: var(--sky); }
+.x-tweet-card:hover .x-tweet-link { opacity: 1; color: var(--teal); }
 
 .brief-news-card-body { flex: 1; min-width: 0; }
 .brief-news-card-title {
@@ -2472,10 +2472,10 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
             <div class="brief-section-label" style="margin-bottom:0.6rem">📰 Top Stories Today</div>
             <!-- X ACCOUNTS MANAGER -->
             <div class="x-accounts-bar">
-              <input type="text" id="xHandleInput" placeholder="@handle or handle" maxlength="50">
-              <button onclick="xHandleAdd()">＋ Add X Account</button>
+              <input type="text" id="xHandleInput" placeholder="t.me/channel or channel" maxlength="50">
+              <button onclick="xHandleAdd()">＋ Add TG Channel</button>
             </div>
-            <div class="x-handles-list" id="xHandlesList"></div>
+            <div class="x-handles-list" id="tgChannelsList"></div>
             <div id="xPreviewPanel"></div>
             <div class="brief-news-grid" id="briefNewsGrid">
               <div class="brief-news-loading">Loading latest news…</div>
@@ -9302,7 +9302,7 @@ setInterval(fetchMarketTicker, TICKER_REFRESH_MS);
 // =============================================================================
 // X ACCOUNTS MANAGER
 // =============================================================================
-const X_HANDLES_KEY = 'vault_x_handles';
+const X_HANDLES_KEY = 'vault_tg_channels';
 
 function xHandleLoad() {
     try { return JSON.parse(localStorage.getItem(X_HANDLES_KEY)) || []; } catch(e) { return []; }
@@ -9313,7 +9313,7 @@ function xHandleSave(handles) {
 let xActivePreview = null; // handle currently being previewed
 
 function xHandleRender() {
-    const list = document.getElementById('xHandlesList');
+    const list = document.getElementById('tgChannelsList');
     if (!list) return;
     const handles = xHandleLoad();
     if (!handles.length) {
@@ -9327,8 +9327,8 @@ function xHandleRender() {
     }
     list.innerHTML = handles.map(h => `
         <span class="x-handle-pill ${xActivePreview === h ? 'active' : ''}"
-              onclick="xPreviewToggle('${h}')" style="cursor:pointer" title="Preview latest tweets">
-            𝕏 @${h}
+              onclick="xPreviewToggle('${h}')" style="cursor:pointer" title="Preview latest posts">
+            ✈ ${h}
             <button class="x-handle-pill-remove" onclick="event.stopPropagation();xHandleRemove('${h}')" title="Remove">✕</button>
         </span>
     `).join('');
@@ -9358,11 +9358,11 @@ async function xPreviewShow(handle) {
     panel.innerHTML = `
         <div class="x-preview-panel">
             <div class="x-preview-header">
-                <span class="x-preview-header-title">𝕏 @${handle} — latest tweets</span>
+                <span class="x-preview-header-title">✈ ${handle} — latest posts</span>
                 <button class="x-preview-close" onclick="xPreviewClose()" title="Close">✕</button>
             </div>
             <div class="x-preview-body" id="xPreviewBody_${handle}">
-                <div class="x-preview-loading">Fetching tweets…</div>
+                <div class="x-preview-loading">Fetching posts…</div>
             </div>
         </div>
     `;
@@ -9371,24 +9371,25 @@ async function xPreviewShow(handle) {
     if (!body) return;
 
     try {
-        const r = await fetch(`/api/tweets?handle=${encodeURIComponent(handle)}`, {
+        const r = await fetch(`/api/tweets?channel=${encodeURIComponent(handle)}`, {
             cache: 'no-store',
             signal: AbortSignal.timeout(15000),
         });
         const data = await r.json();
 
-        if (!data.tweets || !data.tweets.length) {
-            body.innerHTML = `<div class="x-preview-loading">No tweets found for @${handle}. The account may be private or the fetch failed.</div>`;
+        const posts = data.posts || data.tweets || [];
+        if (!posts.length) {
+            body.innerHTML = `<div class="x-preview-loading">No posts found for ${handle}. The channel may not exist or the fetch failed.</div>`;
             return;
         }
 
-        body.innerHTML = data.tweets.map(t => `
+        body.innerHTML = posts.map(t => `
             <a class="x-tweet-card" href="${t.url}" target="_blank" rel="noopener">
                 <div class="x-tweet-text">${t.text}</div>
                 <div class="x-tweet-meta">
-                    <span class="x-tweet-handle">@${handle}</span>
+                    <span class="x-tweet-handle">✈ ${handle}</span>
                     ${t.date ? `<span class="x-tweet-date">${t.date}</span>` : ''}
-                    <span class="x-tweet-link">↗ View on X</span>
+                    <span class="x-tweet-link">↗ View on Telegram</span>
                 </div>
             </a>
         `).join('');
@@ -9399,11 +9400,11 @@ async function xPreviewShow(handle) {
 function xHandleAdd() {
     const input = document.getElementById('xHandleInput');
     if (!input) return;
-    const raw = input.value.trim().replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, '');
+    const raw = input.value.trim().replace(/^https?:\/\/t\.me\//i, '').replace(/^\//, '').replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, '');
     if (!raw) return;
     const handles = xHandleLoad();
     if (handles.includes(raw)) { input.value = ''; return; }
-    if (handles.length >= 10) { alert('Maximum 10 X accounts supported.'); return; }
+    if (handles.length >= 10) { alert('Maximum 10 Telegram channels supported.'); return; }
     handles.push(raw);
     xHandleSave(handles);
     xHandleRender();
@@ -9436,7 +9437,7 @@ async function fetchDailyNews() {
     const CACHE_KEY = 'vault_news_cache';
     const CACHE_TTL = 2 * 60 * 60 * 1000; // 2 hours
 
-    const xHandles = xHandleLoad();
+    const tgChannels = xHandleLoad();
 
     // ── Check localStorage cache first ──────────────────────────────────────
     try {
@@ -9444,7 +9445,7 @@ async function fetchDailyNews() {
         if (cached) {
             const { html, ts, handles } = JSON.parse(cached);
             // Invalidate cache if handle list changed
-            const same = JSON.stringify(handles || []) === JSON.stringify(xHandles);
+            const same = JSON.stringify(handles || []) === JSON.stringify(tgChannels);
             if (Date.now() - ts < CACHE_TTL && html && same) {
                 el.innerHTML = html;
                 return;
@@ -9476,7 +9477,7 @@ async function fetchDailyNews() {
                 </div>
             </a>
         `).join('');
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ html: el.innerHTML, ts: Date.now(), handles: xHandles })); } catch(e) {}
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ html: el.innerHTML, ts: Date.now(), handles: tgChannels })); } catch(e) {}
     }
 
     // ── On Vercel: single call to /api/news (handles RSS + Groq server-side) ─
@@ -9484,8 +9485,8 @@ async function fetchDailyNews() {
         try {
             // cache:'no-store' bypasses the browser disk cache entirely, so adding/
             // removing X handles always hits the live function rather than a stale entry.
-            const base = xHandles.length
-                ? `/api/news?x=${encodeURIComponent(xHandles.join(','))}`
+            const base = tgChannels.length
+                ? `/api/news?tg=${encodeURIComponent(tgChannels.join(','))}`
                 : '/api/news';
             const r = await fetch(base, {
                 cache: 'no-store',
@@ -9519,12 +9520,8 @@ async function fetchDailyNews() {
         { url: 'https://feeds.reuters.com/reuters/businessNews',  type: 'macro',  label: 'Reuters'      },
     ];
 
-    // Add Nitter RSS sources for each saved X handle
-    const xSources = xHandles.map(handle => ({
-        url: `${NITTER_INSTANCES[0]}/${handle}/rss`,
-        type: 'x',
-        label: `@${handle}`,
-    }));
+    // Telegram channels — no RSS in local fallback; posts are loaded via the preview panel
+    const tgSources = [];
 
     async function fetchRSSLocal(src) {
         const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(src.url)}&_=${Date.now()}`;
