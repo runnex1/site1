@@ -2478,15 +2478,19 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
           <!-- NEWS FEED -->
           <div class="brief-news-section">
             <div class="brief-section-label" style="margin-bottom:0.6rem">📰 Top Stories Today</div>
-            <!-- X ACCOUNTS MANAGER -->
-            <div class="x-accounts-bar">
-              <input type="text" id="xHandleInput" placeholder="t.me/channel or channel" maxlength="50">
-              <button onclick="xHandleAdd()">＋ Add TG Channel</button>
-            </div>
-            <div class="x-handles-list" id="tgChannelsList"></div>
             <div id="xPreviewPanel"></div>
             <div class="brief-news-grid" id="briefNewsGrid">
               <div class="brief-news-loading">Loading latest news…</div>
+            </div>
+            <!-- KOBEISSI BREAKING HEADLINE -->
+            <div id="kobeissiCard" style="display:none;margin-top:0.45rem"></div>
+            <!-- TG CHANNEL MANAGER -->
+            <div style="margin-top:0.75rem;padding-top:0.65rem;border-top:1px solid var(--border)">
+              <div class="x-handles-list" id="tgChannelsList" style="margin-bottom:0.45rem"></div>
+              <div class="x-accounts-bar">
+                <input type="text" id="xHandleInput" placeholder="t.me/channel or channel" maxlength="50">
+                <button onclick="xHandleAdd()">＋ Add TG Channel</button>
+              </div>
             </div>
           </div>
 
@@ -9518,18 +9522,35 @@ async function fetchDailyNews() {
         } catch(e) { return null; }
     }
 
+    function renderKobeissi(item) {
+        const card = document.getElementById('kobeissiCard');
+        if (!card) return;
+        if (!item) { card.style.display = 'none'; return; }
+        card.style.display = 'block';
+        card.innerHTML = `
+            <a class="brief-news-card" href="${item.url}" target="_blank" rel="noopener" style="border-color:rgba(245,158,11,0.2)">
+                <span class="brief-news-card-tag kobeissi">⚡ Kobeissi</span>
+                <div class="brief-news-card-body">
+                    <div class="brief-news-card-title">${item.title}</div>
+                    <div class="brief-news-card-meta">
+                        <span class="brief-news-card-source">${item.source}</span>
+                    </div>
+                </div>
+            </a>`;
+    }
+
     function renderItems(items, kobeissiItem) {
-        const allItems = kobeissiItem ? [kobeissiItem, ...items] : items;
-        if (!allItems.length) {
+        renderKobeissi(kobeissiItem);
+        const filtered = (items || []).filter(i => i.type !== 'kobeissi');
+        if (!filtered.length) {
             el.innerHTML = '<div class="brief-news-loading">No major market-moving news today.</div>';
             return;
         }
         const ordered = [
-            ...allItems.filter(i => i.type === 'kobeissi'),
-            ...allItems.filter(i => i.type === 'x'),
-            ...allItems.filter(i => i.type === 'crypto'),
-            ...allItems.filter(i => i.type === 'defi'),
-            ...allItems.filter(i => i.type === 'macro'),
+            ...filtered.filter(i => i.type === 'x'),
+            ...filtered.filter(i => i.type === 'crypto'),
+            ...filtered.filter(i => i.type === 'defi'),
+            ...filtered.filter(i => i.type === 'macro'),
         ];
         el.innerHTML = ordered.map(item => `
             <a class="brief-news-card" href="${item.url}" target="_blank" rel="noopener">
@@ -9542,8 +9563,7 @@ async function fetchDailyNews() {
                 </div>
             </a>
         `).join('');
-        // Cache the news items (not HTML) so Kobeissi is always re-fetched fresh
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items, ts: Date.now(), handles: tgChannels })); } catch(e) {}
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items: filtered, ts: Date.now(), handles: tgChannels })); } catch(e) {}
     }
 
     // ── Always fetch Kobeissi in parallel with everything else ────────────────
