@@ -9477,8 +9477,6 @@ function xHandleAdd() {
     // Clear cache and refresh so new handle's posts appear immediately
     try { localStorage.removeItem('vault_news_cache'); } catch(e) {}
     fetchDailyNews();
-    // Auto-open preview for the newly added channel
-    xPreviewToggle(raw);
 }
 function xHandleRemove(handle) {
     const handles = xHandleLoad().filter(h => h !== handle);
