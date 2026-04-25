@@ -2320,6 +2320,10 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l3-9 5 18 3-9h5"/></svg>
         Prediction Markets
       </div>
+      <div class="nav-item" data-tab="loops" onclick="switchTab('loops')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="M15 5l4 4"/></svg>
+        Loops
+      </div>
       <div class="nav-item" data-tab="etf" onclick="switchTab('etf')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
         ETF &amp; Stocks
@@ -2635,21 +2639,10 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
           </div>
         </div>
 
-        <!-- ── LOOPS SECTION ─────────────────────────────────── -->
-        <div class="section" id="loopsSection" style="display:none">
-          <div class="section-header">
-            <div class="section-title">
-              <div class="section-title-dot" style="background:var(--amber);box-shadow:0 0 8px rgba(245,158,11,0.5)"></div>
-              Loops
-              <span id="loopsCount" style="font-size:0.72rem;font-weight:600;font-family:var(--ff-mono);padding:2px 9px;border-radius:var(--r-xs);background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.22);color:var(--amber);margin-left:0.5rem;"></span>
-            </div>
-          </div>
-          <div id="loopsGrid" class="loops-grid"></div>
-        </div>
-
       </div>
 
-      <div id="predictionTab" class="tab-pane">
+      <!-- ═══════════════════════════════════════════════════════
+           LOOPS TAB
 
         <div class="section">
           <div class="section-header">
@@ -2808,6 +2801,22 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
           </div>
         </div>
 
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════
+           LOOPS TAB
+      ═══════════════════════════════════════════════════════ -->
+      <div id="loopsTab" class="tab-pane">
+        <div class="section">
+          <div class="section-header">
+            <div class="section-title">
+              <div class="section-title-dot" style="background:var(--amber);box-shadow:0 0 8px rgba(245,158,11,0.5)"></div>
+              Loops
+              <span id="loopsCount" style="font-size:0.72rem;font-weight:600;font-family:var(--ff-mono);padding:2px 9px;border-radius:var(--r-xs);background:rgba(245,158,11,0.10);border:1px solid rgba(245,158,11,0.22);color:var(--amber);margin-left:0.5rem;"></span>
+            </div>
+          </div>
+          <div id="loopsGrid" class="loops-grid"></div>
+        </div>
       </div>
 
       <div id="etfTab" class="tab-pane">
