@@ -2042,7 +2042,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   margin-bottom: 0.75rem; flex-wrap: wrap;
 }
 .x-accounts-bar input {
-  flex: 1; min-width: 160px;
+  flex: 1; min-width: 120px; max-width: 220px;
   background: var(--surf-2); border: 1px solid var(--border-mid);
   border-radius: var(--r-sm); color: var(--t1);
   font-family: var(--ff-mono); font-size: 0.8rem;
@@ -9618,19 +9618,33 @@ async function fetchDailyNews() {
         { url: 'https://thedefiant.io/feed',                      type: 'defi',   label: 'The Defiant'  },
         { url: 'https://blockworks.co/feed',                      type: 'defi',   label: 'Blockworks'   },
         { url: 'https://feeds.reuters.com/reuters/businessNews',  type: 'macro',  label: 'Reuters'      },
+        { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',  type: 'macro',  label: 'BBC Business' },
+        { url: 'https://www.investing.com/rss/news_25.rss',       type: 'macro',  label: 'Investing.com'},
+        { url: 'https://decrypt.co/feed',                         type: 'crypto', label: 'Decrypt'      },
     ];
 
     // Telegram channels — no RSS in local fallback; posts are loaded via the preview panel
     const tgSources = [];
 
     async function fetchRSSLocal(src) {
-        const proxy = `https://api.allorigins.win/raw?url=${encodeURIComponent(src.url)}&_=${Date.now()}`;
-        const r = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
-        if (!r.ok) throw new Error('proxy failed');
-        let text = await r.text();
-        if (text.trimStart().startsWith('{')) {
-            try { text = JSON.parse(text).contents || text; } catch(e) {}
+        // Try two CORS proxies in sequence for resilience
+        const proxies = [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(src.url)}&_=${Date.now()}`,
+            `https://corsproxy.io/?${encodeURIComponent(src.url)}`,
+        ];
+        let text = null;
+        for (const proxy of proxies) {
+            try {
+                const r = await fetch(proxy, { signal: AbortSignal.timeout(10000) });
+                if (!r.ok) continue;
+                text = await r.text();
+                if (text.trimStart().startsWith('{')) {
+                    try { text = JSON.parse(text).contents || text; } catch(e) {}
+                }
+                break;
+            } catch(e) { continue; }
         }
+        if (!text) throw new Error('all proxies failed');
         const doc = new DOMParser().parseFromString(text, 'text/xml');
         return Array.from(doc.querySelectorAll('item')).slice(0, 3).map(item => {
             const t = s => (s?.textContent || '').replace(/<!\[CDATA\[|\]\]>/g,'').trim();
@@ -9641,7 +9655,7 @@ async function fetchDailyNews() {
     }
 
     try {
-        const allSources = [...xSources, ...SOURCES];
+        const allSources = [...tgSources, ...SOURCES];
         const [settled, kobeissiItem] = await Promise.all([
             Promise.allSettled(allSources.map(fetchRSSLocal)),
             kobeissiPromise,
