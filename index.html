@@ -2108,6 +2108,22 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   display: flex; flex-wrap: wrap; gap: 0.4rem;
   margin-bottom: 0.75rem;
 }
+.tg-inline-panel {
+  background: var(--surf-2); border: 1px solid var(--border-mid);
+  border-radius: var(--r-sm);
+  padding: 0 0.75rem 0.5rem;
+  animation: xPreviewIn 0.16s ease;
+}
+.tg-inline-panel-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.5rem 0 0.4rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.1rem;
+}
+.tg-inline-panel-title {
+  font-size: 0.72rem; font-weight: 700; color: var(--teal);
+  font-family: var(--ff-mono); letter-spacing: 0.04em;
+}
 .x-handle-pill {
   display: flex; align-items: center; gap: 0.35rem;
   background: var(--surf-2); border: 1px solid var(--border-mid);
@@ -2528,7 +2544,6 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
           <!-- NEWS FEED -->
           <div class="brief-news-section">
             <div class="brief-section-label" style="margin-bottom:0.6rem">📰 Top Stories Today</div>
-            <div id="xPreviewPanel"></div>
             <div class="brief-news-grid" id="briefNewsGrid">
               <div class="brief-news-loading">Loading latest news…</div>
             </div>
@@ -2537,6 +2552,8 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
             <!-- TG CHANNEL MANAGER -->
             <div style="margin-top:0.75rem;padding-top:0.65rem;border-top:1px solid var(--border)">
               <div class="x-handles-list" id="tgChannelsList" style="margin-bottom:0.45rem"></div>
+              <!-- Shared posts panel — full width, below all pills -->
+              <div id="tgSharedPanel" style="display:none;margin-bottom:0.5rem"></div>
               <div class="x-accounts-bar">
                 <input type="text" id="xHandleInput" placeholder="t.me/channel or channel" maxlength="50">
                 <button onclick="xHandleAdd()">＋ Add TG Channel</button>
@@ -3913,6 +3930,7 @@ function switchTab(tab) {
     if (dividerEl) dividerEl.style.display = isOverview ? '' : 'none';
     if (tab === 'history') renderHistory();
     if (tab === 'terminal') { terminalRenderAlerts(); }
+    if (tab === 'loops') { renderLoops(); }
     if (tab === 'prediction') {
         renderPredictionMarkets();
     }
@@ -5706,10 +5724,9 @@ function renderProtocols() {
 // LOOPS — Lending positions that include a Borrowed side
 // =============================================================================
 function renderLoops() {
-    const section = document.getElementById('loopsSection');
     const grid    = document.getElementById('loopsGrid');
     const countEl = document.getElementById('loopsCount');
-    if (!section || !grid) return;
+    if (!grid) return;
 
     const fmtV = v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -5756,12 +5773,12 @@ function renderLoops() {
         loops.push({ p, totalSupplied, totalBorrowed, suppliedPositions, borrowedPositions, health });
     }
 
-    // Hide section if nothing to show
+    // Show empty state if nothing qualifies
     if (!loops.length) {
-        section.style.display = 'none';
+        if (countEl) countEl.textContent = '0 loops';
+        grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🔄</div><div>No loops detected.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">Import Lending protocol positions that include Supplied and Borrowed sides.</small></div></div>';
         return;
     }
-    section.style.display = '';
     if (countEl) countEl.textContent = loops.length + (loops.length === 1 ? ' loop' : ' loops');
 
     // Sort by net value descending
@@ -9567,16 +9584,14 @@ function xHandleRender() {
     const handles = xHandleLoad();
     if (!handles.length) {
         list.innerHTML = '';
-        // Inline close logic here — calling xPreviewClose() would cause infinite
-        // recursion because xPreviewClose() always calls xHandleRender() at the end.
         xActivePreview = null;
-        const panel = document.getElementById('xPreviewPanel');
-        if (panel) panel.innerHTML = '';
+        const panel = document.getElementById('tgSharedPanel');
+        if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
         return;
     }
     list.innerHTML = handles.map(h => `
         <span class="x-handle-pill ${xActivePreview === h ? 'active' : ''}"
-              onclick="xPreviewToggle('${h}')" style="cursor:pointer" title="Preview latest posts">
+              onclick="xPreviewToggle('${h}')" style="cursor:pointer" title="View latest posts">
             ✈ ${h}
             <button class="x-handle-pill-remove" onclick="event.stopPropagation();xHandleRemove('${h}')" title="Remove">✕</button>
         </span>
@@ -9584,82 +9599,77 @@ function xHandleRender() {
 }
 
 function xPreviewToggle(handle) {
+    const panel = document.getElementById('tgSharedPanel');
+    if (!panel) return;
+
     if (xActivePreview === handle) {
-        xPreviewClose();
-    } else {
-        xActivePreview = handle;
-        xHandleRender(); // re-render pills to update active state
-        xPreviewShow(handle);
+        // Collapse
+        xActivePreview = null;
+        panel.style.display = 'none';
+        panel.innerHTML = '';
+        xHandleRender();
+        return;
     }
+
+    // Switch to new handle
+    xActivePreview = handle;
+    xHandleRender(); // re-render pills so active class updates
+    panel.style.display = 'block';
+    xPreviewLoad(handle);
 }
 
 function xPreviewClose() {
     xActivePreview = null;
-    const panel = document.getElementById('xPreviewPanel');
-    if (panel) panel.innerHTML = '';
+    const panel = document.getElementById('tgSharedPanel');
+    if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
     xHandleRender();
 }
 
-async function xPreviewShow(handle) {
-    const panel = document.getElementById('xPreviewPanel');
+async function xPreviewLoad(handle) {
+    const panel = document.getElementById('tgSharedPanel');
     if (!panel) return;
-
     panel.innerHTML = `
-        <div class="x-preview-panel">
-            <div class="x-preview-header">
-                <span class="x-preview-header-title">✈ ${handle} — latest posts</span>
+        <div class="tg-inline-panel">
+            <div class="tg-inline-panel-header">
+                <span class="tg-inline-panel-title">✈ ${handle}</span>
                 <button class="x-preview-close" onclick="xPreviewClose()" title="Close">✕</button>
             </div>
-            <div class="x-preview-body" id="xPreviewBody_${handle}">
-                <div class="x-preview-loading">Fetching posts…</div>
+            <div id="tgSharedBody">
+                <div class="x-preview-loading" style="padding:0.75rem 0">Fetching posts…</div>
             </div>
-        </div>
-    `;
+        </div>`;
 
-    const body = document.getElementById(`xPreviewBody_${handle}`);
-    if (!body) return;
-
+    const body = document.getElementById('tgSharedBody');
     try {
         const r = await fetch(`/api/tweets?channel=${encodeURIComponent(handle)}`, {
-            cache: 'no-store',
-            signal: AbortSignal.timeout(15000),
+            cache: 'no-store', signal: AbortSignal.timeout(15000),
         });
-        const data = await r.json();
-
-        const posts = data.posts || data.tweets || [];
+        const d = await r.json();
+        const posts = d.posts || d.tweets || [];
         if (!posts.length) {
-            body.innerHTML = `<div class="x-preview-loading">No posts found for ${handle}. The channel may not exist or the fetch failed.</div>`;
+            body.innerHTML = `<div class="x-preview-loading" style="padding:0.6rem 0">No posts found for ${handle}.</div>`;
             return;
         }
-
-        // Extract 1 sentence, or 2 if the first ends with ":"
         function summarise(text) {
-            // Split on sentence-ending punctuation followed by whitespace/end
-            const sentences = text.split(/(?<=[.!?])\s+/);
-            if (!sentences.length) return text;
-            const first = sentences[0].trimEnd();
-            if (first.endsWith(':') && sentences[1]) {
-                return first + ' ' + sentences[1].trimEnd();
-            }
-            return first;
+            const parts = text.split(/(?<=[.!?])\s+/);
+            const first = parts[0].trimEnd();
+            return (first.endsWith(':') && parts[1]) ? first + ' ' + parts[1].trimEnd() : first;
         }
-
-        body.innerHTML = posts.map(t => {
-            const summary = summarise(t.text);
-            return `
+        body.innerHTML = posts.map(t => `
             <div class="x-tweet-card">
-                <div class="x-tweet-text">${summary}</div>
+                <div class="x-tweet-text">${summarise(t.text)}</div>
                 <div class="x-tweet-meta">
                     <span class="x-tweet-handle">✈ ${handle}</span>
                     ${t.date ? `<span class="x-tweet-date">${t.date}</span>` : ''}
-                    <a class="x-tweet-link" href="${t.url}" target="_blank" rel="noopener">↗ View on Telegram</a>
+                    <a class="x-tweet-link" href="${t.url}" target="_blank" rel="noopener">↗ Telegram</a>
                 </div>
-            </div>`;
-        }).join('');
+            </div>`).join('');
     } catch(e) {
-        body.innerHTML = `<div class="x-preview-loading">Failed to load posts — ${e.message}</div>`;
+        body.innerHTML = `<div class="x-preview-loading" style="padding:0.6rem 0">Failed to load — ${e.message}</div>`;
     }
 }
+
+async function xPreviewShow(handle) { return xPreviewLoad(handle); }
 
 function xHandleAdd() {
     const input = document.getElementById('xHandleInput');
