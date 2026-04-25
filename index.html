@@ -2478,6 +2478,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
           <!-- NEWS FEED -->
           <div class="brief-news-section">
             <div class="brief-section-label" style="margin-bottom:0.6rem">📰 Top Stories Today</div>
+            <div id="xPreviewPanel"></div>
             <div class="brief-news-grid" id="briefNewsGrid">
               <div class="brief-news-loading">Loading latest news…</div>
             </div>
@@ -2486,8 +2487,6 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
             <!-- TG CHANNEL MANAGER -->
             <div style="margin-top:0.75rem;padding-top:0.65rem;border-top:1px solid var(--border)">
               <div class="x-handles-list" id="tgChannelsList" style="margin-bottom:0.45rem"></div>
-              <!-- TG PREVIEW PANEL — renders directly below the channel pills -->
-              <div id="xPreviewPanel"></div>
               <div class="x-accounts-bar">
                 <input type="text" id="xHandleInput" placeholder="t.me/channel or channel" maxlength="50">
                 <button onclick="xHandleAdd()">＋ Add TG Channel</button>
@@ -9400,7 +9399,7 @@ async function xPreviewShow(handle) {
     if (!panel) return;
 
     panel.innerHTML = `
-        <div class="x-preview-panel" style="margin-top:0.55rem;margin-bottom:0.65rem;">
+        <div class="x-preview-panel">
             <div class="x-preview-header">
                 <span class="x-preview-header-title">✈ ${handle} — latest posts</span>
                 <button class="x-preview-close" onclick="xPreviewClose()" title="Close">✕</button>
@@ -9734,5 +9733,40 @@ setInterval(() => {
 }, 8000);
 
 </script>
+
+<!-- TELEGRAM LATEST POSTS FEATURE -->
+<script>
+document.addEventListener("click", function(e){
+  const btn = e.target.closest("[data-telegram]");
+  if(!btn) return;
+
+  const url = btn.getAttribute("data-telegram");
+
+  let container = btn.nextElementSibling;
+  if(!container || !container.classList.contains("tg-posts")){
+    container = document.createElement("div");
+    container.className = "tg-posts";
+    container.style.marginTop = "10px";
+    container.style.padding = "10px";
+    container.style.border = "1px solid rgba(255,255,255,0.1)";
+    container.style.borderRadius = "8px";
+    btn.parentNode.insertBefore(container, btn.nextSibling);
+  }
+
+  container.innerHTML = "Loading latest posts...";
+
+  // NOTE: Telegram doesn't allow direct fetch without backend
+  // So we simulate or embed via iframe
+  const embed = document.createElement("iframe");
+  embed.src = url;
+  embed.style.width = "100%";
+  embed.style.height = "300px";
+  embed.style.border = "none";
+
+  container.innerHTML = "";
+  container.appendChild(embed);
+});
+</script>
+
 </body>
 </html>
