@@ -6009,6 +6009,8 @@ function renderPredSubtabs() {
 function renderPredictionMarkets() {
     const table = document.getElementById('pmTable');
     if (!table) return;
+
+    if (!data.predictionMarkets || !data.predictionMarkets.length) {
         table.innerHTML = '<div class="empty-state"><div class="empty-icon">🔮</div><div>No Polymarket positions synced yet</div></div>';
         return;
     }
