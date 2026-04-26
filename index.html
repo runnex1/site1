@@ -2659,8 +2659,9 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
       </div>
 
       <!-- ═══════════════════════════════════════════════════════
-           LOOPS TAB
-
+           PREDICTION MARKETS TAB
+      ═══════════════════════════════════════════════════════ -->
+      <div id="predictionTab" class="tab-pane">
         <div class="section">
           <div class="section-header">
             <div class="section-title">
@@ -2683,141 +2684,10 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
             </div>
           </div>
 
-          <!-- Sub-tabs -->
-          <div class="pred-subtabs">
-            <div class="pred-subtab active" onclick="switchPredSubtab('positions', this)">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-              Positions
-            </div>
-            <div class="pred-subtab" onclick="switchPredSubtab('activity', this)">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-              Activity
-            </div>
-          </div>
+          <!-- Sub-tabs (rendered dynamically by switchTab → renderPredSubtabs) -->
+          <div id="predSubContainer"></div>
 
-          <!-- Positions pane -->
-          <div id="predSubPositions" class="pred-subpane active">
-            <div class="data-table">
-              <div class="table-header pm-header">
-                <div>Market</div><div>Side</div><div>Shares</div><div>Avg Price</div><div>Current Price</div><div>Unrealized</div><div>Value</div>
-              </div>
-              <div id="pmTable"></div>
-            </div>
-
-            <div class="platform-divider">
-              <div class="platform-divider-line"></div>
-              <div class="platform-divider-badge">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                Opinion.Trade
-              </div>
-              <div class="platform-divider-line"></div>
-            </div>
-
-            <div class="section">
-              <div class="section-header">
-                <div class="section-title">
-                  <div class="section-title-dot" style="background:var(--orange); box-shadow: 0 0 8px var(--orange)"></div>
-                  Prediction Markets — Opinion
-                </div>
-                <div class="button-group">
-                  <button class="btn-base opinion-btn" onclick="openModal('opinionConfig')">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    Sync Wallets
-                  </button>
-                  <button class="btn-base danger-btn" onclick="deleteAllData('opinionMarkets')">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                    Clear
-                  </button>
-                </div>
-              </div>
-              <div id="opinionConfigNotice" class="opinion-config-notice" onclick="openModal('opinionConfig')" style="display:none">
-                <span class="opinion-config-notice-icon">👛</span>
-                <span><strong>Wallet required</strong> — Click "Sync Wallets" to add your BNB Chain wallet address and load positions.</span>
-              </div>
-              <div id="opinionStatusBar" class="opinion-status-bar" style="display:none">
-                <span id="opinionStatusText">No positions loaded</span>
-                <span id="opinionWalletDisplay"></span>
-              </div>
-              <div class="data-table">
-                <div class="table-header pm-header">
-                  <div>Market</div><div>Side</div><div>Shares</div><div>Avg Price</div><div>Current Price</div><div>Unrealized</div><div>Value</div>
-                </div>
-                <div id="opinionTable"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Activity pane -->
-          <div id="predSubActivity" class="pred-subpane active">
-            <div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1rem;">
-              <div style="font-size:0.78rem; color:var(--t3);">Showing data for all wallets in Manage Wallets</div>
-              <button class="activity-refresh-btn" id="activityRefreshBtn" onclick="refreshActivity()">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
-                Refresh
-              </button>
-            </div>
-
-            <!-- Movers min-value filter -->
-            <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.75rem;">
-              <div class="activity-section-label" style="margin:0; flex:1;">
-                <div class="dot" style="background:var(--amber)"></div>
-                Positions with &gt;5% price move in last 24h
-              </div>
-              <div style="display:flex; align-items:center; gap:0.4rem; flex-shrink:0;">
-                <span style="font-size:0.72rem; color:var(--t3); white-space:nowrap;">Min value</span>
-                <div style="position:relative; display:flex; align-items:center;">
-                  <span style="position:absolute; left:8px; font-size:0.78rem; color:var(--t3); pointer-events:none;">$</span>
-                  <input type="number" id="moversMinValue" min="0" placeholder="0"
-                    style="width:80px; padding:4px 6px 4px 18px; background:var(--surf-2); border:1px solid var(--border-mid);
-                           border-radius:var(--r-sm); color:var(--t1); font-size:0.78rem; font-family:var(--ff-mono);
-                           outline:none; -moz-appearance:textfield;"
-                    oninput="applyMoversFilter()"
-                    onfocus="this.style.borderColor='var(--border-hi)'"
-                    onblur="this.style.borderColor='var(--border-mid)'">
-                </div>
-              </div>
-            </div>
-
-            <div class="activity-platform-label">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-              Polymarket
-            </div>
-            <div id="activityMoversContainer">
-              <div class="activity-empty"><div class="activity-empty-icon">📊</div>Click Refresh to load</div>
-            </div>
-
-            <div class="activity-platform-label" style="margin-top:1rem;">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              Opinion
-            </div>
-            <div id="activityOpinionMoversContainer">
-              <div class="activity-empty"><div class="activity-empty-icon">📊</div>Click Refresh to load</div>
-            </div>
-
-            <!-- Filled orders -->
-            <div class="activity-section-label" style="margin-top:2rem;">
-              <div class="dot" style="background:var(--green)"></div>
-              Limit orders filled in last 24h
-            </div>
-
-            <div class="activity-platform-label">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-              Polymarket
-            </div>
-            <div id="activityFilledContainer">
-              <div class="activity-empty"><div class="activity-empty-icon">📋</div>Click Refresh to load</div>
-            </div>
-
-            <div class="activity-platform-label" style="margin-top:1rem;">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-              Opinion
-            </div>
-            <div id="activityOpinionFilledContainer">
-              <div class="activity-empty"><div class="activity-empty-icon">📋</div>Click Refresh to load</div>
-            </div>
-          </div>
         </div>
-
       </div>
 
       <!-- ═══════════════════════════════════════════════════════
@@ -3932,7 +3802,13 @@ function switchTab(tab) {
     if (tab === 'terminal') { terminalRenderAlerts(); }
     if (tab === 'loops') { renderLoops(); }
     if (tab === 'prediction') {
+        renderPredSubtabs();
         renderPredictionMarkets();
+        renderOpinionMarkets();
+    } else {
+        // Tear down prediction subtabs so they never linger on other tabs
+        const c = document.getElementById('predSubContainer');
+        if (c) c.innerHTML = '';
     }
     if (tab === 'watcher') {
         renderWatchlist();
@@ -4024,6 +3900,7 @@ function removeWallet(index) {
 function updateOpinionStatusBar() {
     const statusBar = document.getElementById('opinionStatusBar');
     const notice = document.getElementById('opinionConfigNotice');
+    if (!statusBar || !notice) return;
     const statusText = document.getElementById('opinionStatusText');
     const walletDisplay = document.getElementById('opinionWalletDisplay');
 
@@ -5417,12 +5294,15 @@ window.updateUI = function updateUI() {
         renderProtocols();
     }
     renderLoops();
-    renderPredictionMarkets();
-    renderOpinionMarkets();
     renderETFs();
     updateCharts();
     renderDailyBrief();
     updateTotalDefiApr();
+    // Re-render prediction markets only if that tab is currently visible
+    if (document.getElementById('predSubPositions')) {
+        renderPredictionMarkets();
+        renderOpinionMarkets();
+    }
 };
 
 function renderTokensOverview() {
@@ -5997,10 +5877,138 @@ function renderProtocolsSnapshot() {
     `;
 }
 
+// =============================================================================
+// PREDICTION MARKETS — dynamic subtab scaffold
+// Injected only when predictionTab is the active tab; torn down on leave.
+// =============================================================================
+function renderPredSubtabs() {
+    const c = document.getElementById('predSubContainer');
+    if (!c) return;
+    if (c.querySelector('.pred-subtabs')) return; // already built
+
+    c.innerHTML = `
+      <div class="pred-subtabs">
+        <div class="pred-subtab active" onclick="switchPredSubtab('positions', this)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          Positions
+        </div>
+        <div class="pred-subtab" onclick="switchPredSubtab('activity', this)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Activity
+        </div>
+      </div>
+
+      <!-- Positions pane -->
+      <div id="predSubPositions" class="pred-subpane active">
+        <div class="data-table">
+          <div class="table-header pm-header">
+            <div>Market</div><div>Side</div><div>Shares</div><div>Avg Price</div><div>Current Price</div><div>Unrealized</div><div>Value</div>
+          </div>
+          <div id="pmTable"></div>
+        </div>
+
+        <div class="platform-divider">
+          <div class="platform-divider-line"></div>
+          <div class="platform-divider-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            Opinion.Trade
+          </div>
+          <div class="platform-divider-line"></div>
+        </div>
+
+        <div class="section">
+          <div class="section-header">
+            <div class="section-title">
+              <div class="section-title-dot" style="background:var(--orange);box-shadow:0 0 8px var(--orange)"></div>
+              Prediction Markets — Opinion
+            </div>
+            <div class="button-group">
+              <button class="btn-base opinion-btn" onclick="openModal('opinionConfig')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Sync Wallets
+              </button>
+              <button class="btn-base danger-btn" onclick="deleteAllData('opinionMarkets')">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                Clear
+              </button>
+            </div>
+          </div>
+          <div id="opinionConfigNotice" class="opinion-config-notice" onclick="openModal('opinionConfig')" style="display:none">
+            <span class="opinion-config-notice-icon">👛</span>
+            <span><strong>Wallet required</strong> — Click "Sync Wallets" to add your BNB Chain wallet address and load positions.</span>
+          </div>
+          <div id="opinionStatusBar" class="opinion-status-bar" style="display:none">
+            <span id="opinionStatusText">No positions loaded</span>
+            <span id="opinionWalletDisplay"></span>
+          </div>
+          <div class="data-table">
+            <div class="table-header pm-header">
+              <div>Market</div><div>Side</div><div>Shares</div><div>Avg Price</div><div>Current Price</div><div>Unrealized</div><div>Value</div>
+            </div>
+            <div id="opinionTable"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity pane -->
+      <div id="predSubActivity" class="pred-subpane">
+        <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;">
+          <div style="font-size:0.78rem;color:var(--t3);">Showing data for all wallets in Manage Wallets</div>
+          <button class="activity-refresh-btn" id="activityRefreshBtn" onclick="refreshActivity()">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+            Refresh
+          </button>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.75rem;">
+          <div class="activity-section-label" style="margin:0;flex:1;">
+            <div class="dot" style="background:var(--amber)"></div>
+            Positions with &gt;5% price move in last 24h
+          </div>
+          <div style="display:flex;align-items:center;gap:0.4rem;flex-shrink:0;">
+            <span style="font-size:0.72rem;color:var(--t3);white-space:nowrap;">Min value</span>
+            <div style="position:relative;display:flex;align-items:center;">
+              <span style="position:absolute;left:8px;font-size:0.78rem;color:var(--t3);pointer-events:none;">$</span>
+              <input type="number" id="moversMinValue" min="0" placeholder="0"
+                style="width:80px;padding:4px 6px 4px 18px;background:var(--surf-2);border:1px solid var(--border-mid);
+                       border-radius:var(--r-sm);color:var(--t1);font-size:0.78rem;font-family:var(--ff-mono);
+                       outline:none;-moz-appearance:textfield;"
+                oninput="applyMoversFilter()"
+                onfocus="this.style.borderColor='var(--border-hi)'"
+                onblur="this.style.borderColor='var(--border-mid)'">
+            </div>
+          </div>
+        </div>
+        <div class="activity-platform-label">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Polymarket
+        </div>
+        <div id="activityMoversContainer"><div class="activity-empty"><div class="activity-empty-icon">📊</div>Click Refresh to load</div></div>
+        <div class="activity-platform-label" style="margin-top:1rem;">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          Opinion
+        </div>
+        <div id="activityOpinionMoversContainer"><div class="activity-empty"><div class="activity-empty-icon">📊</div>Click Refresh to load</div></div>
+        <div class="activity-section-label" style="margin-top:2rem;">
+          <div class="dot" style="background:var(--green)"></div>
+          Limit orders filled in last 24h
+        </div>
+        <div class="activity-platform-label">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Polymarket
+        </div>
+        <div id="activityFilledContainer"><div class="activity-empty"><div class="activity-empty-icon">📋</div>Click Refresh to load</div></div>
+        <div class="activity-platform-label" style="margin-top:1rem;">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          Opinion
+        </div>
+        <div id="activityOpinionFilledContainer"><div class="activity-empty"><div class="activity-empty-icon">📋</div>Click Refresh to load</div></div>
+      </div>
+    `;
+}
+
 function renderPredictionMarkets() {
     const table = document.getElementById('pmTable');
-    
-    if (!data.predictionMarkets || !data.predictionMarkets.length) {
+    if (!table) return;
         table.innerHTML = '<div class="empty-state"><div class="empty-icon">🔮</div><div>No Polymarket positions synced yet</div></div>';
         return;
     }
@@ -6027,6 +6035,7 @@ function renderPredictionMarkets() {
 
 function renderOpinionMarkets() {
     const table = document.getElementById('opinionTable');
+    if (!table) return;
     updateOpinionStatusBar();
 
     if (!data.opinionMarkets || !data.opinionMarkets.length) {
