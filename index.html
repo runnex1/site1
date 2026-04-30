@@ -2874,6 +2874,44 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               </button>
             </div>
 
+            <!-- RPC Configuration (one-time setup) -->
+            <details id="aavecap-config" style="margin-bottom:1.25rem;background:var(--surf-1);border:1px solid var(--border);border-radius:var(--r-sm);">
+              <summary style="cursor:pointer;padding:0.75rem 1rem;font-size:0.72rem;color:var(--t3);font-family:var(--ff-mono);font-weight:600;letter-spacing:0.05em;text-transform:uppercase;list-style:none;display:flex;align-items:center;gap:8px;">
+                <span style="color:var(--teal);">⚙</span>
+                <span>RPC &amp; Contract Setup</span>
+                <span id="aavecap-config-status" style="margin-left:auto;font-size:0.65rem;color:var(--amber);">⚠ needs setup</span>
+              </summary>
+              <div style="padding:0.5rem 1rem 1rem;border-top:1px solid var(--border);">
+                <div style="font-size:0.7rem;color:var(--t3);line-height:1.5;margin-bottom:0.85rem;">
+                  Browser CORS blocks calls to MegaETH's public RPC. Get a <strong style="color:var(--t1);">free Alchemy API key</strong> at <a href="https://alchemy.com" target="_blank" style="color:var(--teal);">alchemy.com</a>, create an app for "MegaETH Mainnet", paste the URL below.
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:8px;">
+                  <div>
+                    <label style="font-size:0.65rem;color:var(--t3);font-family:var(--ff-mono);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:3px;">Alchemy RPC URL</label>
+                    <input type="text" id="aavecap-rpc-url"
+                      placeholder="https://megaeth-mainnet.g.alchemy.com/v2/YOUR_KEY"
+                      style="width:100%;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:var(--r-xs);color:var(--t1);font-family:var(--ff-mono);font-size:0.72rem;padding:6px 9px;outline:none;">
+                  </div>
+                  <div>
+                    <label style="font-size:0.65rem;color:var(--t3);font-family:var(--ff-mono);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:3px;">Aave Pool Data Provider address (MegaETH)</label>
+                    <input type="text" id="aavecap-provider-addr"
+                      placeholder="0x… find at app.aave.com → MegaETH market → contract list"
+                      style="width:100%;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:var(--r-xs);color:var(--t1);font-family:var(--ff-mono);font-size:0.72rem;padding:6px 9px;outline:none;">
+                  </div>
+                  <div>
+                    <label style="font-size:0.65rem;color:var(--t3);font-family:var(--ff-mono);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:3px;">USDe token address (MegaETH)</label>
+                    <input type="text" id="aavecap-asset-addr"
+                      value="0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34"
+                      style="width:100%;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:var(--r-xs);color:var(--t1);font-family:var(--ff-mono);font-size:0.72rem;padding:6px 9px;outline:none;">
+                  </div>
+                  <button onclick="aaveCapSaveConfig()" style="margin-top:6px;background:var(--teal-10);border:1px solid rgba(0,212,170,0.3);border-radius:var(--r-xs);color:var(--teal);font-size:0.72rem;font-family:var(--ff-mono);font-weight:500;padding:6px 14px;cursor:pointer;align-self:flex-start;">
+                    Save &amp; Test Connection
+                  </button>
+                </div>
+              </div>
+            </details>
+
             <!-- Metrics row -->
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.1rem;">
               <div style="background:var(--surf-1);border:1px solid var(--border);border-radius:var(--r-sm);padding:0.85rem 1rem;">
@@ -2904,7 +2942,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
             <!-- Status message -->
             <div id="aavecap-status" style="border-radius:var(--r-sm);padding:0.8rem 1rem;display:flex;align-items:flex-start;gap:10px;border:1px solid var(--border-mid);background:var(--surf-2);margin-bottom:1.25rem;font-size:0.8rem;color:var(--t3);line-height:1.5;">
               <span style="margin-top:1px;opacity:0.5;">◌</span>
-              <span id="aavecap-status-text">Click Refresh to load current cap data from Aave V3 MegaETH.</span>
+              <span id="aavecap-status-text">Set up your RPC URL above, then click Refresh.</span>
             </div>
 
             <!-- Alert settings -->
@@ -2924,16 +2962,18 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               </div>
               <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
                 <button id="aavecap-alert-btn" onclick="aaveCapToggleAlert()"
-                  style="background:var(--teal-10);border:1px solid rgba(0,212,170,0.3);border-radius:var(--r-xs);color:var(--teal);font-size:0.75rem;font-family:var(--ff-mono);font-weight:500;padding:6px 14px;cursor:pointer;transition:all 0.15s;"
-                  onmouseover="this.style.background='var(--teal-20)'" onmouseout="if(!window.aaveCapAlertActive)this.style.background='var(--teal-10)'">
-                  Enable Alert
+                  style="background:var(--teal-10);border:1px solid rgba(0,212,170,0.3);border-radius:var(--r-xs);color:var(--teal);font-size:0.75rem;font-family:var(--ff-mono);font-weight:500;padding:6px 14px;cursor:pointer;transition:all 0.15s;">
+                  Enable Browser Alert
                 </button>
                 <span id="aavecap-alert-status" style="font-size:0.7rem;color:var(--t3);font-family:var(--ff-mono);">Alert off</span>
               </div>
+              <div style="margin-top:8px;font-size:0.65rem;color:var(--t3);line-height:1.4;">
+                Browser alerts only fire while this tab is open. For 24/7 Telegram alerts, use the Node.js + Telegram setup separately.
+              </div>
             </div>
 
-            <div style="margin-top:1rem;font-size:0.62rem;color:var(--t3);font-family:var(--ff-mono);display:flex;justify-content:space-between;">
-              <span>USDe · 0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34</span>
+            <div style="margin-top:1rem;font-size:0.62rem;color:var(--t3);font-family:var(--ff-mono);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+              <span id="aavecap-asset-display">USDe</span>
               <span id="aavecap-last-updated">Never fetched</span>
             </div>
           </div>
@@ -10095,141 +10135,236 @@ document.addEventListener("click", function(e){
 <script>
 // ── AAVE CAP MONITOR ─────────────────────────────────────────────────
 (function() {
-  const MEGAETH_RPC   = 'https://carrot.megaeth.com';
-  const USDE_ADDR     = '0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34';
-  // Aave V3 MegaETH Protocol Data Provider
-  const DATA_PROVIDER = '0x67e2c6E824B3e6c7F2A0e31aEA70Ade44Bc60E68';
+  const LS_KEY = 'aavecap-config-v1';
+  const DEFAULT_USDE = '0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34';
 
-  // fn selectors
-  const SEL_CAPS   = '0xd2493b6c'; // getReserveCaps(address)
-  const SEL_SUPPLY = '0x4d17d0a1'; // getATokenTotalSupply(address)
+  // fn selectors (Aave V3 IPoolDataProvider)
+  const SEL_CAPS   = '0xd2493b6c'; // getReserveCaps(address) → (borrowCap, supplyCap)
+  const SEL_SUPPLY = '0x4d17d0a1'; // getATokenTotalSupply(address) → uint256
 
+  let cfg = loadConfig();
   let alertActive = false;
   let alertTimer  = null;
 
-  window.aaveCapAlertActive = false;
+  function loadConfig() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return { rpcUrl: '', providerAddr: '', assetAddr: DEFAULT_USDE };
+  }
+
+  function saveConfig() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(cfg)); } catch (e) {}
+  }
 
   function padAddr(addr) {
     return addr.replace(/^0x/i, '').toLowerCase().padStart(64, '0');
   }
 
-  function callRpc(to, selector) {
-    return fetch(MEGAETH_RPC, {
+  function isValidAddr(a) {
+    return /^0x[0-9a-fA-F]{40}$/.test((a || '').trim());
+  }
+
+  async function rpcCall(method, params) {
+    if (!cfg.rpcUrl) throw new Error('No RPC URL configured');
+    const res = await fetch(cfg.rpcUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 1, method: 'eth_call',
-        params: [{ to, data: selector + padAddr(USDE_ADDR) }, 'latest']
-      })
-    }).then(r => r.json());
+      body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const body = await res.json();
+    if (body.error) throw new Error(body.error.message || 'RPC error');
+    return body.result;
+  }
+
+  function ethCall(to, data) {
+    return rpcCall('eth_call', [{ to, data }, 'latest']);
   }
 
   function fmtUnits(n) {
+    if (!isFinite(n) || n < 0) return '—';
     if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
     if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
     if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
     return n.toFixed(2);
   }
 
-  function setMetric(id, val) {
+  function setText(id, val) {
     const el = document.getElementById(id);
     if (el) el.textContent = val;
   }
 
-  function setStatus(msg, type) {
+  function setStatus(msgHtml, type) {
     const box = document.getElementById('aavecap-status');
     const txt = document.getElementById('aavecap-status-text');
     if (!box || !txt) return;
-    txt.innerHTML = msg;
+    txt.innerHTML = msgHtml;
     const colors = {
-      ok:   { bg: 'rgba(34,197,94,0.08)',  border: 'rgba(34,197,94,0.2)',   icon: '✓' },
-      warn: { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.2)', icon: '⚠' },
-      full: { bg: 'rgba(244,63,94,0.08)',  border: 'rgba(244,63,94,0.2)',  icon: '✕' },
-      load: { bg: 'var(--surf-2)',          border: 'var(--border-mid)',    icon: '◌' },
-      err:  { bg: 'rgba(244,63,94,0.08)',  border: 'rgba(244,63,94,0.2)',  icon: '!' },
+      ok:   { bg: 'rgba(34,197,94,0.08)',  border: 'rgba(34,197,94,0.2)',  icon: '✓', col: 'var(--green)' },
+      warn: { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.2)', icon: '⚠', col: 'var(--amber)' },
+      full: { bg: 'rgba(244,63,94,0.08)',  border: 'rgba(244,63,94,0.2)',  icon: '✕', col: 'var(--red)' },
+      load: { bg: 'var(--surf-2)',         border: 'var(--border-mid)',   icon: '◌', col: 'var(--t3)' },
+      err:  { bg: 'rgba(244,63,94,0.08)',  border: 'rgba(244,63,94,0.2)',  icon: '!', col: 'var(--red)' },
     };
     const c = colors[type] || colors.load;
     box.style.background = c.bg;
     box.style.borderColor = c.border;
-    box.querySelector('span').textContent = c.icon;
+    const iconEl = box.querySelector('span');
+    if (iconEl) { iconEl.textContent = c.icon; iconEl.style.color = c.col; iconEl.style.opacity = '1'; }
   }
 
   function setBar(pct) {
-    const bar = document.getElementById('aavecap-bar');
-    const pctEl = document.getElementById('aavecap-pct');
-    const dot = document.getElementById('aavecap-dot');
-    const badge = document.getElementById('aavecap-util-badge');
+    const bar  = document.getElementById('aavecap-bar');
+    const pctE = document.getElementById('aavecap-pct');
+    const dot  = document.getElementById('aavecap-dot');
+    const bdg  = document.getElementById('aavecap-util-badge');
     if (!bar) return;
-    const clamped = Math.min(100, pct);
-    bar.style.width = clamped.toFixed(2) + '%';
     const color = pct >= 99.5 ? 'var(--red)' : pct >= 90 ? 'var(--amber)' : 'var(--teal)';
+    bar.style.width = Math.min(100, pct).toFixed(2) + '%';
     bar.style.background = color;
-    if (pctEl) { pctEl.textContent = pct.toFixed(2) + '%'; pctEl.style.color = color; }
-    if (dot)   dot.style.background = color;
-    if (badge) { badge.textContent = pct.toFixed(1) + '% used'; badge.style.color = color; }
-    setMetric('aavecap-available', '');
-    const avEl = document.getElementById('aavecap-available');
-    if (avEl) avEl.style.color = color;
+    if (pctE) { pctE.textContent = pct.toFixed(2) + '%'; pctE.style.color = color; }
+    if (dot)  dot.style.background = color;
+    if (bdg)  { bdg.textContent = pct.toFixed(1) + '% used'; bdg.style.color = color; }
+    const av = document.getElementById('aavecap-available');
+    if (av) av.style.color = color;
+  }
+
+  function refreshConfigUI() {
+    const rpcEl  = document.getElementById('aavecap-rpc-url');
+    const provEl = document.getElementById('aavecap-provider-addr');
+    const assEl  = document.getElementById('aavecap-asset-addr');
+    if (rpcEl  && cfg.rpcUrl)      rpcEl.value  = cfg.rpcUrl;
+    if (provEl && cfg.providerAddr) provEl.value = cfg.providerAddr;
+    if (assEl  && cfg.assetAddr)   assEl.value  = cfg.assetAddr;
+
+    const status = document.getElementById('aavecap-config-status');
+    const ok = cfg.rpcUrl && isValidAddr(cfg.providerAddr) && isValidAddr(cfg.assetAddr);
+    if (status) {
+      status.textContent = ok ? '✓ configured' : '⚠ needs setup';
+      status.style.color = ok ? 'var(--green)' : 'var(--amber)';
+    }
+    const cfgEl = document.getElementById('aavecap-config');
+    if (cfgEl && !ok) cfgEl.open = true;
+
+    const display = document.getElementById('aavecap-asset-display');
+    if (display && cfg.assetAddr) {
+      const short = cfg.assetAddr.slice(0,6) + '…' + cfg.assetAddr.slice(-4);
+      display.textContent = 'Asset: ' + short;
+    }
+  }
+
+  window.aaveCapSaveConfig = async function() {
+    const rpcEl  = document.getElementById('aavecap-rpc-url');
+    const provEl = document.getElementById('aavecap-provider-addr');
+    const assEl  = document.getElementById('aavecap-asset-addr');
+    const rpcUrl = (rpcEl?.value || '').trim();
+    const provAddr = (provEl?.value || '').trim();
+    const assAddr  = (assEl?.value || '').trim();
+
+    if (!rpcUrl || !rpcUrl.startsWith('http')) {
+      setStatus('<strong>Invalid RPC URL.</strong> Paste a valid https:// URL from Alchemy or another CORS-enabled MegaETH provider.', 'err');
+      return;
+    }
+    if (!isValidAddr(provAddr)) {
+      setStatus('<strong>Invalid Pool Data Provider address.</strong> Must be a 0x… 40-hex-character address.', 'err');
+      return;
+    }
+    if (!isValidAddr(assAddr)) {
+      setStatus('<strong>Invalid asset address.</strong> Must be a 0x… 40-hex-character address.', 'err');
+      return;
+    }
+
+    cfg.rpcUrl = rpcUrl;
+    cfg.providerAddr = provAddr;
+    cfg.assetAddr = assAddr;
+
+    setStatus('Testing connection…', 'load');
+    try {
+      const chainId = await rpcCall('eth_chainId', []);
+      const decimal = parseInt(chainId, 16);
+      saveConfig();
+      refreshConfigUI();
+      setStatus(`<strong>Connected.</strong> Chain ID ${decimal} (0x${decimal.toString(16)}). Now click Refresh to load cap data.`, 'ok');
+      const cfgEl = document.getElementById('aavecap-config');
+      if (cfgEl) cfgEl.open = false;
+    } catch (e) {
+      setStatus(`<strong>Connection failed.</strong> ${escapeHtml(e.message)}<br><span style="font-size:0.7rem;opacity:0.7;">Check that your Alchemy URL is for MegaETH Mainnet and the API key is correct.</span>`, 'err');
+    }
+  };
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
   }
 
   window.aaveCapFetch = async function() {
+    if (!cfg.rpcUrl || !isValidAddr(cfg.providerAddr) || !isValidAddr(cfg.assetAddr)) {
+      setStatus('<strong>Setup required.</strong> Open "RPC &amp; Contract Setup" above and configure your Alchemy URL plus the Aave Pool Data Provider address.', 'warn');
+      const cfgEl = document.getElementById('aavecap-config');
+      if (cfgEl) cfgEl.open = true;
+      return;
+    }
     const btn = document.getElementById('aavecap-refresh-btn');
     if (btn) { btn.textContent = '↻ …'; btn.disabled = true; }
     setStatus('Querying Aave V3 MegaETH…', 'load');
 
     try {
-      const [capsRes, supplyRes] = await Promise.all([
-        callRpc(DATA_PROVIDER, SEL_CAPS),
-        callRpc(DATA_PROVIDER, SEL_SUPPLY),
+      const padded = padAddr(cfg.assetAddr);
+      const [capsHex, supplyHex] = await Promise.all([
+        ethCall(cfg.providerAddr, SEL_CAPS   + padded),
+        ethCall(cfg.providerAddr, SEL_SUPPLY + padded),
       ]);
 
-      if (capsRes.error || supplyRes.error) throw new Error(capsRes.error?.message || supplyRes.error?.message || 'RPC error');
+      if (!capsHex || capsHex.length < 130) throw new Error('getReserveCaps returned empty — wrong contract address?');
+      if (!supplyHex || supplyHex.length < 66) throw new Error('getATokenTotalSupply returned empty');
 
-      const capsHex   = (capsRes.result  || '').slice(2);
-      const supplyHex = (supplyRes.result || '').slice(2).padStart(64, '0');
+      const raw = capsHex.slice(2);
+      const borrowCap = Number(BigInt('0x' + raw.slice(0,  64)));
+      const supplyCap = Number(BigInt('0x' + raw.slice(64, 128)));
 
-      if (capsHex.length < 128) throw new Error('Unexpected response length');
+      const currentRaw = BigInt(supplyHex);
+      const currentSupply = Number(currentRaw) / 1e18;
 
-      const supplyCap     = Number(BigInt('0x' + capsHex.slice(0, 64)));
-      const currentSupply = Number(BigInt('0x' + supplyHex));
+      if (supplyCap === 0) {
+        setStatus('<strong>Supply cap is 0</strong> — this asset may not be listed yet, or the contract address is wrong. Verify the Pool Data Provider address.', 'warn');
+        return;
+      }
 
-      if (supplyCap === 0) throw new Error('Supply cap returned zero — contract may differ');
-
-      const util      = (currentSupply / supplyCap) * 100;
+      const util = (currentSupply / supplyCap) * 100;
       const available = Math.max(0, supplyCap - currentSupply);
 
-      setMetric('aavecap-cap',       fmtUnits(supplyCap / 1e18)     + ' USDe');
-      setMetric('aavecap-supply',    fmtUnits(currentSupply / 1e18) + ' USDe');
-      setMetric('aavecap-available', fmtUnits(available / 1e18)     + ' USDe');
+      setText('aavecap-cap',       fmtUnits(supplyCap)      + ' USDe');
+      setText('aavecap-supply',    fmtUnits(currentSupply)  + ' USDe');
+      setText('aavecap-available', fmtUnits(available)      + ' USDe');
       setBar(util);
-      setMetric('aavecap-last-updated', 'Updated ' + new Date().toLocaleTimeString());
+      setText('aavecap-last-updated', 'Updated ' + new Date().toLocaleTimeString());
 
       if (util >= 99.5) {
         setStatus('<strong>Cap fully reached.</strong> No more USDe can be deposited until someone withdraws or governance raises the cap.', 'full');
       } else if (util >= 90) {
-        setStatus(`<strong>Cap nearly full (${util.toFixed(1)}% used).</strong> Only ${fmtUnits(available / 1e18)} USDe of headroom remains.`, 'warn');
+        setStatus(`<strong>Cap nearly full (${util.toFixed(1)}% used).</strong> Only ${fmtUnits(available)} USDe of headroom remains.`, 'warn');
       } else {
-        setStatus(`<strong>Deposits open.</strong> ${util.toFixed(1)}% of cap used — ${fmtUnits(available / 1e18)} USDe available to deposit now.`, 'ok');
+        setStatus(`<strong>Deposits open.</strong> ${util.toFixed(1)}% of cap used — ${fmtUnits(available)} USDe available to deposit now.`, 'ok');
       }
 
-      // fire notification if alert active and cap below threshold
       const threshold = parseFloat(document.getElementById('aavecap-threshold')?.value) || 95;
-      if (alertActive && window.aaveCapAlertActive && util < threshold && Notification.permission === 'granted') {
+      if (alertActive && util < threshold && 'Notification' in window && Notification.permission === 'granted') {
         new Notification('USDe Deposit Space Open — Aave MegaETH', {
-          body: `Cap at ${util.toFixed(1)}% (below your ${threshold}% threshold). ${fmtUnits(available / 1e18)} USDe available!`,
+          body: `Cap at ${util.toFixed(1)}% (below your ${threshold}% threshold). ${fmtUnits(available)} USDe available!`,
           tag: 'aave-usde-cap'
         });
       }
-
     } catch (e) {
-      setMetric('aavecap-last-updated', 'Error ' + new Date().toLocaleTimeString());
-      setStatus(
-        `<strong>Could not fetch live data.</strong> MegaETH RPC may block browser requests (CORS).<br>` +
-        `<span style="font-size:0.72rem;opacity:0.6;font-family:var(--ff-mono);">` +
-        `Call getReserveCaps(${USDE_ADDR}) on ${DATA_PROVIDER} via a CORS-enabled proxy or Node.js backend.</span>`,
-        'err'
-      );
-      console.warn('[AaveCapMonitor]', e.message);
+      setText('aavecap-last-updated', 'Error ' + new Date().toLocaleTimeString());
+      const msg = e.message || String(e);
+      let hint = '';
+      if (/CORS|Failed to fetch|NetworkError/i.test(msg)) {
+        hint = '<br><span style="font-size:0.7rem;opacity:0.7;">CORS blocked. Use an Alchemy or other CORS-enabled MegaETH RPC URL.</span>';
+      } else if (/revert|invalid|empty/i.test(msg)) {
+        hint = '<br><span style="font-size:0.7rem;opacity:0.7;">The contract call reverted. The Pool Data Provider address may be wrong, or USDe is not listed on this Aave instance.</span>';
+      }
+      setStatus(`<strong>Could not fetch.</strong> ${escapeHtml(msg)}${hint}`, 'err');
     } finally {
       if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; }
     }
@@ -10241,9 +10376,8 @@ document.addEventListener("click", function(e){
 
     if (alertActive) {
       alertActive = false;
-      window.aaveCapAlertActive = false;
       if (alertTimer) { clearInterval(alertTimer); alertTimer = null; }
-      if (btn) { btn.textContent = 'Enable Alert'; btn.style.background = 'var(--teal-10)'; }
+      if (btn) { btn.textContent = 'Enable Browser Alert'; btn.style.background = 'var(--teal-10)'; }
       if (statusEl) statusEl.textContent = 'Alert off';
       return;
     }
@@ -10259,14 +10393,16 @@ document.addEventListener("click", function(e){
         return;
       }
       alertActive = true;
-      window.aaveCapAlertActive = true;
-      if (btn) { btn.textContent = '✓ Alert On'; btn.style.background = 'var(--teal-20)'; }
+      if (btn) { btn.textContent = '✓ Alert On', btn.style.background = 'var(--teal-20)'; }
       const secs = Math.max(10, parseInt(document.getElementById('aavecap-interval')?.value) || 60);
       if (statusEl) statusEl.textContent = 'Checking every ' + secs + 's';
       alertTimer = setInterval(window.aaveCapFetch, secs * 1000);
       window.aaveCapFetch();
     });
   };
+
+  // initialize on DOM ready (script runs at body end so DOM is ready)
+  refreshConfigUI();
 })();
 </script>
 
