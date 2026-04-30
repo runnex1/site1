@@ -2756,6 +2756,11 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               Yield Tools
               <span class="wtab-badge">5 saved</span>
             </button>
+            <button class="wtab-btn" id="wtab-btn-aavecap" onclick="switchWTab('aavecap',this)" style="border-color:rgba(0,212,170,0.3);color:var(--teal);">
+              <span class="wtab-live-dot" id="aavecap-dot" style="background:var(--teal);"></span>
+              Aave Cap Monitor
+              <span class="wtab-badge" id="aavecap-badge" style="background:var(--teal-10);border-color:rgba(0,212,170,0.2);color:var(--teal);">USDe · MegaETH</span>
+            </button>
           </div>
 
           <!-- ── SUB-TAB: Wallet Watchlist ──────────────────────── -->
@@ -2852,6 +2857,84 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Save Tool
               </button>
+            </div>
+          </div>
+
+          <!-- ── SUB-TAB: Aave Cap Monitor ──────────────────────── -->
+          <div class="wtab-panel" id="wtab-aavecap">
+            <div class="wsec-header" style="margin-bottom:1.25rem;">
+              <div style="display:flex;align-items:center;gap:0.6rem;">
+                <span style="font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:var(--teal);">Aave V3 · MegaETH · USDe Supply Cap</span>
+                <span id="aavecap-util-badge" style="font-size:0.62rem;font-weight:600;padding:1px 7px;border-radius:100px;background:var(--teal-10);border:1px solid rgba(0,212,170,0.2);color:var(--teal);font-family:var(--ff-mono);">—</span>
+              </div>
+              <button class="wsec-add-btn" id="aavecap-refresh-btn" onclick="aaveCapFetch()" style="border-color:rgba(0,212,170,0.25);background:var(--teal-10);color:var(--teal);"
+                onmouseover="this.style.background='var(--teal-20)';this.style.borderColor='var(--teal)'"
+                onmouseout="this.style.background='var(--teal-10)';this.style.borderColor='rgba(0,212,170,0.25)'">
+                ↻ Refresh
+              </button>
+            </div>
+
+            <!-- Metrics row -->
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.1rem;">
+              <div style="background:var(--surf-1);border:1px solid var(--border);border-radius:var(--r-sm);padding:0.85rem 1rem;">
+                <div style="font-size:0.62rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.4rem;">Supply Cap</div>
+                <div id="aavecap-cap" style="font-family:var(--ff-mono);font-size:1.05rem;font-weight:500;color:var(--t2);">—</div>
+              </div>
+              <div style="background:var(--surf-1);border:1px solid var(--border);border-radius:var(--r-sm);padding:0.85rem 1rem;">
+                <div style="font-size:0.62rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.4rem;">Current Supply</div>
+                <div id="aavecap-supply" style="font-family:var(--ff-mono);font-size:1.05rem;font-weight:500;color:var(--t2);">—</div>
+              </div>
+              <div style="background:var(--surf-1);border:1px solid var(--border);border-radius:var(--r-sm);padding:0.85rem 1rem;">
+                <div style="font-size:0.62rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.4rem;">Available</div>
+                <div id="aavecap-available" style="font-family:var(--ff-mono);font-size:1.05rem;font-weight:500;color:var(--teal);">—</div>
+              </div>
+            </div>
+
+            <!-- Bar -->
+            <div style="margin-bottom:1.1rem;">
+              <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--t3);font-family:var(--ff-mono);margin-bottom:5px;">
+                <span>Cap utilization</span>
+                <span id="aavecap-pct" style="color:var(--teal);">—</span>
+              </div>
+              <div style="height:7px;background:var(--surf-3);border-radius:100px;overflow:hidden;">
+                <div id="aavecap-bar" style="height:100%;border-radius:100px;background:var(--teal);width:0%;transition:width 0.6s ease,background 0.4s;"></div>
+              </div>
+            </div>
+
+            <!-- Status message -->
+            <div id="aavecap-status" style="border-radius:var(--r-sm);padding:0.8rem 1rem;display:flex;align-items:flex-start;gap:10px;border:1px solid var(--border-mid);background:var(--surf-2);margin-bottom:1.25rem;font-size:0.8rem;color:var(--t3);line-height:1.5;">
+              <span style="margin-top:1px;opacity:0.5;">◌</span>
+              <span id="aavecap-status-text">Click Refresh to load current cap data from Aave V3 MegaETH.</span>
+            </div>
+
+            <!-- Alert settings -->
+            <div style="border-top:1px solid var(--border);padding-top:1.1rem;">
+              <div style="font-size:0.62rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.75rem;">Alert Settings</div>
+              <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.65rem;">
+                <span style="font-size:0.72rem;color:var(--t3);font-family:var(--ff-mono);min-width:120px;">Notify when below</span>
+                <input type="number" id="aavecap-threshold" min="0" max="100" value="95" step="1"
+                  style="width:70px;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:var(--r-xs);color:var(--t1);font-family:var(--ff-mono);font-size:0.78rem;padding:5px 8px;outline:none;">
+                <span style="font-size:0.72rem;color:var(--t3);">% cap used</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.85rem;">
+                <span style="font-size:0.72rem;color:var(--t3);font-family:var(--ff-mono);min-width:120px;">Poll every</span>
+                <input type="number" id="aavecap-interval" min="10" max="3600" value="60" step="10"
+                  style="width:70px;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:var(--r-xs);color:var(--t1);font-family:var(--ff-mono);font-size:0.78rem;padding:5px 8px;outline:none;">
+                <span style="font-size:0.72rem;color:var(--t3);">seconds</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+                <button id="aavecap-alert-btn" onclick="aaveCapToggleAlert()"
+                  style="background:var(--teal-10);border:1px solid rgba(0,212,170,0.3);border-radius:var(--r-xs);color:var(--teal);font-size:0.75rem;font-family:var(--ff-mono);font-weight:500;padding:6px 14px;cursor:pointer;transition:all 0.15s;"
+                  onmouseover="this.style.background='var(--teal-20)'" onmouseout="if(!window.aaveCapAlertActive)this.style.background='var(--teal-10)'">
+                  Enable Alert
+                </button>
+                <span id="aavecap-alert-status" style="font-size:0.7rem;color:var(--t3);font-family:var(--ff-mono);">Alert off</span>
+              </div>
+            </div>
+
+            <div style="margin-top:1rem;font-size:0.62rem;color:var(--t3);font-family:var(--ff-mono);display:flex;justify-content:space-between;">
+              <span>USDe · 0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34</span>
+              <span id="aavecap-last-updated">Never fetched</span>
             </div>
           </div>
 
@@ -10007,6 +10090,184 @@ document.addEventListener("click", function(e){
   container.innerHTML = "";
   container.appendChild(embed);
 });
+</script>
+
+<script>
+// ── AAVE CAP MONITOR ─────────────────────────────────────────────────
+(function() {
+  const MEGAETH_RPC   = 'https://carrot.megaeth.com';
+  const USDE_ADDR     = '0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34';
+  // Aave V3 MegaETH Protocol Data Provider
+  const DATA_PROVIDER = '0x67e2c6E824B3e6c7F2A0e31aEA70Ade44Bc60E68';
+
+  // fn selectors
+  const SEL_CAPS   = '0xd2493b6c'; // getReserveCaps(address)
+  const SEL_SUPPLY = '0x4d17d0a1'; // getATokenTotalSupply(address)
+
+  let alertActive = false;
+  let alertTimer  = null;
+
+  window.aaveCapAlertActive = false;
+
+  function padAddr(addr) {
+    return addr.replace(/^0x/i, '').toLowerCase().padStart(64, '0');
+  }
+
+  function callRpc(to, selector) {
+    return fetch(MEGAETH_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'eth_call',
+        params: [{ to, data: selector + padAddr(USDE_ADDR) }, 'latest']
+      })
+    }).then(r => r.json());
+  }
+
+  function fmtUnits(n) {
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
+    return n.toFixed(2);
+  }
+
+  function setMetric(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  function setStatus(msg, type) {
+    const box = document.getElementById('aavecap-status');
+    const txt = document.getElementById('aavecap-status-text');
+    if (!box || !txt) return;
+    txt.innerHTML = msg;
+    const colors = {
+      ok:   { bg: 'rgba(34,197,94,0.08)',  border: 'rgba(34,197,94,0.2)',   icon: '✓' },
+      warn: { bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.2)', icon: '⚠' },
+      full: { bg: 'rgba(244,63,94,0.08)',  border: 'rgba(244,63,94,0.2)',  icon: '✕' },
+      load: { bg: 'var(--surf-2)',          border: 'var(--border-mid)',    icon: '◌' },
+      err:  { bg: 'rgba(244,63,94,0.08)',  border: 'rgba(244,63,94,0.2)',  icon: '!' },
+    };
+    const c = colors[type] || colors.load;
+    box.style.background = c.bg;
+    box.style.borderColor = c.border;
+    box.querySelector('span').textContent = c.icon;
+  }
+
+  function setBar(pct) {
+    const bar = document.getElementById('aavecap-bar');
+    const pctEl = document.getElementById('aavecap-pct');
+    const dot = document.getElementById('aavecap-dot');
+    const badge = document.getElementById('aavecap-util-badge');
+    if (!bar) return;
+    const clamped = Math.min(100, pct);
+    bar.style.width = clamped.toFixed(2) + '%';
+    const color = pct >= 99.5 ? 'var(--red)' : pct >= 90 ? 'var(--amber)' : 'var(--teal)';
+    bar.style.background = color;
+    if (pctEl) { pctEl.textContent = pct.toFixed(2) + '%'; pctEl.style.color = color; }
+    if (dot)   dot.style.background = color;
+    if (badge) { badge.textContent = pct.toFixed(1) + '% used'; badge.style.color = color; }
+    setMetric('aavecap-available', '');
+    const avEl = document.getElementById('aavecap-available');
+    if (avEl) avEl.style.color = color;
+  }
+
+  window.aaveCapFetch = async function() {
+    const btn = document.getElementById('aavecap-refresh-btn');
+    if (btn) { btn.textContent = '↻ …'; btn.disabled = true; }
+    setStatus('Querying Aave V3 MegaETH…', 'load');
+
+    try {
+      const [capsRes, supplyRes] = await Promise.all([
+        callRpc(DATA_PROVIDER, SEL_CAPS),
+        callRpc(DATA_PROVIDER, SEL_SUPPLY),
+      ]);
+
+      if (capsRes.error || supplyRes.error) throw new Error(capsRes.error?.message || supplyRes.error?.message || 'RPC error');
+
+      const capsHex   = (capsRes.result  || '').slice(2);
+      const supplyHex = (supplyRes.result || '').slice(2).padStart(64, '0');
+
+      if (capsHex.length < 128) throw new Error('Unexpected response length');
+
+      const supplyCap     = Number(BigInt('0x' + capsHex.slice(0, 64)));
+      const currentSupply = Number(BigInt('0x' + supplyHex));
+
+      if (supplyCap === 0) throw new Error('Supply cap returned zero — contract may differ');
+
+      const util      = (currentSupply / supplyCap) * 100;
+      const available = Math.max(0, supplyCap - currentSupply);
+
+      setMetric('aavecap-cap',       fmtUnits(supplyCap / 1e18)     + ' USDe');
+      setMetric('aavecap-supply',    fmtUnits(currentSupply / 1e18) + ' USDe');
+      setMetric('aavecap-available', fmtUnits(available / 1e18)     + ' USDe');
+      setBar(util);
+      setMetric('aavecap-last-updated', 'Updated ' + new Date().toLocaleTimeString());
+
+      if (util >= 99.5) {
+        setStatus('<strong>Cap fully reached.</strong> No more USDe can be deposited until someone withdraws or governance raises the cap.', 'full');
+      } else if (util >= 90) {
+        setStatus(`<strong>Cap nearly full (${util.toFixed(1)}% used).</strong> Only ${fmtUnits(available / 1e18)} USDe of headroom remains.`, 'warn');
+      } else {
+        setStatus(`<strong>Deposits open.</strong> ${util.toFixed(1)}% of cap used — ${fmtUnits(available / 1e18)} USDe available to deposit now.`, 'ok');
+      }
+
+      // fire notification if alert active and cap below threshold
+      const threshold = parseFloat(document.getElementById('aavecap-threshold')?.value) || 95;
+      if (alertActive && window.aaveCapAlertActive && util < threshold && Notification.permission === 'granted') {
+        new Notification('USDe Deposit Space Open — Aave MegaETH', {
+          body: `Cap at ${util.toFixed(1)}% (below your ${threshold}% threshold). ${fmtUnits(available / 1e18)} USDe available!`,
+          tag: 'aave-usde-cap'
+        });
+      }
+
+    } catch (e) {
+      setMetric('aavecap-last-updated', 'Error ' + new Date().toLocaleTimeString());
+      setStatus(
+        `<strong>Could not fetch live data.</strong> MegaETH RPC may block browser requests (CORS).<br>` +
+        `<span style="font-size:0.72rem;opacity:0.6;font-family:var(--ff-mono);">` +
+        `Call getReserveCaps(${USDE_ADDR}) on ${DATA_PROVIDER} via a CORS-enabled proxy or Node.js backend.</span>`,
+        'err'
+      );
+      console.warn('[AaveCapMonitor]', e.message);
+    } finally {
+      if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; }
+    }
+  };
+
+  window.aaveCapToggleAlert = function() {
+    const btn = document.getElementById('aavecap-alert-btn');
+    const statusEl = document.getElementById('aavecap-alert-status');
+
+    if (alertActive) {
+      alertActive = false;
+      window.aaveCapAlertActive = false;
+      if (alertTimer) { clearInterval(alertTimer); alertTimer = null; }
+      if (btn) { btn.textContent = 'Enable Alert'; btn.style.background = 'var(--teal-10)'; }
+      if (statusEl) statusEl.textContent = 'Alert off';
+      return;
+    }
+
+    if (!('Notification' in window)) {
+      if (statusEl) statusEl.textContent = 'Notifications not supported';
+      return;
+    }
+
+    Notification.requestPermission().then(perm => {
+      if (perm !== 'granted') {
+        if (statusEl) statusEl.textContent = 'Permission denied — enable in browser settings';
+        return;
+      }
+      alertActive = true;
+      window.aaveCapAlertActive = true;
+      if (btn) { btn.textContent = '✓ Alert On'; btn.style.background = 'var(--teal-20)'; }
+      const secs = Math.max(10, parseInt(document.getElementById('aavecap-interval')?.value) || 60);
+      if (statusEl) statusEl.textContent = 'Checking every ' + secs + 's';
+      alertTimer = setInterval(window.aaveCapFetch, secs * 1000);
+      window.aaveCapFetch();
+    });
+  };
+})();
 </script>
 
 </body>
