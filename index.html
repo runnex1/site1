@@ -2757,7 +2757,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               <span class="wtab-badge">5 saved</span>
             </button>
             <button class="wtab-btn" id="wtab-btn-aavecap" onclick="switchWTab('aavecap',this)" style="border-color:rgba(0,212,170,0.3);color:var(--teal);">
-              <span class="wtab-live-dot" id="aavecap-dot" style="background:var(--teal);"></span>
+              <span class="wtab-live-dot" id="aavecap-dot" style="background:var(--teal);animation:livePulse 2s infinite;"></span>
               Aave Cap Monitor
               <span class="wtab-badge" id="aavecap-badge" style="background:var(--teal-10);border-color:rgba(0,212,170,0.2);color:var(--teal);">USDe · MegaETH</span>
             </button>
@@ -2862,48 +2862,21 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 
           <!-- ── SUB-TAB: Aave Cap Monitor ──────────────────────── -->
           <div class="wtab-panel" id="wtab-aavecap">
+
             <div class="wsec-header" style="margin-bottom:1.25rem;">
               <div style="display:flex;align-items:center;gap:0.6rem;">
                 <span style="font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:var(--teal);">Aave V3 · MegaETH · USDe Supply Cap</span>
-                <span id="aavecap-badge2" style="font-size:0.62rem;font-weight:600;padding:1px 7px;border-radius:100px;background:var(--teal-10);border:1px solid rgba(0,212,170,0.2);color:var(--teal);font-family:var(--ff-mono);">—</span>
+                <span id="aavecap-util-badge" style="font-size:0.62rem;font-weight:600;padding:1px 7px;border-radius:100px;background:var(--teal-10);border:1px solid rgba(0,212,170,0.2);color:var(--teal);font-family:var(--ff-mono);">—</span>
               </div>
-              <button class="wsec-add-btn" id="aavecap-refresh-btn" onclick="aaveCapFetch()" style="border-color:rgba(0,212,170,0.25);background:var(--teal-10);color:var(--teal);"
+              <button class="wsec-add-btn" id="aavecap-refresh-btn" onclick="aaveCapFetch()"
+                style="border-color:rgba(0,212,170,0.25);background:var(--teal-10);color:var(--teal);"
                 onmouseover="this.style.background='var(--teal-20)';this.style.borderColor='var(--teal)'"
                 onmouseout="this.style.background='var(--teal-10)';this.style.borderColor='rgba(0,212,170,0.25)'">
                 ↻ Refresh
               </button>
             </div>
 
-            <!-- Setup -->
-            <details id="aavecap-config" style="margin-bottom:1.25rem;background:var(--surf-1);border:1px solid var(--border);border-radius:var(--r-sm);">
-              <summary style="cursor:pointer;padding:0.75rem 1rem;font-size:0.72rem;color:var(--t3);font-family:var(--ff-mono);font-weight:600;letter-spacing:0.05em;text-transform:uppercase;list-style:none;display:flex;align-items:center;gap:8px;">
-                <span style="color:var(--teal);">⚙</span>
-                <span>Setup</span>
-                <span id="aavecap-config-status" style="margin-left:auto;font-size:0.65rem;color:var(--amber);">⚠ needs RPC key</span>
-              </summary>
-              <div style="padding:0.5rem 1rem 1rem;border-top:1px solid var(--border);">
-                <div style="font-size:0.7rem;color:var(--t3);line-height:1.6;margin-bottom:1rem;">
-                  Get a <strong style="color:var(--t1);">free Alchemy API key</strong> at <a href="https://alchemy.com" target="_blank" style="color:var(--teal);">alchemy.com</a> → create app for <strong style="color:var(--t1);">MegaETH Mainnet</strong> → paste the HTTPS URL below. The contract addresses will be discovered automatically from the blockchain.
-                </div>
-                <div style="display:flex;flex-direction:column;gap:8px;">
-                  <div>
-                    <label style="font-size:0.65rem;color:var(--t3);font-family:var(--ff-mono);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:3px;">Alchemy RPC URL (MegaETH Mainnet)</label>
-                    <input type="text" id="aavecap-rpc-url"
-                      placeholder="https://megaeth-mainnet.g.alchemy.com/v2/YOUR_KEY_HERE"
-                      style="width:100%;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:var(--r-xs);color:var(--t1);font-family:var(--ff-mono);font-size:0.72rem;padding:6px 9px;outline:none;">
-                  </div>
-                  <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap;">
-                    <button onclick="aaveCapSaveAndDiscover()" style="background:var(--teal-10);border:1px solid rgba(0,212,170,0.3);border-radius:var(--r-xs);color:var(--teal);font-size:0.72rem;font-family:var(--ff-mono);font-weight:500;padding:6px 14px;cursor:pointer;">
-                      Connect &amp; Auto-Discover Contracts
-                    </button>
-                    <span id="aavecap-discover-status" style="font-size:0.7rem;color:var(--t3);font-family:var(--ff-mono);align-self:center;"></span>
-                  </div>
-                  <div id="aavecap-discovered" style="display:none;margin-top:6px;padding:8px 10px;background:var(--surf-2);border:1px solid var(--border);border-radius:var(--r-xs);font-family:var(--ff-mono);font-size:0.65rem;color:var(--t3);line-height:2;"></div>
-                </div>
-              </div>
-            </details>
-
-            <!-- Metrics -->
+            <!-- Metric cards -->
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.1rem;">
               <div style="background:var(--surf-1);border:1px solid var(--border);border-radius:var(--r-sm);padding:0.85rem 1rem;">
                 <div style="font-size:0.62rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.4rem;">Supply Cap</div>
@@ -2919,21 +2892,21 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               </div>
             </div>
 
-            <!-- Bar -->
+            <!-- Utilization bar -->
             <div style="margin-bottom:1.1rem;">
               <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--t3);font-family:var(--ff-mono);margin-bottom:5px;">
                 <span>Cap utilization</span>
                 <span id="aavecap-pct" style="color:var(--teal);">—</span>
               </div>
               <div style="height:7px;background:var(--surf-3);border-radius:100px;overflow:hidden;">
-                <div id="aavecap-bar" style="height:100%;border-radius:100px;background:var(--teal);width:0%;transition:width 0.6s ease,background 0.4s;"></div>
+                <div id="aavecap-bar" style="height:100%;border-radius:100px;background:var(--teal);width:0%;transition:width 0.7s ease,background 0.4s;"></div>
               </div>
             </div>
 
-            <!-- Status -->
+            <!-- Status message -->
             <div id="aavecap-status" style="border-radius:var(--r-sm);padding:0.8rem 1rem;display:flex;align-items:flex-start;gap:10px;border:1px solid var(--border-mid);background:var(--surf-2);margin-bottom:1.25rem;font-size:0.8rem;color:var(--t3);line-height:1.5;">
               <span id="aavecap-status-icon" style="margin-top:1px;opacity:0.5;">◌</span>
-              <span id="aavecap-status-text">Paste your Alchemy URL above and click Connect to get started.</span>
+              <span id="aavecap-status-text">Loading from Aave API…</span>
             </div>
 
             <!-- Alert settings -->
@@ -2961,7 +2934,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
             </div>
 
             <div style="margin-top:1rem;font-size:0.62rem;color:var(--t3);font-family:var(--ff-mono);display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;">
-              <span>USDe · 0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34 · MegaETH</span>
+              <span>Source: api.v3.aave.com · USDe · MegaETH (chain 4326)</span>
               <span id="aavecap-last-updated">Never fetched</span>
             </div>
           </div>
@@ -10121,285 +10094,121 @@ document.addEventListener("click", function(e){
 </script>
 
 <script>
-// ── AAVE CAP MONITOR ─────────────────────────────────────────────────
-(function() {
-  const LS_KEY   = 'aavecap-v2';
-  const USDE     = '0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34';
-  const MEGAETH_FALLBACK = 'https://mainnet.megaeth.com/rpc'; // fallback, often CORS-blocked
+// ── AAVE CAP MONITOR — uses official Aave GraphQL API (no RPC, no API key) ──
+(function () {
+  const AAVE_GQL    = 'https://api.v3.aave.com/graphql';
+  const CHAIN_ID    = 4326;   // MegaETH mainnet
+  const USDE_ADDR   = '0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34';
 
-  // ABI selectors
-  const SEL_GET_RESERVE_DATA   = '0x35ea6a75'; // Pool.getReserveData(address) → returns aTokenAddress at slot [7] (bytes 7*32..8*32)
-  const SEL_ADDRESSES_PROVIDER = '0x0542975c'; // Pool.ADDRESSES_PROVIDER()
-  const SEL_GET_DATA_PROVIDER  = '0x0b3c7e26'; // PoolAddressesProvider.getPoolDataProvider()
-  const SEL_GET_RESERVE_CAPS   = '0xd2493b6c'; // DataProvider.getReserveCaps(address) → (borrowCap, supplyCap)
-  const SEL_GET_ATOKEN_SUPPLY  = '0x4d17d0a1'; // DataProvider.getATokenTotalSupply(address)
-  // For auto-discovery: we need the Aave Pool address on MegaETH
-  // We get it from the aToken contract stored in reserve data
-  // But we need the Pool to call getReserveData — bootstrap via known MegaETH Aave Pool
-  // MegaETH Aave V3 Pool (from governance posts referencing the deployment):
-  const MEGAETH_POOL = '0x9Bd23B050F7F16E2b1f18373e4A39e4a1B5B2cA1'; // placeholder — discovered at runtime
+  // GraphQL query: fetch all supply reserves on MegaETH, find USDe
+  const QUERY = `
+    query AaveMarkets {
+      markets(chainIds: [${CHAIN_ID}]) {
+        address
+        name
+        supplyReserves {
+          underlyingToken { address symbol }
+          supplyInfo {
+            totalLiquidity { amount }
+            cap { amount }
+          }
+        }
+      }
+    }
+  `;
 
-  let cfg = { rpcUrl: '', poolDataProvider: '', ready: false };
   let alertActive = false;
   let alertTimer  = null;
 
-  try {
-    const s = localStorage.getItem(LS_KEY);
-    if (s) cfg = { ...cfg, ...JSON.parse(s) };
-  } catch(e) {}
-
-  function save() {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(cfg)); } catch(e) {}
-  }
-
-  function pad(addr) {
-    return addr.replace(/^0x/i,'').toLowerCase().padStart(64,'0');
-  }
-
-  function addrFromResult(hex) {
-    // last 20 bytes of a 32-byte result
-    if (!hex || hex.length < 66) return null;
-    return '0x' + hex.slice(-40);
-  }
-
-  async function call(to, data) {
-    const res = await fetch(cfg.rpcUrl, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({jsonrpc:'2.0',id:Date.now(),method:'eth_call',params:[{to,data},'latest']})
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const j = await res.json();
-    if (j.error) throw new Error(j.error.message || 'RPC error');
-    return j.result || '0x';
-  }
-
-  async function rpcMethod(method, params) {
-    const res = await fetch(cfg.rpcUrl, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({jsonrpc:'2.0',id:Date.now(),method,params})
-    });
-    const j = await res.json();
-    if (j.error) throw new Error(j.error.message);
-    return j.result;
-  }
-
   function fmt(n) {
+    n = parseFloat(n);
     if (!isFinite(n) || n < 0) return '—';
-    if (n >= 1e9) return (n/1e9).toFixed(2)+'B';
-    if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
-    if (n >= 1e3) return (n/1e3).toFixed(2)+'K';
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
     return n.toFixed(2);
   }
 
-  function setEl(id, v) { const e=document.getElementById(id); if(e) e.textContent=v; }
+  function setEl(id, v) { const e = document.getElementById(id); if (e) e.textContent = v; }
 
   function setStatus(html, type) {
     const box = document.getElementById('aavecap-status');
     const txt = document.getElementById('aavecap-status-text');
     const ico = document.getElementById('aavecap-status-icon');
-    if (!box||!txt) return;
+    if (!box || !txt) return;
     txt.innerHTML = html;
     const map = {
-      ok:   {bg:'rgba(34,197,94,0.08)',  bd:'rgba(34,197,94,0.2)',  ic:'✓', col:'var(--green)'},
-      warn: {bg:'rgba(245,158,11,0.08)', bd:'rgba(245,158,11,0.2)', ic:'⚠', col:'var(--amber)'},
-      full: {bg:'rgba(244,63,94,0.08)',  bd:'rgba(244,63,94,0.2)',  ic:'✕', col:'var(--red)'},
-      load: {bg:'var(--surf-2)',         bd:'var(--border-mid)',    ic:'◌', col:'var(--t3)'},
-      err:  {bg:'rgba(244,63,94,0.08)',  bd:'rgba(244,63,94,0.2)',  ic:'!', col:'var(--red)'},
+      ok:   { bg: 'rgba(34,197,94,0.08)',  bd: 'rgba(34,197,94,0.2)',  ic: '✓', col: 'var(--green)' },
+      warn: { bg: 'rgba(245,158,11,0.08)', bd: 'rgba(245,158,11,0.2)', ic: '⚠', col: 'var(--amber)' },
+      full: { bg: 'rgba(244,63,94,0.08)',  bd: 'rgba(244,63,94,0.2)',  ic: '✕', col: 'var(--red)'   },
+      load: { bg: 'var(--surf-2)',         bd: 'var(--border-mid)',    ic: '◌', col: 'var(--t3)'    },
+      err:  { bg: 'rgba(244,63,94,0.08)',  bd: 'rgba(244,63,94,0.2)',  ic: '!', col: 'var(--red)'   },
     };
-    const c = map[type]||map.load;
-    box.style.background=c.bg; box.style.borderColor=c.bd;
-    if(ico){ico.textContent=c.ic;ico.style.color=c.col;ico.style.opacity='1';}
+    const c = map[type] || map.load;
+    box.style.background  = c.bg;
+    box.style.borderColor = c.bd;
+    if (ico) { ico.textContent = c.ic; ico.style.color = c.col; ico.style.opacity = '1'; }
   }
 
   function setBar(pct) {
-    const bar=document.getElementById('aavecap-bar');
-    const pctE=document.getElementById('aavecap-pct');
-    const dot=document.getElementById('aavecap-dot');
-    const bdg=document.getElementById('aavecap-badge');
-    const bdg2=document.getElementById('aavecap-badge2');
-    if(!bar) return;
-    const color = pct>=99.5?'var(--red)':pct>=90?'var(--amber)':'var(--teal)';
-    bar.style.width=Math.min(100,pct).toFixed(2)+'%'; bar.style.background=color;
-    if(pctE){pctE.textContent=pct.toFixed(2)+'%'; pctE.style.color=color;}
-    if(dot) dot.style.background=color;
-    const label=pct.toFixed(1)+'% used';
-    if(bdg){bdg.textContent=label;bdg.style.color=color;}
-    if(bdg2){bdg2.textContent=label;bdg2.style.color=color;}
-    const av=document.getElementById('aavecap-available');
-    if(av) av.style.color=color;
+    const bar   = document.getElementById('aavecap-bar');
+    const pctEl = document.getElementById('aavecap-pct');
+    const dot   = document.getElementById('aavecap-dot');
+    const bdg   = document.getElementById('aavecap-badge');
+    const bdg2  = document.getElementById('aavecap-util-badge');
+    if (!bar) return;
+    const color = pct >= 99.5 ? 'var(--red)' : pct >= 90 ? 'var(--amber)' : 'var(--teal)';
+    bar.style.width      = Math.min(100, pct).toFixed(2) + '%';
+    bar.style.background = color;
+    const label = pct.toFixed(1) + '% used';
+    if (pctEl) { pctEl.textContent = pct.toFixed(2) + '%'; pctEl.style.color = color; }
+    if (dot)   dot.style.background = color;
+    if (bdg)   { bdg.textContent  = label; bdg.style.color  = color; }
+    if (bdg2)  { bdg2.textContent = label; bdg2.style.color = color; }
+    const avEl = document.getElementById('aavecap-available');
+    if (avEl) avEl.style.color = color;
   }
 
-  function refreshSetupUI() {
-    const inp = document.getElementById('aavecap-rpc-url');
-    if(inp && cfg.rpcUrl) inp.value = cfg.rpcUrl;
-    const st = document.getElementById('aavecap-config-status');
-    const ok = cfg.ready && cfg.rpcUrl && cfg.poolDataProvider;
-    if(st){st.textContent=ok?'✓ ready':'⚠ needs RPC key'; st.style.color=ok?'var(--green)':'var(--amber)';}
-    const cfgEl = document.getElementById('aavecap-config');
-    if(cfgEl && !ok) cfgEl.open = true;
-    if(cfg.poolDataProvider) {
-      const disc = document.getElementById('aavecap-discovered');
-      if(disc){
-        disc.style.display='block';
-        disc.innerHTML='<span style="color:var(--teal);">Pool Data Provider:</span> '+cfg.poolDataProvider;
-      }
-    }
-  }
-
-  // Discovery chain:
-  // 1. eth_chainId to verify we're on MegaETH (4326)
-  // 2. Call Pool.getReserveData(USDE) → extract aTokenAddress (offset 7 * 32 bytes in result)
-  //    getReserveData returns a struct; aTokenAddress is field index 8 (0-indexed) in ReserveData
-  // 3. aToken.POOL() → Pool address (double-check)
-  // 4. Pool.ADDRESSES_PROVIDER() → PoolAddressesProvider address
-  // 5. PoolAddressesProvider.getPoolDataProvider() → DataProvider address  ✓
-
-  // But we need a starting pool address. We can get it differently:
-  // The Aave PoolAddressesProviderRegistry is at a known address on every Aave V3 deployment.
-  // OR: we call getReserveData on likely pool addresses.
-  // Simplest approach that needs no starting address:
-  // The USDe aToken on MegaETH holds a .POOL() reference we can call.
-  // But USDE is the underlying, not the aToken. We need the aToken address.
-  // 
-  // CLEANEST APPROACH: Call the Blockscout API (no auth, CORS-open) to get
-  // the token holders of USDe, find the aToken (biggest holder that is a contract 
-  // with name starting "Aave"), then call POOL() on it.
-  // Blockscout API: GET https://megaeth.blockscout.com/api/v2/tokens/{addr}/holders
-  
-  async function discoverViaBlockscout() {
-    // Get top holders of USDe on MegaETH via Blockscout public API
-    const resp = await fetch(
-      'https://megaeth.blockscout.com/api/v2/tokens/'+USDE+'/holders?limit=50',
-      {headers:{Accept:'application/json'}}
-    );
-    if (!resp.ok) throw new Error('Blockscout API returned '+resp.status);
-    const data = await resp.json();
-    const holders = data.items || [];
-    // The aToken will be a big holder with "Aave" in the name
-    const aTokenHolder = holders.find(h =>
-      h.address && (
-        (h.address.name||'').toLowerCase().includes('aave') ||
-        (h.address.name||'').toLowerCase().includes('ausde') ||
-        (h.address.name||'').toLowerCase().startsWith('a')
-      ) && h.address.is_contract
-    ) || holders.find(h => h.address && h.address.is_contract);
-    
-    if (!aTokenHolder) throw new Error('Could not identify aToken from holders list');
-    const aTokenAddr = aTokenHolder.address.hash;
-    setDiscoverStatus('Found aToken: '+aTokenAddr.slice(0,10)+'… → fetching pool…');
-    
-    // Call aToken.POOL() — selector 0x026b1d5f
-    const poolHex = await call(aTokenAddr, '0x026b1d5f');
-    const poolAddr = addrFromResult(poolHex);
-    if (!poolAddr || poolAddr === '0x'+'0'.repeat(40)) throw new Error('aToken.POOL() returned zero');
-    setDiscoverStatus('Pool: '+poolAddr.slice(0,10)+'… → fetching provider…');
-
-    // Pool.ADDRESSES_PROVIDER()
-    const provHex = await call(poolAddr, SEL_ADDRESSES_PROVIDER);
-    const provAddr = addrFromResult(provHex);
-    if (!provAddr || provAddr === '0x'+'0'.repeat(40)) throw new Error('ADDRESSES_PROVIDER() returned zero');
-    setDiscoverStatus('PoolAddressesProvider: '+provAddr.slice(0,10)+'… → fetching data provider…');
-
-    // PoolAddressesProvider.getPoolDataProvider()
-    const dpHex = await call(provAddr, SEL_GET_DATA_PROVIDER);
-    const dpAddr = addrFromResult(dpHex);
-    if (!dpAddr || dpAddr === '0x'+'0'.repeat(40)) throw new Error('getPoolDataProvider() returned zero');
-
-    return { aTokenAddr, poolAddr, provAddr, dpAddr };
-  }
-
-  function setDiscoverStatus(msg) {
-    const el = document.getElementById('aavecap-discover-status');
-    if(el) el.textContent = msg;
-  }
-
-  window.aaveCapSaveAndDiscover = async function() {
-    const inp = document.getElementById('aavecap-rpc-url');
-    const url = (inp?.value||'').trim();
-    if (!url || !url.startsWith('http')) {
-      setDiscoverStatus('⚠ Enter a valid https:// Alchemy URL first');
-      return;
-    }
-    cfg.rpcUrl = url;
-    cfg.ready = false;
-    save();
-
-    setDiscoverStatus('Checking connection…');
-    setStatus('Discovering contract addresses from the blockchain…', 'load');
-
-    try {
-      // Step 1: verify chain
-      const chainId = await rpcMethod('eth_chainId', []);
-      const chain = parseInt(chainId, 16);
-      if (chain !== 4326) {
-        setDiscoverStatus(`⚠ Wrong network: chain ${chain}. Switch to MegaETH Mainnet (4326)`);
-        return;
-      }
-      setDiscoverStatus('MegaETH confirmed (chain 4326) → finding aToken via Blockscout…');
-
-      // Step 2: auto-discover via Blockscout + on-chain calls
-      const { aTokenAddr, poolAddr, provAddr, dpAddr } = await discoverViaBlockscout();
-
-      cfg.poolDataProvider = dpAddr;
-      cfg.ready = true;
-      save();
-
-      const disc = document.getElementById('aavecap-discovered');
-      if(disc){
-        disc.style.display='block';
-        disc.innerHTML =
-          '<span style="color:var(--teal);">aToken:</span> '+aTokenAddr+'<br>'+
-          '<span style="color:var(--teal);">Pool:</span> '+poolAddr+'<br>'+
-          '<span style="color:var(--teal);">PoolAddressesProvider:</span> '+provAddr+'<br>'+
-          '<span style="color:var(--teal);">Pool Data Provider:</span> '+dpAddr;
-      }
-      setDiscoverStatus('✓ All contracts discovered automatically');
-      refreshSetupUI();
-
-      const cfgEl = document.getElementById('aavecap-config');
-      if(cfgEl) cfgEl.open = false;
-
-      setStatus('<strong>Setup complete.</strong> All contracts discovered. Click Refresh to load cap data.', 'ok');
-      window.aaveCapFetch();
-
-    } catch(e) {
-      let msg = e.message || String(e);
-      if (/CORS|fetch|network/i.test(msg)) {
-        msg = 'CORS blocked — make sure you are using your Alchemy URL (not the public MegaETH RPC).';
-      }
-      setDiscoverStatus('✕ ' + msg);
-      setStatus('<strong>Discovery failed.</strong> ' + escHtml(e.message), 'err');
-    }
-  };
-
-  window.aaveCapFetch = async function() {
-    if (!cfg.ready || !cfg.rpcUrl || !cfg.poolDataProvider) {
-      setStatus('<strong>Setup required.</strong> Open the Setup panel above and connect your Alchemy URL.', 'warn');
-      document.getElementById('aavecap-config').open = true;
-      return;
-    }
+  window.aaveCapFetch = async function () {
     const btn = document.getElementById('aavecap-refresh-btn');
-    if(btn){btn.textContent='↻ …';btn.disabled=true;}
-    setStatus('Fetching cap data from Aave V3 MegaETH…', 'load');
+    if (btn) { btn.textContent = '↻ …'; btn.disabled = true; }
+    setStatus('Fetching from Aave API…', 'load');
 
     try {
-      const padded = pad(USDE);
-      const [capsHex, supplyHex] = await Promise.all([
-        call(cfg.poolDataProvider, SEL_GET_RESERVE_CAPS + padded),
-        call(cfg.poolDataProvider, SEL_GET_ATOKEN_SUPPLY + padded),
-      ]);
+      const res = await fetch(AAVE_GQL, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ query: QUERY }),
+      });
 
-      if (!capsHex || capsHex.length < 130) throw new Error('getReserveCaps: empty response — wrong contract?');
-      const raw = capsHex.slice(2);
-      // getReserveCaps returns (uint256 borrowCap, uint256 supplyCap)
-      const borrowCap = Number(BigInt('0x'+raw.slice(0,64)));
-      const supplyCap = Number(BigInt('0x'+raw.slice(64,128)));
+      if (!res.ok) throw new Error('Aave API returned HTTP ' + res.status);
+      const json = await res.json();
 
-      if (supplyCap === 0) throw new Error('Supply cap is 0 — USDe may not be listed yet, or wrong Data Provider address');
+      if (json.errors) throw new Error(json.errors[0]?.message || 'GraphQL error');
 
-      const currentSupply = Number(BigInt(supplyHex)) / 1e18;
+      const markets = json.data?.markets;
+      if (!markets || markets.length === 0) {
+        throw new Error('No Aave markets found for MegaETH (chain 4326). The market may not be indexed yet.');
+      }
+
+      // Find USDe across all markets on this chain
+      let usdeReserve = null;
+      for (const market of markets) {
+        const found = (market.supplyReserves || []).find(r =>
+          r.underlyingToken?.address?.toLowerCase() === USDE_ADDR
+        );
+        if (found) { usdeReserve = found; break; }
+      }
+
+      if (!usdeReserve) {
+        throw new Error('USDe not found in any MegaETH Aave market. It may not be listed yet or the API hasn\'t indexed it.');
+      }
+
+      const supplyCap     = parseFloat(usdeReserve.supplyInfo?.cap?.amount ?? '0');
+      const currentSupply = parseFloat(usdeReserve.supplyInfo?.totalLiquidity?.amount ?? '0');
+
+      if (supplyCap === 0) throw new Error('Supply cap is 0 — data may not be available yet.');
+
       const util      = (currentSupply / supplyCap) * 100;
       const available = Math.max(0, supplyCap - currentSupply);
 
@@ -10410,56 +10219,58 @@ document.addEventListener("click", function(e){
       setEl('aavecap-last-updated', 'Updated ' + new Date().toLocaleTimeString());
 
       if (util >= 99.5) {
-        setStatus('<strong>Cap fully reached.</strong> No new USDe can be deposited until someone withdraws or governance raises the cap.', 'full');
+        setStatus('<strong>Cap fully reached.</strong> No new USDe deposits until someone withdraws or governance raises the cap.', 'full');
       } else if (util >= 90) {
-        setStatus(`<strong>Cap nearly full (${util.toFixed(1)}% used).</strong> Only ${fmt(available)} USDe headroom remains.`, 'warn');
+        setStatus('<strong>Cap nearly full (' + util.toFixed(1) + '% used).</strong> Only ' + fmt(available) + ' USDe headroom remains.', 'warn');
       } else {
-        setStatus(`<strong>Deposits open.</strong> ${util.toFixed(1)}% of cap used — ${fmt(available)} USDe available now.`, 'ok');
+        setStatus('<strong>Deposits open.</strong> ' + util.toFixed(1) + '% of cap used — ' + fmt(available) + ' USDe available now.', 'ok');
       }
 
-      // Fire notification if alert is active and cap below threshold
-      const threshold = parseFloat(document.getElementById('aavecap-threshold')?.value)||95;
-      if (alertActive && util < threshold && 'Notification' in window && Notification.permission==='granted') {
+      // Fire browser notification if alert is active and below threshold
+      const threshold = parseFloat(document.getElementById('aavecap-threshold')?.value) || 95;
+      if (alertActive && util < threshold && 'Notification' in window && Notification.permission === 'granted') {
         new Notification('USDe Deposit Space Open — Aave MegaETH', {
-          body:`Cap at ${util.toFixed(1)}% (below ${threshold}% threshold). ${fmt(available)} USDe available!`,
-          tag:'aave-usde-cap'
+          body: 'Cap at ' + util.toFixed(1) + '% (below ' + threshold + '% threshold). ' + fmt(available) + ' USDe available now.',
+          tag:  'aave-usde-cap',
         });
       }
-    } catch(e) {
+
+    } catch (e) {
       setEl('aavecap-last-updated', 'Error ' + new Date().toLocaleTimeString());
-      setStatus('<strong>Fetch failed:</strong> ' + escHtml(e.message), 'err');
+      setStatus('<strong>Could not fetch data.</strong> ' + (e.message || String(e)), 'err');
+      console.warn('[AaveCapMonitor]', e);
     } finally {
-      if(btn){btn.textContent='↻ Refresh';btn.disabled=false;}
+      if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; }
     }
   };
 
-  window.aaveCapToggleAlert = function() {
+  window.aaveCapToggleAlert = function () {
     const btn = document.getElementById('aavecap-alert-btn');
     const st  = document.getElementById('aavecap-alert-status');
+
     if (alertActive) {
-      alertActive=false;
-      if(alertTimer){clearInterval(alertTimer);alertTimer=null;}
-      if(btn){btn.textContent='Enable Browser Alert';btn.style.background='var(--teal-10)';}
-      if(st) st.textContent='Alert off';
+      alertActive = false;
+      if (alertTimer) { clearInterval(alertTimer); alertTimer = null; }
+      if (btn) { btn.textContent = 'Enable Browser Alert'; btn.style.background = 'var(--teal-10)'; }
+      if (st) st.textContent = 'Alert off';
       return;
     }
-    if (!('Notification' in window)) { if(st) st.textContent='Not supported'; return; }
-    Notification.requestPermission().then(p => {
-      if (p!=='granted') { if(st) st.textContent='Permission denied'; return; }
-      alertActive=true;
-      if(btn){btn.textContent='✓ Alert On';btn.style.background='var(--teal-20)';}
-      const secs=Math.max(30,parseInt(document.getElementById('aavecap-interval')?.value)||60);
-      if(st) st.textContent='Checking every '+secs+'s';
-      alertTimer=setInterval(window.aaveCapFetch, secs*1000);
+
+    if (!('Notification' in window)) { if (st) st.textContent = 'Not supported in this browser'; return; }
+
+    Notification.requestPermission().then(perm => {
+      if (perm !== 'granted') { if (st) st.textContent = 'Permission denied — enable in browser settings'; return; }
+      alertActive = true;
+      if (btn) { btn.textContent = '✓ Alert On'; btn.style.background = 'var(--teal-20)'; }
+      const secs = Math.max(30, parseInt(document.getElementById('aavecap-interval')?.value) || 60);
+      if (st) st.textContent = 'Checking every ' + secs + 's';
+      alertTimer = setInterval(window.aaveCapFetch, secs * 1000);
       window.aaveCapFetch();
     });
   };
 
-  function escHtml(s) {
-    return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
-  }
-
-  refreshSetupUI();
+  // Auto-fetch on load
+  window.aaveCapFetch();
 })();
 </script>
 
