@@ -8608,29 +8608,44 @@ function terminalParseAaveCap(raw) {
                    || t.includes('utilization') || t.includes('util') || t.includes('available');
     if (!hasAave || !hasCapKw) return null;
 
-    // Detect token symbol — word after "aave" OR common known symbols
+    // Detect token symbol — scan for known symbols first, then try word after "aave"
+    const AAVE_SKIP_WORDS = new Set([
+        'cap','deposit','supply','v3','v2','on','the','for','utilization',
+        'util','utiliz','monitor','alert','market','pool','protocol','when',
+        'me','is','are','below','above','over','under','percent','percentage',
+    ]);
+    const knownTokens = ['USDC','USDT','USDE','WETH','ETH','WBTC','BTC','DAI','GHO',
+                         'LUSD','FRAX','RETH','STETH','CBETH','WEETH','WSTETH','USDE',
+                         'PYUSD','CRVUSD','SUSD','TUSD','FDUSD','BUSD'];
     let symbol = null;
-    const afterAave = raw.match(/aave\s+([A-Za-z][A-Za-z0-9]{1,9})/i);
-    if (afterAave && !['cap','deposit','supply','v3','v2','on','the'].includes(afterAave[1].toLowerCase())) {
-        symbol = afterAave[1].toUpperCase();
+    // Priority 1: scan entire text for known token symbols (case-insensitive)
+    for (const tk of knownTokens) {
+        // match as whole word
+        if (new RegExp('\\b' + tk + '\\b', 'i').test(raw)) { symbol = tk; break; }
     }
-    // Also scan for well-known token symbols anywhere in text
+    // Priority 2: word immediately after "aave" that isn't a skip word
     if (!symbol) {
-        const knownTokens = ['USDC','USDT','USDE','WETH','ETH','WBTC','BTC','DAI','GHO',
-                             'LUSD','FRAX','RETH','STETH','CBETH','WEETH','WSTETH'];
-        for (const tk of knownTokens) {
-            if (t.includes(tk.toLowerCase())) { symbol = tk; break; }
+        const afterAave = raw.match(/aave\s+([A-Za-z][A-Za-z0-9]{0,9})/i);
+        if (afterAave && !AAVE_SKIP_WORDS.has(afterAave[1].toLowerCase())) {
+            symbol = afterAave[1].toUpperCase();
+        }
+    }
+    // Priority 3: word after "for" or "of" near aave context
+    if (!symbol) {
+        const forMatch = raw.match(/(?:for|of)\s+([A-Za-z][A-Za-z0-9]{1,9})/i);
+        if (forMatch && !AAVE_SKIP_WORDS.has(forMatch[1].toLowerCase())) {
+            symbol = forMatch[1].toUpperCase();
         }
     }
     if (!symbol) return null;
 
-    // Fix common case variants
-    if (symbol === 'USDE') symbol = 'USDe';
-    if (symbol === 'WSTETH') symbol = 'wstETH';
-    if (symbol === 'RETH') symbol = 'rETH';
-    if (symbol === 'CBETH') symbol = 'cbETH';
-    if (symbol === 'WEETH') symbol = 'weETH';
-    if (symbol === 'STETH') symbol = 'stETH';
+    // Fix common case variants to match Aave's API symbol exactly
+    const AAVE_CASE_MAP = {
+        'USDE':'USDe', 'WSTETH':'wstETH', 'RETH':'rETH',
+        'CBETH':'cbETH', 'WEETH':'weETH', 'STETH':'stETH',
+        'CRVUSD':'crvUSD', 'PYUSD':'PYUSD', 'SUSD':'sUSD',
+    };
+    symbol = AAVE_CASE_MAP[symbol] ?? symbol;
 
     // Detect chain — check longer names first to avoid partial matches
     let chainId = 1; // default Ethereum
