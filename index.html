@@ -2757,7 +2757,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               <span class="wtab-badge">5 saved</span>
             </button>
             <button class="wtab-btn" id="wtab-btn-aavecap" onclick="switchWTab('aavecap',this)" style="border-color:rgba(0,212,170,0.3);color:var(--teal);">
-              <span class="wtab-live-dot" id="aavecap-dot" style="background:var(--teal);animation:livePulse 2s infinite;"></span>
+              <span class="wtab-live-dot" id="aavecap-dot" style="background:var(--teal);"></span>
               Aave Cap Monitor
               <span class="wtab-badge" id="aavecap-badge" style="background:var(--teal-10);border-color:rgba(0,212,170,0.2);color:var(--teal);">USDe · MegaETH</span>
             </button>
@@ -2862,7 +2862,6 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 
           <!-- ── SUB-TAB: Aave Cap Monitor ──────────────────────── -->
           <div class="wtab-panel" id="wtab-aavecap">
-
             <div class="wsec-header" style="margin-bottom:1.25rem;">
               <div style="display:flex;align-items:center;gap:0.6rem;">
                 <span style="font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:var(--teal);">Aave V3 · MegaETH · USDe Supply Cap</span>
@@ -2875,8 +2874,6 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 ↻ Refresh
               </button>
             </div>
-
-            <!-- Metric cards -->
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:1.1rem;">
               <div style="background:var(--surf-1);border:1px solid var(--border);border-radius:var(--r-sm);padding:0.85rem 1rem;">
                 <div style="font-size:0.62rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.4rem;">Supply Cap</div>
@@ -2891,8 +2888,6 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 <div id="aavecap-available" style="font-family:var(--ff-mono);font-size:1.05rem;font-weight:500;color:var(--teal);">—</div>
               </div>
             </div>
-
-            <!-- Utilization bar -->
             <div style="margin-bottom:1.1rem;">
               <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--t3);font-family:var(--ff-mono);margin-bottom:5px;">
                 <span>Cap utilization</span>
@@ -2902,14 +2897,10 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 <div id="aavecap-bar" style="height:100%;border-radius:100px;background:var(--teal);width:0%;transition:width 0.7s ease,background 0.4s;"></div>
               </div>
             </div>
-
-            <!-- Status message -->
             <div id="aavecap-status" style="border-radius:var(--r-sm);padding:0.8rem 1rem;display:flex;align-items:flex-start;gap:10px;border:1px solid var(--border-mid);background:var(--surf-2);margin-bottom:1.25rem;font-size:0.8rem;color:var(--t3);line-height:1.5;">
               <span id="aavecap-status-icon" style="margin-top:1px;opacity:0.5;">◌</span>
               <span id="aavecap-status-text">Loading from Aave API…</span>
             </div>
-
-            <!-- Alert settings -->
             <div style="border-top:1px solid var(--border);padding-top:1.1rem;">
               <div style="font-size:0.62rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.75rem;">Alert Settings</div>
               <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.65rem;">
@@ -2932,7 +2923,6 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 <span id="aavecap-alert-status" style="font-size:0.7rem;color:var(--t3);font-family:var(--ff-mono);">Alert off</span>
               </div>
             </div>
-
             <div style="margin-top:1rem;font-size:0.62rem;color:var(--t3);font-family:var(--ff-mono);display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px;">
               <span>Source: api.v3.aave.com · USDe · MegaETH (chain 4326)</span>
               <span id="aavecap-last-updated">Never fetched</span>
@@ -10094,28 +10084,28 @@ document.addEventListener("click", function(e){
 </script>
 
 <script>
-// ── AAVE CAP MONITOR — uses official Aave GraphQL API (no RPC, no API key) ──
+// ── AAVE CAP MONITOR — Official Aave GraphQL API ─────────────────────
 (function () {
-  const AAVE_GQL    = 'https://api.v3.aave.com/graphql';
-  const CHAIN_ID    = 4326;   // MegaETH mainnet
-  const USDE_ADDR   = '0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34';
+  const AAVE_GQL  = 'https://api.v3.aave.com/graphql';
+  const CHAIN_ID  = 4326;
+  const USDE_ADDR = '0x5d3a1ff2b6bab83b63cd9ad0787074081a52ef34';
 
-  // GraphQL query: fetch all supply reserves on MegaETH, find USDe
-  const QUERY = `
-    query AaveMarkets {
-      markets(chainIds: [${CHAIN_ID}]) {
-        address
-        name
-        supplyReserves {
-          underlyingToken { address symbol }
-          supplyInfo {
-            totalLiquidity { amount }
-            cap { amount }
-          }
+  // Correct query per official docs: markets(request: { chainIds: [...] })
+  // reserves (not supplyReserves), supplyInfo.supplyCap.amount.value + supplyInfo.total.value
+  const QUERY = `query AaveMegaETH {
+    markets(request: { chainIds: [${CHAIN_ID}] }) {
+      name
+      address
+      reserves {
+        underlyingToken { address symbol }
+        supplyInfo {
+          total { value }
+          supplyCap { amount { value } }
+          supplyCapReached
         }
       }
     }
-  `;
+  }`;
 
   let alertActive = false;
   let alertTimer  = null;
@@ -10183,31 +10173,30 @@ document.addEventListener("click", function(e){
 
       if (!res.ok) throw new Error('Aave API returned HTTP ' + res.status);
       const json = await res.json();
-
-      if (json.errors) throw new Error(json.errors[0]?.message || 'GraphQL error');
+      if (json.errors) throw new Error(json.errors.map(e => e.message).join('; '));
 
       const markets = json.data?.markets;
-      if (!markets || markets.length === 0) {
-        throw new Error('No Aave markets found for MegaETH (chain 4326). The market may not be indexed yet.');
-      }
+      if (!markets || markets.length === 0)
+        throw new Error('No Aave markets returned for MegaETH (chain 4326). The market may not be indexed yet.');
 
-      // Find USDe across all markets on this chain
+      // Search all markets on this chain for USDe
       let usdeReserve = null;
       for (const market of markets) {
-        const found = (market.supplyReserves || []).find(r =>
+        const r = (market.reserves || []).find(r =>
           r.underlyingToken?.address?.toLowerCase() === USDE_ADDR
         );
-        if (found) { usdeReserve = found; break; }
+        if (r) { usdeReserve = r; break; }
       }
 
-      if (!usdeReserve) {
-        throw new Error('USDe not found in any MegaETH Aave market. It may not be listed yet or the API hasn\'t indexed it.');
-      }
+      if (!usdeReserve)
+        throw new Error('USDe reserve not found in any MegaETH market. It may not be listed yet.');
 
-      const supplyCap     = parseFloat(usdeReserve.supplyInfo?.cap?.amount ?? '0');
-      const currentSupply = parseFloat(usdeReserve.supplyInfo?.totalLiquidity?.amount ?? '0');
+      // supplyCap.amount.value is the cap in whole tokens (e.g. 400000000)
+      // supplyInfo.total.value is current total supply in whole tokens
+      const supplyCap     = parseFloat(usdeReserve.supplyInfo?.supplyCap?.amount?.value ?? '0');
+      const currentSupply = parseFloat(usdeReserve.supplyInfo?.total?.value ?? '0');
 
-      if (supplyCap === 0) throw new Error('Supply cap is 0 — data may not be available yet.');
+      if (supplyCap === 0) throw new Error('Supply cap returned as 0 — data may not be available yet.');
 
       const util      = (currentSupply / supplyCap) * 100;
       const available = Math.max(0, supplyCap - currentSupply);
@@ -10218,7 +10207,7 @@ document.addEventListener("click", function(e){
       setBar(util);
       setEl('aavecap-last-updated', 'Updated ' + new Date().toLocaleTimeString());
 
-      if (util >= 99.5) {
+      if (usdeReserve.supplyInfo?.supplyCapReached) {
         setStatus('<strong>Cap fully reached.</strong> No new USDe deposits until someone withdraws or governance raises the cap.', 'full');
       } else if (util >= 90) {
         setStatus('<strong>Cap nearly full (' + util.toFixed(1) + '% used).</strong> Only ' + fmt(available) + ' USDe headroom remains.', 'warn');
@@ -10226,11 +10215,10 @@ document.addEventListener("click", function(e){
         setStatus('<strong>Deposits open.</strong> ' + util.toFixed(1) + '% of cap used — ' + fmt(available) + ' USDe available now.', 'ok');
       }
 
-      // Fire browser notification if alert is active and below threshold
       const threshold = parseFloat(document.getElementById('aavecap-threshold')?.value) || 95;
       if (alertActive && util < threshold && 'Notification' in window && Notification.permission === 'granted') {
         new Notification('USDe Deposit Space Open — Aave MegaETH', {
-          body: 'Cap at ' + util.toFixed(1) + '% (below ' + threshold + '% threshold). ' + fmt(available) + ' USDe available now.',
+          body: 'Cap at ' + util.toFixed(1) + '% (below your ' + threshold + '% threshold). ' + fmt(available) + ' USDe available.',
           tag:  'aave-usde-cap',
         });
       }
@@ -10238,7 +10226,6 @@ document.addEventListener("click", function(e){
     } catch (e) {
       setEl('aavecap-last-updated', 'Error ' + new Date().toLocaleTimeString());
       setStatus('<strong>Could not fetch data.</strong> ' + (e.message || String(e)), 'err');
-      console.warn('[AaveCapMonitor]', e);
     } finally {
       if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; }
     }
@@ -10247,7 +10234,6 @@ document.addEventListener("click", function(e){
   window.aaveCapToggleAlert = function () {
     const btn = document.getElementById('aavecap-alert-btn');
     const st  = document.getElementById('aavecap-alert-status');
-
     if (alertActive) {
       alertActive = false;
       if (alertTimer) { clearInterval(alertTimer); alertTimer = null; }
@@ -10255,11 +10241,9 @@ document.addEventListener("click", function(e){
       if (st) st.textContent = 'Alert off';
       return;
     }
-
-    if (!('Notification' in window)) { if (st) st.textContent = 'Not supported in this browser'; return; }
-
+    if (!('Notification' in window)) { if (st) st.textContent = 'Not supported'; return; }
     Notification.requestPermission().then(perm => {
-      if (perm !== 'granted') { if (st) st.textContent = 'Permission denied — enable in browser settings'; return; }
+      if (perm !== 'granted') { if (st) st.textContent = 'Permission denied'; return; }
       alertActive = true;
       if (btn) { btn.textContent = '✓ Alert On'; btn.style.background = 'var(--teal-20)'; }
       const secs = Math.max(30, parseInt(document.getElementById('aavecap-interval')?.value) || 60);
@@ -10269,7 +10253,7 @@ document.addEventListener("click", function(e){
     });
   };
 
-  // Auto-fetch on load
+  // Auto-fetch immediately on load
   window.aaveCapFetch();
 })();
 </script>
