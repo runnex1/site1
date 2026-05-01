@@ -279,6 +279,42 @@ html { height: 100%; }
 .wl-btn:hover { color: var(--t1); border-color: var(--border-hi); }
 .wl-btn.danger:hover { color: var(--red); border-color: rgba(244,63,94,0.4); }
 
+
+/* ── Telegram settings panel ─────────────────────────────────────────────── */
+.tg-panel {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.85rem;
+}
+.tg-panel-header {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--t3);
+  margin-bottom: 0.65rem; cursor: pointer; user-select: none;
+}
+.tg-panel-header:hover { color: var(--t1); }
+.tg-panel-body { display: flex; flex-direction: column; gap: 0.45rem; }
+.tg-row { display: flex; align-items: center; gap: 0.5rem; }
+.tg-label { font-size: 0.7rem; color: var(--t3); white-space: nowrap; min-width: 72px; }
+.tg-input {
+  flex: 1; background: var(--surf-2); border: 1px solid var(--border-mid);
+  border-radius: var(--r-xs); color: var(--t1);
+  font-family: var(--ff-mono); font-size: 0.75rem;
+  padding: 4px 8px; outline: none; min-width: 0;
+}
+.tg-input:focus { border-color: var(--border-hi); }
+.tg-input::placeholder { color: var(--t3); opacity: 0.6; }
+.tg-actions { display: flex; gap: 0.4rem; margin-top: 0.25rem; }
+.tg-btn {
+  flex: 1; padding: 5px 10px; border-radius: var(--r-xs);
+  font-size: 0.75rem; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--border-mid); background: var(--surf-2);
+  color: var(--t3); transition: all 0.14s;
+}
+.tg-btn:hover { color: var(--t1); border-color: var(--border-hi); }
+.tg-btn.primary { border-color: rgba(0,212,170,0.3); color: var(--teal); background: var(--teal-10); }
+.tg-btn.primary:hover { border-color: var(--teal); }
+
 /* ─── WATCHER SUB-TABS ───────────────────────────────────── */
 .wtab-row {
   display: flex; gap: 0.2rem;
@@ -3005,6 +3041,28 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               <div class="term-alerts-empty">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                 <div>No alerts active</div>
+              </div>
+            </div>
+
+            <!-- Telegram notification settings -->
+            <div class="tg-panel" id="tgPanel">
+              <div class="tg-panel-header" onclick="var b=document.getElementById('tgPanelBody');b.style.display=b.style.display==='none'?'flex':'none'">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                Telegram Notifications
+              </div>
+              <div class="tg-panel-body" id="tgPanelBody">
+                <div class="tg-row">
+                  <span class="tg-label">Bot Token</span>
+                  <input class="tg-input" id="tg-token-input" type="password" placeholder="123456:ABC-DEFâ¦" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="tg-row">
+                  <span class="tg-label">Chat ID</span>
+                  <input class="tg-input" id="tg-chatid-input" type="text" placeholder="-100123456789" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="tg-actions">
+                  <button class="tg-btn primary" onclick="tgSaveSettings()">Save</button>
+                  <button class="tg-btn" onclick="tgTest()">Test</button>
+                </div>
               </div>
             </div>
           </div>
@@ -7614,9 +7672,57 @@ function wlFireNotification(entry, alert, price) {
         }
     } catch(e) {}
 
+    // ── 4. Telegram ────────────────────────────────────────────────────────────
+    tgSend(msg);
+
     saveWatchlist();
 }
 
+
+// ── Telegram Notifications ────────────────────────────────────────────────────
+function tgSend(msg) {
+    const token  = (localStorage.getItem('tg-bot-token') || '').trim();
+    const chatId = (localStorage.getItem('tg-chat-id')   || '').trim();
+    if (!token || !chatId) return;
+    fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: '\u{1F514} Vault Alert\n' + msg })
+    }).catch(() => {});
+}
+
+function tgSaveSettings() {
+    const token  = document.getElementById('tg-token-input').value.trim();
+    const chatId = document.getElementById('tg-chatid-input').value.trim();
+    localStorage.setItem('tg-bot-token', token);
+    localStorage.setItem('tg-chat-id', chatId);
+    wlShowToast('\u2705 Telegram Saved', 'Settings saved. Use Test to verify.', null);
+}
+
+async function tgTest() {
+    const token  = (localStorage.getItem('tg-bot-token') || '').trim();
+    const chatId = (localStorage.getItem('tg-chat-id')   || '').trim();
+    if (!token || !chatId) { wlShowToast('\u26a0\ufe0f Telegram', 'Enter bot token and chat ID first, then save.', null); return; }
+    try {
+        const r = await fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, text: '\u2705 Vault \u2014 Telegram notifications are working!' })
+        });
+        const j = await r.json();
+        if (j.ok) wlShowToast('\u2705 Telegram Working', 'Test message delivered!', null);
+        else       wlShowToast('\u274c Telegram Error', j.description || 'Unknown error. Check token & chat ID.', null);
+    } catch(e) {
+        wlShowToast('\u274c Telegram Failed', 'Network error: ' + e.message, null);
+    }
+}
+
+function tgLoadSettings() {
+    const tokenEl  = document.getElementById('tg-token-input');
+    const chatEl   = document.getElementById('tg-chatid-input');
+    if (tokenEl) tokenEl.value  = localStorage.getItem('tg-bot-token') || '';
+    if (chatEl)  chatEl.value   = localStorage.getItem('tg-chat-id')   || '';
+}
 function wlShowToast(title, msg, cardId) {
     const container = document.getElementById('wl-toast-container');
     if (!container) return;
@@ -8257,6 +8363,7 @@ function terminalLoad() {
     } catch(e) {}
     terminalRenderAlerts();
     if (terminalAlerts.some(a => !a.triggered)) terminalStartPolling();
+    tgLoadSettings();
 }
 
 function terminalSave() {
@@ -8869,6 +8976,7 @@ function terminalCheckAlert(alert) {
         const msg = alert.label + ' — now at ' + priceStr;
         terminalLog('🔔 ALERT FIRED: ' + msg, 'tl-warn');
         wlShowToast('🔔 Alert Triggered', msg, null);
+        tgSend(msg);
         // Audio beep
         try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
