@@ -8692,6 +8692,47 @@ function terminalParsePriceQuery(raw) {
 // ── Offline regex parser for Aave cap alerts ──────────────────────────────────
 // Triggers on: "aave" + (cap|deposit|supply|utilization|util)
 // OR: "deposit cap" + chain name + token
+// ── Polymarket URL alert parser ──────────────────────────────────────────────
+function terminalParsePolymarketUrl(raw) {
+    // Detect a polymarket.com URL anywhere in the input
+    const urlMatch = raw.match(/https?:\/\/(?:www\.)?polymarket\.com\/[^\s]*/i);
+    if (!urlMatch) return null;
+    const url = urlMatch[0];
+
+    // Extract slugs using existing wlSlugFromUrl logic
+    const multi  = url.match(/polymarket\.com\/event\/([^/?#]+)\/([^/?#]+)/);
+    const single = url.match(/polymarket\.com\/(?:event|market)\/([^/?#]+)/);
+    if (!multi && !single) return null;
+
+    const eventSlug  = multi ? multi[1] : single[1];
+    const marketSlug = multi ? multi[2] : single[1];
+
+    // Detect YES/NO side
+    const side = /\bno\b/i.test(raw) && !/\byes\b/i.test(raw) ? 'NO' : 'YES';
+
+    // Detect direction
+    const t = raw.toLowerCase();
+    const dir = (t.includes('above') || t.includes('over') || t.includes('hits') ||
+                 t.includes('reaches') || t.includes('exceeds')) ? 'above' : 'below';
+
+    // Detect target — look for a percentage first, then a bare number 0-100
+    let target = null;
+    const pctMatch = raw.match(/(\d+(?:\.\d+)?)\s*%/);
+    if (pctMatch) {
+        target = parseFloat(pctMatch[1]) / 100; // convert % → 0-1
+    } else {
+        // bare number like "0.7" or "70" (treat >1 as %)
+        const numMatch = raw.match(/(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/);
+        if (numMatch) {
+            const n = parseFloat(numMatch[1]);
+            target = n > 1 ? n / 100 : n;
+        }
+    }
+    if (target === null) target = dir === 'above' ? 0.75 : 0.25; // sensible default
+
+    return { eventSlug, marketSlug, side, dir, target };
+}
+
 function terminalParseAaveCap(raw) {
     const t = raw.toLowerCase();
 
@@ -9165,6 +9206,79 @@ async function terminalSubmit() {
         }
     }
 
+    // ── Polymarket URL alert? Intercept before AI ────────────────────────────
+    {
+        const pmUrl = terminalParsePolymarketUrl(raw);
+        if (pmUrl) {
+            const { eventSlug, marketSlug, side, dir, target } = pmUrl;
+            terminalLog('↳ Fetching Polymarket market info…', 'tl-system');
+            try {
+                // Fetch market metadata from Gamma API
+                const gmUrl = 'https://gamma-api.polymarket.com/markets?slug=' + encodeURIComponent(marketSlug) + '&limit=1';
+                const gmRes = await pmFetch(gmUrl);
+                const market = Array.isArray(gmRes) ? gmRes[0] : (gmRes?.markets?.[0] || null);
+                const title = market?.question || market?.title || marketSlug;
+
+                // Get current YES probability
+                let currentProb = null;
+                if (market) {
+                    // Try outcomePrices first (fast)
+                    if (market.outcomePrices) {
+                        try {
+                            const prices = JSON.parse(market.outcomePrices);
+                            currentProb = side === 'YES' ? parseFloat(prices[0]) : parseFloat(prices[1]);
+                        } catch(e) {}
+                    }
+                    // Fallback: CLOB last trade price
+                    if (currentProb === null) {
+                        const tokens = market.tokens || market.clobTokenIds;
+                        if (tokens && tokens.length > 0) {
+                            const sidx = side === 'YES' ? 0 : 1;
+                            const tokenId = typeof tokens[sidx] === 'string' ? tokens[sidx] : tokens[sidx]?.token_id;
+                            if (tokenId) {
+                                const pr = await pmFetch('https://clob.polymarket.com/last-trade-price?token_id=' + tokenId);
+                                if (pr?.price) currentProb = parseFloat(pr.price);
+                            }
+                        }
+                    }
+                }
+
+                const dirSym = dir === 'above' ? '>' : '<';
+                const targetPct = (target * 100).toFixed(0);
+                const label = title.slice(0, 60) + (title.length > 60 ? '…' : '')
+                            + ' · ' + side + ' ' + dirSym + ' ' + targetPct + '%';
+                const alert = {
+                    id: Date.now().toString() + Math.random().toString(36).slice(2,5),
+                    symbol:      marketSlug,
+                    side,
+                    type:        'polymarket',
+                    dir,
+                    target,
+                    label,
+                    marketTitle: title,
+                    currentPrice: currentProb,
+                    triggered: false,
+                };
+                terminalAlerts.push(alert);
+                terminalSave();
+                terminalRenderAlerts();
+                terminalLog('✓ Polymarket alert set: ' + label, 'tl-ok');
+                if (currentProb !== null) {
+                    terminalLog('↳ Current ' + side + ': ' + (currentProb * 100).toFixed(1) + '%', 'tl-info');
+                    terminalCheckAlert(alert);
+                } else {
+                    terminalLog('↳ Could not fetch current probability — will check on next poll', 'tl-warn');
+                }
+            } catch(err) {
+                terminalLog('Polymarket fetch error: ' + err.message, 'tl-warn');
+            }
+            terminalSetStatus(terminalAlerts.filter(a => !a.triggered).length + ' active', true);
+            terminalStartPolling();
+            btn.disabled = false;
+            return;
+        }
+    }
+
     // ── Aave cap alert? Intercept before AI — LLM too small to parse reliably ──
     {
         const earlyAave = terminalParseAaveCap(raw);
@@ -9538,24 +9652,30 @@ async function terminalFetchPrice(alert) {
             return null;
         }
         if (alert.type === 'polymarket') {
-            // Use CLOB API to get current price for a market slug
+            // Use Gamma API to get current probability for a market slug
             const url = 'https://gamma-api.polymarket.com/markets?slug=' + encodeURIComponent(alert.symbol) + '&limit=1';
             const res = await pmFetch(url);
             const market = Array.isArray(res) ? res[0] : (res?.markets?.[0] || null);
             if (market) {
+                const side = alert.side || 'YES';
+                // Fast path: outcomePrices [YES, NO]
+                if (market.outcomePrices) {
+                    try {
+                        const prices = JSON.parse(market.outcomePrices);
+                        const prob = side === 'YES' ? parseFloat(prices[0]) : parseFloat(prices[1]);
+                        if (!isNaN(prob)) return prob;
+                    } catch(e) {}
+                }
+                // CLOB last-trade-price
                 const tokens = market.tokens || market.clobTokenIds;
                 if (tokens && tokens.length > 0) {
-                    const tokenId = typeof tokens[0] === 'string' ? tokens[0] : tokens[0].token_id;
+                    const sidx = side === 'YES' ? 0 : 1;
+                    const tk = tokens[Math.min(sidx, tokens.length - 1)];
+                    const tokenId = typeof tk === 'string' ? tk : tk?.token_id;
                     if (tokenId) {
-                        const priceUrl = 'https://clob.polymarket.com/last-trade-price?token_id=' + tokenId;
-                        const priceRes = await pmFetch(priceUrl);
+                        const priceRes = await pmFetch('https://clob.polymarket.com/last-trade-price?token_id=' + tokenId);
                         if (priceRes?.price) return parseFloat(priceRes.price);
                     }
-                }
-                // Fallback: outcomePrices
-                if (market.outcomePrices) {
-                    const prices = JSON.parse(market.outcomePrices);
-                    return parseFloat(prices[0]);
                 }
             }
             return null;
@@ -9666,7 +9786,7 @@ async function terminalFetchAaveCapUtil(symbol, chainId) {
 }
 function terminalFmtPrice(price, type) {
     if (type === 'polymarket' || type === 'opinion') {
-        return (price * 100).toFixed(1) + '¢';
+        return (price * 100).toFixed(1) + '%';
     }
     if (type === 'aavecap') {
         return price.toFixed(1) + '% util';
@@ -10149,7 +10269,8 @@ function fmtTokenPrice(price) {
     if (price === null || price === undefined || isNaN(price)) return '—';
     if (price <= 0) return '$0.00';
     if (price >= 1000) return '$' + price.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
-    if (price >= 1)    return '$' + price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (price >= 2)    return '$' + price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (price >= 1)    return '$' + price.toLocaleString('en-US', {minimumFractionDigits: 3, maximumFractionDigits: 3});
     // Sub-$1: find first non-zero decimal digit then show that + 2 more
     const s = price.toFixed(20);
     const afterDot = s.split('.')[1] || '';
