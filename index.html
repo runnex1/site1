@@ -8893,8 +8893,10 @@ async function terminalSubmit() {
         if (contractInAlert && isAlertCmd) {
             const { address, chain } = contractInAlert;
             // Extract direction and target from the raw text
-            const dirMatch = raw.match(/(?:above|over|hits?|reaches?|exceeds?|below|under|drops?(?:\s+(?:below|under))?)/i);
-            const numMatch = raw.match(/\$?([0-9]+(?:[.,][0-9]+)?(?:k|m)?)/i);
+            // Strip the contract address before parsing numbers so it doesn't interfere
+            const rawNoContract = raw.replace(address, '');
+            const dirMatch = rawNoContract.match(/(?:above|over|hits?|reaches?|exceeds?|below|under|drops?(?:\s+(?:below|under))?)/i);
+            const numMatch = rawNoContract.match(/\$?([0-9]+(?:[.,][0-9]+)?(?:k|m)?)/i);
             const dir    = dirMatch && /below|under|drop/i.test(dirMatch[0]) ? 'below' : 'above';
             let target   = numMatch ? parseFloat(numMatch[1].replace(',','.')) : null;
             if (numMatch && /k$/i.test(numMatch[1])) target *= 1000;
