@@ -1844,6 +1844,8 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 .term-alert-badge.etf        { background: rgba(108,114,255,0.12);color: var(--indigo); }
 .term-alert-badge.opinion    { background: rgba(249,115,22,0.12); color: var(--orange); }
 .term-alert-badge.polymarket { background: var(--fuchsia-10); color: var(--fuchsia); }
+.term-alert-badge.aavecap   { background: var(--teal-10);          color: var(--teal); }
+.term-alert-badge.contract  { background: rgba(56,189,248,0.12);   color: var(--sky);  }
 
 .term-alert-dir {
   margin-left: auto; font-family: var(--ff-mono);
@@ -3016,8 +3018,8 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
               <div class="term-input-row">
                 <span class="term-ps1"><span class="term-ps1-user">vault</span><span class="term-ps1-sep">@</span><span class="term-ps1-host">alerts</span><span class="term-ps1-end"> ~ $</span></span>
                 <input class="term-input" id="terminalInput" type="text"
-                  placeholder="Ask anything, or set an alert…"
-                  onkeydown="if(event.key==='Enter') terminalSubmit()" autocomplete="off" spellcheck="false">
+                  placeholder="Ask anything, or set an alert… (↑↓ history)"
+                  onkeydown="terminalKeyDown(event)" autocomplete="off" spellcheck="false">
               </div>
               <div class="term-input-actions">
                 <button class="term-btn-submit" id="terminalSendBtn" onclick="terminalSubmit()">
@@ -8928,6 +8930,91 @@ async function terminalParseWithAI(raw) {
     return []; // not an alert command — handled by terminalSubmit directly
 }
 
+// ── Command history ───────────────────────────────────────────────────────────
+let _cmdHistory = [];
+let _cmdHistoryIdx = -1;
+
+function terminalKeyDown(e) {
+    const input = document.getElementById('terminalInput');
+    if (e.key === 'Enter') { terminalSubmit(); return; }
+    if (e.key === 'l' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); terminalClearLog(); return; }
+    if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!_cmdHistory.length) return;
+        if (_cmdHistoryIdx === -1) _cmdHistoryIdx = _cmdHistory.length - 1;
+        else if (_cmdHistoryIdx > 0) _cmdHistoryIdx--;
+        input.value = _cmdHistory[_cmdHistoryIdx];
+        setTimeout(() => input.setSelectionRange(input.value.length, input.value.length), 0);
+        return;
+    }
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (_cmdHistoryIdx === -1) return;
+        if (_cmdHistoryIdx < _cmdHistory.length - 1) { _cmdHistoryIdx++; input.value = _cmdHistory[_cmdHistoryIdx]; }
+        else { _cmdHistoryIdx = -1; input.value = ''; }
+        return;
+    }
+    _cmdHistoryIdx = -1;
+}
+
+function terminalClearLog() {
+    const log = document.getElementById('terminalLog');
+    if (!log) return;
+    while (log.children.length > 2) log.removeChild(log.lastChild);
+    terminalLog('Log cleared.', 'tl-system');
+}
+
+function terminalRearm(id) {
+    const a = terminalAlerts.find(x => x.id === id);
+    if (!a) return;
+    a.triggered = false;
+    a.currentPrice = null;
+    a.lastChecked = null;
+    terminalSave();
+    terminalRenderAlerts();
+    terminalStartPolling();
+    terminalSetStatus(terminalAlerts.filter(x => !x.triggered).length + ' active', true);
+    terminalLog('\u21ba Re-armed: ' + a.label, 'tl-system');
+}
+
+function terminalHandleBuiltin(raw) {
+    const cmd = raw.trim().toLowerCase();
+    if (cmd === 'help' || cmd === '?') {
+        terminalLog('\u2500\u2500 Built-in commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500', 'tl-system');
+        terminalLog('help / ?         \u2014 show this message', 'tl-info');
+        terminalLog('clear / Ctrl+L   \u2014 clear the terminal log', 'tl-info');
+        terminalLog('list             \u2014 show all active alerts with current prices', 'tl-info');
+        terminalLog('mute / unmute    \u2014 toggle alert beep sound', 'tl-info');
+        terminalLog('price <SYMBOL>   \u2014 fetch live price', 'tl-info');
+        terminalLog('set <addr> as <SYM> token  \u2014 save contract mapping', 'tl-info');
+        return true;
+    }
+    if (cmd === 'clear' || cmd === 'cls') { terminalClearLog(); return true; }
+    if (cmd === 'list' || cmd === 'alerts') {
+        const active = terminalAlerts.filter(a => !a.triggered);
+        const fired  = terminalAlerts.filter(a =>  a.triggered);
+        if (!terminalAlerts.length) { terminalLog('No alerts set.', 'tl-system'); return true; }
+        if (active.length) {
+            terminalLog('\u2500\u2500 Active (' + active.length + ') \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500', 'tl-system');
+            active.forEach(a => {
+                const p = a.currentPrice !== null ? terminalFmtPrice(a.currentPrice, a.type) : '?';
+                terminalLog(a.label + '  \u00b7 now ' + p, 'tl-info');
+            });
+        }
+        if (fired.length) {
+            terminalLog('\u2500\u2500 Fired (' + fired.length + ') \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500', 'tl-system');
+            fired.forEach(a => terminalLog('\ud83d\udd14 ' + a.label, 'tl-warn'));
+        }
+        return true;
+    }
+    if (cmd === 'mute' || cmd === 'unmute' || cmd === 'sound') {
+        window._terminalMuted = !window._terminalMuted;
+        terminalLog(window._terminalMuted ? '\ud83d\udd07 Sound muted.' : '\ud83d\udd14 Sound on.', 'tl-system');
+        return true;
+    }
+    return false;
+}
+
 async function terminalSubmit() {
     const input = document.getElementById('terminalInput');
     const btn   = document.getElementById('terminalSendBtn');
@@ -8936,8 +9023,21 @@ async function terminalSubmit() {
 
     input.value = '';
     btn.disabled = true;
+    if (raw && (_cmdHistory.length === 0 || _cmdHistory[_cmdHistory.length - 1] !== raw)) {
+        _cmdHistory.push(raw);
+        if (_cmdHistory.length > 50) _cmdHistory.shift();
+    }
+    _cmdHistoryIdx = -1;
     terminalLog('> ' + raw, 'tl-cmd');
     terminalSetStatus('thinking…', true);
+
+    // ── Built-in commands ───────────────────────────────
+    if (terminalHandleBuiltin(raw)) {
+        const n = terminalAlerts.filter(a => !a.triggered).length;
+        terminalSetStatus(n > 0 ? n + ' active' : 'ready', false);
+        btn.disabled = false;
+        return;
+    }
 
     // ── "Set <contract> as SYMBOL token" — save custom mapping ─────────────────
     {
@@ -9576,6 +9676,7 @@ function terminalFmtPrice(price, type) {
 
 // ── Alert checking ────────────────────────────────────────────────────────────
 function terminalCheckAlert(alert) {
+    alert.lastChecked = Date.now();
     if (alert.triggered || alert.currentPrice === null) return;
     const hit = alert.dir === 'above'
         ? alert.currentPrice >= alert.target
@@ -9590,7 +9691,7 @@ function terminalCheckAlert(alert) {
         wlShowToast('🔔 Alert Triggered', msg, null);
         tgSend(msg);
         // Audio beep
-        try {
+        if (!window._terminalMuted) try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
             const osc = ctx.createOscillator(); const gain = ctx.createGain();
             osc.connect(gain); gain.connect(ctx.destination);
@@ -9668,8 +9769,14 @@ function terminalRenderAlerts() {
 
     // Accent colours per type
     const ACCENT = {
-        crypto: '#38bdf8', stock: '#22c55e', etf: '#6c72ff',
-        opinion: '#f97316', polymarket: '#d946ef', event: '#f59e0b'
+        crypto:     '#38bdf8',
+        stock:      '#22c55e',
+        etf:        '#6c72ff',
+        opinion:    '#f97316',
+        polymarket: '#d946ef',
+        event:      '#f59e0b',
+        aavecap:    '#00d4aa',
+        contract:   '#38bdf8',
     };
 
     el.innerHTML = terminalAlerts.slice().reverse().map(a => {
@@ -9693,11 +9800,38 @@ function terminalRenderAlerts() {
         }
 
         // ── Price / market alert card ─────────────────────────────────────────
-        const priceStr   = a.currentPrice !== null ? terminalFmtPrice(a.currentPrice, a.type) : '—';
-        const targetStr  = terminalFmtPrice(a.target, a.type);
-        const isUp       = a.dir === 'above';
-        const dirClass   = isUp ? 'up' : 'down';
-        const dirArrow   = isUp ? '↑' : '↓';
+        const priceStr  = a.currentPrice !== null ? terminalFmtPrice(a.currentPrice, a.type) : '—';
+        const targetStr = terminalFmtPrice(a.target, a.type);
+        const isUp      = a.dir === 'above';
+        const dirClass  = isUp ? 'up' : 'down';
+        const dirArrow  = isUp ? '↑' : '↓';
+
+        // Proximity: % distance from current price to target
+        let proximityBar = '';
+        if (!a.triggered && a.currentPrice !== null && a.target > 0) {
+            const dist = Math.abs((a.currentPrice - a.target) / a.target) * 100;
+            const barColor = dist < 2  ? 'var(--red)'
+                           : dist < 10 ? 'var(--amber)'
+                           : accent;
+            const fillPct  = Math.max(0, Math.min(100, 100 - dist));
+            const distLabel = dist < 0.01 ? '<0.01% away'
+                            : dist < 1    ? dist.toFixed(2) + '% away'
+                            : dist.toFixed(1) + '% away';
+            proximityBar =
+                '<div style="margin:5px 0 3px;">'
+              + '<div style="display:flex;justify-content:space-between;font-size:0.62rem;color:' + barColor + ';font-family:var(--ff-mono);margin-bottom:3px;">'
+              + '<span>' + distLabel + ' from target</span></div>'
+              + '<div style="height:3px;background:var(--surf-3);border-radius:100px;overflow:hidden;">'
+              + '<div style="height:100%;border-radius:100px;background:' + barColor + ';width:' + fillPct.toFixed(1) + '%;transition:width 1s ease;"></div>'
+              + '</div></div>';
+        }
+
+        // Last-checked timestamp
+        const lastChecked = a.lastChecked
+            ? '<div style="font-size:0.61rem;color:var(--t3);font-family:var(--ff-mono);margin-top:3px;">'
+              + 'checked ' + new Date(a.lastChecked).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})
+              + '</div>'
+            : '';
 
         return '<div class="term-alert-card' + (a.triggered ? ' triggered' : '') + '" style="--card-accent:' + accent + '">'
             + '<div class="term-alert-top">'
@@ -9710,8 +9844,11 @@ function terminalRenderAlerts() {
             + '<div class="term-alert-prices">'
             +   (a.triggered
                     ? '<span class="term-alert-fired">🔔 fired · was ' + priceStr + '</span>'
+                      + '<button onclick="terminalRearm(\'' + a.id + '\')" style="background:none;border:1px solid var(--border-mid);border-radius:4px;color:var(--t3);cursor:pointer;font-size:0.7rem;padding:1px 6px;margin-left:6px;" onmouseover="this.style.color=\'var(--t1)\'" onmouseout="this.style.color=\'var(--t3)\'">↺ re-arm</button>'
                     : '<span>now <span class="now">' + priceStr + '</span></span><span class="target-lbl">target ' + targetStr + '</span>')
             + '</div>'
+            + proximityBar
+            + (a.triggered ? '' : lastChecked)
             + '</div>';
     }).join('');
 }
