@@ -8505,6 +8505,157 @@ function terminalParseNL(raw) {
     return { symbol: symbol.toUpperCase(), type: type || 'crypto', dir, target, label };
 }
 
+
+// ── Contract address helpers ──────────────────────────────────────────────────
+function isSolanaMint(s) {
+    // Base58, 32–44 chars
+    return typeof s === 'string' && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s.trim());
+}
+function isEvmAddress(s) {
+    return typeof s === 'string' && /^0x[0-9a-fA-F]{40}$/.test(s.trim());
+}
+
+// Extract first Solana mint or EVM address from a string
+function extractContractAddress(text) {
+    // EVM first (unambiguous 0x prefix)
+    const evmMatch = text.match(/0x[0-9a-fA-F]{40}/);
+    if (evmMatch) return { address: evmMatch[0], chain: 'evm' };
+    // Solana: base58, 32–44 chars — must be surrounded by whitespace/start/end
+    const solMatch = text.match(/(?:^|[\s:,])([1-9A-HJ-NP-Za-km-z]{32,44})(?:[\s,]|$)/);
+    if (solMatch) return { address: solMatch[1], chain: 'solana' };
+    return null;
+}
+
+async function terminalFetchPriceByContract(address, chain) {
+    if (chain === 'solana' || isSolanaMint(address)) {
+        // Jupiter Price API — takes mint address directly
+        try {
+            const r = await fetch('https://api.jup.ag/price/v2?ids=' + address, { signal: AbortSignal.timeout(8000) });
+            if (r.ok) {
+                const d = await r.json();
+                const entry = d?.data?.[address];
+                if (entry?.price != null) return { price: parseFloat(entry.price), symbol: entry.mintSymbol || address.slice(0,6) + '…' };
+            }
+        } catch(e) { console.warn('[Jupiter contract]', e.message); }
+        // DEX Screener fallback for Solana
+        try {
+            const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + address, { signal: AbortSignal.timeout(8000) });
+            if (r.ok) {
+                const d = await r.json();
+                const pairs = (d?.pairs || []).filter(p => p.priceUsd);
+                pairs.sort((a, b) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0));
+                if (pairs[0]) return { price: parseFloat(pairs[0].priceUsd), symbol: pairs[0].baseToken?.symbol || address.slice(0,6) + '…' };
+            }
+        } catch(e) { console.warn('[DexScreener contract]', e.message); }
+    } else {
+        // EVM — DEX Screener token endpoint
+        try {
+            const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + address, { signal: AbortSignal.timeout(8000) });
+            if (r.ok) {
+                const d = await r.json();
+                const pairs = (d?.pairs || []).filter(p => p.priceUsd);
+                pairs.sort((a, b) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0));
+                if (pairs[0]) return { price: parseFloat(pairs[0].priceUsd), symbol: pairs[0].baseToken?.symbol || address.slice(0,6) + '…' };
+            }
+        } catch(e) { console.warn('[DexScreener EVM]', e.message); }
+    }
+    return null;
+}
+
+// ── Price query interceptor — "what is the price of X", "PRIME price" etc. ──
+function terminalParsePriceQuery(raw) {
+    const t = raw.toLowerCase().trim();
+
+    // Must look like a price question, not an alert command
+    const isAlert = t.includes('alert') || t.includes('notify') || t.includes('when') || t.includes('if ');
+    if (isAlert) return null;
+
+    const priceKw = t.includes('price') || t.includes('how much') || t.includes('worth') ||
+                    t.includes('trading') || t.includes('value') || t.includes('cost') ||
+                    t.includes('quote') || t.includes('rate');
+    if (!priceKw) return null;
+
+    // Extract symbol — look for an ALL-CAPS word or a word following "of/for"
+    let symbol = null;
+
+    // "price of PRIME", "price of prime on solana"
+    const ofMatch = raw.match(/(?:price|value|quote|rate)\s+of\s+([A-Za-z0-9]+)/i);
+    if (ofMatch) symbol = ofMatch[1];
+
+    // "PRIME price", "PRIME token"
+    if (!symbol) {
+        const capsMatch = raw.match(/([A-Z]{2,10})/);
+        if (capsMatch) symbol = capsMatch[1];
+    }
+
+    // Ignore common stop-words that aren't tokens
+    const stopWords = new Set(['THE','OF','ON','IN','AT','IS','MY','FOR','A','AN',
+                                'USD','SOLANA','ETH','PRICE','WHAT','HOW','MUCH','TELL','ME']);
+    if (!symbol || stopWords.has(symbol.toUpperCase())) return null;
+
+    return { symbol: symbol.toUpperCase() };
+}
+
+// ── Offline regex parser for Aave cap alerts ──────────────────────────────────
+// Triggers on: "aave" + (cap|deposit|supply|utilization|util)
+// OR: "deposit cap" + chain name + token
+function terminalParseAaveCap(raw) {
+    const t = raw.toLowerCase();
+
+    // Must mention aave and at least one cap/deposit/utilization keyword
+    const hasAave   = t.includes('aave');
+    const hasCapKw  = t.includes('cap') || t.includes('deposit') || t.includes('supply')
+                   || t.includes('utilization') || t.includes('util') || t.includes('available');
+    if (!hasAave || !hasCapKw) return null;
+
+    // Detect token symbol — word after "aave" OR common known symbols
+    let symbol = null;
+    const afterAave = raw.match(/aave\s+([A-Za-z][A-Za-z0-9]{1,9})/i);
+    if (afterAave && !['cap','deposit','supply','v3','v2','on','the'].includes(afterAave[1].toLowerCase())) {
+        symbol = afterAave[1].toUpperCase();
+    }
+    // Also scan for well-known token symbols anywhere in text
+    if (!symbol) {
+        const knownTokens = ['USDC','USDT','USDE','WETH','ETH','WBTC','BTC','DAI','GHO',
+                             'LUSD','FRAX','RETH','STETH','CBETH','WEETH','WSTETH'];
+        for (const tk of knownTokens) {
+            if (t.includes(tk.toLowerCase())) { symbol = tk; break; }
+        }
+    }
+    if (!symbol) return null;
+
+    // Fix common case variants
+    if (symbol === 'USDE') symbol = 'USDe';
+    if (symbol === 'WSTETH') symbol = 'wstETH';
+    if (symbol === 'RETH') symbol = 'rETH';
+    if (symbol === 'CBETH') symbol = 'cbETH';
+    if (symbol === 'WEETH') symbol = 'weETH';
+    if (symbol === 'STETH') symbol = 'stETH';
+
+    // Detect chain — check longer names first to avoid partial matches
+    let chainId = 1; // default Ethereum
+    const chainEntries = Object.entries(AAVE_CHAIN_IDS).sort((a, b) => b[0].length - a[0].length);
+    for (const [name, id] of chainEntries) {
+        if (t.includes(name)) { chainId = id; break; }
+    }
+
+    // Detect direction & threshold
+    let dir    = 'below';
+    let target = 100;
+    const numMatch = raw.match(/(\d+(?:\.\d+)?)\s*%/);
+    if (numMatch) target = parseFloat(numMatch[1]);
+
+    if (t.includes('above') || t.includes('over') || t.includes('full') || t.includes('reached') || t.includes('nearly')) {
+        dir = 'above';
+        if (!numMatch) target = 95;
+    }
+
+    const chainName = AAVE_CHAIN_NAMES_TERMINAL[chainId] || ('Chain ' + chainId);
+    const dirSymbol = dir === 'above' ? '>' : '<';
+    const label = 'Aave ' + symbol + '/' + chainName + ' util ' + dirSymbol + target + '%';
+    return { symbol, chainId, type: 'aavecap', dir, target, label };
+}
+
 // ── Terminal conversation history (in-memory, not persisted) ─────────────────
 let _terminalHistory = [];   // [{ role: 'user'|'assistant', content: string }]
 
@@ -8561,6 +8712,12 @@ RESPONSE FORMAT:
   For prediction markets, target is 0-1 decimal (e.g. 65% = 0.65)
   Multiple alerts: return multiple objects in the array
 
+- If the user wants to SET AN AAVE SUPPLY CAP UTILIZATION ALERT (e.g. "alert when Aave USDe on MegaETH drops below 100% utilization", "notify me when Aave USDC cap on Base is below 90%"): respond with ONLY a JSON array like [{"type":"aavecap","symbol":"USDe","chainId":4326,"dir":"below","target":100,"label":"Aave USDe/MegaETH util < 100%"}]
+  dir is "below" (alert when there is room, i.e. util drops under target) or "above" (alert when nearly full)
+  target is a percentage 0-100. For "below 100% utilization" / "when space opens up" use target:100,dir:"below". For "when nearly full" or "above 95%" use dir:"above",target:95.
+  Chain IDs: Ethereum=1, Optimism=10, BNB=56, Gnosis=100, Polygon=137, zkSync Era=324, Metis=1088, Base=8453, Arbitrum=42161, Avalanche=43114, Scroll=534352, MegaETH=4326
+  The label should be short, e.g. "Aave USDe/MegaETH util < 100%"
+
 - If the user wants to SET A REAL-WORLD EVENT ALERT (e.g. "alert me when the war with Iran ends", "notify me if Trump is impeached", "ping me when the Fed cuts rates"): respond with ONLY a JSON array like [{"type":"event","condition":"The Iran-Israel war has officially ended or a ceasefire agreement has been signed","label":"Iran war ends"}]
   The "condition" field must be a clear, verifiable statement that can be checked against news headlines.
   The "label" field is a short human-readable name for the alert.
@@ -8612,6 +8769,21 @@ function terminalParseAIResponse(text) {
         const parsed = JSON.parse(clean.slice(start, end + 1));
         if (!Array.isArray(parsed) || !parsed.length) return { type: 'message', text };
 
+        // Aave cap alert: { type: "aavecap", symbol, chainId, dir, target, label }
+        if (parsed[0].type === 'aavecap') {
+            return {
+                type: 'alerts',
+                alerts: parsed.map(p => ({
+                    symbol:  p.symbol || 'USDe',
+                    chainId: parseInt(p.chainId) || 4326,
+                    type:    'aavecap',
+                    dir:     p.dir || 'below',
+                    target:  parseFloat(p.target ?? 100),
+                    label:   p.label || ('Aave ' + (p.symbol||'?') + '/' + (AAVE_CHAIN_NAMES_TERMINAL[parseInt(p.chainId)] || p.chainId) + ' util ' + (p.dir==='above'?'>':'<') + p.target + '%'),
+                }))
+            };
+        }
+
         // Event alert: { type: "event", condition: "...", label: "..." }
         if (parsed[0].type === 'event' || parsed.every(p => p.condition)) {
             const alerts = parsed.map(p => ({
@@ -8661,12 +8833,162 @@ async function terminalSubmit() {
     terminalLog('> ' + raw, 'tl-cmd');
     terminalSetStatus('thinking…', true);
 
+    // ── Price query? Fetch live price directly — AI has no real-time data ────
+    {
+        // First check if a contract address was pasted
+        const contractInfo = extractContractAddress(raw);
+        const priceQ       = contractInfo ? null : terminalParsePriceQuery(raw);
+
+        if (contractInfo) {
+            const { address, chain } = contractInfo;
+            terminalLog('\u21b3 Looking up contract ' + address.slice(0,8) + '\u2026 via ' + (chain === 'solana' ? 'Jupiter + DEX Screener' : 'DEX Screener') + '\u2026', 'tl-system');
+            try {
+                const result = await terminalFetchPriceByContract(address, chain);
+                if (result) {
+                    const { price, symbol } = result;
+                    const fmt = price < 0.000001 ? price.toExponential(4)
+                              : price < 0.01     ? price.toFixed(8)
+                              : price < 1        ? price.toFixed(6)
+                              : price < 1000     ? price.toFixed(4)
+                              : price.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+                    terminalLog(symbol + ' — $' + fmt, 'tl-ok');
+                    terminalLog('\u21b3 Contract: ' + address, 'tl-info');
+                    terminalSetStatus('ready', false);
+                    btn.disabled = false;
+                    return; // done — no need to hit AI
+                } else {
+                    terminalLog('Could not fetch price for that contract — asking AI\u2026', 'tl-warn');
+                }
+            } catch(err) {
+                terminalLog('Contract lookup error: ' + err.message, 'tl-warn');
+            }
+        } else if (priceQ) {
+            terminalLog('\u21b3 Fetching ' + priceQ.symbol + ' price\u2026', 'tl-system');
+            try {
+                const price = await terminalFetchCryptoPrice(priceQ.symbol);
+                if (price !== null) {
+                    const fmt = price < 0.000001 ? price.toExponential(4)
+                              : price < 0.01     ? price.toFixed(8)
+                              : price < 1        ? price.toFixed(6)
+                              : price < 1000     ? price.toFixed(4)
+                              : price.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+                    terminalLog(priceQ.symbol + ' — $' + fmt, 'tl-ok');
+                    terminalSetStatus('ready', false);
+                    btn.disabled = false;
+                    return; // done
+                } else {
+                    terminalLog('Could not find live price for ' + priceQ.symbol + ' — trying AI\u2026', 'tl-warn');
+                }
+            } catch(err) {
+                terminalLog('Price fetch error: ' + err.message, 'tl-warn');
+            }
+        }
+    }
+
+    // ── Contract address in an alert command? Handle directly ───────────────────
+    {
+        const contractInAlert = extractContractAddress(raw);
+        const isAlertCmd = /alert|notify|when|if /i.test(raw);
+        if (contractInAlert && isAlertCmd) {
+            const { address, chain } = contractInAlert;
+            // Extract direction and target from the raw text
+            const dirMatch = raw.match(/(?:above|over|hits?|reaches?|exceeds?|below|under|drops?(?:\s+(?:below|under))?)/i);
+            const numMatch = raw.match(/\$?([0-9]+(?:[.,][0-9]+)?(?:k|m)?)/i);
+            const dir    = dirMatch && /below|under|drop/i.test(dirMatch[0]) ? 'below' : 'above';
+            let target   = numMatch ? parseFloat(numMatch[1].replace(',','.')) : null;
+            if (numMatch && /k$/i.test(numMatch[1])) target *= 1000;
+            if (numMatch && /m$/i.test(numMatch[1])) target *= 1_000_000;
+
+            if (target !== null) {
+                // Try to get the symbol from Jupiter first
+                let symbol = address.slice(0,6) + '\u2026';
+                try {
+                    const pr = await fetch('https://api.jup.ag/price/v2?ids=' + address, { signal: AbortSignal.timeout(6000) });
+                    if (pr.ok) { const pd = await pr.json(); symbol = pd?.data?.[address]?.mintSymbol || symbol; }
+                } catch(e) {}
+
+                const alert = {
+                    id: Date.now().toString() + Math.random().toString(36).slice(2,5),
+                    symbol,
+                    contractAddress: address,
+                    contractChain:   chain,
+                    type:    'contract',
+                    dir,
+                    target,
+                    label:   symbol + ' ' + (dir === 'above' ? '>' : '<') + ' $' + target,
+                    currentPrice: null,
+                    triggered: false,
+                };
+                terminalAlerts.push(alert);
+                terminalSave();
+                terminalRenderAlerts();
+                terminalLog('\u2713 Contract alert set: ' + alert.label, 'tl-ok');
+                try {
+                    const result = await terminalFetchPriceByContract(address, chain);
+                    if (result) {
+                        alert.symbol       = result.symbol || symbol;
+                        alert.label        = alert.symbol + ' ' + (dir === 'above' ? '>' : '<') + ' $' + target;
+                        alert.currentPrice = result.price;
+                        terminalSave();
+                        terminalRenderAlerts();
+                        terminalLog('\u21b3 Current price: $' + result.price.toFixed(6) + ' (' + result.symbol + ')', 'tl-info');
+                        terminalCheckAlert(alert);
+                    }
+                } catch(err) { terminalLog('\u21b3 Fetch error: ' + err.message, 'tl-warn'); }
+                terminalSetStatus(terminalAlerts.filter(a => !a.triggered).length + ' active', true);
+                terminalStartPolling();
+                btn.disabled = false;
+                return;
+            }
+        }
+    }
+
+    // ── Aave cap alert? Intercept before AI — LLM too small to parse reliably ──
+    {
+        const earlyAave = terminalParseAaveCap(raw);
+        if (earlyAave) {
+            const alert = {
+                id: Date.now().toString() + Math.random().toString(36).slice(2,5),
+                symbol:  earlyAave.symbol,
+                chainId: earlyAave.chainId,
+                type:    'aavecap',
+                dir:     earlyAave.dir,
+                target:  earlyAave.target,
+                label:   earlyAave.label,
+                currentPrice: null,
+                triggered: false,
+            };
+            terminalAlerts.push(alert);
+            terminalSave();
+            terminalRenderAlerts();
+            terminalLog('\u2713 Aave cap alert set: ' + alert.label, 'tl-ok');
+            try {
+                const util = await terminalFetchPrice(alert);
+                if (util !== null) {
+                    alert.currentPrice = util;
+                    terminalSave();
+                    terminalRenderAlerts();
+                    terminalLog('\u21b3 Current utilization: ' + terminalFmtPrice(util, 'aavecap'), 'tl-info');
+                    terminalCheckAlert(alert);
+                } else {
+                    terminalLog('\u21b3 Could not fetch utilization — will check on next poll', 'tl-warn');
+                }
+            } catch(err) {
+                terminalLog('\u21b3 Fetch error: ' + err.message, 'tl-warn');
+            }
+            terminalSetStatus(terminalAlerts.filter(a => !a.triggered).length + ' active', true);
+            terminalStartPolling();
+            btn.disabled = false;
+            return;
+        }
+    }
+
     // ── Ask the AI (conversational, with full portfolio + alert context) ──────
     let aiText = null;
     try {
         aiText = await terminalAskAI(raw);
     } catch(e) {
-        terminalLog('⚠ AI offline: ' + e.message, 'tl-warn');
+        terminalLog('\u26a0 AI offline: ' + e.message, 'tl-warn');
     }
 
     if (aiText) {
@@ -8907,7 +9229,7 @@ const JUPITER_MINTS = {
 async function terminalFetchCryptoPrice(symbol) {
     const sym = symbol.toUpperCase();
 
-    // 1. Jupiter Price API — best for Solana-native tokens
+    // 1a. Jupiter Price API — hardcoded mints for known Solana-native tokens
     const jupMint = JUPITER_MINTS[sym];
     if (jupMint) {
         try {
@@ -8920,8 +9242,31 @@ async function terminalFetchCryptoPrice(symbol) {
                 const price = d?.data?.[jupMint]?.price;
                 if (price != null) return parseFloat(price);
             }
-        } catch(e) { console.warn('[Jupiter] ' + sym + ':', e.message); }
+        } catch(e) { console.warn('[Jupiter hardcoded] ' + sym + ':', e.message); }
     }
+
+    // 1b. Jupiter dynamic token search — finds ANY Solana token by symbol
+    try {
+        const searchR = await fetch(
+            'https://lite-api.jup.ag/tokens/v1/mints/by-symbol?symbol=' + encodeURIComponent(sym),
+            { signal: AbortSignal.timeout(8000) }
+        );
+        if (searchR.ok) {
+            const mints = await searchR.json(); // array of mint addresses
+            if (Array.isArray(mints) && mints.length > 0) {
+                const mint = mints[0]; // take first (most prominent)
+                const priceR = await fetch(
+                    'https://api.jup.ag/price/v2?ids=' + mint,
+                    { signal: AbortSignal.timeout(8000) }
+                );
+                if (priceR.ok) {
+                    const pd = await priceR.json();
+                    const price = pd?.data?.[mint]?.price;
+                    if (price != null) return parseFloat(price);
+                }
+            }
+        }
+    } catch(e) { console.warn('[Jupiter dynamic] ' + sym + ':', e.message); }
 
     // 2. CoinGecko — best for major tokens (BTC, ETH, SOL …)
     const cgId = terminalCryptoToGeckoId(sym);
@@ -8936,22 +9281,12 @@ async function terminalFetchCryptoPrice(symbol) {
     try {
         const url = 'https://api.dexscreener.com/latest/dex/search?q=' + encodeURIComponent(sym);
         const res = await pmFetch(url);
-        const pairs = (res?.pairs || []);
-        // Prefer USD-quoted pairs matching the symbol exactly
-        const usdPairs = pairs.filter(p =>
-            p.baseToken?.symbol?.toUpperCase() === sym &&
-            (p.quoteToken?.symbol === 'USDT' ||
-             p.quoteToken?.symbol === 'USDC' ||
-             p.quoteToken?.symbol === 'USD'  ||
-             p.quoteToken?.symbol === 'WUSDC')
-        );
-        usdPairs.sort((a, b) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0));
-        if (usdPairs[0]?.priceUsd) return parseFloat(usdPairs[0].priceUsd);
-        // Fallback: any pair with this symbol and a USD price
-        const anyPair = pairs.find(p =>
+        const pairs = (res?.pairs || []).filter(p =>
             p.baseToken?.symbol?.toUpperCase() === sym && p.priceUsd
         );
-        if (anyPair?.priceUsd) return parseFloat(anyPair.priceUsd);
+        // Sort by 24h volume descending — highest liquidity pair wins
+        pairs.sort((a, b) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0));
+        if (pairs[0]?.priceUsd) return parseFloat(pairs[0].priceUsd);
     } catch(e) { console.warn('[DexScreener] ' + sym + ':', e.message); }
 
     return null;
@@ -9006,6 +9341,14 @@ async function terminalFetchPrice(alert) {
             }
             return null;
         }
+        if (alert.type === 'aavecap') {
+            // Aave V3 supply cap utilization %
+            return await terminalFetchAaveCapUtil(alert.symbol, alert.chainId);
+        }
+        if (alert.type === 'contract') {
+            const result = await terminalFetchPriceByContract(alert.contractAddress, alert.contractChain);
+            return result ? result.price : null;
+        }
     } catch(e) {
         console.warn('terminalFetchPrice error for ' + alert.symbol, e);
     }
@@ -9031,9 +9374,73 @@ function terminalCryptoToGeckoId(symbol) {
     return CRYPTO_GECKO_IDS[symbol.toUpperCase()] || symbol.toLowerCase();
 }
 
+
+// ── Aave Cap alert helpers ────────────────────────────────────────────────────
+const AAVE_CHAIN_IDS = {
+    ethereum:1, mainnet:1, eth:1,
+    optimism:10, op:10,
+    bnb:56, bsc:56, binance:56,
+    gnosis:100,
+    polygon:137, matic:137,
+    zksync:324, 'zksync era':324,
+    metis:1088,
+    base:8453,
+    arbitrum:42161, arb:42161,
+    avalanche:43114, avax:43114,
+    scroll:534352,
+    megaeth:4326, mega:4326,
+};
+
+const AAVE_CHAIN_NAMES_TERMINAL = {
+    1:'Ethereum', 10:'Optimism', 56:'BNB Chain', 100:'Gnosis',
+    137:'Polygon', 324:'zkSync Era', 1088:'Metis', 8453:'Base',
+    42161:'Arbitrum', 43114:'Avalanche', 534352:'Scroll', 4326:'MegaETH',
+};
+
+async function terminalFetchAaveCapUtil(symbol, chainId) {
+    const AAVE_GQL = 'https://api.v3.aave.com/graphql';
+    const query = `query CapAlert {
+      markets(request: { chainIds: [${chainId}] }) {
+        chain { chainId }
+        reserves {
+          underlyingToken { symbol }
+          supplyInfo {
+            total { value }
+            supplyCap { amount { value } }
+            supplyCapReached
+          }
+        }
+      }
+    }`;
+    const res = await fetch(AAVE_GQL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+        signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) throw new Error('Aave API ' + res.status);
+    const json = await res.json();
+    if (json.errors) throw new Error(json.errors[0]?.message || 'GraphQL error');
+
+    const allMarkets = json.data?.markets || [];
+    for (const m of allMarkets) {
+        for (const r of (m.reserves || [])) {
+            if (r.underlyingToken?.symbol?.toUpperCase() === symbol.toUpperCase()) {
+                const supplyCap     = parseFloat(r.supplyInfo?.supplyCap?.amount?.value ?? '0');
+                const currentSupply = parseFloat(r.supplyInfo?.total?.value ?? '0');
+                if (supplyCap === 0) throw new Error('Supply cap is 0 for ' + symbol);
+                return (currentSupply / supplyCap) * 100; // utilization %
+            }
+        }
+    }
+    throw new Error(symbol + ' not found on chain ' + chainId);
+}
 function terminalFmtPrice(price, type) {
     if (type === 'polymarket' || type === 'opinion') {
         return (price * 100).toFixed(1) + '¢';
+    }
+    if (type === 'aavecap') {
+        return price.toFixed(1) + '% util';
     }
     return fmtTokenPrice(price);
 }
@@ -10491,11 +10898,17 @@ document.addEventListener("click", function(e){
         cache[m.id] = { supplyCap, currentSupply, util, available, capReached };
 
         // Fire alert if active and below threshold
-        if (alertActive && util < threshold && 'Notification' in window && Notification.permission === 'granted') {
-          new Notification(m.symbol + ' deposit space open — Aave ' + (CHAIN_NAMES[m.chainId] || m.chainId), {
-            body: 'Cap at ' + util.toFixed(1) + '% (below ' + threshold + '%). ' + fmt(available) + ' ' + m.symbol + ' available.',
-            tag:  'aave-cap-' + m.id,
-          });
+        if (alertActive && util < threshold) {
+          const notifMsg = 'Aave ' + m.symbol + ' (' + (CHAIN_NAMES[m.chainId] || m.chainId) + ') — cap at ' + util.toFixed(1) + '% (below ' + threshold + '%). ' + fmt(available) + ' ' + m.symbol + ' available.';
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(m.symbol + ' deposit space open — Aave ' + (CHAIN_NAMES[m.chainId] || m.chainId), {
+              body: notifMsg,
+              tag:  'aave-cap-' + m.id,
+            });
+          }
+          // Also fire in-page toast + Telegram
+          wlShowToast('🔔 Aave Cap Alert', notifMsg, null);
+          tgSend(notifMsg);
         }
       }
 
