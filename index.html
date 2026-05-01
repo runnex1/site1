@@ -3065,6 +3065,30 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
                 </div>
               </div>
             </div>
+
+            <!-- Saved custom tokens panel -->
+            <div style="margin-top:1rem;border-top:1px solid var(--border);padding-top:0.85rem;">
+              <div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07"/><path d="M4.93 4.93A10 10 0 0 1 19.07 19.07"/></svg>
+                Saved Tokens
+              </div>
+              <div id="customTokensList" style="display:flex;flex-direction:column;gap:2px;"></div>
+              <div style="margin-top:0.5rem;font-size:0.65rem;color:var(--t3);line-height:1.5;">
+                Type <span style="font-family:var(--ff-mono);color:var(--t1);">set &lt;contract&gt; as SYMBOL token</span> in the terminal.
+              </div>
+            </div>
+
+            <!-- Saved custom tokens -->
+            <div style="margin-top:1rem;border-top:1px solid var(--border);padding-top:0.85rem;">
+              <div style="font-size:0.68rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem;">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07"/><path d="M4.93 4.93A10 10 0 0 1 19.07 19.07"/></svg>
+                Saved Tokens
+              </div>
+              <div id="customTokensList" style="display:flex;flex-direction:column;gap:2px;"></div>
+              <div style="margin-top:0.5rem;font-size:0.65rem;color:var(--t3);line-height:1.5;">
+                Type <span style="font-family:var(--ff-mono);color:var(--t1);">set &lt;contract&gt; as SYMBOL token</span> in the terminal.
+              </div>
+            </div>
           </div>
 
         </div>
@@ -8364,6 +8388,8 @@ function terminalLoad() {
     terminalRenderAlerts();
     if (terminalAlerts.some(a => !a.triggered)) terminalStartPolling();
     tgLoadSettings();
+    renderCustomTokens();
+    renderCustomTokens();
 }
 
 function terminalSave() {
@@ -8505,6 +8531,71 @@ function terminalParseNL(raw) {
     return { symbol: symbol.toUpperCase(), type: type || 'crypto', dir, target, label };
 }
 
+
+// ── Custom Token Registry ─────────────────────────────────────────────────────
+const CUSTOM_TOKEN_LS = 'vault-custom-tokens';
+function customTokenLoad() {
+    try { return JSON.parse(localStorage.getItem(CUSTOM_TOKEN_LS) || '{}'); } catch(e) { return {}; }
+}
+function customTokenSave(map) {
+    try { localStorage.setItem(CUSTOM_TOKEN_LS, JSON.stringify(map)); } catch(e) {}
+}
+function customTokenGet(symbol) {
+    return customTokenLoad()[symbol.toUpperCase()] || null;
+}
+function customTokenSet(symbol, address, chain) {
+    const map = customTokenLoad();
+    map[symbol.toUpperCase()] = { address, chain };
+    customTokenSave(map);
+    renderCustomTokens();
+}
+function customTokenRemove(symbol) {
+    const map = customTokenLoad();
+    delete map[symbol.toUpperCase()];
+    customTokenSave(map);
+    renderCustomTokens();
+}
+
+function terminalParseSetToken(raw) {
+    const t = raw.trim();
+    // "set <address> as [default] <SYMBOL> [token]"
+    const setMatch = t.match(
+        /^(?:set|save|register|add|define|map)\s+([1-9A-HJ-NP-Za-km-z]{32,44}|0x[0-9a-fA-F]{40})\s+as\s+(?:default\s+)?([A-Za-z][A-Za-z0-9]{0,19})(?:\s+token)?$/i
+    );
+    if (setMatch) {
+        const address = setMatch[1], symbol = setMatch[2].toUpperCase();
+        return { address, symbol, chain: isSolanaMint(address) ? 'solana' : 'evm' };
+    }
+    // "set SYMBOL = <address>"
+    const eqMatch = t.match(
+        /^(?:set|save|register|add|define|map)\s+([A-Za-z][A-Za-z0-9]{0,19})\s*[=:]\s*([1-9A-HJ-NP-Za-km-z]{32,44}|0x[0-9a-fA-F]{40})$/i
+    );
+    if (eqMatch) {
+        const symbol = eqMatch[1].toUpperCase(), address = eqMatch[2];
+        return { address, symbol, chain: isSolanaMint(address) ? 'solana' : 'evm' };
+    }
+    return null;
+}
+
+function renderCustomTokens() {
+    const el = document.getElementById('customTokensList');
+    if (!el) return;
+    const map = customTokenLoad();
+    const entries = Object.entries(map);
+    if (!entries.length) {
+        el.innerHTML = '<div style="font-size:0.7rem;color:var(--t3);font-family:var(--ff-mono);padding:4px 0;">No tokens saved yet.</div>';
+        return;
+    }
+    el.innerHTML = entries.map(([sym, { address, chain }]) => `
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:3px 0;border-bottom:1px solid var(--border);">
+            <span style="font-family:var(--ff-mono);font-size:0.75rem;font-weight:700;color:var(--teal);min-width:56px;">${sym}</span>
+            <span style="font-family:var(--ff-mono);font-size:0.68rem;color:var(--t3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${address}">${address.slice(0,10)}…${address.slice(-6)}</span>
+            <span style="font-size:0.62rem;color:var(--t3);background:var(--surf-3);border-radius:3px;padding:1px 5px;">${chain}</span>
+            <button onclick="customTokenRemove('${sym}')"
+                style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:0.8rem;padding:0 2px;line-height:1;"
+                onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--t3)'">✕</button>
+        </div>`).join('');
+}
 
 // ── Contract address helpers ──────────────────────────────────────────────────
 function isSolanaMint(s) {
@@ -8847,6 +8938,19 @@ async function terminalSubmit() {
     btn.disabled = true;
     terminalLog('> ' + raw, 'tl-cmd');
     terminalSetStatus('thinking…', true);
+
+    // ── "Set <contract> as SYMBOL token" — save custom mapping ─────────────────
+    {
+        const setTok = terminalParseSetToken(raw);
+        if (setTok) {
+            customTokenSet(setTok.symbol, setTok.address, setTok.chain);
+            terminalLog('✓ Saved: ' + setTok.symbol + ' → ' + setTok.address.slice(0,10) + '… (' + setTok.chain + ')', 'tl-ok');
+            terminalLog('↳ You can now use "' + setTok.symbol + '" in alerts and price lookups', 'tl-info');
+            terminalSetStatus('ready', false);
+            btn.disabled = false;
+            return;
+        }
+    }
 
     // ── Price query? Fetch live price directly — AI has no real-time data ────
     {
@@ -9243,9 +9347,16 @@ const JUPITER_MINTS = {
 };
 
 // ── Multi-source crypto price fetcher ─────────────────────────────────────────
-// Priority: 1) Jupiter (Solana-native tokens) → 2) CoinGecko → 3) DEX Screener
+// Priority: 0) Custom registry → 1) Jupiter → 2) CoinGecko → 3) DEX Screener
 async function terminalFetchCryptoPrice(symbol) {
     const sym = symbol.toUpperCase();
+
+    // 0. Custom token registry — user-defined mappings take priority
+    const customEntry = customTokenGet(sym);
+    if (customEntry) {
+        const result = await terminalFetchPriceByContract(customEntry.address, customEntry.chain);
+        if (result) return result.price;
+    }
 
     // 1a. Jupiter Price API — hardcoded mints for known Solana-native tokens
     const jupMint = JUPITER_MINTS[sym];
