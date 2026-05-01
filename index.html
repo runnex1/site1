@@ -8835,9 +8835,10 @@ async function terminalSubmit() {
 
     // ── Price query? Fetch live price directly — AI has no real-time data ────
     {
+        const isAlertCmd = /\balert\b|\bnotify\b|\bwhen\b|\bif\s/i.test(raw);
         // First check if a contract address was pasted
-        const contractInfo = extractContractAddress(raw);
-        const priceQ       = contractInfo ? null : terminalParsePriceQuery(raw);
+        const contractInfo = !isAlertCmd ? extractContractAddress(raw) : null;
+        const priceQ       = (!isAlertCmd && !contractInfo) ? terminalParsePriceQuery(raw) : null;
 
         if (contractInfo) {
             const { address, chain } = contractInfo;
