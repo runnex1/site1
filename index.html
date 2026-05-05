@@ -2357,6 +2357,44 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 </style>
 </head>
 
+<script>
+(function() {
+  const WORKER_URL  = 'https://vault-alerts-full-git-main-petrescusebi100-5291s-projects.vercel.app';
+  const SYNC_SECRET = 'mysecret123';
+
+  async function syncAlertsToServer() {
+    if (!Array.isArray(window.terminalAlerts)) return;
+    try {
+      await fetch(WORKER_URL + '/api/sync-alerts', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+        body:    JSON.stringify({ alerts: window.terminalAlerts }),
+      });
+    } catch (e) {}
+  }
+
+  function patchTerminalSave() {
+    const original = window.terminalSave;
+    if (typeof original !== 'function') return false;
+    window.terminalSave = function() {
+      original.apply(this, arguments);
+      syncAlertsToServer();
+    };
+    return true;
+  }
+
+  let attempts = 0;
+  const poll = setInterval(() => {
+    if (patchTerminalSave()) {
+      clearInterval(poll);
+      syncAlertsToServer();
+    }
+    if (++attempts > 50) clearInterval(poll);
+  }, 100);
+})();
+</script>
+
+  
 <body>
 <div id="wl-toast-container"></div>
 <div class="app-shell">
