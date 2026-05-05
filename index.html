@@ -11443,5 +11443,46 @@ document.addEventListener("click", function(e){
 })();
 </script>
 
+
+<script>
+(function() {
+  const WORKER_URL  = 'https://vault-alerts-full-git-main-petrescusebi100-5291s-projects.vercel.app';
+  const SYNC_SECRET = 'mysecret123';
+
+  async function syncAlertsToServer() {
+    if (!Array.isArray(window.terminalAlerts)) return;
+    try {
+      await fetch(WORKER_URL + '/api/sync-alerts', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+        body:    JSON.stringify({ alerts: window.terminalAlerts }),
+      });
+      console.log('[VaultSync] Synced', window.terminalAlerts.length, 'alerts to server.');
+    } catch (e) {
+      console.warn('[VaultSync] Failed:', e.message);
+    }
+  }
+
+  function patchTerminalSave() {
+    const original = window.terminalSave;
+    if (typeof original !== 'function') return false;
+    window.terminalSave = function() {
+      original.apply(this, arguments);
+      syncAlertsToServer();
+    };
+    return true;
+  }
+
+  let attempts = 0;
+  const poll = setInterval(() => {
+    if (patchTerminalSave()) {
+      clearInterval(poll);
+      syncAlertsToServer();
+      console.log('[VaultSync] Active — syncing alerts on every change.');
+    }
+    if (++attempts > 50) clearInterval(poll);
+  }, 100);
+})();
+</script>
 </body>
 </html>
