@@ -9239,6 +9239,7 @@ async function terminalSubmit() {
                     label:   symbol + ' ' + (dir === 'above' ? '>' : '<') + ' $' + target,
                     currentPrice: null,
                     triggered: false,
+                    setAt: Date.now(),
                 };
                 terminalAlerts.push(alert);
                 terminalSave();
@@ -9316,6 +9317,7 @@ async function terminalSubmit() {
                     marketTitle: title,
                     currentPrice: currentProb,
                     triggered: false,
+                    setAt: Date.now(),
                 };
                 terminalAlerts.push(alert);
                 terminalSave();
@@ -9351,6 +9353,7 @@ async function terminalSubmit() {
                 label:   earlyAave.label,
                 currentPrice: null,
                 triggered: false,
+                setAt: Date.now(),
             };
             terminalAlerts.push(alert);
             terminalSave();
@@ -9400,6 +9403,7 @@ async function terminalSubmit() {
                     label:   p.label,
                     currentPrice: null,
                     triggered: false,
+                    setAt: Date.now(),
                 };
                 terminalAlerts.push(alert);
                 terminalSave();
@@ -9455,6 +9459,7 @@ async function terminalSubmit() {
             label:   fallback.label,
             currentPrice: null,
             triggered: false,
+            setAt: Date.now(),
         };
         terminalAlerts.push(alert);
         terminalSave();
@@ -9467,7 +9472,7 @@ async function terminalSubmit() {
                 terminalSave();
                 terminalRenderAlerts();
                 terminalLog('↳ Current price: ' + terminalFmtPrice(price, alert.type), 'tl-info');
-                terminalCheckAlert(alert);
+                // Only check immediately if alert is older than 30s (server handles fresh ones)
             }
         } catch(err) {}
         terminalSetStatus(terminalAlerts.filter(a => !a.triggered).length + ' active', true);
@@ -9856,6 +9861,8 @@ function terminalFmtPrice(price, type) {
 function terminalCheckAlert(alert) {
     alert.lastChecked = Date.now();
     if (alert.triggered || alert.currentPrice === null) return;
+    // Skip alerts set less than 30 seconds ago — let server worker handle them
+    if (alert.setAt && (Date.now() - alert.setAt) < 30000) return;
     const hit = alert.dir === 'above'
         ? alert.currentPrice >= alert.target
         : alert.currentPrice <= alert.target;
@@ -9865,12 +9872,9 @@ function terminalCheckAlert(alert) {
         terminalRenderAlerts();
         const priceStr = terminalFmtPrice(alert.currentPrice, alert.type);
         const msg = alert.label + ' — now at ' + priceStr;
-        terminalLog('🔔 ALERT FIRED: ' + msg + ' (browser alert in 35s)', 'tl-warn');
-        // Delay browser notification by 35s so server worker can fire first when tab is closed
-        setTimeout(function() {
-            wlShowToast('🔔 Alert Triggered', msg, null);
-            tgSend(msg);
-        }, 35000);
+        terminalLog('🔔 ALERT FIRED: ' + msg, 'tl-warn');
+        wlShowToast('🔔 Alert Triggered', msg, null);
+        tgSend(msg);
         // Audio beep
         if (!window._terminalMuted) try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
