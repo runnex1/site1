@@ -9865,9 +9865,12 @@ function terminalCheckAlert(alert) {
         terminalRenderAlerts();
         const priceStr = terminalFmtPrice(alert.currentPrice, alert.type);
         const msg = alert.label + ' — now at ' + priceStr;
-        terminalLog('🔔 ALERT FIRED: ' + msg, 'tl-warn');
-        wlShowToast('🔔 Alert Triggered', msg, null);
-        tgSend(msg);
+        terminalLog('🔔 ALERT FIRED: ' + msg + ' (browser alert in 35s)', 'tl-warn');
+        // Delay browser notification by 35s so server worker can fire first when tab is closed
+        setTimeout(function() {
+            wlShowToast('🔔 Alert Triggered', msg, null);
+            tgSend(msg);
+        }, 35000);
         // Audio beep
         if (!window._terminalMuted) try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
