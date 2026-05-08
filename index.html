@@ -11457,14 +11457,17 @@ document.addEventListener("click", function(e){
   const SYNC_SECRET = 'mysecret123';
 
   async function syncAlertsToServer() {
-    if (!Array.isArray(window.terminalAlerts)) return;
     try {
+      const stored = localStorage.getItem('terminal-alerts');
+      if (!stored) return;
+      const terminalAlerts = JSON.parse(stored);
+      if (!Array.isArray(terminalAlerts)) return;
       await fetch(WORKER_URL + '/api/sync-alerts', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
-        body:    JSON.stringify({ alerts: window.terminalAlerts }),
+        body:    JSON.stringify({ alerts: terminalAlerts }),
       });
-      console.log('[VaultSync] Synced', window.terminalAlerts.length, 'alerts to server.');
+      console.log('[VaultSync] Synced', terminalAlerts.length, 'alerts to server.');
     } catch (e) {
       console.warn('[VaultSync] Failed:', e.message);
     }
