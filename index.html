@@ -11463,17 +11463,19 @@ document.addEventListener("click", function(e){
   async function syncAlertsToServer() {
     try {
       const stored = localStorage.getItem('terminal-alerts');
-      if (!stored) return;
-      const alerts = JSON.parse(stored);
-      if (!Array.isArray(alerts)) return;
+      const alerts = stored ? JSON.parse(stored) : [];
       // Only sync untriggered alerts — let server fire them independently
-      const untriggered = alerts.filter(a => !a.triggered);
+      const untriggered = Array.isArray(alerts) ? alerts.filter(a => !a.triggered) : [];
+      // Also sync TG channels for event alert news checking
+      const tgChannels = (() => {
+        try { return JSON.parse(localStorage.getItem('vault_tg_channels') || '[]'); } catch(e) { return []; }
+      })();
       await fetch(WORKER_URL + '/api/sync-alerts', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
-        body:    JSON.stringify({ alerts: untriggered }),
+        body:    JSON.stringify({ alerts: untriggered, tgChannels }),
       });
-      console.log('[VaultSync] Synced', untriggered.length, 'untriggered alerts to server.');
+      console.log('[VaultSync] Synced', untriggered.length, 'alerts +', tgChannels.length, 'TG channels to server.');
     } catch (e) {
       console.warn('[VaultSync] Failed:', e.message);
     }
