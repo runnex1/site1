@@ -7756,8 +7756,8 @@ function wlFireNotification(entry, alert, price) {
         }
     } catch(e) {}
 
-    // ── 4. Telegram ────────────────────────────────────────────────────────────
-    tgSend(msg);
+    // ── 4. Telegram — handled by server worker
+    // tgSend(msg);
 
     saveWatchlist();
 }
@@ -11483,6 +11483,80 @@ document.addEventListener("click", function(e){
     if (patchTerminalSave()) {
       clearInterval(poll);
       syncAlertsToServer();
+      console.log('[VaultSync] Active — syncing alerts on every change.');
+    }
+    if (++attempts > 50) clearInterval(poll);
+  }, 100);
+})();
+</script>
+
+<script>
+(function() {
+  const WORKER_URL  = 'https://vault-alerts-full-git-main-petrescusebi100-5291s-projects.vercel.app';
+  const SYNC_SECRET = 'mysecret123';
+
+  async function syncAlertsToServer() {
+    try {
+      const stored = localStorage.getItem('terminal-alerts');
+      if (!stored) return;
+      const terminalAlerts = JSON.parse(stored);
+      if (!Array.isArray(terminalAlerts)) return;
+      await fetch(WORKER_URL + '/api/sync-alerts', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+        body:    JSON.stringify({ alerts: terminalAlerts }),
+      });
+      console.log('[VaultSync] Synced', terminalAlerts.length, 'alerts to server.');
+    } catch (e) {
+      console.warn('[VaultSync] Failed:', e.message);
+    }
+  }
+
+  async function syncTriggeredFromServer() {
+    try {
+      const res = await fetch(WORKER_URL + '/api/check-alerts');
+      const data = await res.json();
+      if (!data.results || !data.results.length) return;
+      const stored = localStorage.getItem('terminal-alerts');
+      if (!stored) return;
+      const terminalAlerts = JSON.parse(stored);
+      if (!Array.isArray(terminalAlerts)) return;
+      let changed = false;
+      for (const result of data.results) {
+        if (result.triggered) {
+          const alert = terminalAlerts.find(a => a.id === result.id);
+          if (alert && !alert.triggered) {
+            alert.triggered = true;
+            changed = true;
+            console.log('[VaultSync] Marked as triggered (server already fired):', alert.label || alert.symbol);
+          }
+        }
+      }
+      if (changed) {
+        localStorage.setItem('terminal-alerts', JSON.stringify(terminalAlerts));
+        if (typeof terminalRenderAlerts === 'function') terminalRenderAlerts();
+      }
+    } catch (e) {
+      console.warn('[VaultSync] syncTriggeredFromServer failed:', e.message);
+    }
+  }
+
+  function patchTerminalSave() {
+    const original = window.terminalSave;
+    if (typeof original !== 'function') return false;
+    window.terminalSave = function() {
+      original.apply(this, arguments);
+      syncAlertsToServer();
+    };
+    return true;
+  }
+
+  let attempts = 0;
+  const poll = setInterval(() => {
+    if (patchTerminalSave()) {
+      clearInterval(poll);
+      syncAlertsToServer();
+      syncTriggeredFromServer();
       console.log('[VaultSync] Active — syncing alerts on every change.');
     }
     if (++attempts > 50) clearInterval(poll);
