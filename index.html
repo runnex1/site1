@@ -11358,7 +11358,7 @@ document.addEventListener("click", function(e){
           }
           // Also fire in-page toast + Telegram
           wlShowToast('🔔 Aave Cap Alert', notifMsg, null);
-          tgSend(notifMsg);
+          // tgSend(notifMsg); // handled by server worker
         }
       }
 
@@ -11449,46 +11449,8 @@ document.addEventListener("click", function(e){
 </script>
 
 
-<script>
-(function() {
-  const WORKER_URL  = 'https://vault-alerts-full-git-main-petrescusebi100-5291s-projects.vercel.app';
-  const SYNC_SECRET = 'mysecret123';
 
-  async function syncAlertsToServer() {
-    if (!Array.isArray(window.terminalAlerts)) return;
-    try {
-      await fetch(WORKER_URL + '/api/sync-alerts', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
-        body:    JSON.stringify({ alerts: window.terminalAlerts }),
-      });
-      console.log('[VaultSync] Synced', window.terminalAlerts.length, 'alerts to server.');
-    } catch (e) {
-      console.warn('[VaultSync] Failed:', e.message);
-    }
-  }
 
-  function patchTerminalSave() {
-    const original = window.terminalSave;
-    if (typeof original !== 'function') return false;
-    window.terminalSave = function() {
-      original.apply(this, arguments);
-      syncAlertsToServer();
-    };
-    return true;
-  }
-
-  let attempts = 0;
-  const poll = setInterval(() => {
-    if (patchTerminalSave()) {
-      clearInterval(poll);
-      syncAlertsToServer();
-      console.log('[VaultSync] Active — syncing alerts on every change.');
-    }
-    if (++attempts > 50) clearInterval(poll);
-  }, 100);
-})();
-</script>
 
 <script>
 (function() {
@@ -11499,14 +11461,14 @@ document.addEventListener("click", function(e){
     try {
       const stored = localStorage.getItem('terminal-alerts');
       if (!stored) return;
-      const terminalAlerts = JSON.parse(stored);
-      if (!Array.isArray(terminalAlerts)) return;
+      const alerts = JSON.parse(stored);
+      if (!Array.isArray(alerts)) return;
       await fetch(WORKER_URL + '/api/sync-alerts', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
-        body:    JSON.stringify({ alerts: terminalAlerts }),
+        body:    JSON.stringify({ alerts }),
       });
-      console.log('[VaultSync] Synced', terminalAlerts.length, 'alerts to server.');
+      console.log('[VaultSync] Synced', alerts.length, 'alerts to server.');
     } catch (e) {
       console.warn('[VaultSync] Failed:', e.message);
     }
@@ -11519,21 +11481,21 @@ document.addEventListener("click", function(e){
       if (!data.results || !data.results.length) return;
       const stored = localStorage.getItem('terminal-alerts');
       if (!stored) return;
-      const terminalAlerts = JSON.parse(stored);
-      if (!Array.isArray(terminalAlerts)) return;
+      const alerts = JSON.parse(stored);
+      if (!Array.isArray(alerts)) return;
       let changed = false;
       for (const result of data.results) {
         if (result.triggered) {
-          const alert = terminalAlerts.find(a => a.id === result.id);
+          const alert = alerts.find(a => a.id === result.id);
           if (alert && !alert.triggered) {
             alert.triggered = true;
             changed = true;
-            console.log('[VaultSync] Marked as triggered (server already fired):', alert.label || alert.symbol);
+            console.log('[VaultSync] Server already fired:', alert.label || alert.symbol);
           }
         }
       }
       if (changed) {
-        localStorage.setItem('terminal-alerts', JSON.stringify(terminalAlerts));
+        localStorage.setItem('terminal-alerts', JSON.stringify(alerts));
         if (typeof terminalRenderAlerts === 'function') terminalRenderAlerts();
       }
     } catch (e) {
@@ -11551,78 +11513,46 @@ document.addEventListener("click", function(e){
     return true;
   }
 
-  let attempts = 0;
-  const poll = setInterval(() => {
-    if (patchTerminalSave()) {
-      clearInterval(poll);
-      syncAlertsToServer();
-      syncTriggeredFromServer();
-      console.log('[VaultSync] Active — syncing alerts on every change.');
-    }
-    if (++attempts > 50) clearInterval(poll);
-  }, 100);
-})();
-</script>
+  // Poll server every 10 seconds to check for newly fired alerts and show browser toast
+  let lastFiredIds = new Set();
 
-<script>
-(function() {
-  const WORKER_URL  = 'https://vault-alerts-full-git-main-petrescusebi100-5291s-projects.vercel.app';
-  const SYNC_SECRET = 'mysecret123';
-
-  async function syncAlertsToServer() {
-    try {
-      const stored = localStorage.getItem('terminal-alerts');
-      if (!stored) return;
-      const terminalAlerts = JSON.parse(stored);
-      if (!Array.isArray(terminalAlerts)) return;
-      await fetch(WORKER_URL + '/api/sync-alerts', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
-        body:    JSON.stringify({ alerts: terminalAlerts }),
-      });
-      console.log('[VaultSync] Synced', terminalAlerts.length, 'alerts to server.');
-    } catch (e) {
-      console.warn('[VaultSync] Failed:', e.message);
-    }
-  }
-
-  async function syncTriggeredFromServer() {
+  async function pollForFiredAlerts() {
     try {
       const res = await fetch(WORKER_URL + '/api/check-alerts');
       const data = await res.json();
-      if (!data.results || !data.results.length) return;
+      if (!data.results) return;
+
       const stored = localStorage.getItem('terminal-alerts');
       if (!stored) return;
-      const terminalAlerts = JSON.parse(stored);
-      if (!Array.isArray(terminalAlerts)) return;
+      const alerts = JSON.parse(stored);
+      if (!Array.isArray(alerts)) return;
+
       let changed = false;
       for (const result of data.results) {
-        if (result.triggered) {
-          const alert = terminalAlerts.find(a => a.id === result.id);
+        if (result.triggered && !lastFiredIds.has(result.id)) {
+          lastFiredIds.add(result.id);
+          // Find matching local alert to get label
+          const alert = alerts.find(a => a.id === result.id);
+          const label = alert ? (alert.label || alert.symbol) : result.symbol;
+          const priceStr = result.price != null ? result.price : '';
+          const msg = label + (priceStr ? ' — now at ' + priceStr : '');
+          // Show browser toast
+          if (typeof wlShowToast === 'function') {
+            wlShowToast('🔔 Alert Triggered', msg, null);
+          }
+          console.log('[VaultSync] Server fired alert — showing toast:', msg);
+          // Mark as triggered in localStorage
           if (alert && !alert.triggered) {
             alert.triggered = true;
             changed = true;
-            console.log('[VaultSync] Marked as triggered (server already fired):', alert.label || alert.symbol);
           }
         }
       }
       if (changed) {
-        localStorage.setItem('terminal-alerts', JSON.stringify(terminalAlerts));
+        localStorage.setItem('terminal-alerts', JSON.stringify(alerts));
         if (typeof terminalRenderAlerts === 'function') terminalRenderAlerts();
       }
-    } catch (e) {
-      console.warn('[VaultSync] syncTriggeredFromServer failed:', e.message);
-    }
-  }
-
-  function patchTerminalSave() {
-    const original = window.terminalSave;
-    if (typeof original !== 'function') return false;
-    window.terminalSave = function() {
-      original.apply(this, arguments);
-      syncAlertsToServer();
-    };
-    return true;
+    } catch (e) {}
   }
 
   let attempts = 0;
@@ -11631,7 +11561,9 @@ document.addEventListener("click", function(e){
       clearInterval(poll);
       syncAlertsToServer();
       syncTriggeredFromServer();
-      console.log('[VaultSync] Active — syncing alerts on every change.');
+      console.log('[VaultSync] Active.');
+      // Start polling server for fired alerts every 10 seconds
+      setInterval(pollForFiredAlerts, 10000);
     }
     if (++attempts > 50) clearInterval(poll);
   }, 100);
