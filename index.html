@@ -7732,7 +7732,7 @@ function wlFireNotification(entry, alert, price) {
     const msg   = `${entry.title} [${label}] is ${(price * 100).toFixed(1)}¢ — your alert triggered (${alert.dir} ${(alert.price * 100).toFixed(0)}¢)`;
 
     // ── 1. In-page toast (always works, no permissions needed) ─────────────────
-    wlShowToast('🔔 Alert Triggered', msg, entry.id);
+    // wlShowToast fired by server poll instead
 
     // ── 2. Audio beep via Web Audio API (works on file:// too) ─────────────────
     try {
@@ -9497,7 +9497,7 @@ async function terminalCheckEventAlert(alert) {
         terminalSave();
         terminalRenderAlerts();
         terminalLog('🔔 EVENT ALERT FIRED: ' + alert.label, 'tl-warn');
-        wlShowToast('🔔 Event Alert Triggered', alert.label, null);
+        // wlShowToast fired by server poll instead
         try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
             const osc = ctx.createOscillator(); const gain = ctx.createGain();
@@ -9871,8 +9871,7 @@ function terminalCheckAlert(alert) {
         const priceStr = terminalFmtPrice(alert.currentPrice, alert.type);
         const msg = alert.label + ' — now at ' + priceStr;
         terminalLog('🔔 ALERT FIRED: ' + msg, 'tl-warn');
-        wlShowToast('🔔 Alert Triggered', msg, null);
-        // Telegram is handled by the server worker — no tgSend here
+        // Toast and TG fired by server worker poll — not here
         // Audio beep
         if (!window._terminalMuted) try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -11357,7 +11356,7 @@ document.addEventListener("click", function(e){
             });
           }
           // Also fire in-page toast + Telegram
-          wlShowToast('🔔 Aave Cap Alert', notifMsg, null);
+          // wlShowToast fired by server poll instead
           // tgSend(notifMsg); // handled by server worker
         }
       }
@@ -11463,12 +11462,14 @@ document.addEventListener("click", function(e){
       if (!stored) return;
       const alerts = JSON.parse(stored);
       if (!Array.isArray(alerts)) return;
+      // Only sync untriggered alerts — let server fire them independently
+      const untriggered = alerts.filter(a => !a.triggered);
       await fetch(WORKER_URL + '/api/sync-alerts', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
-        body:    JSON.stringify({ alerts }),
+        body:    JSON.stringify({ alerts: untriggered }),
       });
-      console.log('[VaultSync] Synced', alerts.length, 'alerts to server.');
+      console.log('[VaultSync] Synced', untriggered.length, 'untriggered alerts to server.');
     } catch (e) {
       console.warn('[VaultSync] Failed:', e.message);
     }
