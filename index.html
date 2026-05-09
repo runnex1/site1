@@ -9939,7 +9939,8 @@ function terminalRenderAlerts() {
     const active = terminalAlerts.filter(a => !a.triggered).length;
     if (count) count.textContent = active;
 
-    if (!terminalAlerts.length) {
+    const visibleAlerts = terminalAlerts.filter(a => !a.triggered);
+    if (!visibleAlerts.length) {
         el.innerHTML = '<div class="term-alerts-empty">'
             + '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>'
             + '<div>No alerts active</div></div>';
@@ -9958,7 +9959,7 @@ function terminalRenderAlerts() {
         contract:   '#38bdf8',
     };
 
-    el.innerHTML = terminalAlerts.slice().reverse().map(a => {
+    el.innerHTML = visibleAlerts.slice().reverse().map(a => {
         const accent = ACCENT[a.type] || '#ffffff';
 
         // ── Event alert card ──────────────────────────────────────────────────
