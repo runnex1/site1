@@ -11546,6 +11546,7 @@ document.addEventListener("click", function(e){
     try {
       const res = await fetch(WORKER_URL + '/api/check-alerts');
       const data = await res.json();
+      console.log('[VaultSync] check-alerts response:', JSON.stringify(data));
       if (!data.results) return;
 
       const stored = localStorage.getItem('terminal-alerts');
