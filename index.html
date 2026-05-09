@@ -7711,9 +7711,7 @@ function wlRemoveAlert(marketId, alertId) {
 }
 
 // ── Check alerts ──────────────────────────────────────────────────────────────
-function wlCheckAlerts((entry, newPriceYes, newPriceNo) {
-    return; // Disabled — server worker handles all alert checking
-    
+function wlCheckAlerts(entry, newPriceYes, newPriceNo) {
     return; // Disabled — server worker handles all alert checking
     entry.alerts.forEach(alert => {
         if (alert.triggered) return;
@@ -9483,9 +9481,7 @@ async function terminalSubmit() {
 
 // ── Price fetchers ────────────────────────────────────────────────────────────
 // ── Event alert checker — routes through /api/event-check on Vercel ─────────
-async function terminalCheckEventAlert((alert) {
-    return; // Disabled — server worker handles all alert checking
-    
+async function terminalCheckEventAlert(alert) {
     return; // Disabled — server worker handles all alert checking
     if (alert.triggered) return;
     const condition = alert.condition || alert.label;
