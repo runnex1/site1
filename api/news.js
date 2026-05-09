@@ -1,189 +1,193 @@
-// Vercel serverless function: fetch RSS headlines + rank with Groq AI
-// GET /api/news?x=handle1,handle2  — returns pre-ranked news JSON, cached 2h on CDN edge
-export default async function handler(req, res) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    // Do NOT use s-maxage — Vercel's CDN would cache /api/news and serve that
-    // same response for /api/news?x=handle1, ignoring the query string entirely.
-    // Per-handle responses are marked private so Vercel's CDN never coalesces them.
-    const xParam = req.query?.x || '';
-    res.setHeader(
-        'Cache-Control',
-        xParam ? 'private, max-age=300' : 'public, max-age=7200'
-    );
+/**
+ * News fetcher for event alert checking.
+ * Fetches from the same RSS sources as the Daily Brief + user TG channels via RSS.
+ */
 
-    const GROQ_KEY = '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';
+const DAILY_BRIEF_SOURCES = [
+  // ── Crypto / DeFi ────────────────────────────────────────────────────────
+  { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/',          label: 'CoinDesk'        },
+  { url: 'https://cointelegraph.com/rss',                            label: 'CoinTelegraph'   },
+  { url: 'https://thedefiant.io/feed',                               label: 'The Defiant'     },
+  { url: 'https://blockworks.co/feed',                               label: 'Blockworks'      },
+  { url: 'https://decrypt.co/feed',                                  label: 'Decrypt'         },
+  { url: 'https://theblock.co/rss.xml',                              label: 'The Block'       },
+  { url: 'https://unchainedcrypto.com/feed/',                        label: 'Unchained'       },
+  { url: 'https://www.dlnews.com/arc/outboundfeeds/rss/',            label: 'DL News'         },
+  { url: 'https://cryptopanic.com/news/rss/',                        label: 'CryptoPanic'     },
+  // ── Macro / Traditional Finance ──────────────────────────────────────────
+  { url: 'https://feeds.reuters.com/reuters/businessNews',           label: 'Reuters Business'},
+  { url: 'https://feeds.reuters.com/reuters/politicsNews',           label: 'Reuters Politics'},
+  { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',          label: 'BBC Business'    },
+  { url: 'https://feeds.bbci.co.uk/news/world/rss.xml',             label: 'BBC World'       },
+  { url: 'https://www.investing.com/rss/news_25.rss',               label: 'Investing.com'   },
+  { url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',           label: 'WSJ Markets'     },
+  { url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html',    label: 'CNBC Finance'    },
+  { url: 'https://www.marketwatch.com/rss/topstories',              label: 'MarketWatch'     },
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',  label: 'NYT World'       },
+  { url: 'https://www.ft.com/rss/home',                             label: 'FT'              },
+];
 
-    const SOURCES = [
-        { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/',  type: 'crypto', label: 'CoinDesk'      },
-        { url: 'https://cointelegraph.com/rss',                    type: 'crypto', label: 'CoinTelegraph' },
-        { url: 'https://thedefiant.io/feed',                       type: 'defi',   label: 'The Defiant'  },
-        { url: 'https://blockworks.co/feed',                       type: 'defi',   label: 'Blockworks'   },
-        { url: 'https://dlnews.com/rss.xml',                       type: 'defi',   label: 'DL News'      },
-        { url: 'https://feeds.reuters.com/reuters/businessNews',   type: 'macro',  label: 'Reuters'      },
-        { url: 'https://feeds.reuters.com/reuters/topNews',        type: 'macro',  label: 'Reuters'      },
-    ];
-
-    // ── Parse X handles from ?x= query param ───────────────────────────────
-    const xHandles = xParam
-        .split(',')
-        .map(h => h.trim().replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, ''))
-        .filter(Boolean)
-        .slice(0, 10); // hard cap at 10
-
-    // Nitter instances to try in order if the first fails
-    const NITTER_INSTANCES = [
-        'https://nitter.net',
-        'https://nitter.privacydev.net',
-        'https://nitter.poast.org',
-    ];
-
-    // ── Fetch + parse one RSS feed ──────────────────────────────────────────
-    async function fetchFeed(src) {
-        const r = await fetch(src.url, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VaultBot/1.0)' },
-            signal: AbortSignal.timeout(8000),
-        });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const text = await r.text();
-
-        const items = [];
-        const itemRe = /<item>([\s\S]*?)<\/item>/gi;
-        let match;
-        while ((match = itemRe.exec(text)) !== null && items.length < 5) {
-            const block = match[1];
-            const tag = (name) => {
-                const m = block.match(new RegExp(`<${name}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${name}>`, 'i'))
-                       || block.match(new RegExp(`<${name}[^>]*>([^<]*)<\\/${name}>`, 'i'));
-                return m ? m[1].trim() : '';
-            };
-            const title = tag('title');
-            let link = tag('link');
-            if (!link) link = tag('guid');
-            if (title && link) items.push({ title, link, type: src.type, source: src.label });
-        }
-        return items;
-    }
-
-    // ── Fetch Nitter RSS for one X handle (tries multiple instances) ────────
-    async function fetchNitter(handle) {
-        for (const instance of NITTER_INSTANCES) {
-            try {
-                const url = `${instance}/${handle}/rss`;
-                const r = await fetch(url, {
-                    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VaultBot/1.0)' },
-                    signal: AbortSignal.timeout(8000),
-                });
-                if (!r.ok) continue;
-                const text = await r.text();
-
-                const items = [];
-                const itemRe = /<item>([\s\S]*?)<\/item>/gi;
-                let match;
-                while ((match = itemRe.exec(text)) !== null && items.length < 3) {
-                    const block = match[1];
-                    const tag = (name) => {
-                        const m = block.match(new RegExp(`<${name}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${name}>`, 'i'))
-                               || block.match(new RegExp(`<${name}[^>]*>([^<]*)<\\/${name}>`, 'i'));
-                        return m ? m[1].trim() : '';
-                    };
-                    const title = tag('title');
-                    let link = tag('link') || tag('guid');
-                    // Rewrite Nitter links to x.com
-                    if (link) link = link.replace(/^https?:\/\/nitter\.[^/]+\//, 'https://x.com/');
-                    if (title && link) {
-                        items.push({ title, link, type: 'x', source: `@${handle}` });
-                    }
-                }
-                if (items.length) return items; // success — stop trying instances
-            } catch(e) {
-                // try next instance
-            }
-        }
-        return []; // all instances failed
-    }
-
-    // ── Fetch all RSS feeds + Nitter feeds in parallel ──────────────────────
-    const [settledFeeds, settledNitter] = await Promise.all([
-        Promise.allSettled(SOURCES.map(fetchFeed)),
-        Promise.allSettled(xHandles.map(fetchNitter)),
-    ]);
-
-    const allHeadlines = settledFeeds.flatMap(s => s.status === 'fulfilled' ? s.value : []);
-    const xPosts       = settledNitter.flatMap(s => s.status === 'fulfilled' ? s.value : []);
-
-    if (!allHeadlines.length && !xPosts.length) {
-        return res.status(200).json({ items: [], error: 'No RSS feeds returned data' });
-    }
-
-    // ── Rank news headlines with Groq (X posts bypass AI ranking) ──────────
-    let rankedItems = [];
-
-    if (allHeadlines.length) {
-        const headlineList = allHeadlines
-            .map((h, i) => `${i}|${h.type}|${h.source}|${h.title.slice(0, 120)}`)
-            .join('\n');
-
-        const prompt = `You are a financial news editor for a serious crypto/DeFi portfolio tracker. From the headlines below, select only genuinely important stories. Return at most: 3 crypto, 3 defi, 2 macro. Return fewer if fewer qualify. Return [] if nothing qualifies. Never pad.
-
-CRYPTO — include only: major exchange collapse/hack, significant regulatory decision (ETF approval/rejection, ban, new law passed), major stablecoin depeg, institutional/whale move >$500M. NEVER: BTC/ETH price moves, minor news, opinions.
-
-DEFI — include only: major protocol hack or exploit, significant protocol upgrade or v2/v3 launch for a top-50 DeFi project, major tokenomics overhaul, new product launch by Uniswap/Aave/Curve/Compound/MakerDAO/Lido/Pendle/dYdX/GMX/Hyperliquid/EigenLayer, governance vote changing fundamental parameters. NEVER: minor integrations, TVL updates, farming guides, price predictions, opinions.
-
-MACRO — include only: Fed rate decision or emergency statement, Bank of Japan rate decision, US/Japan military escalation or war declaration, major US sanctions, US sovereign debt crisis, crash/surge >5% in NVDA/ARKK/QQQ. NEVER: ECB/BOE decisions, non-US/Japan geopolitics, PPI, earnings, index moves, analyst opinions.
-
-Headlines (index|type|source|title):
-${headlineList}
-
-Reply with ONLY a raw JSON array — no markdown, no explanation:
-[{"index":0,"type":"defi","source":"Blockworks","title":"..."}]`;
-
-        try {
-            const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${GROQ_KEY}`,
-                },
-                signal: AbortSignal.timeout(15000),
-                body: JSON.stringify({
-                    model: 'llama-3.1-8b-instant',
-                    temperature: 0.1,
-                    messages: [{ role: 'user', content: prompt }],
-                }),
-            });
-
-            if (!groqRes.ok) {
-                const err = await groqRes.json().catch(() => ({}));
-                throw new Error(err?.error?.message || `Groq HTTP ${groqRes.status}`);
-            }
-
-            const groqData = await groqRes.json();
-            const raw   = groqData.choices?.[0]?.message?.content || '';
-            const clean = raw.replace(/```json|```/g, '').trim();
-            const start = clean.indexOf('[');
-            const end   = clean.lastIndexOf(']');
-            if (start === -1) throw new Error('Groq returned no JSON array');
-
-            const ranked = JSON.parse(clean.slice(start, end + 1));
-            rankedItems = ranked.map(item => ({
-                type:   item.type,
-                source: item.source,
-                title:  item.title || allHeadlines[item.index]?.title || '',
-                url:    allHeadlines[item.index]?.link || '#',
-            }));
-
-        } catch (err) {
-            // Groq failed — fall back to top raw headlines
-            rankedItems = allHeadlines.slice(0, 8).map(h => ({
-                type: h.type, source: h.source, title: h.title, url: h.link,
-            }));
-        }
-    }
-
-    // X posts come first, then ranked news
-    const xItems = xPosts.map(p => ({
-        type: 'x', source: p.source, title: p.title, url: p.link,
-    }));
-
-    return res.status(200).json({ items: [...xItems, ...rankedItems] });
+async function safeFetch(url, timeout = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'Accept': 'application/rss+xml, application/xml, text/xml, */*' },
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch (e) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
+
+function parseRSS(xml) {
+  // Simple regex-based RSS parser (no DOM on server)
+  const items = [];
+  const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+  let itemMatch;
+  while ((itemMatch = itemRegex.exec(xml)) !== null) {
+    const block = itemMatch[1];
+    const title = (block.match(/<title[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) ||
+                   block.match(/<title[^>]*>([\s\S]*?)<\/title>/) || [])[1] || '';
+    const desc  = (block.match(/<description[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) ||
+                   block.match(/<description[^>]*>([\s\S]*?)<\/description>/) || [])[1] || '';
+    const link  = (block.match(/<link[^>]*>([\s\S]*?)<\/link>/) || [])[1] || '';
+    const pubDate = (block.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/) || [])[1] || '';
+    
+    const cleanTitle = title.replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
+    const cleanDesc  = desc.replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim().slice(0, 200);
+    
+    if (cleanTitle) items.push({ title: cleanTitle, desc: cleanDesc, link: link.trim(), pubDate: pubDate.trim() });
+    if (items.length >= 3) break;
+  }
+  return items;
+}
+
+async function fetchRSSFeed(url) {
+  // Try direct first, then CORS proxies
+  const urls = [
+    url,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  ];
+  for (const u of urls) {
+    const text = await safeFetch(u);
+    if (text && text.includes('<item>')) {
+      return parseRSS(text);
+    }
+  }
+  return [];
+}
+
+// Build TG channel RSS URL from handle
+function tgChannelRSSUrl(handle) {
+  // Clean handle — remove t.me/ prefix if present
+  const clean = handle.replace(/^(?:https?:\/\/)?t\.me\//, '').replace(/^@/, '').trim();
+  // Telegram channels have RSS via nitter or rsshub
+  return `https://rsshub.app/telegram/channel/${clean}`;
+}
+
+/**
+ * Fetch recent headlines from all sources.
+ * tgChannels: array of channel handles from vault_tg_channels
+ * Returns array of { title, desc, source } strings
+ */
+async function fetchRecentHeadlines(tgChannels = []) {
+  const sources = [...DAILY_BRIEF_SOURCES];
+
+  // Add TG channels as RSS sources
+  for (const handle of (tgChannels || [])) {
+    sources.push({ url: tgChannelRSSUrl(handle), label: handle });
+  }
+
+  const results = await Promise.allSettled(
+    sources.map(async (src) => {
+      const items = await fetchRSSFeed(src.url);
+      return items.map(i => ({ ...i, source: src.label }));
+    })
+  );
+
+  return results
+    .filter(r => r.status === 'fulfilled')
+    .flatMap(r => r.value)
+    .slice(0, 60); // max 60 headlines across all sources
+}
+
+/**
+ * Check if an event condition has been met based on recent headlines.
+ * Uses Groq AI.
+ */
+function buildEventPrompt(condition, headlineText) {
+  return 'You are checking if a specific condition has been met based on recent news headlines.\n\n' +
+    'CONDITION TO CHECK: "' + condition + '"\n\n' +
+    'RECENT HEADLINES:\n' + headlineText + '\n\n' +
+    'Has the condition been met? Reply with ONLY a JSON object:\n' +
+    '{"triggered": true/false, "reason": "brief explanation"}\n\n' +
+    'Be conservative — only say triggered:true if there is clear, direct evidence in the headlines.';
+}
+
+async function checkWithGroq(prompt, groqKey) {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
+    body: JSON.stringify({
+      model: 'llama-3.1-8b-instant',
+      temperature: 0,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+  if (!res.ok) throw new Error('Groq HTTP ' + res.status);
+  const data = await res.json();
+  return (data.choices?.[0]?.message?.content || '{}').replace(/```json|```/g, '').trim();
+}
+
+async function checkWithGemini(prompt) {
+  const geminiKey = process.env.GEMINI_API_KEY || 'AIzaSyAOsn_x9-tg_YlN-AyDmkyNzX-20TVomyc';
+  if (!geminiKey) throw new Error('No Gemini key');
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + geminiKey;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0 },
+    }),
+  });
+  if (!res.ok) throw new Error('Gemini HTTP ' + res.status);
+  const data = await res.json();
+  return (data.candidates?.[0]?.content?.parts?.[0]?.text || '{}').replace(/```json|```/g, '').trim();
+}
+
+async function checkEventCondition(condition, headlines, groqKey) {
+  if (!headlines.length) return { triggered: false, reason: 'no headlines fetched' };
+
+  const headlineText = headlines
+    .map((h, i) => (i + 1) + '. [' + h.source + '] ' + h.title + (h.desc ? ' — ' + h.desc : ''))
+    .join('\n');
+
+  const prompt = buildEventPrompt(condition, headlineText);
+
+  let rawText = '{}';
+  try {
+    rawText = await checkWithGroq(prompt, groqKey);
+  } catch (e) {
+    console.warn('[news] Groq failed (' + e.message + '), trying Gemini...');
+    try {
+      rawText = await checkWithGemini(prompt);
+    } catch (e2) {
+      return { triggered: false, reason: 'AI unavailable: ' + e2.message };
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(rawText);
+    return { triggered: !!parsed.triggered, reason: parsed.reason || '' };
+  } catch (e) {
+    return { triggered: false, reason: 'Parse error' };
+  }
+}
+
+module.exports = { fetchRecentHeadlines, checkEventCondition };
