@@ -1,22 +1,90 @@
-export default async function handler(req, res) {
-  // These names match the ones Vercel created for you automatically
-  const url = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
+/**
+ * POST /api/sync-portfolio
+ *
+ * Receives full portfolio snapshot from browser and stores in KV.
+ * Called by the browser every time saveData() runs.
+ *
+ * Stores:
+ *   vault:portfolio   — tokens, protocols, ETFs, prediction markets, watchlist
+ *   vault:watchlist   — watchlist entries with prices
+ *   vault:snapshots   — weekly portfolio snapshots
+ *   vault:aavemarkets — Aave cap markets being monitored
+ *   vault:customtokens— custom token definitions
+ */
 
-  if (req.method === 'POST') {
-    // This SAVES your data to Upstash
-    await fetch(`${url}/set/portfolio_data`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-      body: JSON.stringify(req.body)
-    });
-    return res.status(200).json({ success: true });
-  } else {
-    // This GETS your data from Upstash
-    const response = await fetch(`${url}/get/portfolio_data`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    const result = await response.json();
-    return res.status(200).json(result);
+const { kvGet, kvSet } = require('../lib/kv');
+
+const SYNC_SECRET = process.env.SYNC_SECRET || '';
+
+module.exports = async function handler(req, res) {
+  // CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-sync-secret');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Auth
+  if (SYNC_SECRET) {
+    const provided = req.headers['x-sync-secret'];
+    if (provided !== SYNC_SECRET) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
   }
-}
+
+  let body = req.body;
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch (e) {
+      return res.status(400).json({ error: 'Invalid JSON' });
+    }
+  }
+
+  const saved = {};
+
+  try {
+    // Portfolio data (tokens, protocols, ETFs, prediction markets)
+    if (body.portfolio) {
+      await kvSet('vault:portfolio', JSON.stringify(body.portfolio));
+      saved.portfolio = true;
+    }
+
+    // Watchlist
+    if (body.watchlist) {
+      await kvSet('vault:watchlist', JSON.stringify(body.watchlist));
+      saved.watchlist = true;
+    }
+
+    // Weekly snapshots
+    if (body.snapshots) {
+      await kvSet('vault:snapshots', JSON.stringify(body.snapshots));
+      saved.snapshots = true;
+    }
+
+    // Aave markets being monitored
+    if (body.aaveMarkets) {
+      await kvSet('vault:aavemarkets', JSON.stringify(body.aaveMarkets));
+      saved.aaveMarkets = true;
+    }
+
+    // Custom token definitions
+    if (body.customTokens) {
+      await kvSet('vault:customtokens', JSON.stringify(body.customTokens));
+      saved.customTokens = true;
+    }
+
+    // Watcher wallets
+    if (body.watcherWallets) {
+      await kvSet('vault:watcherwallets', JSON.stringify(body.watcherWallets));
+      saved.watcherWallets = true;
+    }
+
+    // Timestamp of last sync
+    await kvSet('vault:portfolio_synced_at', Date.now().toString());
+
+    return res.status(200).json({ ok: true, saved });
+  } catch (e) {
+    console.error('[sync-portfolio] KV error:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+};
