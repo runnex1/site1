@@ -11481,6 +11481,32 @@ document.addEventListener("click", function(e){
     }
   }
 
+  async function syncPortfolioToServer() {
+    try {
+      const get = (key, fallback) => {
+        try { return JSON.parse(localStorage.getItem(key) || fallback); } catch(e) { return JSON.parse(fallback); }
+      };
+      const payload = {
+        portfolio:     get('portfolio-data-pro', 'null'),
+        watchlist:     get('wl-data', '[]'),
+        snapshots:     get('portfolio-snapshots', '{}'),
+        aaveMarkets:   get('aavecap-markets-v1', '[]'),
+        customTokens:  get('vault-custom-tokens', '{}'),
+        watcherWallets:get('vault-watcher-wallets', '[]'),
+      };
+      // Only sync if we have real portfolio data
+      if (!payload.portfolio) return;
+      await fetch(WORKER_URL + '/api/sync-portfolio', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+        body:    JSON.stringify(payload),
+      });
+      console.log('[VaultSync] Portfolio synced to server.');
+    } catch (e) {
+      console.warn('[VaultSync] Portfolio sync failed:', e.message);
+    }
+  }
+
   async function syncTriggeredFromServer() {
     try {
       const res = await fetch(WORKER_URL + '/api/check-alerts');
@@ -11567,8 +11593,19 @@ document.addEventListener("click", function(e){
     if (patchTerminalSave()) {
       clearInterval(poll);
       syncAlertsToServer();
+      syncPortfolioToServer();
       syncTriggeredFromServer();
       console.log('[VaultSync] Active.');
+
+      // Also sync portfolio every time saveData runs
+      const _origSaveData = window.saveData;
+      if (typeof _origSaveData === 'function') {
+        window.saveData = async function() {
+          const result = await _origSaveData.apply(this, arguments);
+          syncPortfolioToServer();
+          return result;
+        };
+      }
       // Start polling server for fired alerts every 10 seconds
       setInterval(pollForFiredAlerts, 10000);
     }
