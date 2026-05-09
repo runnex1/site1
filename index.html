@@ -9585,7 +9585,7 @@ async function terminalCheckEventAlert(alert) {
         }
     } catch(e) { terminalLog('\u26a0 AI error: ' + e.message, 'tl-warn'); }
     terminalLog('\u21b3 Verdict: ' + verdict.slice(0,10), 'tl-system');
-    if (verdict.startsWith('YES')) fireEventAlert();(e) { terminalLog('⚠ Groq error: ' + e.message, 'tl-warn'); }
+    if (verdict.startsWith('YES')) fireEventAlert();
 }
 
 // ── Jupiter mint addresses for Solana-native tokens ──────────────────────────
