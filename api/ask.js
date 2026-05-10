@@ -54,35 +54,32 @@ async function wikidataLookup({ country, prop }) {
       /\b(country|state|republic|nation|kingdom|federation|territory)\b/i.test(e.description || '')
     ) || searchRes?.search?.[0];
 
-    console.log(`[wikidata] country="${country}" entity=${entity?.id} (${entity?.description})`);
-    if (!entity?.id) return null;
+    if (!entity?.id) { console.log(`[wikidata] FAIL no entity for "${country}"`); return null; }
 
     // Step 2: get entity claims directly (avoid SPARQL — unreliable from Vercel)
     const claimsRes = await fetch(
       `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${entity.id}&props=claims&format=json`,
       { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(6000) }
-    ).then(r => r.ok ? r.json() : null).catch(() => null);
+    ).then(r => r.ok ? r.json() : null).catch((e) => { console.log(`[wikidata] claims fetch err: ${e.message}`); return null; });
 
     const claims = claimsRes?.entities?.[entity.id]?.claims?.[prop] || [];
-    // preferred rank = current holder; fallback to claim with no end date (P582)
     const current = claims.find(c => c.rank === 'preferred') ||
                     claims.find(c => !c.qualifiers?.P582);
     const personQid = current?.mainsnak?.datavalue?.value?.id;
 
-    console.log(`[wikidata] prop=${prop} claims=${claims.length} current QID=${personQid}`);
-    if (!personQid) return null;
+    if (!personQid) { console.log(`[wikidata] FAIL no ${prop} claim on ${entity.id} (${claims.length} claims total)`); return null; }
 
     // Step 3: fetch the person's English label
     const personRes = await fetch(
       `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${personQid}&props=labels&format=json&languages=en`,
       { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000) }
-    ).then(r => r.ok ? r.json() : null).catch(() => null);
+    ).then(r => r.ok ? r.json() : null).catch((e) => { console.log(`[wikidata] label fetch err: ${e.message}`); return null; });
 
     const name = personRes?.entities?.[personQid]?.labels?.en?.value || null;
-    console.log(`[wikidata] person name="${name}"`);
+    console.log(`[wikidata] OK: "${country}" ${entity.id} -> ${prop} -> ${personQid} -> "${name}"`);
     return name;
   } catch (e) {
-    console.error('[wikidata] error:', e.message);
+    console.log(`[wikidata] EXCEPTION: ${e.message}`);
     return null;
   }
 }
