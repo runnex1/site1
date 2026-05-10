@@ -120,13 +120,55 @@ Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers 
   }
 
 
-  // ── Step 5: Last resort — show question-relevant headlines only ───────────
+  // ── Step 5: Extract answer from headlines (no AI needed) ─────────────────
   if (!answer) {
     const relevant = googleNewsHeadlines.length ? googleNewsHeadlines : allHeadlines;
-    if (relevant.length > 0) {
-      answer = relevant.slice(0, 5).map((h, i) => `${i + 1}. ${h}`).join('\n');
-    } else {
+    if (!relevant.length) {
       return res.status(503).json({ error: 'AI unavailable and no headlines fetched' });
+    }
+
+    // For "who is [role] of [country]" — extract name from headlines
+    const isWhoQ = /^who\s+(is|was|are)/i.test(question.trim());
+    if (isWhoQ) {
+      // Extract role keyword from question (president, prime minister, minister, etc.)
+      const roleMatch = question.match(/\b(president|prime minister|premier|chancellor|minister|ceo|director|head)\b/i);
+      const role = roleMatch ? roleMatch[1] : null;
+
+      let extracted = null;
+      const combined = relevant.join(' | ');
+
+      if (role) {
+        // Pattern: "President Nicușor Dan" or "prime minister Bolojan" (role followed by name)
+        const afterRole = new RegExp(
+          role.replace(' ', '\\s+') + '\\s+([A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+(?:\\s+[A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+){1,3})',
+          'i'
+        );
+        // Pattern: "Nicușor Dan, president" or "Dan is president" (name before role)
+        const beforeRole = new RegExp(
+          '([A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+(?:\\s+[A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+){1,3})\\s+(?:is\\s+(?:the\\s+)?)?' + role.replace(' ', '\\s+'),
+          'i'
+        );
+
+        for (const h of relevant) {
+          const m = h.match(afterRole) || h.match(beforeRole);
+          if (m?.[1] && m[1].split(' ').length >= 2) { // require at least first + last name
+            extracted = m[1].trim();
+            break;
+          }
+        }
+      }
+
+      if (extracted) {
+        // Build role + country context from question for a clean answer
+        const context = question.replace(/^who\s+(is|was|are)\s+(the\s+)?/i, '').replace(/\?$/, '').trim();
+        answer = `The ${context} is ${extracted}.`;
+      } else {
+        // Couldn't extract a name — show the most relevant headline
+        answer = relevant[0];
+      }
+    } else {
+      // Non-who questions: show top relevant headlines
+      answer = relevant.slice(0, 3).map((h, i) => `${i + 1}. ${h}`).join('\n');
     }
   }
 
