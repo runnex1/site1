@@ -82,11 +82,6 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-cron-secret, authorization');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  if (!GROQ_KEY) {
-    console.error('[check-alerts] GROQ_API_KEY is not set');
-    return res.status(500).json({ error: 'GROQ_API_KEY not configured' });
-  }
-
   const tgToken  = (process.env.TG_BOT_TOKEN || '').trim();
   const tgChatId = (process.env.TG_CHAT_ID   || '').trim();
   if (!tgToken || !tgChatId) {
@@ -135,6 +130,12 @@ module.exports = async function handler(req, res) {
         if (!condition) {
           console.warn('[event] Alert has no condition or label — skipping:', alert.id);
           results.push({ id: alert.id, type: 'event', triggered: false, reason: 'no_condition' });
+          continue;
+        }
+
+        if (!GROQ_KEY) {
+          console.warn('[event] GROQ_API_KEY not set — skipping event alert');
+          results.push({ id: alert.id, type: 'event', triggered: false, reason: 'no_groq_key' });
           continue;
         }
 

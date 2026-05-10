@@ -10,11 +10,23 @@ const RECENT_FIRED_KEY = 'vault:recent_fired';
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin',  '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-sync-secret');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
+
+  // GET — return current alerts from KV (used by terminalLoad to merge on startup)
+  if (req.method === 'GET') {
+    try {
+      const stored = await kvGet(ALERTS_KEY);
+      const alerts = stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : [];
+      return res.status(200).json({ ok: true, alerts });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   const syncSecret = process.env.SYNC_SECRET;
   if (syncSecret) {
