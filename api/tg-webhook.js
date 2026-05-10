@@ -15,7 +15,7 @@
 const { kvGet, kvSet } = require('../lib/kv');
 
 const ALERTS_KEY = 'vault:alerts';
-const GROQ_KEY   = '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';
+const GROQ_KEY   = process.env.GROQ_API_KEY;
 const GROQ_MODEL = 'llama-3.1-8b-instant';
 
 // ── Chain maps (mirrors browser) ──────────────────────────────────────────────
@@ -241,6 +241,7 @@ RESPONSE FORMAT:
 }
 
 async function askAI(userMessage) {
+  if (!GROQ_KEY) throw new Error('GROQ_API_KEY environment variable is not set');
   const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
