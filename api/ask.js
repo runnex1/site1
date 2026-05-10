@@ -162,9 +162,38 @@ Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers 
       }
 
       if (extracted) {
-        const context = question.replace(/^who\s+(is|was|are)\s+(the\s+)?/i, '').replace(/\?$/, '').trim();
-        answer = `The ${context} is ${extracted}.`;
-      } else {
+        // Quick Groq sanity-check: confirm extracted string is actually a person name
+        let confirmed = true; // assume valid if Groq is down
+        if (GROQ_KEY) {
+          try {
+            const vr = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+              signal: AbortSignal.timeout(5000),
+              body: JSON.stringify({
+                model: 'llama-3.3-70b-versatile',
+                temperature: 0,
+                max_tokens: 5,
+                messages: [{ role: 'user', content: `Is "${extracted}" a real person's name? Reply only YES or NO.` }],
+              }),
+            });
+            if (vr.ok) {
+              const vd = await vr.json();
+              const reply = (vd.choices?.[0]?.message?.content || '').trim().toUpperCase();
+              confirmed = reply.startsWith('YES');
+            }
+          } catch (e) { /* Groq down — keep extracted as-is */ }
+        }
+
+        if (confirmed) {
+          const context = question.replace(/^who\s+(is|was|are)\s+(the\s+)?/i, '').replace(/\?$/, '').trim();
+          answer = `The ${context} is ${extracted}.`;
+        } else {
+          extracted = null; // not a real name — fall through to keyword headlines
+        }
+      }
+
+      if (!extracted) {
         // Filter to headlines containing question keywords (not a random headline)
         const keywords = question.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 3);
         const filtered = relevant.filter(h => keywords.some(k => h.toLowerCase().includes(k)));
