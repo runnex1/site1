@@ -9579,7 +9579,7 @@ async function terminalCheckEventAlert(alert) {
             const r = await fetch('/api/event-check', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ condition, label: alert.label }),
+                body: JSON.stringify({ condition, label: alert.label, alertId: alert.id }),
                 signal: AbortSignal.timeout(20000),
             });
             if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -9590,7 +9590,24 @@ async function terminalCheckEventAlert(alert) {
             if (data.verdict === 'NO_NEWS') {
                 terminalLog('⚠ No news found — will retry next poll', 'tl-warn');
             } else if (data.triggered) {
-                fireEventAlert();
+                // Server already sent TG and updated KV — just show browser notification
+                alert.triggered = true;
+                alert.tgSent = true;
+                terminalRenderAlerts();
+                terminalLog('🔔 EVENT ALERT FIRED: ' + alert.label, 'tl-warn');
+                try {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+                    osc.connect(gain); gain.connect(ctx.destination);
+                    osc.type = 'sine'; osc.frequency.setValueAtTime(660, ctx.currentTime);
+                    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+                    osc.start(); osc.stop(ctx.currentTime + 0.8);
+                } catch(e) {}
+                try {
+                    if ('Notification' in window && Notification.permission === 'granted')
+                        new Notification('Vault Alert 🔔', { body: alert.label });
+                } catch(e) {}
             }
         } catch(e) {
             terminalLog('⚠ Event check failed: ' + e.message, 'tl-warn');

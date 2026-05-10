@@ -1,11 +1,9 @@
 const { kvGet, kvSet } = require('../lib/kv');
 const { fetchPrice, fmtPrice, AAVE_CHAIN_NAMES } = require('../lib/price');
-const { fetchRecentHeadlines, checkEventCondition } = require('../lib/news');
 
 const ALERTS_KEY      = 'vault:alerts';
 const TG_CHAN_KEY     = 'vault:tg_channels';
 const RECENT_FIRED_KEY = 'vault:recent_fired';
-const GROQ_KEY        = process.env.GROQ_API_KEY;   // ← from Vercel env vars
 const GRACE_MS        = 5000;   // 5 seconds grace period
 const EVENT_CHECK_MS  = 600000; // check event alerts every 10 minutes
 
@@ -115,7 +113,7 @@ module.exports = async function handler(req, res) {
   for (const alert of active) {
     if (alert.type === 'opinion') continue;
 
-    // ── Event alerts — check via news + AI ──────────────────────────────────
+    // ── Event alerts — delegate to /api/event-check (same logic as browser) ──
     if (alert.type === 'event') {
       try {
         const lastChecked = alert.lastEventCheck || 0;
@@ -126,54 +124,34 @@ module.exports = async function handler(req, res) {
         alert.lastEventCheck = now;
         alertsModified = true;
 
-        // Use condition if set, fall back to label
         const condition = (alert.condition || alert.label || '').trim();
         if (!condition) {
-          console.warn('[event] Alert has no condition or label — skipping:', alert.id);
           results.push({ id: alert.id, type: 'event', triggered: false, reason: 'no_condition' });
           continue;
         }
 
-        if (!GROQ_KEY) {
-          console.warn('[event] GROQ_API_KEY not set — skipping event alert');
-          results.push({ id: alert.id, type: 'event', triggered: false, reason: 'no_groq_key' });
-          continue;
-        }
+        console.log('[event] Checking condition via /api/event-check:', condition);
 
-        console.log('[event] Checking condition:', condition);
+        // Call the same endpoint the browser uses — identical logic, identical result
+        const baseUrl = process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'http://localhost:3000';
+        const ecRes = await fetch(baseUrl + '/api/event-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ condition, label: alert.label, alertId: alert.id }),
+          signal: AbortSignal.timeout(25000),
+        });
 
-        const tgChanStored = await kvGet(TG_CHAN_KEY);
-        const tgChannels   = tgChanStored
-          ? (typeof tgChanStored === 'string' ? JSON.parse(tgChanStored) : tgChanStored)
-          : [];
+        if (!ecRes.ok) throw new Error('event-check HTTP ' + ecRes.status);
+        const ecData = await ecRes.json();
 
-        if (!handlerState.headlines) {
-          handlerState.headlines = await fetchRecentHeadlines(tgChannels);
-        }
+        console.log('[event] verdict=' + ecData.verdict + ' triggered=' + ecData.triggered + ' source=' + ecData.source);
+        results.push({ id: alert.id, symbol: alert.symbol, type: 'event', triggered: ecData.triggered, verdict: ecData.verdict });
 
-        const { triggered: eventTriggered, reason } = await checkEventCondition(
-          condition,                  // ← fixed: was alert.condition (could be undefined)
-          handlerState.headlines,
-          GROQ_KEY,
-        );
-
-        console.log(`[event] Groq says triggered=${eventTriggered} for: "${condition}" — reason: ${reason}`);
-
-        results.push({ id: alert.id, symbol: alert.symbol, type: 'event', triggered: eventTriggered, reason });
-
-        if (eventTriggered) {
-          const msg = [
-            '🔔 <b>Event Alert — ' + (alert.label || condition) + '</b>',
-            '',
-            '<b>Condition:</b> ' + condition,
-            '<b>Reason:</b> ' + reason,
-            '',
-            '<i>' + nowStr + '</i>',
-          ].join('\n');
-          await tgSend(tgToken, tgChatId, msg);
+        if (ecData.triggered) {
+          // TG was already sent by event-check — just mark for deletion
           newFired.push(alert.id);
-          alert._delete    = true;
-          alertsModified   = true;
+          alert._delete  = true;
+          alertsModified = true;
         }
       } catch (e) {
         console.error('[check-alerts] event check error:', e.message);
