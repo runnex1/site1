@@ -138,11 +138,13 @@ Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers 
       if (role) {
         // Build case-variants of role (e.g. "president" → "President", "prime minister" → "Prime Minister")
         const titleRole = role.replace(/\b\w/g, c => c.toUpperCase());
+        // Common abbreviations (prime minister → PM, chief executive → CEO, etc.)
+        const abbrevMap = { 'prime minister': 'PM', 'chief executive': 'CEO', 'secretary general': 'SG' };
+        const abbrev = abbrevMap[role] || null;
+        const roleVariants = [titleRole, role, ...(abbrev ? [abbrev] : [])].join('|');
         // NO 'i' flag — name capture group [A-Z][a-z]+ must be strictly uppercase-first
-        // Matches: "President Nicușor Dan" or "Romanian President Nicușor Dan"
-        const afterRole  = new RegExp(`(?:${titleRole}|${role})\\s+([A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+(?:\\s+[A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+){1,3})`);
-        // Matches: "Nicușor Dan, President" or "Nicușor Dan is the president"
-        const beforeRole = new RegExp(`([A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+(?:\\s+[A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+){1,3})(?:,?\\s+is(?:\\s+the)?)?\\s+(?:${titleRole}|${role})`);
+        const afterRole  = new RegExp(`(?:${roleVariants})\\s+([A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+(?:\\s+[A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+){1,3})`);
+        const beforeRole = new RegExp(`([A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+(?:\\s+[A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+){1,3})(?:,?\\s+is(?:\\s+the)?)?\\s+(?:${roleVariants})`);
 
         for (const h of relevant) {
           const m = h.match(afterRole) || h.match(beforeRole);
@@ -163,7 +165,10 @@ Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers 
         const context = question.replace(/^who\s+(is|was|are)\s+(the\s+)?/i, '').replace(/\?$/, '').trim();
         answer = `The ${context} is ${extracted}.`;
       } else {
-        answer = relevant[0]; // most relevant headline as fallback
+        // Filter to headlines containing question keywords (not a random headline)
+        const keywords = question.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 3);
+        const filtered = relevant.filter(h => keywords.some(k => h.toLowerCase().includes(k)));
+        answer = filtered.length > 0 ? filtered[0] : 'AI is temporarily unavailable. Try again in a moment.';
       }
     } else {
       answer = relevant.slice(0, 3).map((h, i) => `${i + 1}. ${h}`).join('\n');
