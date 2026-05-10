@@ -119,31 +119,66 @@ Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers 
     }
   }
 
-  // ── Step 4: Wikipedia search fallback (AI down) ───────────────────────────
-  // Search Wikipedia with the full question so we get the right article
-  // e.g. "who is the Romania prime minister" → finds "Prime Minister of Romania"
+  // ── Step 4: Wikipedia fallback (AI down) ─────────────────────────────────
+  // For "who is" questions: search with current year to find the person's article
+  // (not the role/office article). Check description to confirm it's a person.
   if (!answer) {
     try {
-      const wikiSearch = encodeURIComponent(question.replace(/^(who|what|when|where|why|how|is|are|was|were)\s+/i, '').slice(0, 80));
+      const isWhoQ   = /^who\s+(is|was|are)/i.test(question.trim());
+      const year     = new Date().getFullYear();
 
-      // Step 4a: search for the best-matching Wikipedia article title
+      // Strip question words, keep the meaningful part
+      const core = question
+        .replace(/^(who|what|when|where|why|how)\s+(is|are|was|were|did|does|do)\s+(the\s+|a\s+)?/i, '')
+        .replace(/\?$/, '').trim();
+
+      // For "who is" questions, append year to bias toward current-holder articles
+      const searchTerm = isWhoQ ? `${core} ${year}` : core;
+      const wikiSearch = encodeURIComponent(searchTerm.slice(0, 80));
+
+      // Search for top 3 candidates
       const searchRes = await fetch(
-        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${wikiSearch}&format=json&srlimit=1`,
+        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${wikiSearch}&format=json&srlimit=3`,
         { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000) }
       ).then(r => r.ok ? r.json() : null).catch(() => null);
 
-      const pageTitle = searchRes?.query?.search?.[0]?.title;
+      const results = searchRes?.query?.search || [];
 
-      if (pageTitle) {
-        // Step 4b: fetch the summary for that article
+      for (const result of results) {
         const summaryRes = await fetch(
-          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`,
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(result.title)}`,
           { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000) }
         ).then(r => r.ok ? r.json() : null).catch(() => null);
 
-        const extract = summaryRes?.extract;
-        if (extract) {
-          answer = `[Wikipedia: ${pageTitle}] ${extract.slice(0, 500)}`;
+        if (!summaryRes?.extract) continue;
+
+        const desc    = (summaryRes.description || '').toLowerCase();
+        const extract = summaryRes.extract;
+
+        if (isWhoQ) {
+          // For "who is" questions, prefer a PERSON article over a role/office article.
+          // A person article has a description like "Romanian politician" or
+          // "Prime Minister of Romania" (a title held by a person).
+          const isPerson = /politician|minister|president|prime minister|head of|official|diplomat|born|\d{4}–/i.test(desc) &&
+                           !/list of|history of|politics of|government of/i.test(result.title);
+          if (isPerson) {
+            answer = `${result.title} — ${summaryRes.description || extract.slice(0, 200)}`;
+            break;
+          }
+        } else {
+          answer = `[Wikipedia: ${result.title}] ${extract.slice(0, 500)}`;
+          break;
+        }
+      }
+
+      // If no person found, fall back to best result's extract
+      if (!answer && results[0]) {
+        const fallbackRes = await fetch(
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(results[0].title)}`,
+          { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000) }
+        ).then(r => r.ok ? r.json() : null).catch(() => null);
+        if (fallbackRes?.extract) {
+          answer = `[Wikipedia: ${results[0].title}] ${fallbackRes.extract.slice(0, 500)}`;
         }
       }
     } catch (e) {}
