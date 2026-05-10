@@ -2373,11 +2373,41 @@ async function syncAlertsToServer() {
               const _data = await _res.json().catch(() => ({}));
               if (Array.isArray(_data.recentFired) && _data.recentFired.length > 0) {
                         const _fired = new Set(_data.recentFired);
+                        // Stash labels before filtering so we can notify
+                        const _firedAlerts = (window.terminalAlerts || []).filter(a => _fired.has(a.id));
                         const _before = window.terminalAlerts.length;
                         window.terminalAlerts = window.terminalAlerts.filter(a => !_fired.has(a.id));
                         if (window.terminalAlerts.length !== _before) {
                                     try { localStorage.setItem('terminal-alerts', JSON.stringify(window.terminalAlerts)); } catch(e) {}
                                     if (typeof window.terminalRenderAlerts === 'function') window.terminalRenderAlerts();
+                                    // Notify for each fired alert
+                                    _firedAlerts.forEach(function(_fa) {
+                                        // Toast
+                                        if (typeof wlShowToast === 'function') {
+                                            wlShowToast('🔔 Alert fired: ' + _fa.label, 'success');
+                                        }
+                                        // Terminal log
+                                        if (typeof terminalLog === 'function') {
+                                            terminalLog('🔔 ALERT FIRED: ' + _fa.label, 'tl-warn');
+                                        }
+                                        // Audio beep
+                                        try {
+                                            var _ctx = new (window.AudioContext || window.webkitAudioContext)();
+                                            var _osc = _ctx.createOscillator();
+                                            var _gain = _ctx.createGain();
+                                            _osc.connect(_gain); _gain.connect(_ctx.destination);
+                                            _osc.type = 'sine'; _osc.frequency.setValueAtTime(660, _ctx.currentTime);
+                                            _gain.gain.setValueAtTime(0.3, _ctx.currentTime);
+                                            _gain.gain.exponentialRampToValueAtTime(0.001, _ctx.currentTime + 0.8);
+                                            _osc.start(); _osc.stop(_ctx.currentTime + 0.8);
+                                        } catch(e) {}
+                                        // Browser notification
+                                        try {
+                                            if ('Notification' in window && Notification.permission === 'granted') {
+                                                new Notification('Vault Alert 🔔', { body: _fa.label });
+                                            }
+                                        } catch(e) {}
+                                    });
                         }
               }
       } catch (e) {}
@@ -9492,7 +9522,6 @@ async function terminalSubmit() {
 // ── Price fetchers ────────────────────────────────────────────────────────────
 // ── Event alert checker — routes through /api/event-check on Vercel ─────────
 async function terminalCheckEventAlert(alert) {
-    return; // Disabled — server worker handles all alert checking
     if (alert.triggered) return;
     const condition = alert.condition || alert.label;
 
