@@ -120,6 +120,30 @@ Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers 
   }
 
 
+  // ── Step 4b: Groq fast-model fallback (knowledge-only, no headlines) ────────
+  // llama-3.1-8b-instant has a much higher RPM limit than 70b — often succeeds
+  // when the big model is rate-limited. Answers well-known facts (leaders, events)
+  // directly from training data without needing headlines.
+  if (!answer && GROQ_KEY) {
+    try {
+      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+        signal: AbortSignal.timeout(8000),
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          temperature: 0.1,
+          max_tokens: 80,
+          messages: [{ role: 'user', content: `Today is ${today}. Answer in 1-2 sentences, be direct: ${question}` }],
+        }),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        answer = (data.choices?.[0]?.message?.content || '').trim();
+      }
+    } catch (e) { console.warn('[ask] fast-model fallback failed:', e.message); }
+  }
+
   // ── Step 5: Extract answer from headlines (no AI needed) ─────────────────
   if (!answer) {
     const relevant = googleNewsHeadlines.length ? googleNewsHeadlines : allHeadlines;
