@@ -87,7 +87,7 @@ module.exports = async function handler(req, res) {
       count:       merged.length,
       active:      merged.filter(a => !a.triggered).length,
       browser:     browserAlerts.length,
-      tgOnly:      tgOnly.length,
+      tgOnly:      0,
       recentFired: [...recentFired], // let browser remove these from localStorage
     });
   } catch (e) {
