@@ -72,7 +72,7 @@ Has this event occurred? Reply with exactly one word: YES or NO.`;
       },
       signal: AbortSignal.timeout(12000),
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: 'llama-3.3-70b-versatile',
         temperature: 0,
         messages: [
           { role: 'system', content: 'You are a factual news verification assistant. Answer only YES or NO. Never refuse or add caveats.' },
@@ -82,7 +82,14 @@ Has this event occurred? Reply with exactly one word: YES or NO.`;
     });
 
     if (!groqRes.ok) {
-      return res.status(200).json({ triggered: false, verdict: 'GROQ_ERROR', headlines: headlines.slice(0, 5) });
+      // Surface the actual Groq error so it's diagnosable
+      let groqError = `HTTP ${groqRes.status}`;
+      try {
+        const errBody = await groqRes.json();
+        groqError = `HTTP ${groqRes.status} — ${errBody?.error?.message || JSON.stringify(errBody)}`;
+      } catch (e) {}
+      console.error('[event-check] Groq error:', groqError);
+      return res.status(200).json({ triggered: false, verdict: 'GROQ_ERROR', error: groqError, headlines: headlines.slice(0, 5) });
     }
 
     const data = await groqRes.json();
