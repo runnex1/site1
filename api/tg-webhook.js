@@ -389,17 +389,43 @@ async function processMessage(raw) {
     return { type: 'alerts', alerts: [{ id: uid(), ...nl, triggered: false, setAt: Date.now() }] };
   }
 
-  // 4. AI fallback
-  const aiText = await askAI(raw);
-  const aiResult = parseAIResponse(aiText);
-  if (aiResult.type === 'alerts') {
+  // 4. No number in message → definitely a real-world event alert (no AI needed)
+  //    e.g. "alert me when Putin is president of Russia"
+  const hasNumber = /\d/.test(raw);
+  if (!hasNumber) {
+    // Strip common trigger phrases to get the core condition
+    const condition = raw
+      .replace(/^(?:alert(?:\s+me)?|notify(?:\s+me)?|tell(?:\s+me)?|ping(?:\s+me)?)\s+(?:when|if|once|whenever)\s+/i, '')
+      .replace(/^(?:when|if|once|whenever)\s+/i, '')
+      .trim() || raw.trim();
+    const label = condition.length > 60 ? condition.slice(0, 57) + '...' : condition;
     return {
       type: 'alerts',
-      alerts: aiResult.alerts.map(a => ({ id: uid(), ...a, triggered: false, setAt: Date.now() })),
+      alerts: [{ id: uid(), type: 'event', condition, label, symbol: '\u{1F30D}', triggered: false, setAt: Date.now() }],
     };
   }
 
-  return { type: 'message', text: aiResult.text };
+  // 5. AI fallback (for ambiguous messages with numbers that regex couldn't parse)
+  try {
+    const aiText = await askAI(raw);
+    const aiResult = parseAIResponse(aiText);
+    if (aiResult.type === 'alerts') {
+      return {
+        type: 'alerts',
+        alerts: aiResult.alerts.map(a => ({ id: uid(), ...a, triggered: false, setAt: Date.now() })),
+      };
+    }
+    return { type: 'message', text: aiResult.text };
+  } catch (aiErr) {
+    // AI failed — last resort: create a generic event alert from the raw message
+    console.warn('[tg-webhook] AI parse failed (' + aiErr.message + '), creating raw event alert');
+    const condition = raw.trim();
+    const label = condition.length > 60 ? condition.slice(0, 57) + '...' : condition;
+    return {
+      type: 'alerts',
+      alerts: [{ id: uid(), type: 'event', condition, label, symbol: '\u{1F30D}', triggered: false, setAt: Date.now() }],
+    };
+  }
 }
 
 // ── KV helpers ────────────────────────────────────────────────────────────────
