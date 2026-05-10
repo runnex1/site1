@@ -191,3 +191,62 @@ async function checkEventCondition(condition, headlines, groqKey) {
 }
 
 module.exports = { fetchRecentHeadlines, checkEventCondition };
+
+// ── Vercel HTTP handler ───────────────────────────────────────────────────────
+
+const SOURCES_WITH_TYPE = [
+  { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/',          label: 'CoinDesk',        type: 'crypto' },
+  { url: 'https://cointelegraph.com/rss',                            label: 'CoinTelegraph',   type: 'crypto' },
+  { url: 'https://thedefiant.io/feed',                               label: 'The Defiant',     type: 'defi'   },
+  { url: 'https://blockworks.co/feed',                               label: 'Blockworks',      type: 'defi'   },
+  { url: 'https://decrypt.co/feed',                                  label: 'Decrypt',         type: 'crypto' },
+  { url: 'https://theblock.co/rss.xml',                              label: 'The Block',       type: 'crypto' },
+  { url: 'https://unchainedcrypto.com/feed/',                        label: 'Unchained',       type: 'crypto' },
+  { url: 'https://www.dlnews.com/arc/outboundfeeds/rss/',            label: 'DL News',         type: 'defi'   },
+  { url: 'https://cryptopanic.com/news/rss/',                        label: 'CryptoPanic',     type: 'crypto' },
+  { url: 'https://feeds.reuters.com/reuters/businessNews',           label: 'Reuters Business',type: 'macro'  },
+  { url: 'https://feeds.reuters.com/reuters/politicsNews',           label: 'Reuters Politics',type: 'macro'  },
+  { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',          label: 'BBC Business',    type: 'macro'  },
+  { url: 'https://feeds.bbci.co.uk/news/world/rss.xml',             label: 'BBC World',       type: 'macro'  },
+  { url: 'https://www.investing.com/rss/news_25.rss',               label: 'Investing.com',   type: 'macro'  },
+  { url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',           label: 'WSJ Markets',     type: 'macro'  },
+  { url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html',    label: 'CNBC Finance',    type: 'macro'  },
+  { url: 'https://www.marketwatch.com/rss/topstories',              label: 'MarketWatch',     type: 'macro'  },
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',  label: 'NYT World',       type: 'macro'  },
+  { url: 'https://www.ft.com/rss/home',                             label: 'FT',              type: 'macro'  },
+];
+
+module.exports = async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
+
+  const tgParam = req.query?.tg || '';
+  const tgChannels = tgParam ? tgParam.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+  const sources = [...SOURCES_WITH_TYPE];
+  for (const handle of tgChannels) {
+    const clean = handle.replace(/^(?:https?:\/\/)?t\.me\//, '').replace(/^@/, '').trim();
+    sources.push({ url: `https://rsshub.app/telegram/channel/${clean}`, label: handle, type: 'tg' });
+  }
+
+  const settled = await Promise.allSettled(
+    sources.map(async (src) => {
+      const items = await fetchRSSFeed(src.url);
+      return items.map(i => ({
+        title:  i.title,
+        url:    i.link || '#',
+        type:   src.type,
+        source: src.label,
+      }));
+    })
+  );
+
+  const items = settled
+    .filter(r => r.status === 'fulfilled')
+    .flatMap(r => r.value)
+    .slice(0, 30);
+
+  return res.status(200).json({ ok: true, items, ts: Date.now() });
+};
