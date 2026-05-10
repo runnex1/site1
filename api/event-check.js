@@ -2,20 +2,19 @@
  * POST /api/event-check
  *
  * Single authority for event alert checking.
- * Called by:
- *   - Browser (terminalCheckEventAlert) — while website is open
- *   - check-alerts.js (cron) — when website is closed
+ * Called by browser (while website open) and check-alerts.js (cron, when closed).
  *
- * Both paths use identical logic and produce identical results.
+ * Source priority:
+ *   1. Wikipedia summary  — authoritative for political roles, elections, deaths
+ *   2. Wikidata description — structured entity facts (e.g. "President of Romania")
+ *   3. Google News RSS     — breaking/recent events not yet on Wikipedia
+ *   4. Reuters / BBC / NYT — additional headline sources
  *
- * Body: { condition, label, alertId? }
- *   alertId — when provided, marks the alert triggered in KV and sends TG
- *
- * Returns: { triggered, verdict, source, headlines }
+ * Body:  { condition, label, alertId? }
+ * Returns: { triggered, verdict, source, context }
  */
 
 const { kvGet, kvSet } = require('../lib/kv');
-
 const ALERTS_KEY = 'vault:alerts';
 
 module.exports = async function handler(req, res) {
@@ -33,98 +32,185 @@ module.exports = async function handler(req, res) {
   const TG_TOKEN   = (process.env.TG_BOT_TOKEN || '').trim();
   const TG_CHAT_ID = (process.env.TG_CHAT_ID   || '').trim();
 
-  const query = (condition || label).slice(0, 100);
+  const query = (condition || label).slice(0, 120);
+  const today = new Date().toDateString();
 
-  // ── AI helper (OpenAI-compatible endpoint) ────────────────────────────────
-  async function askAI({ url, apiKey, model, systemPrompt, userPrompt }) {
+  // ── AI helper ─────────────────────────────────────────────────────────────
+  async function askAI({ url, apiKey, model, messages }) {
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      signal: AbortSignal.timeout(12000),
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user',   content: userPrompt },
-        ],
-      }),
+      signal: AbortSignal.timeout(14000),
+      body: JSON.stringify({ model, temperature: 0, messages }),
     });
     if (!r.ok) {
-      let errMsg = 'HTTP ' + r.status;
-      try { const b = await r.json(); errMsg += ' — ' + (b?.error?.message || JSON.stringify(b)); } catch(e) {}
-      throw new Error(errMsg);
+      let msg = 'HTTP ' + r.status;
+      try { const b = await r.json(); msg += ' — ' + (b?.error?.message || ''); } catch(e) {}
+      throw new Error(msg);
     }
     const data = await r.json();
     return (data.choices?.[0]?.message?.content || '').trim().toUpperCase().slice(0, 10);
   }
 
-  async function askGroq(systemPrompt, userPrompt) {
+  async function askGroq(prompt) {
     if (!GROQ_KEY) return null;
     try {
       return await askAI({
-        url:    'https://api.groq.com/openai/v1/chat/completions',
-        apiKey: GROQ_KEY,
-        model:  'llama-3.3-70b-versatile',
-        systemPrompt, userPrompt,
+        url: 'https://api.groq.com/openai/v1/chat/completions',
+        apiKey: GROQ_KEY, model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
       });
-    } catch (e) {
-      console.error('[event-check] Groq error:', e.message);
-      return null;
-    }
+    } catch(e) { console.error('[event-check] Groq:', e.message); return null; }
   }
 
-  async function askGemini(systemPrompt, userPrompt) {
+  async function askGemini(prompt) {
     if (!GEMINI_KEY) return null;
     try {
       return await askAI({
-        url:    'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-        apiKey: GEMINI_KEY,
-        model:  'gemini-2.0-flash',
-        systemPrompt, userPrompt,
+        url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+        apiKey: GEMINI_KEY, model: 'gemini-2.0-flash',
+        messages: [{ role: 'user', content: prompt }],
       });
-    } catch (e) {
-      console.error('[event-check] Gemini error:', e.message);
+    } catch(e) { console.error('[event-check] Gemini:', e.message); return null; }
+  }
+
+  // Either AI saying YES is enough
+  async function askBoth(prompt) {
+    const [g, m] = await Promise.all([askGroq(prompt), askGemini(prompt)]);
+    console.log('[event-check] Groq: ' + g + ' | Gemini: ' + m);
+    const triggered = g?.startsWith('YES') || m?.startsWith('YES');
+    return { triggered, verdict: triggered ? 'YES' : (g || m || 'ERROR') };
+  }
+
+  // ── Wikipedia summary ─────────────────────────────────────────────────────
+  async function fetchWikipedia(searchTerm) {
+    try {
+      const sUrl = 'https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=' +
+        encodeURIComponent(searchTerm) + '&format=json&srlimit=2&origin=*';
+      const sr = await fetch(sUrl, {
+        signal: AbortSignal.timeout(6000),
+        headers: { 'User-Agent': 'VaultAlerts/1.0 (farcasteeer@gmail.com)' },
+      });
+      if (!sr.ok) return null;
+      const sd = await sr.json();
+      const title = sd?.query?.search?.[0]?.title;
+      if (!title) return null;
+
+      const uUrl = 'https://en.wikipedia.org/api/rest_v1/page/summary/' +
+        encodeURIComponent(title.replace(/ /g, '_'));
+      const ur = await fetch(uUrl, {
+        signal: AbortSignal.timeout(6000),
+        headers: { 'User-Agent': 'VaultAlerts/1.0 (farcasteeer@gmail.com)' },
+      });
+      if (!ur.ok) return null;
+      const ud = await ur.json();
+      return ud.extract ? '[Wikipedia] ' + ud.extract.slice(0, 700) : null;
+    } catch(e) {
+      console.warn('[event-check] Wikipedia error:', e.message);
       return null;
     }
   }
 
-  async function askBoth(systemPrompt, userPrompt) {
-    const [groqV, geminiV] = await Promise.all([
-      askGroq(systemPrompt, userPrompt),
-      askGemini(systemPrompt, userPrompt),
-    ]);
-    console.log('[event-check] Groq: ' + groqV + ' | Gemini: ' + geminiV);
-    const triggered = groqV?.startsWith('YES') || geminiV?.startsWith('YES');
-    return { triggered, verdict: triggered ? 'YES' : (groqV || geminiV || 'ERROR'), groqV, geminiV };
+  // ── Wikidata entity description ───────────────────────────────────────────
+  async function fetchWikidata(searchTerm) {
+    try {
+      const url = 'https://www.wikidata.org/w/api.php?action=wbsearchentities&search=' +
+        encodeURIComponent(searchTerm) + '&language=en&format=json&limit=3&origin=*';
+      const r = await fetch(url, {
+        signal: AbortSignal.timeout(5000),
+        headers: { 'User-Agent': 'VaultAlerts/1.0 (farcasteeer@gmail.com)' },
+      });
+      if (!r.ok) return null;
+      const d = await r.json();
+      const items = (d?.search || []).filter(i => i.description);
+      if (!items.length) return null;
+      return items
+        .slice(0, 2)
+        .map(i => '[Wikidata] ' + i.label + ': ' + i.description)
+        .join('\n');
+    } catch(e) {
+      console.warn('[event-check] Wikidata error:', e.message);
+      return null;
+    }
   }
 
-  const SYSTEM_FACTUAL = 'You are a factual assistant. Answer only YES, NO, or UNSURE. Never refuse or add caveats.';
-  const SYSTEM_VERIFY  = 'You are a factual news verification assistant. Answer only YES or NO. Never refuse or add caveats.';
+  // ── RSS headlines ─────────────────────────────────────────────────────────
+  async function fetchRSS(url) {
+    try {
+      const r = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VaultBot/1.0)' },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!r.ok) return [];
+      const text = await r.text();
+      const titles = [...text.matchAll(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/gi)];
+      const descs  = [...text.matchAll(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/gi)];
+      const out = [];
+      [...titles.slice(1, 12), ...descs.slice(1, 6)].forEach(m => {
+        const t = (m[1] || '').replace(/<[^>]+>/g, '').trim().slice(0, 220);
+        if (t.length > 10) out.push(t);
+      });
+      return out;
+    } catch(e) { return []; }
+  }
 
-  // ── Step 1: Prior knowledge check ────────────────────────────────────────
-  // Either AI saying YES is enough — both saying NO means skip to headlines.
-  // UNSURE from one or both → proceed to headlines (don't block on uncertainty).
-  const priorResult = await askBoth(
-    SYSTEM_FACTUAL,
-    'Today is ' + new Date().toDateString() + '. Based on your knowledge, is this condition currently true? Condition: "' + query + '". Answer YES if true or very likely true given current date, NO if clearly false, UNSURE if uncertain. For well-known public figures and their roles, be confident.'
-  );
+  // ── Extract entity name (first run of Title-Case words) ───────────────────
+  function extractEntity(text) {
+    const m = text.match(/\b([A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,}){0,3})/);
+    return m ? m[1] : text.split(' ').slice(0, 3).join(' ');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 1 — Wikipedia + Wikidata (authoritative, no API key needed)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const entity = extractEntity(query);
+  console.log('[event-check] Entity extracted:', entity, '| Query:', query);
+
+  const [wikiSummary, wikidataDesc] = await Promise.all([
+    fetchWikipedia(entity),
+    fetchWikidata(entity),
+  ]);
+
+  const authoritative = [wikiSummary, wikidataDesc].filter(Boolean).join('\n');
 
   let triggered = false;
   let verdict   = 'NO';
-  let source    = 'prior_knowledge';
-  let headlines = [];
+  let source    = 'no_data';
 
-  if (priorResult.triggered) {
-    triggered = true;
-    verdict   = 'YES';
-  } else {
-    // ── Step 2: Fetch live news headlines ───────────────────────────────────
-    // Use 3 targeted searches: full query, key entity name, and entity + "president"
-    const words   = query.split(/\s+/).filter(w => w.length > 2);
-    const keyName = words.slice(0, 3).join(' '); // first 3 meaningful words
-    const searchQuery  = encodeURIComponent(query);
-    const searchShort  = encodeURIComponent(keyName);
+  if (authoritative) {
+    const wikiPrompt =
+      'Today is ' + today + '.\n\n' +
+      'AUTHORITATIVE SOURCES:\n' + authoritative + '\n\n' +
+      'CONDITION TO CHECK: "' + query + '"\n\n' +
+      'Based ONLY on the authoritative sources above, is this condition currently true?\n' +
+      'Answer YES if any source confirms it, NO if contradicted, UNSURE if unclear.\n' +
+      'One word: YES, NO, or UNSURE.';
+
+    const wikiResult = await askBoth(wikiPrompt);
+    console.log('[event-check] Wiki verdict:', wikiResult.verdict);
+
+    if (wikiResult.triggered) {
+      triggered = true;
+      verdict   = 'YES';
+      source    = 'wikipedia';
+    } else if (wikiResult.verdict !== 'UNSURE' && wikiResult.verdict !== 'ERROR') {
+      // Both AIs said NO based on Wikipedia → very confident, skip RSS
+      triggered = false;
+      verdict   = 'NO';
+      source    = 'wikipedia';
+    }
+    // If UNSURE → fall through to RSS
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 2 — RSS headlines (for breaking/recent events not yet on Wikipedia)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  if (!triggered && (source === 'no_data' || verdict === 'UNSURE' || !authoritative)) {
+    const searchQuery = encodeURIComponent(query);
+    const searchShort = encodeURIComponent(entity);
+
     const RSS_SOURCES = [
       'https://news.google.com/rss/search?q=' + searchQuery + '&hl=en-US&gl=US&ceid=US:en',
       'https://news.google.com/rss/search?q=' + searchShort + '&hl=en-US&gl=US&ceid=US:en',
@@ -134,74 +220,65 @@ module.exports = async function handler(req, res) {
       'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',
     ];
 
-    await Promise.allSettled(RSS_SOURCES.map(async (url) => {
-      try {
-        const r = await fetch(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VaultBot/1.0)' },
-          signal: AbortSignal.timeout(6000),
-        });
-        if (!r.ok) return;
-        const text = await r.text();
-        const titles = [...text.matchAll(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/gi)];
-        const descs  = [...text.matchAll(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/gi)];
-        [...titles.slice(1, 15), ...descs.slice(1, 8)].forEach(m => {
-          const t = (m[1] || '').replace(/<[^>]+>/g, '').trim().slice(0, 200);
-          if (t.length > 10) headlines.push(t);
-        });
-      } catch (e) {}
-    }));
+    const rssResults = await Promise.all(RSS_SOURCES.map(fetchRSS));
+    const headlines  = rssResults.flat();
 
     if (!headlines.length) {
       verdict = 'NO_NEWS';
+      source  = 'no_news';
     } else {
-      // ── Step 3: Ask both AIs with live headlines ──────────────────────────
-      const headlineResult = await askBoth(
-        SYSTEM_VERIFY,
-        'Today is ' + new Date().toDateString() + '. Is the following condition currently true based on these recent news headlines? Condition: "' + query + '". Headlines:\n' + headlines.slice(0, 30).join('\n') + '\nIf any headline confirms the condition is true, say YES. If headlines clearly contradict it, say NO. One word only: YES or NO.'
-      );
-      triggered = headlineResult.triggered;
-      verdict   = headlineResult.verdict;
+      // Build full context: Wikipedia (if any) + RSS headlines
+      const contextParts = [];
+      if (authoritative) contextParts.push('AUTHORITATIVE SOURCES:\n' + authoritative);
+      contextParts.push('RECENT NEWS HEADLINES:\n' + headlines.slice(0, 30).join('\n'));
+
+      const rssPrompt =
+        'Today is ' + today + '.\n\n' +
+        contextParts.join('\n\n') + '\n\n' +
+        'CONDITION TO CHECK: "' + query + '"\n\n' +
+        'Is this condition currently true?\n' +
+        'Say YES if any source confirms it. Say NO only if clearly contradicted.\n' +
+        'One word: YES or NO.';
+
+      const rssResult = await askBoth(rssPrompt);
+      triggered = rssResult.triggered;
+      verdict   = rssResult.verdict;
       source    = 'headlines';
     }
   }
 
-  // ── If triggered: send TG + mark in KV (single authority) ────────────────
+  // ── Fire: send TG + mark in KV ────────────────────────────────────────────
   if (triggered && alertId && TG_TOKEN && TG_CHAT_ID) {
     try {
-      // Mark alert as triggered in KV
       const stored = await kvGet(ALERTS_KEY);
       const alerts = stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : [];
       const alert  = alerts.find(a => a.id === alertId);
-
       if (alert && !alert.tgSent) {
-        const nowStr = new Date().toUTCString();
         const msg = [
           '🔔 <b>Event Alert — ' + (alert.label || query) + '</b>',
           '',
           '<b>Condition:</b> ' + query,
           '<b>Source:</b> ' + source,
           '',
-          '<i>' + nowStr + '</i>',
+          '<i>' + new Date().toUTCString() + '</i>',
         ].join('\n');
-
         await fetch('https://api.telegram.org/bot' + TG_TOKEN + '/sendMessage', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chat_id: TG_CHAT_ID, text: msg, parse_mode: 'HTML' }),
         });
-
         alert.triggered = true;
         alert.tgSent    = true;
         await kvSet(ALERTS_KEY, JSON.stringify(alerts));
-        console.log('[event-check] Fired + TG sent for:', alert.label);
+        console.log('[event-check] Fired + TG sent:', alert.label, '| source:', source);
       }
-    } catch (e) {
+    } catch(e) {
       console.error('[event-check] KV/TG error:', e.message);
     }
   }
 
   return res.status(200).json({
     triggered, verdict, source,
-    headlines: headlines.slice(0, 5),
+    context: [wikiSummary, wikidataDesc].filter(Boolean).slice(0, 2),
   });
 };
