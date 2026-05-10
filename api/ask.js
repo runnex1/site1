@@ -50,25 +50,39 @@ async function wikidataLookup({ country, prop }) {
       { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(6000) }
     ).then(r => r.ok ? r.json() : null).catch(() => null);
 
-    // Prefer a result whose description suggests it's a country/state
     const entity = (searchRes?.search || []).find(e =>
       /\b(country|state|republic|nation|kingdom|federation|territory)\b/i.test(e.description || '')
     ) || searchRes?.search?.[0];
+
+    console.log(`[wikidata] country="${country}" entity=${entity?.id} (${entity?.description})`);
     if (!entity?.id) return null;
 
-    // Step 2: SPARQL query — wdt:Pxx returns best-ranked (current) value automatically
-    const sparql = `SELECT ?personLabel WHERE {
-      wd:${entity.id} wdt:${prop} ?person.
-      SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
-    } LIMIT 1`;
-
-    const sparqlRes = await fetch(
-      `https://query.wikidata.org/sparql?query=${encodeURIComponent(sparql)}&format=json`,
-      { headers: { 'Accept': 'application/json', 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(8000) }
+    // Step 2: get entity claims directly (avoid SPARQL — unreliable from Vercel)
+    const claimsRes = await fetch(
+      `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${entity.id}&props=claims&format=json`,
+      { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(6000) }
     ).then(r => r.ok ? r.json() : null).catch(() => null);
 
-    return sparqlRes?.results?.bindings?.[0]?.personLabel?.value || null;
+    const claims = claimsRes?.entities?.[entity.id]?.claims?.[prop] || [];
+    // preferred rank = current holder; fallback to claim with no end date (P582)
+    const current = claims.find(c => c.rank === 'preferred') ||
+                    claims.find(c => !c.qualifiers?.P582);
+    const personQid = current?.mainsnak?.datavalue?.value?.id;
+
+    console.log(`[wikidata] prop=${prop} claims=${claims.length} current QID=${personQid}`);
+    if (!personQid) return null;
+
+    // Step 3: fetch the person's English label
+    const personRes = await fetch(
+      `https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${personQid}&props=labels&format=json&languages=en`,
+      { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000) }
+    ).then(r => r.ok ? r.json() : null).catch(() => null);
+
+    const name = personRes?.entities?.[personQid]?.labels?.en?.value || null;
+    console.log(`[wikidata] person name="${name}"`);
+    return name;
   } catch (e) {
+    console.error('[wikidata] error:', e.message);
     return null;
   }
 }
