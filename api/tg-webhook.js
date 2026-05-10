@@ -246,6 +246,7 @@ NEVER refuse. NEVER say you cannot help. ALWAYS return JSON.`;
 }
 
 async function askGroq(userMessage) {
+  if (!GROQ_KEY) throw new Error('GROQ_API_KEY not set');
   const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
@@ -270,6 +271,7 @@ async function askGroq(userMessage) {
 
 async function askGemini(userMessage) {
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY not set');
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_KEY;
   const r = await fetch(url, {
     method: 'POST',
@@ -291,7 +293,12 @@ async function askAI(userMessage) {
     return await askGroq(userMessage);
   } catch (e) {
     console.warn('[tg-webhook] Groq failed (' + e.message + '), trying Gemini...');
-    return await askGemini(userMessage);
+    try {
+      return await askGemini(userMessage);
+    } catch (e2) {
+      console.error('[tg-webhook] Both AI providers failed:', e2.message);
+      throw new Error('AI unavailable — set GROQ_API_KEY and GEMINI_API_KEY in Vercel env vars');
+    }
   }
 }
 
@@ -541,7 +548,7 @@ module.exports = async function handler(req, res) {
     }
   } catch (e) {
     console.error('[tg-webhook] error:', e.message);
-    await tgReply(tgToken, tgChatId, '⚠️ Something went wrong. Please try again.');
+    await tgReply(tgToken, tgChatId, '⚠️ ' + e.message);
   }
 
   return res.status(200).json({ ok: true });
