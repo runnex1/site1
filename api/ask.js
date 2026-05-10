@@ -110,8 +110,44 @@ Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers 
     }
   }
 
+  // ── Wikipedia fallback when AI is down ───────────────────────────────────
   if (!answer) {
-    return res.status(500).json({ error: 'AI unavailable' });
+    try {
+      // Extract likely entity from question (first Title-Case sequence, or first 3 words)
+      const entityMatch = question.match(/([A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,}){0,3})/);
+      const entity = entityMatch ? entityMatch[1] : question.split(' ').slice(0, 3).join(' ');
+      const searchQ = encodeURIComponent(entity);
+
+      const [wikiRes, wdRes] = await Promise.allSettled([
+        fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${searchQ}`, {
+          headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000)
+        }).then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch(`https://en.wikipedia.org/w/api.php?action=wbsearchentities&search=${searchQ}&language=en&format=json&limit=1`, {
+          signal: AbortSignal.timeout(5000)
+        }).then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
+
+      const wikiData  = wikiRes.status === 'fulfilled' ? wikiRes.value : null;
+      const wdData    = wdRes.status === 'fulfilled'   ? wdRes.value  : null;
+      const wikiText  = wikiData?.extract ? wikiData.extract.slice(0, 400) : null;
+      const wdDesc    = wdData?.search?.[0]?.description || null;
+
+      if (wikiText) {
+        answer = wikiText;
+      } else if (wdDesc) {
+        answer = `${entity}: ${wdDesc}`;
+      }
+    } catch (e) {}
+  }
+
+  // ── Last resort: return top headlines as the answer ───────────────────────
+  if (!answer) {
+    if (headlines.length > 0) {
+      answer = 'AI is currently unavailable. Here are the latest relevant headlines:\n' +
+        headlines.slice(0, 5).map((h, i) => `${i+1}. ${h}`).join('\n');
+    } else {
+      return res.status(503).json({ error: 'AI unavailable and no headlines fetched' });
+    }
   }
 
   return res.status(200).json({
