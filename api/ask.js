@@ -2,7 +2,14 @@
  * POST /api/ask
  * News-grounded Q&A for the alerts terminal.
  * Body: { question: "what was the last FOMC decision?" }
- * Returns: { answer: "...", headlines: [...] }
+ * Returns: { answer, headlines, sources }
+ *
+ * Pipeline:
+ *   1. Fetch RSS headlines (Google News search + major feeds) in parallel
+ *   2. Ask Groq (grounded on headlines)
+ *   3. Ask Gemini (fallback)
+ *   4. Wikipedia search fallback (AI down? search Wikipedia with full question)
+ *   5. Return top Google-News-only headlines (last resort, relevant to question)
  */
 const { getNewsSources } = require('../lib/news-sources');
 
@@ -19,18 +26,17 @@ module.exports = async function handler(req, res) {
   const GROQ_KEY   = process.env.GROQ_API_KEY;
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-  if (!GROQ_KEY && !GEMINI_KEY) {
-    return res.status(500).json({ error: 'No AI keys configured' });
-  }
-
-  // ── Fetch relevant headlines ──────────────────────────────────────────────
-  // Extract short entity for dual Google News search (same as event-check)
+  // ── Fetch headlines ───────────────────────────────────────────────────────
+  // Short entity for dual Google News search (e.g. "Romania" from "who is Romania PM?")
   const entityMatch = question.match(/\b([A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,}){0,3})/);
   const shortQuery  = entityMatch ? entityMatch[1] : question.split(' ').slice(0, 3).join(' ');
   const RSS_SOURCES = getNewsSources(question.slice(0, 80), shortQuery);
 
-  const headlines = [];
-  await Promise.allSettled(RSS_SOURCES.map(async (url) => {
+  // Track which headlines came from Google News (question-specific) vs generic feeds
+  const googleNewsHeadlines = [];
+  const otherHeadlines      = [];
+
+  await Promise.allSettled(RSS_SOURCES.map(async (url, idx) => {
     try {
       const r = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VaultBot/1.0)' },
@@ -40,17 +46,23 @@ module.exports = async function handler(req, res) {
       const text = await r.text();
       const titles = [...text.matchAll(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/gi)];
       const descs  = [...text.matchAll(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/gi)];
+      const parsed = [];
       [...titles.slice(1, 12), ...descs.slice(1, 6)].forEach(m => {
-        const t = (m[1] || '').replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim().slice(0, 250);
-        if (t.length > 15) headlines.push(t);
+        const t = (m[1] || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim().slice(0, 250);
+        if (t.length > 15) parsed.push(t);
       });
+      // idx 0 and 1 are the two Google News search URLs (question-specific)
+      if (idx <= 1) googleNewsHeadlines.push(...parsed);
+      else          otherHeadlines.push(...parsed);
     } catch (e) {}
   }));
 
-  // ── Build prompt ──────────────────────────────────────────────────────────
+  const allHeadlines = [...googleNewsHeadlines, ...otherHeadlines];
+
+  // ── Build AI prompt ───────────────────────────────────────────────────────
   const today = new Date().toDateString();
-  const headlineBlock = headlines.length
-    ? headlines.slice(0, 35).join('\n')
+  const headlineBlock = allHeadlines.length
+    ? allHeadlines.slice(0, 35).join('\n')
     : '(no headlines fetched — answer from training knowledge only)';
 
   const prompt = `Today is ${today}. You are a financial and world news assistant. Answer the user's question concisely and factually based on the recent headlines provided. If the headlines don't contain enough information, use your training knowledge but note the uncertainty.
@@ -62,7 +74,7 @@ ${headlineBlock}
 
 Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers about being an AI.`;
 
-  // ── Ask Groq first, fall back to Gemini ──────────────────────────────────
+  // ── Step 2: Groq ──────────────────────────────────────────────────────────
   let answer = null;
 
   if (GROQ_KEY) {
@@ -86,6 +98,7 @@ Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers 
     }
   }
 
+  // ── Step 3: Gemini fallback ───────────────────────────────────────────────
   if (!answer && GEMINI_KEY) {
     try {
       const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_KEY, {
@@ -106,41 +119,41 @@ Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers 
     }
   }
 
-  // ── Wikipedia fallback when AI is down ───────────────────────────────────
+  // ── Step 4: Wikipedia search fallback (AI down) ───────────────────────────
+  // Search Wikipedia with the full question so we get the right article
+  // e.g. "who is the Romania prime minister" → finds "Prime Minister of Romania"
   if (!answer) {
     try {
-      // Extract likely entity from question (first Title-Case sequence, or first 3 words)
-      const entityMatch = question.match(/([A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,}){0,3})/);
-      const entity = entityMatch ? entityMatch[1] : question.split(' ').slice(0, 3).join(' ');
-      const searchQ = encodeURIComponent(entity);
+      const wikiSearch = encodeURIComponent(question.replace(/^(who|what|when|where|why|how|is|are|was|were)\s+/i, '').slice(0, 80));
 
-      const [wikiRes, wdRes] = await Promise.allSettled([
-        fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${searchQ}`, {
-          headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000)
-        }).then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch(`https://en.wikipedia.org/w/api.php?action=wbsearchentities&search=${searchQ}&language=en&format=json&limit=1`, {
-          signal: AbortSignal.timeout(5000)
-        }).then(r => r.ok ? r.json() : null).catch(() => null),
-      ]);
+      // Step 4a: search for the best-matching Wikipedia article title
+      const searchRes = await fetch(
+        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${wikiSearch}&format=json&srlimit=1`,
+        { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000) }
+      ).then(r => r.ok ? r.json() : null).catch(() => null);
 
-      const wikiData  = wikiRes.status === 'fulfilled' ? wikiRes.value : null;
-      const wdData    = wdRes.status === 'fulfilled'   ? wdRes.value  : null;
-      const wikiText  = wikiData?.extract ? wikiData.extract.slice(0, 400) : null;
-      const wdDesc    = wdData?.search?.[0]?.description || null;
+      const pageTitle = searchRes?.query?.search?.[0]?.title;
 
-      if (wikiText) {
-        answer = wikiText;
-      } else if (wdDesc) {
-        answer = `${entity}: ${wdDesc}`;
+      if (pageTitle) {
+        // Step 4b: fetch the summary for that article
+        const summaryRes = await fetch(
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(pageTitle)}`,
+          { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000) }
+        ).then(r => r.ok ? r.json() : null).catch(() => null);
+
+        const extract = summaryRes?.extract;
+        if (extract) {
+          answer = `[Wikipedia: ${pageTitle}] ${extract.slice(0, 500)}`;
+        }
       }
     } catch (e) {}
   }
 
-  // ── Last resort: return top headlines as the answer ───────────────────────
+  // ── Step 5: Last resort — show question-relevant headlines only ───────────
   if (!answer) {
-    if (headlines.length > 0) {
-      answer = 'AI is currently unavailable. Here are the latest relevant headlines:\n' +
-        headlines.slice(0, 5).map((h, i) => `${i+1}. ${h}`).join('\n');
+    const relevant = googleNewsHeadlines.length ? googleNewsHeadlines : allHeadlines;
+    if (relevant.length > 0) {
+      answer = relevant.slice(0, 5).map((h, i) => `${i + 1}. ${h}`).join('\n');
     } else {
       return res.status(503).json({ error: 'AI unavailable and no headlines fetched' });
     }
@@ -149,7 +162,7 @@ Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers 
   return res.status(200).json({
     ok: true,
     answer,
-    headlines: headlines.slice(0, 5),
-    sources: headlines.length,
+    headlines: googleNewsHeadlines.slice(0, 5),
+    sources: allHeadlines.length,
   });
 };
