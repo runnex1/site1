@@ -4,6 +4,7 @@ const { fetchRecentHeadlines, checkEventCondition } = require('../lib/news');
 
 const ALERTS_KEY      = 'vault:alerts';
 const TG_CHAN_KEY     = 'vault:tg_channels';
+const RECENT_FIRED_KEY = 'vault:recent_fired';
 const GROQ_KEY        = process.env.GROQ_API_KEY;   // ← from Vercel env vars
 const GRACE_MS        = 5000;   // 5 seconds grace period
 const EVENT_CHECK_MS  = 600000; // check event alerts every 10 minutes
@@ -208,6 +209,17 @@ module.exports = async function handler(req, res) {
       const remaining = alerts.filter(a => !a._delete);
       await kvSet(ALERTS_KEY, JSON.stringify(remaining));
     }
+
+    // Write fired IDs to recent_fired so browser re-syncs don't re-add them
+    if (newFired.length > 0) {
+      const firedRaw = await kvGet(RECENT_FIRED_KEY);
+      const existing = firedRaw
+        ? (typeof firedRaw === 'string' ? JSON.parse(firedRaw) : firedRaw)
+        : [];
+      // Keep last 100 fired IDs to prevent unbounded growth
+      const updated = [...existing, ...newFired].slice(-100);
+      await kvSet(RECENT_FIRED_KEY, JSON.stringify(updated));
+    }
   } catch (e) {
     console.error('[check-alerts] KV write:', e.message);
   }
@@ -215,6 +227,7 @@ module.exports = async function handler(req, res) {
   return res.status(200).json({
     ok: true, timestamp: nowStr,
     checked: results.length, fired: newFired.length,
+    recentFired: newFired,
     skippedGrace, results,
   });
 };
