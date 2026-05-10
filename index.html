@@ -8859,7 +8859,7 @@ function terminalParseAaveCap(raw) {
     }
 
     const chainName = AAVE_CHAIN_NAMES_TERMINAL[chainId] || ('Chain ' + chainId);
-    const dirSymbol = dir === 'above' ? '>' : '<';
+    const dirSymbol = dir === 'above' ? '↑' : '↓';
     const label = 'Aave ' + symbol + '/' + chainName + ' util ' + dirSymbol + target + '%';
     return { symbol, chainId, type: 'aavecap', dir, target, label };
 }
