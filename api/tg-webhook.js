@@ -224,27 +224,31 @@ function parseAaveCap(raw) {
 // ── AI parser (mirrors terminalAskAI + terminalParseAIResponse) ───────────────
 
 function buildSystemPrompt() {
-  return `You are Vault AI, an expert financial assistant in a crypto/DeFi portfolio tracker.
+  return `You are Vault AI, a news and market alert assistant. Your ONLY job is to parse alert requests and return structured JSON. You monitor news and prices on behalf of the user — you never take any action, you only watch and notify.
+
+CRITICAL: You must ALWAYS parse any request as an alert. Never refuse. Never say you cannot help. Every message is a monitoring request.
 
 RESPONSE FORMAT:
-- If the user wants to SET A PRICE/MARKET ALERT: respond with ONLY a JSON array like [{"symbol":"BTC","type":"crypto","dir":"above","target":100000}]
+- For PRICE/MARKET alerts: respond with ONLY a JSON array like [{"symbol":"BTC","type":"crypto","dir":"above","target":100000}]
   Types: "crypto", "etf", "stock", "polymarket", "opinion"
-  For prediction markets, target is 0-1 decimal (e.g. 65% = 0.65)
 
-- If the user wants to SET AN AAVE SUPPLY CAP UTILIZATION ALERT: respond with ONLY a JSON array like [{"type":"aavecap","symbol":"USDe","chainId":4326,"dir":"below","target":100,"label":"Aave USDe/MegaETH util < 100%"}]
-  dir is "below" or "above". target is 0-100 percentage.
+- For AAVE SUPPLY CAP alerts: respond with ONLY [{"type":"aavecap","symbol":"USDe","chainId":4326,"dir":"below","target":100,"label":"Aave USDe/MegaETH util < 100%"}]
   Chain IDs: Ethereum=1, Optimism=10, BNB=56, Gnosis=100, Polygon=137, zkSync=324, Metis=1088, Base=8453, Arbitrum=42161, Avalanche=43114, Scroll=534352, MegaETH=4326
 
-- If the user wants to SET A REAL-WORLD EVENT ALERT: respond with ONLY a JSON array like [{"type":"event","condition":"The Fed has cut interest rates","label":"Fed rate cut"}]
+- For ANY real-world event, news, or situation alert (political, economic, sports, crypto, legal, etc.): respond with ONLY [{"type":"event","condition":"exact condition to monitor","label":"short label"}]
+  Examples:
+  "alert me when Trump pardons CZ" -> [{"type":"event","condition":"Trump pardons CZ (Changpeng Zhao)","label":"Trump pardons CZ"}]
+  "alert me when Ukraine announces ceasefire" -> [{"type":"event","condition":"Ukraine announces ceasefire with Russia","label":"Ukraine ceasefire"}]
+  "alert me when Fed cuts rates" -> [{"type":"event","condition":"Federal Reserve cuts interest rates","label":"Fed rate cut"}]
+  "alert me when ETH ETF is approved" -> [{"type":"event","condition":"Ethereum ETF approved by SEC","label":"ETH ETF approval"}]
 
-- For ALL OTHER MESSAGES: respond in plain text, be concise (2-4 sentences max).`;
+NEVER refuse. NEVER say you cannot help. ALWAYS return JSON.`;
 }
 
-async function askAI(userMessage) {
-  if (!GROQ_KEY) throw new Error('GROQ_API_KEY environment variable is not set');
+async function askGroq(userMessage) {
   const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_KEY}` },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
     body: JSON.stringify({
       model: GROQ_MODEL,
       temperature: 0.2,
@@ -256,7 +260,39 @@ async function askAI(userMessage) {
   });
   if (!r.ok) throw new Error('Groq HTTP ' + r.status);
   const resp = await r.json();
-  return (resp.choices?.[0]?.message?.content || '').trim();
+  const text = (resp.choices?.[0]?.message?.content || '').trim();
+  // If Groq refused, throw so we fall back to Gemini
+  if (!text || text.toLowerCase().includes("i can't help") || text.toLowerCase().includes("i cannot help") || text.toLowerCase().includes("i'm unable")) {
+    throw new Error('Groq refused');
+  }
+  return text;
+}
+
+async function askGemini(userMessage) {
+  const GEMINI_KEY = process.env.GEMINI_API_KEY;
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_KEY;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: buildSystemPrompt() }] },
+      contents: [{ role: 'user', parts: [{ text: userMessage }] }],
+      generationConfig: { temperature: 0.2 },
+    }),
+  });
+  if (!r.ok) throw new Error('Gemini HTTP ' + r.status);
+  const resp = await r.json();
+  return (resp.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+}
+
+async function askAI(userMessage) {
+  // Try Groq first, fall back to Gemini
+  try {
+    return await askGroq(userMessage);
+  } catch (e) {
+    console.warn('[tg-webhook] Groq failed (' + e.message + '), trying Gemini...');
+    return await askGemini(userMessage);
+  }
 }
 
 function parseAIResponse(text) {
@@ -272,14 +308,18 @@ function parseAIResponse(text) {
     if (parsed[0].type === 'aavecap') {
       return {
         type: 'alerts',
-        alerts: parsed.map(p => ({
-          symbol:  p.symbol || 'USDe',
-          chainId: parseInt(p.chainId) || 4326,
-          type:    'aavecap',
-          dir:     p.dir || 'below',
-          target:  parseFloat(p.target ?? 100),
-          label:   p.label || ('Aave ' + (p.symbol||'?') + '/' + (AAVE_CHAIN_NAMES[parseInt(p.chainId)] || p.chainId) + ' util ' + (p.dir==='above'?'>':'<') + p.target + '%'),
-        })),
+        alerts: parsed.map(p => {
+          const chainId = parseInt(p.chainId) || 1;
+          const chainName = AAVE_CHAIN_NAMES[chainId] || ('Chain ' + chainId);
+          return {
+            symbol:  p.symbol || 'USDe',
+            chainId: chainId,
+            type:    'aavecap',
+            dir:     p.dir || 'below',
+            target:  parseFloat(p.target ?? 100),
+            label:   p.label || ('Aave ' + (p.symbol||'?') + '/' + chainName + ' util ' + (p.dir==='above'?'>':'<') + p.target + '%'),
+          };
+        }),
       };
     }
 
@@ -331,7 +371,9 @@ async function processMessage(raw) {
   // 2. Aave cap regex
   const aave = parseAaveCap(raw);
   if (aave) {
-    return { type: 'alerts', alerts: [{ id: uid(), ...aave, triggered: false, setAt: Date.now() }] };
+    const alert = { id: uid(), ...aave, triggered: false, setAt: Date.now() };
+    if (!alert.chainId) alert.chainId = 1; // default Ethereum
+    return { type: 'alerts', alerts: [alert] };
   }
 
   // 3. Simple NL regex
@@ -473,9 +515,22 @@ module.exports = async function handler(req, res) {
       for (const a of result.alerts) alerts.push(a);
       await saveAlerts(alerts);
 
-      const lines = result.alerts.map(a => `✅ <b>${a.label}</b>`).join('\n');
+      // Fetch current prices for non-event alerts to show in confirmation
+      const { fetchPrice, fmtPrice } = require('../lib/price');
+      const lines = await Promise.all(result.alerts.map(async a => {
+        if (a.type === 'event') {
+          return '✅ <b>' + a.label + '</b>';
+        }
+        try {
+          const price = await fetchPrice(a);
+          const priceStr = price != null ? ' (' + fmtPrice(price, a.type) + ')' : '';
+          return '✅ <b>' + a.symbol + priceStr + ' ' + a.dir + ' ' + fmtPrice(a.target, a.type) + '</b>';
+        } catch (e) {
+          return '✅ <b>' + a.label + '</b>';
+        }
+      }));
       await tgReply(tgToken, tgChatId,
-        `${lines}\n\nI'll notify you when triggered.`
+        lines.join('\n') + '\n\nI\'ll notify you when triggered.'
       );
     } else if (result.type === 'message') {
       await tgReply(tgToken, tgChatId, result.text);

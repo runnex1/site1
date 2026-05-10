@@ -1,0 +1,82 @@
+/**
+ * POST /api/sync-alerts
+ * Merges browser alerts with KV alerts (preserves TG-set alerts).
+ */
+
+const { kvGet, kvSet } = require('../lib/kv');
+
+const ALERTS_KEY       = 'vault:alerts';
+const RECENT_FIRED_KEY = 'vault:recent_fired';
+
+module.exports = async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin',  '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-sync-secret');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
+
+  const syncSecret = process.env.SYNC_SECRET;
+  if (syncSecret) {
+    const provided = req.headers['x-sync-secret'];
+    if (provided !== syncSecret) return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  let body = req.body;
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch (e) {
+      return res.status(400).json({ error: 'Invalid JSON' });
+    }
+  }
+
+  const browserAlerts = body?.alerts;
+  const tgChannels    = body?.tgChannels || [];
+
+  if (!Array.isArray(browserAlerts)) {
+    return res.status(400).json({ error: 'alerts must be an array' });
+  }
+
+  try {
+    // Load existing KV alerts and recently fired IDs
+    let existing = [];
+    let recentFired = new Set();
+    try {
+      const stored = await kvGet(ALERTS_KEY);
+      if (stored) existing = typeof stored === 'string' ? JSON.parse(stored) : stored;
+    } catch (e) {}
+    try {
+      const firedRaw = await kvGet(RECENT_FIRED_KEY);
+      if (firedRaw) {
+        const firedArr = typeof firedRaw === 'string' ? JSON.parse(firedRaw) : firedRaw;
+        recentFired = new Set(firedArr);
+      }
+    } catch (e) {}
+
+    const browserIds = new Set(browserAlerts.map(a => a.id));
+
+    // Only keep untriggered browser alerts that haven't already fired on the server
+    const merged = browserAlerts.filter(a => !a.triggered && !recentFired.has(a.id));
+
+    // Add TG-only alerts that aren't triggered and haven't fired
+    const tgOnly = existing.filter(a => !browserIds.has(a.id) && !a.triggered && !recentFired.has(a.id));
+    merged.push(...tgOnly);
+
+    await kvSet(ALERTS_KEY, JSON.stringify(merged));
+
+    if (Array.isArray(tgChannels) && tgChannels.length > 0) {
+      await kvSet('vault:tg_channels', JSON.stringify(tgChannels));
+    }
+
+    return res.status(200).json({
+      ok:          true,
+      count:       merged.length,
+      active:      merged.filter(a => !a.triggered).length,
+      browser:     browserAlerts.length,
+      tgOnly:      tgOnly.length,
+      recentFired: [...recentFired], // let browser remove these from localStorage
+    });
+  } catch (e) {
+    console.error('[sync-alerts] KV write error:', e.message);
+    return res.status(500).json({ error: e.message });
+  }
+};

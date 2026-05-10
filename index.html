@@ -8482,6 +8482,7 @@ let _terminalPollTimer = null;
 const TERMINAL_POLL_MS = 30000; // 30 s — faster alert checks
 
 function terminalLoad() {
+    // 1. Load from localStorage immediately (fast)
     try {
         const saved = localStorage.getItem('terminal-alerts');
         if (saved) terminalAlerts = JSON.parse(saved);
@@ -8491,10 +8492,34 @@ function terminalLoad() {
     tgLoadSettings();
     renderCustomTokens();
     renderCustomTokens();
+
+    // 2. Merge with server copy (async — handles multi-device or server-fired alerts)
+    if (location.protocol !== 'file:') {
+        fetch('/api/sync-alerts')
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (!data?.alerts?.length) return;
+                const serverIds = new Set(data.alerts.map(a => a.id));
+                const localOnly = terminalAlerts.filter(a => !serverIds.has(a.id));
+                terminalAlerts = [...data.alerts, ...localOnly];
+                localStorage.setItem('terminal-alerts', JSON.stringify(terminalAlerts));
+                terminalRenderAlerts();
+                if (terminalAlerts.some(a => !a.triggered)) terminalStartPolling();
+            })
+            .catch(() => {}); // offline — no problem, localStorage is fine
+    }
 }
 
 function terminalSave() {
     try { localStorage.setItem('terminal-alerts', JSON.stringify(terminalAlerts)); } catch(e) {}
+    // Sync to server so the 24/7 worker picks up the latest alerts
+    if (location.protocol !== 'file:') {
+        fetch('/api/sync-alerts', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ alerts: terminalAlerts }),
+        }).catch(() => {}); // fire-and-forget
+    }
 }
 
 // ── Log helpers ───────────────────────────────────────────────────────────────
