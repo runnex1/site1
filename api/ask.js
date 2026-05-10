@@ -200,7 +200,12 @@ Provide a clear, direct answer in 1-2 sentences. Focus on facts. No disclaimers.
           model: 'llama-3.1-8b-instant',
           temperature: 0.1,
           max_tokens: 80,
-          messages: [{ role: 'user', content: `Today is ${today}. Answer in 1-2 sentences: ${question}` }],
+          messages: [{ role: 'user', content: `Today is ${today}. Answer based on these recent headlines and your knowledge. Be direct and factual, 1-2 sentences.
+
+RECENT HEADLINES:
+${allHeadlines.slice(0,15).join('\n')}
+
+QUESTION: ${question}` }],
         }),
       });
       if (r.ok) answer = (await r.json()).choices?.[0]?.message?.content?.trim() || null;
