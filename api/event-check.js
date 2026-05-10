@@ -103,9 +103,11 @@ module.exports = async function handler(req, res) {
   const SYSTEM_VERIFY  = 'You are a factual news verification assistant. Answer only YES or NO. Never refuse or add caveats.';
 
   // ── Step 1: Prior knowledge check ────────────────────────────────────────
+  // Either AI saying YES is enough — both saying NO means skip to headlines.
+  // UNSURE from one or both → proceed to headlines (don't block on uncertainty).
   const priorResult = await askBoth(
     SYSTEM_FACTUAL,
-    'Based on your training knowledge, is this condition currently true?\n\nCondition: "' + query + '"\n\nAnswer YES if confident it is already true, NO if confident it is not yet true, or UNSURE if you cannot determine this from training data alone.'
+    'Based on your training knowledge, is this condition currently true?\n\nCondition: "' + query + '"\n\nAnswer YES if you are confident it is already true, NO if you are confident it is NOT true, or UNSURE if your training data does not clearly cover this. Be generous with YES for events that likely happened before your training cutoff.'
   );
 
   let triggered = false;
@@ -118,9 +120,14 @@ module.exports = async function handler(req, res) {
     verdict   = 'YES';
   } else {
     // ── Step 2: Fetch live news headlines ───────────────────────────────────
-    const searchQuery = encodeURIComponent(query);
+    // Use 3 targeted searches: full query, key entity name, and entity + "president"
+    const words   = query.split(/\s+/).filter(w => w.length > 3);
+    const keyName = words.slice(0, 3).join(' '); // first 3 meaningful words
+    const searchQuery  = encodeURIComponent(query);
+    const searchShort  = encodeURIComponent(keyName);
     const RSS_SOURCES = [
       'https://news.google.com/rss/search?q=' + searchQuery + '&hl=en-US&gl=US&ceid=US:en',
+      'https://news.google.com/rss/search?q=' + searchShort + '&hl=en-US&gl=US&ceid=US:en',
       'https://feeds.reuters.com/reuters/topNews',
       'https://feeds.reuters.com/reuters/worldNews',
       'https://feeds.bbci.co.uk/news/world/rss.xml',
