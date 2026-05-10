@@ -11505,20 +11505,19 @@ document.addEventListener("click", function(e){
     try {
       const res = await fetch(WORKER_URL + '/api/check-alerts');
       const data = await res.json();
-      if (!data.results || !data.results.length) return;
+      const _firedIds = new Set([...(data.recentFired || []), ...((data.results || []).filter(r => r.triggered).map(r => r.id))]);
+      if (!_firedIds.size) return;
       const stored = localStorage.getItem('terminal-alerts');
       if (!stored) return;
       const alerts = JSON.parse(stored);
       if (!Array.isArray(alerts)) return;
       let changed = false;
-      for (const result of data.results) {
-        if (result.triggered) {
-          const alert = alerts.find(a => a.id === result.id);
-          if (alert && !alert.triggered) {
-            alert.triggered = true;
-            changed = true;
-            console.log('[VaultSync] Server already fired:', alert.label || alert.symbol);
-          }
+      for (const id of _firedIds) {
+        const alert = alerts.find(a => a.id === id);
+        if (alert && !alert.triggered) {
+          alert.triggered = true;
+          changed = true;
+          console.log('[VaultSync] Server already fired:', alert.label || alert.symbol);
         }
       }
       if (changed) {
@@ -11573,6 +11572,22 @@ document.addEventListener("click", function(e){
           if (alert && !alert.triggered) {
             alert.triggered = true;
             changed = true;
+          }
+        }
+      }
+      // Catch alerts that fired before this poll (browser missed them)
+      if (data.recentFired && Array.isArray(data.recentFired)) {
+        for (const id of data.recentFired) {
+          if (!lastFiredIds.has(id)) {
+            lastFiredIds.add(id);
+            const alertIdx = alerts.findIndex(a => a.id === id);
+            if (alertIdx !== -1 && !alerts[alertIdx].triggered) {
+              const label = alerts[alertIdx].label || alerts[alertIdx].symbol;
+              if (typeof wlShowToast === 'function') wlShowToast('🔔 Alert Triggered', label, null);
+              console.log('[VaultSync] Missed fire detected:', label);
+              alerts[alertIdx].triggered = true;
+              changed = true;
+            }
           }
         }
       }
