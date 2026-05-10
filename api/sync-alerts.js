@@ -69,9 +69,12 @@ module.exports = async function handler(req, res) {
     // Only keep untriggered browser alerts that haven't already fired on the server
     const merged = browserAlerts.filter(a => !a.triggered && !recentFired.has(a.id));
 
-    // Add TG-only alerts that aren't triggered and haven't fired
-    const tgOnly = existing.filter(a => !browserIds.has(a.id) && !a.triggered && !recentFired.has(a.id));
-    merged.push(...tgOnly);
+    // Add TG-only alerts — but only if browser sent a non-empty list.
+    // If browser sends [], the user explicitly cleared everything — don't restore KV alerts.
+    if (browserAlerts.length > 0) {
+      const tgOnly = existing.filter(a => !browserIds.has(a.id) && !a.triggered && !recentFired.has(a.id));
+      merged.push(...tgOnly);
+    }
 
     await kvSet(ALERTS_KEY, JSON.stringify(merged));
 
