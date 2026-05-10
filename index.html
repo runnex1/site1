@@ -11532,6 +11532,11 @@ document.addEventListener("click", function(e){
       }
       if (changed) {
         localStorage.setItem('terminal-alerts', JSON.stringify(alerts));
+        // Remove fired alerts from in-memory array so the UI immediately reflects them gone
+        if (Array.isArray(window.terminalAlerts)) {
+          const firedSet = new Set(alerts.filter(a => a.triggered).map(a => a.id));
+          window.terminalAlerts = window.terminalAlerts.filter(a => !firedSet.has(a.id));
+        }
         if (typeof terminalRenderAlerts === 'function') terminalRenderAlerts();
       }
     } catch (e) {
@@ -11603,6 +11608,11 @@ document.addEventListener("click", function(e){
       }
       if (changed) {
         localStorage.setItem('terminal-alerts', JSON.stringify(alerts));
+        // Remove fired alerts from in-memory array so the UI immediately reflects them gone
+        if (Array.isArray(window.terminalAlerts)) {
+          const firedSet = new Set(alerts.filter(a => a.triggered).map(a => a.id));
+          window.terminalAlerts = window.terminalAlerts.filter(a => !firedSet.has(a.id));
+        }
         if (typeof terminalRenderAlerts === 'function') terminalRenderAlerts();
       }
     } catch (e) {}
