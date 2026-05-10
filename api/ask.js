@@ -120,65 +120,74 @@ Provide a clear, direct answer in 2-4 sentences. Focus on facts. No disclaimers 
   }
 
   // ── Step 4: Wikipedia fallback (AI down) ─────────────────────────────────
-  // For "who is" questions: search with current year to find the person's article
-  // (not the role/office article). Check description to confirm it's a person.
   if (!answer) {
     try {
-      const isWhoQ   = /^who\s+(is|was|are)/i.test(question.trim());
-      const year     = new Date().getFullYear();
+      const isWhoQ = /^who\s+(is|was|are)/i.test(question.trim());
+      const year   = new Date().getFullYear();
 
-      // Strip question words, keep the meaningful part
       const core = question
         .replace(/^(who|what|when|where|why|how)\s+(is|are|was|were|did|does|do)\s+(the\s+|a\s+)?/i, '')
         .replace(/\?$/, '').trim();
 
-      // For "who is" questions, append year to bias toward current-holder articles
       const searchTerm = isWhoQ ? `${core} ${year}` : core;
       const wikiSearch = encodeURIComponent(searchTerm.slice(0, 80));
 
-      // Search for top 3 candidates
       const searchRes = await fetch(
-        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${wikiSearch}&format=json&srlimit=3`,
+        `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${wikiSearch}&format=json&srlimit=5`,
         { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000) }
       ).then(r => r.ok ? r.json() : null).catch(() => null);
 
-      const results = searchRes?.query?.search || [];
+      const allResults = searchRes?.query?.search || [];
 
-      for (const result of results) {
-        const summaryRes = await fetch(
-          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(result.title)}`,
-          { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000) }
-        ).then(r => r.ok ? r.json() : null).catch(() => null);
+      // Fetch summaries for all results in parallel
+      const summaries = await Promise.all(allResults.map(r =>
+        fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(r.title)}`,
+          { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000) })
+          .then(res => res.ok ? res.json() : null).catch(() => null)
+      ));
 
-        if (!summaryRes?.extract) continue;
-
-        const desc    = (summaryRes.description || '').toLowerCase();
-        const extract = summaryRes.extract;
-
-        if (isWhoQ) {
-          // For "who is" questions, prefer a PERSON article over a role/office article.
-          // A person article has a description like "Romanian politician" or
-          // "Prime Minister of Romania" (a title held by a person).
-          const isPerson = /politician|minister|president|prime minister|head of|official|diplomat|born|\d{4}–/i.test(desc) &&
-                           !/list of|history of|politics of|government of/i.test(result.title);
+      if (isWhoQ) {
+        // Pass 1: find a person article (has a person description, not a list/office)
+        for (let i = 0; i < summaries.length; i++) {
+          const s = summaries[i];
+          if (!s?.extract) continue;
+          const desc  = (s.description || '').toLowerCase();
+          const title = allResults[i].title;
+          const isPerson =
+            /politician|prime minister|president|minister|chancellor|secretary|official|diplomat/i.test(desc) &&
+            !/list of|lists of|history of|politics of/i.test(title) &&
+            !/^(prime minister|president|government|minister|office) of/i.test(title);
           if (isPerson) {
-            answer = `${result.title} — ${summaryRes.description || extract.slice(0, 200)}`;
+            answer = `${s.title} — ${s.description || s.extract.split('.')[0]}`;
             break;
           }
-        } else {
-          answer = `[Wikipedia: ${result.title}] ${extract.slice(0, 500)}`;
-          break;
+        }
+
+        // Pass 2: extract "current X is [Name]" sentence from any article
+        if (!answer) {
+          for (const s of summaries) {
+            if (!s?.extract) continue;
+            // Match "current prime minister is Bolojan" or "Bolojan is the current PM"
+            const m = s.extract.match(
+              /current[^.]*(?:prime minister|president|premier|head of government|chancellor)[^.]*is\s+([A-ZȘȚĂÎÂ][a-zșțăîâ]+(?:\s+[A-ZȘȚĂÎÂ][a-zșțăîâ]+){0,3})/i
+            ) || s.extract.match(
+              /([A-ZȘȚĂÎÂ][a-zșțăîâ]+(?:\s+[A-ZȘȚĂÎÂ][a-zșțăîâ]+){1,3})\s+is\s+the\s+(?:current\s+)?(?:prime minister|president|premier)/i
+            );
+            if (m) {
+              answer = m[0].trim().replace(/^[^A-Z]*/, '');
+              break;
+            }
+          }
         }
       }
 
-      // If no person found, fall back to best result's extract
-      if (!answer && results[0]) {
-        const fallbackRes = await fetch(
-          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(results[0].title)}`,
-          { headers: { 'User-Agent': 'VaultBot/1.0' }, signal: AbortSignal.timeout(5000) }
-        ).then(r => r.ok ? r.json() : null).catch(() => null);
-        if (fallbackRes?.extract) {
-          answer = `[Wikipedia: ${results[0].title}] ${fallbackRes.extract.slice(0, 500)}`;
+      // For non-who questions, or final fallback: return first non-list result's extract
+      if (!answer) {
+        const best = summaries.find((s, i) =>
+          s?.extract && !/^(list of|lists of)/i.test(allResults[i]?.title || '')
+        );
+        if (best) {
+          answer = `[Wikipedia: ${best.title}] ${best.extract.slice(0, 400)}`;
         }
       }
     } catch (e) {}
