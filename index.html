@@ -2359,8 +2359,8 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 
 <script>
 (function() {
-  const WORKER_URL  = 'https://vault-alerts-full-git-main-petrescusebi100-5291s-projects.vercel.app';
-  const SYNC_SECRET = 'mysecret123';
+  const WORKER_URL  = '';
+  const SYNC_SECRET = '';
 
 async function syncAlertsToServer() {
       if (!Array.isArray(window.terminalAlerts)) return;
@@ -9006,7 +9006,7 @@ async function terminalAskAI(userMessage) {
     _terminalHistory.push({ role: 'user', content: userMessage });
     if (_terminalHistory.length > 20) _terminalHistory = _terminalHistory.slice(-20);
 
-    const r = await fetch('https://vault-alerts-full-git-main-petrescusebi100-5291s-projects.vercel.app/api/ai', {
+    const r = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(20000),
@@ -9633,7 +9633,7 @@ async function terminalCheckEventAlert(alert) {
     const eventPrompt = 'Event: "' + condition + '" Headlines: ' + headlines.slice(0,20).join(' | ') + ' Occurred? Answer only YES or NO.';
     let verdict = '';
     try {
-        const r = await fetch('https://vault-alerts-full-git-main-petrescusebi100-5291s-projects.vercel.app/api/ai', {
+        const r = await fetch('/api/ai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             signal: AbortSignal.timeout(15000),
@@ -11515,8 +11515,8 @@ document.addEventListener("click", function(e){
 
 <script>
 (function() {
-  const WORKER_URL  = 'https://vault-alerts-full-git-main-petrescusebi100-5291s-projects.vercel.app';
-  const SYNC_SECRET = 'mysecret123';
+  const WORKER_URL  = '';
+  const SYNC_SECRET = '';
 
   async function syncAlertsToServer() {
     try {
