@@ -9197,6 +9197,37 @@ async function terminalSubmit() {
         return;
     }
 
+    // ── Q&A — news-grounded questions ───────────────────────────────────────
+    {
+        const QUESTION_RE = /^(what|why|how|who|when|where|is|are|was|were|did|does|do|has|have|had|will|would|can|could|tell\s+me|explain|give\s+me)\b/i;
+        const isQuestion = QUESTION_RE.test(raw) || raw.trim().endsWith('?');
+        const isAlertIntent = /\balert\b|\bnotify\b|\bping\b/i.test(raw) ||
+            (/\bwhen\b/i.test(raw) && /\b(hits?|reaches?|drops?|falls?|above|below|over|under|becomes?|wins?|announces?|goes\s+to)\b/i.test(raw));
+        if (isQuestion && !isAlertIntent) {
+            terminalLog('↓ Searching news for answer…', 'tl-system');
+            try {
+                const r = await fetch('/api/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: raw }),
+                    signal: AbortSignal.timeout(20000),
+                });
+                const data = await r.json();
+                if (data.answer) {
+                    terminalLog('📰 ' + data.answer, 'tl-info');
+                    if (data.sources) terminalLog('↳ Based on ' + data.sources + ' recent headlines', 'tl-system');
+                } else {
+                    terminalLog('⚠ Could not fetch an answer. Try again.', 'tl-warn');
+                }
+            } catch(e) {
+                terminalLog('⚠ Q&A error: ' + e.message, 'tl-warn');
+            }
+            terminalSetStatus(terminalAlerts.filter(a => !a.triggered).length + ' active', false);
+            btn.disabled = false;
+            return;
+        }
+    }
+
     // ── "Set <contract> as SYMBOL token" — save custom mapping ─────────────────
     {
         const setTok = terminalParseSetToken(raw);

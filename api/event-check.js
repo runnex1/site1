@@ -107,7 +107,7 @@ module.exports = async function handler(req, res) {
   // UNSURE from one or both → proceed to headlines (don't block on uncertainty).
   const priorResult = await askBoth(
     SYSTEM_FACTUAL,
-    'Based on your training knowledge, is this condition currently true?\n\nCondition: "' + query + '"\n\nAnswer YES if you are confident it is already true, NO if you are confident it is NOT true, or UNSURE if your training data does not clearly cover this. Be generous with YES for events that likely happened before your training cutoff.'
+    'Today is ' + new Date().toDateString() + '. Based on your knowledge, is this condition currently true? Condition: "' + query + '". Answer YES if true or very likely true given current date, NO if clearly false, UNSURE if uncertain. For well-known public figures and their roles, be confident.'
   );
 
   let triggered = false;
@@ -121,7 +121,7 @@ module.exports = async function handler(req, res) {
   } else {
     // ── Step 2: Fetch live news headlines ───────────────────────────────────
     // Use 3 targeted searches: full query, key entity name, and entity + "president"
-    const words   = query.split(/\s+/).filter(w => w.length > 3);
+    const words   = query.split(/\s+/).filter(w => w.length > 2);
     const keyName = words.slice(0, 3).join(' '); // first 3 meaningful words
     const searchQuery  = encodeURIComponent(query);
     const searchShort  = encodeURIComponent(keyName);
@@ -157,7 +157,7 @@ module.exports = async function handler(req, res) {
       // ── Step 3: Ask both AIs with live headlines ──────────────────────────
       const headlineResult = await askBoth(
         SYSTEM_VERIFY,
-        'Determine if a specific real-world event has occurred based on these news headlines.\n\nEvent to check: "' + query + '"\n\nRecent news (' + headlines.length + ' items):\n' + headlines.slice(0, 30).join('\n') + '\n\nHas this event occurred? Reply with exactly one word: YES or NO.'
+        'Today is ' + new Date().toDateString() + '. Is the following condition currently true based on these recent news headlines? Condition: "' + query + '". Headlines:\n' + headlines.slice(0, 30).join('\n') + '\nIf any headline confirms the condition is true, say YES. If headlines clearly contradict it, say NO. One word only: YES or NO.'
       );
       triggered = headlineResult.triggered;
       verdict   = headlineResult.verdict;
