@@ -9470,6 +9470,41 @@ async function terminalSubmit() {
         }
     }
 
+    // ── No-number event alert — create directly, no AI needed ────────────────
+    // e.g. "alert me when Nicusor Dan becomes president" — no price, no number
+    {
+        const hasAlertIntent = /\b(alert|notify|ping|tell\s+me)\b/i.test(raw) ||
+            (/\bwhen\b/i.test(raw) && !/\b(price|worth|value|cost|cap|tvl|utilization)\b/i.test(raw));
+        const hasNumber = /\d/.test(raw);
+        if (hasAlertIntent && !hasNumber) {
+            const condition = raw
+                .replace(/^(?:alert(?:\s+me)?|notify(?:\s+me)?|tell(?:\s+me)?|ping(?:\s+me)?)\s+(?:when|if|once|whenever)\s+/i, '')
+                .replace(/^(?:when|if|once|whenever)\s+/i, '')
+                .trim() || raw.trim();
+            const label = condition.length > 60 ? condition.slice(0, 57) + '\u2026' : condition;
+            const evAlert = {
+                id: Date.now().toString() + Math.random().toString(36).slice(2, 5),
+                symbol: '\ud83c\udf0d',
+                type: 'event',
+                condition,
+                label,
+                currentPrice: null,
+                triggered: false,
+                setAt: Date.now(),
+            };
+            terminalAlerts.push(evAlert);
+            terminalSave();
+            terminalRenderAlerts();
+            terminalLog('\u2713 Event alert set: ' + label, 'tl-ok');
+            terminalLog('\u21b3 Checking news now\u2026', 'tl-info');
+            terminalCheckEventAlert(evAlert);
+            terminalSetStatus(terminalAlerts.filter(a => !a.triggered).length + ' active', true);
+            terminalStartPolling();
+            btn.disabled = false;
+            return;
+        }
+    }
+
     // ── Ask the AI (conversational, with full portfolio + alert context) ──────
     let aiText = null;
     try {
