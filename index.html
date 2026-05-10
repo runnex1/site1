@@ -2362,16 +2362,26 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   const WORKER_URL  = 'https://vault-alerts-full-git-main-petrescusebi100-5291s-projects.vercel.app';
   const SYNC_SECRET = 'mysecret123';
 
-  async function syncAlertsToServer() {
-    if (!Array.isArray(window.terminalAlerts)) return;
-    try {
-      await fetch(WORKER_URL + '/api/sync-alerts', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
-        body:    JSON.stringify({ alerts: window.terminalAlerts }),
-      });
-    } catch (e) {}
-  }
+async function syncAlertsToServer() {
+      if (!Array.isArray(window.terminalAlerts)) return;
+      try {
+              const _res = await fetch(WORKER_URL + '/api/sync-alerts', {
+                        method:  'POST',
+                        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+                        body:    JSON.stringify({ alerts: window.terminalAlerts }),
+              });
+              const _data = await _res.json().catch(() => ({}));
+              if (Array.isArray(_data.recentFired) && _data.recentFired.length > 0) {
+                        const _fired = new Set(_data.recentFired);
+                        const _before = window.terminalAlerts.length;
+                        window.terminalAlerts = window.terminalAlerts.filter(a => !_fired.has(a.id));
+                        if (window.terminalAlerts.length !== _before) {
+                                    try { localStorage.setItem('terminal-alerts', JSON.stringify(window.terminalAlerts)); } catch(e) {}
+                                    if (typeof window.terminalRenderAlerts === 'function') window.terminalRenderAlerts();
+                        }
+              }
+      } catch (e) {}
+}
 
   function patchTerminalSave() {
     const original = window.terminalSave;
