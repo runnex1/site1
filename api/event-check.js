@@ -15,6 +15,7 @@
  */
 
 const { kvGet, kvSet } = require('../lib/kv');
+const { getNewsSources } = require('../lib/news-sources');
 const ALERTS_KEY = 'vault:alerts';
 
 module.exports = async function handler(req, res) {
@@ -208,17 +209,7 @@ module.exports = async function handler(req, res) {
   // ═══════════════════════════════════════════════════════════════════════════
 
   if (!triggered && (source === 'no_data' || verdict === 'UNSURE' || !authoritative)) {
-    const searchQuery = encodeURIComponent(query);
-    const searchShort = encodeURIComponent(entity);
-
-    const RSS_SOURCES = [
-      'https://news.google.com/rss/search?q=' + searchQuery + '&hl=en-US&gl=US&ceid=US:en',
-      'https://news.google.com/rss/search?q=' + searchShort + '&hl=en-US&gl=US&ceid=US:en',
-      'https://feeds.reuters.com/reuters/topNews',
-      'https://feeds.reuters.com/reuters/worldNews',
-      'https://feeds.bbci.co.uk/news/world/rss.xml',
-      'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',
-    ];
+    const RSS_SOURCES = getNewsSources(query, entity);
 
     const rssResults = await Promise.all(RSS_SOURCES.map(fetchRSS));
     const headlines  = rssResults.flat();

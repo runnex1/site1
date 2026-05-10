@@ -4,6 +4,8 @@
  * Body: { question: "what was the last FOMC decision?" }
  * Returns: { answer: "...", headlines: [...] }
  */
+const { getNewsSources } = require('../lib/news-sources');
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -22,16 +24,10 @@ module.exports = async function handler(req, res) {
   }
 
   // ── Fetch relevant headlines ──────────────────────────────────────────────
-  const searchQuery = encodeURIComponent(question.slice(0, 80));
-  const RSS_SOURCES = [
-    'https://news.google.com/rss/search?q=' + searchQuery + '&hl=en-US&gl=US&ceid=US:en',
-    'https://feeds.reuters.com/reuters/topNews',
-    'https://feeds.reuters.com/reuters/businessNews',
-    'https://feeds.reuters.com/reuters/worldNews',
-    'https://feeds.bbci.co.uk/news/business/rss.xml',
-    'https://www.cnbc.com/id/10000664/device/rss/rss.html',
-    'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',
-  ];
+  // Extract short entity for dual Google News search (same as event-check)
+  const entityMatch = question.match(/\b([A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,}){0,3})/);
+  const shortQuery  = entityMatch ? entityMatch[1] : question.split(' ').slice(0, 3).join(' ');
+  const RSS_SOURCES = getNewsSources(question.slice(0, 80), shortQuery);
 
   const headlines = [];
   await Promise.allSettled(RSS_SOURCES.map(async (url) => {
