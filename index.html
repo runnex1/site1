@@ -8447,7 +8447,7 @@ function renderWatchlist() {
 // ALERT TERMINAL
 // =============================================================================
 
-let terminalAlerts = [];       // { id, symbol, type, dir, target, currentPrice, triggered, label }
+var terminalAlerts = [];       // { id, symbol, type, dir, target, currentPrice, triggered, label }
 let _terminalPollTimer = null;
 const TERMINAL_POLL_MS = 30000; // 30 s — faster alert checks
 
@@ -11521,23 +11521,12 @@ document.addEventListener("click", function(e){
       if (!stored) return;
       const alerts = JSON.parse(stored);
       if (!Array.isArray(alerts)) return;
-      let changed = false;
-      for (const id of _firedIds) {
-        const alert = alerts.find(a => a.id === id);
-        if (alert && !alert.triggered) {
-          alert.triggered = true;
-          changed = true;
-          console.log('[VaultSync] Server already fired:', alert.label || alert.symbol);
-        }
-      }
-      if (changed) {
-        localStorage.setItem('terminal-alerts', JSON.stringify(alerts));
-        // Remove fired alerts from in-memory array so the UI immediately reflects them gone
-        if (Array.isArray(window.terminalAlerts)) {
-          const firedSet = new Set(alerts.filter(a => a.triggered).map(a => a.id));
-          window.terminalAlerts = window.terminalAlerts.filter(a => !firedSet.has(a.id));
-        }
+      const remaining = alerts.filter(a => !_firedIds.has(a.id));
+      if (remaining.length < alerts.length) {
+        localStorage.setItem('terminal-alerts', JSON.stringify(remaining));
+        window.terminalAlerts = remaining;
         if (typeof terminalRenderAlerts === 'function') terminalRenderAlerts();
+        console.log('[VaultSync] Deleted', alerts.length - remaining.length, 'fired alert(s)');
       }
     } catch (e) {
       console.warn('[VaultSync] syncTriggeredFromServer failed:', e.message);
@@ -11569,25 +11558,20 @@ document.addEventListener("click", function(e){
       const alerts = JSON.parse(stored);
       if (!Array.isArray(alerts)) return;
 
-      let changed = false;
+      const toDelete = new Set();
+
       for (const result of data.results) {
         if (result.triggered && !lastFiredIds.has(result.id)) {
           lastFiredIds.add(result.id);
-          // Find matching local alert to get label
+          toDelete.add(result.id);
           const alert = alerts.find(a => a.id === result.id);
           const label = alert ? (alert.label || alert.symbol) : result.symbol;
           const priceStr = result.price != null ? result.price : '';
           const msg = label + (priceStr ? ' — now at ' + priceStr : '');
-          // Show browser toast
           if (typeof wlShowToast === 'function') {
             wlShowToast('🔔 Alert Triggered', msg, null);
           }
           console.log('[VaultSync] Server fired alert — showing toast:', msg);
-          // Mark as triggered in localStorage
-          if (alert && !alert.triggered) {
-            alert.triggered = true;
-            changed = true;
-          }
         }
       }
       // Catch alerts that fired before this poll (browser missed them)
@@ -11595,24 +11579,20 @@ document.addEventListener("click", function(e){
         for (const id of data.recentFired) {
           if (!lastFiredIds.has(id)) {
             lastFiredIds.add(id);
-            const alertIdx = alerts.findIndex(a => a.id === id);
-            if (alertIdx !== -1 && !alerts[alertIdx].triggered) {
-              const label = alerts[alertIdx].label || alerts[alertIdx].symbol;
+            toDelete.add(id);
+            const alert = alerts.find(a => a.id === id);
+            if (alert) {
+              const label = alert.label || alert.symbol;
               if (typeof wlShowToast === 'function') wlShowToast('🔔 Alert Triggered', label, null);
               console.log('[VaultSync] Missed fire detected:', label);
-              alerts[alertIdx].triggered = true;
-              changed = true;
             }
           }
         }
       }
-      if (changed) {
-        localStorage.setItem('terminal-alerts', JSON.stringify(alerts));
-        // Remove fired alerts from in-memory array so the UI immediately reflects them gone
-        if (Array.isArray(window.terminalAlerts)) {
-          const firedSet = new Set(alerts.filter(a => a.triggered).map(a => a.id));
-          window.terminalAlerts = window.terminalAlerts.filter(a => !firedSet.has(a.id));
-        }
+      if (toDelete.size) {
+        const remaining = alerts.filter(a => !toDelete.has(a.id));
+        localStorage.setItem('terminal-alerts', JSON.stringify(remaining));
+        window.terminalAlerts = remaining;
         if (typeof terminalRenderAlerts === 'function') terminalRenderAlerts();
       }
     } catch (e) {}
