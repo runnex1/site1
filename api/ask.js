@@ -127,8 +127,20 @@ module.exports = async function handler(req, res) {
   const roleQ = parseRoleQuestion(question);
 
   // ── Fetch headlines + Wikidata in parallel ────────────────────────────────
-  const entityMatch = question.match(/\b([A-Z][a-z]{1,}(?:\s+[A-Z][a-z]{1,}){0,3})/);
-  const shortQuery  = entityMatch ? entityMatch[1] : question.split(' ').slice(0, 3).join(' ');
+  // Extract a meaningful short query by stripping question/stop words.
+  // Without this, "What are the latest news on Iran?" → shortQuery="What"
+  // → Google News searches for "What" → completely unrelated results.
+  const QUERY_STOP_WORDS = new Set([
+    'what','who','where','when','why','how','is','are','was','were','do','does',
+    'did','will','would','could','can','has','have','had','the','a','an','in',
+    'on','at','to','for','of','and','or','but','latest','recent','news','update',
+    'updates','tell','me','give','about','regarding','currently','some','any',
+    'going','happening','right','now','get','us','their','been','being','let',
+    'with','from','by','into','about','over','up','down','out','between','across',
+  ]);
+  const meaningfulWords = question.replace(/[?!.,]/g, '').split(/\s+/)
+    .filter(w => !QUERY_STOP_WORDS.has(w.toLowerCase()) && w.length > 1);
+  const shortQuery = meaningfulWords.slice(0, 4).join(' ') || question.split(' ').slice(0, 3).join(' ');
   const RSS_SOURCES = getNewsSources(question.slice(0, 80), shortQuery);
 
   const googleNewsItems = [];   // { title, url }
