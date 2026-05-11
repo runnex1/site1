@@ -79,6 +79,43 @@ module.exports = async function handler(req, res) {
       saved.watcherWallets = true;
     }
 
+    // Polymarket wallet addresses — also available inside body.portfolio
+    const pmWallets = body.polymarketWallets || body.portfolio?.polymarketWallets;
+    if (pmWallets) {
+      await kvSet('vault:pm_wallets', JSON.stringify(pmWallets));
+      saved.pmWallets = true;
+    }
+
+    // Watcher links
+    if (body.watcherLinks) {
+      await kvSet('vault:watcherlinks', JSON.stringify(body.watcherLinks));
+      saved.watcherLinks = true;
+    }
+
+    // Opinion.trade wallet addresses (no API key stored)
+    if (body.opinionWallets) {
+      await kvSet('vault:opinion_wallets', JSON.stringify(body.opinionWallets));
+      saved.opinionWallets = true;
+    }
+
+    // Portfolio snapshots
+    if (body.snapshots) {
+      await kvSet('vault:snapshots', JSON.stringify(body.snapshots));
+      saved.snapshots = true;
+    }
+
+    // Chart comparison tickers
+    if (body.chartTickers) {
+      await kvSet('vault:chart_tickers', JSON.stringify(body.chartTickers));
+      saved.chartTickers = true;
+    }
+
+    // TG / news feed channel handles
+    if (body.tgChannels) {
+      await kvSet('vault:feed_channels', JSON.stringify(body.tgChannels));
+      saved.tgChannels = true;
+    }
+
     // Timestamp of last sync
     await kvSet('vault:portfolio_synced_at', Date.now().toString());
 

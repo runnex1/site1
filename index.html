@@ -3834,13 +3834,31 @@ async function saveData() {
         // Cloud sync only works when served via http/https (not file://)
         if (location.protocol === 'file:') return;
 
-        // Bundle all watcher data alongside portfolio data so everything
-        // is persisted to Vercel KV in one atomic write
+        // Build a complete payload with every key the server needs.
+        // Sensitive values (API keys, TG token/chatId, dome key) are intentionally excluded.
+        const _ls = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || fallback); } catch(e) { return JSON.parse(fallback); } };
         const payload = {
-            ...data,
-            _watcherLinks:   (typeof watcherLinks   !== 'undefined' ? watcherLinks   : []),
-            _watcherWallets: (typeof watcherWallets !== 'undefined' ? watcherWallets : []),
-            _watchlist:      (typeof watchlist      !== 'undefined' ? watchlist      : []),
+            // Main portfolio (tokens, protocols, ETFs, PM positions, polymarketWallets)
+            portfolio:      data,
+            // Watchlist
+            watchlist:      (typeof watchlist      !== 'undefined' ? watchlist      : _ls('wl-data', '[]')),
+            // Watcher infrastructure
+            watcherWallets: (typeof watcherWallets !== 'undefined' ? watcherWallets : _ls('vault-watcher-wallets', '[]')),
+            watcherLinks:   (typeof watcherLinks   !== 'undefined' ? watcherLinks   : _ls('watcher-links', '[]')),
+            // Aave cap alert markets
+            aaveMarkets:    _ls('aavecap-markets-v1', '[]'),
+            // Custom token address mappings
+            customTokens:   _ls(CUSTOM_TOKEN_LS, '{}'),
+            // Portfolio weekly snapshots
+            snapshots:      _ls('portfolio-snapshots', '{}'),
+            // Opinion.trade wallet addresses (no API key)
+            opinionWallets: (opinionConfig?.wallets?.length
+                ? opinionConfig.wallets
+                : (opinionConfig?.walletAddress ? [opinionConfig.walletAddress] : [])),
+            // Chart comparison tickers
+            chartTickers:   { c1: getChartTicker(1), c2: getChartTicker(2) },
+            // Telegram / news feed channel handles
+            tgChannels:     _ls(X_HANDLES_KEY, '[]'),
         };
         await fetch('/api/sync', {
             method: 'POST',
@@ -11645,9 +11663,10 @@ document.addEventListener("click", function(e){
       };
       // Only sync if we have real portfolio data
       if (!payload.portfolio) return;
-      await fetch(WORKER_URL + '/api/sync-portfolio', {
+      // Use main /api/sync endpoint (WORKER_URL path is deprecated)
+      await fetch('/api/sync', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+        headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(payload),
       });
       console.log('[VaultSync] Portfolio synced to server.');

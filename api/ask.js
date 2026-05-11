@@ -16,6 +16,8 @@
  * For non-role questions (FOMC, market crashes, etc.): skip Wikidata, go straight to AI + feeds.
  */
 const { getNewsSources } = require('../lib/news-sources');
+const { fetchPrice, fmtPrice } = require('../lib/price');
+const { fetchMovers, fetchTrades, formatActivityForPrompt } = require('../lib/activity');
 
 // Map role keywords → Wikidata property
 const ROLE_PROP = {
@@ -27,6 +29,58 @@ const ROLE_PROP = {
   'head of government': 'P6',
   'minister':           'P6',
 };
+
+// Detect price questions — answered with live market data, not AI
+const CRYPTO_TICKERS = new Set([
+  'BTC','ETH','SOL','BNB','XRP','ADA','DOGE','MATIC','POL','DOT','SHIB','LTC',
+  'LINK','UNI','ATOM','XLM','NEAR','APT','SUI','ARB','OP','INJ','TIA','PEPE',
+  'WIF','BONK','AVAX','USDC','USDT','DAI','FRAX','AAVE','CRV','LDO','MKR',
+  'PENDLE','ENA','WBTC','STETH','RETH','JUP','PYTH','RNDR','HNT',
+]);
+const ETF_TICKERS = new Set([
+  'SPY','QQQ','IWM','DIA','VTI','VOO','GLD','SLV','TLT','HYG','ARKK',
+  'SOXL','TQQQ','SQQQ','IBIT','FBTC','ETHA','GBTC',
+]);
+const CRYPTO_NAMES = {
+  bitcoin:'BTC', ethereum:'ETH', solana:'SOL', bnb:'BNB', ripple:'XRP',
+  cardano:'ADA', avalanche:'AVAX', dogecoin:'DOGE', polkadot:'DOT',
+  polygon:'MATIC', shiba:'SHIB', litecoin:'LTC', chainlink:'LINK',
+  uniswap:'UNI', cosmos:'ATOM', stellar:'XLM', near:'NEAR',
+  aptos:'APT', sui:'SUI', arbitrum:'ARB', optimism:'OP',
+};
+
+function parsePriceQuestion(q) {
+  const s = q.toLowerCase().replace(/[?]/g, '').trim();
+  const PRICE_INTENT = /\b(price|cost|worth|value|trading\s+at|how\s+much\s+is|how\s+much\s+does|what\s+is.*price|what.*trading)\b/;
+  if (!PRICE_INTENT.test(s) && !/\$[A-Z]{1,6}\b/.test(q)) return null;
+
+  // $TICKER — explicit dollar-prefix
+  const dollarMatch = q.match(/\$([A-Z]{1,7})\b/);
+  if (dollarMatch) {
+    const sym = dollarMatch[1];
+    const type = CRYPTO_TICKERS.has(sym) ? 'crypto' : ETF_TICKERS.has(sym) ? 'etf' : 'stock';
+    return { symbol: sym, type };
+  }
+
+  // Bare uppercase ticker with price intent
+  const tickerMatch = q.match(/\b([A-Z]{2,6})\b/);
+  if (tickerMatch && (CRYPTO_TICKERS.has(tickerMatch[1]) || ETF_TICKERS.has(tickerMatch[1]))) {
+    const sym = tickerMatch[1];
+    return { symbol: sym, type: CRYPTO_TICKERS.has(sym) ? 'crypto' : 'etf' };
+  }
+
+  // Crypto name mentions with price intent
+  for (const [name, sym] of Object.entries(CRYPTO_NAMES)) {
+    if (s.includes(name)) return { symbol: sym, type: 'crypto' };
+  }
+
+  return null;
+}
+
+// Detect portfolio/activity questions
+function isPortfolioQuestion(q) {
+  return /\b(polymarket|my\s+position|my\s+trade|my\s+portfolio|position.*moved|movers?|filled\s+order|limit\s+order.*filled|what.*i.*trade|my\s+p&?l|my\s+activity)\b/i.test(q);
+}
 
 function parseRoleQuestion(q) {
   const clean = q.toLowerCase().replace(/[?]/g, '').trim();
@@ -123,8 +177,26 @@ module.exports = async function handler(req, res) {
   const GROQ_KEY   = process.env.GROQ_API_KEY;
   const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
+  // ── Price question — answer with live market data, skip AI entirely ────────
+  const priceQ = parsePriceQuestion(question);
+  if (priceQ) {
+    try {
+      const price = await fetchPrice(priceQ);
+      if (price !== null) {
+        return res.status(200).json({
+          ok: true,
+          answer: `${priceQ.symbol} is currently trading at ${fmtPrice(price, priceQ.type)}.`,
+          sources: [],
+          headlines: [],
+        });
+      }
+    } catch (e) { console.warn('[ask] price fetch failed:', e.message); }
+    // Fall through to AI if live price unavailable
+  }
+
   // ── Detect political role question ───────────────────────────────────────
   const roleQ = parseRoleQuestion(question);
+  const portfolioQ = isPortfolioQuestion(question);
 
   // ── Fetch headlines + Wikidata in parallel ────────────────────────────────
   // Extract a meaningful short query by stripping question/stop words.
@@ -146,7 +218,7 @@ module.exports = async function handler(req, res) {
   const googleNewsItems = [];   // { title, url }
   const otherItems      = [];   // { title, url }
 
-  const [, wikidataName] = await Promise.all([
+  const [, wikidataName, activityData] = await Promise.all([
     // RSS fetch — extract items with title + URL
     Promise.allSettled(RSS_SOURCES.map(async (url, idx) => {
       try {
@@ -162,7 +234,10 @@ module.exports = async function handler(req, res) {
     })),
     // Wikidata lookup (only for role questions)
     roleQ ? wikidataLookup(roleQ) : Promise.resolve(null),
+    // Polymarket activity (only for portfolio questions)
+    portfolioQ ? Promise.all([fetchMovers(), fetchTrades()]).catch(() => [[], []]) : Promise.resolve(null),
   ]);
+  const [movers, trades] = activityData || [[], []];
 
   const allItems     = [...googleNewsItems, ...otherItems];
   const allHeadlines = allItems.map(it => it.title);
@@ -182,12 +257,19 @@ module.exports = async function handler(req, res) {
 
   const lengthGuide = roleQ
     ? 'Answer in 1 concise sentence — state the name and role only.'
-    : isNewsQuery
-      ? 'Summarise in 3-4 sentences: what happened, who is involved, and current status. Use the headlines as your primary source.'
-      : 'Answer directly in 1-2 sentences. No disclaimers.';
+    : portfolioQ
+      ? 'Summarise the portfolio activity clearly. List each position or trade. Be concise but complete.'
+      : isNewsQuery
+        ? 'Summarise in 3-4 sentences: what happened, who is involved, and current status. Use the headlines as your primary source.'
+        : 'Answer directly in 1-2 sentences. No disclaimers.';
+
+  // Include live portfolio data in prompt when available
+  const activityBlock = portfolioQ && (movers.length || trades.length)
+    ? '\n\n' + formatActivityForPrompt(movers, trades)
+    : '';
 
   const prompt = `Today is ${today}. Answer the user's question concisely and factually.
-${wikidataContext}RECENT HEADLINES:\n${headlineBlock}
+${wikidataContext}RECENT HEADLINES:\n${headlineBlock}${activityBlock}
 
 USER QUESTION: ${question}
 
@@ -203,7 +285,7 @@ ${lengthGuide}`;
         body: JSON.stringify({
           model: 'llama-3.3-70b-versatile',
           temperature: 0.1,
-          max_tokens: isNewsQuery ? 220 : 80,
+          max_tokens: portfolioQ ? 350 : isNewsQuery ? 220 : 80,
           messages: [{ role: 'user', content: prompt }],
         }),
       });
@@ -220,11 +302,18 @@ ${lengthGuide}`;
         signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: isNewsQuery ? 220 : 80 },
+          generationConfig: { temperature: 0.1, maxOutputTokens: portfolioQ ? 350 : isNewsQuery ? 220 : 80 },
         }),
       });
       if (r.ok) answer = (await r.json()).candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
     } catch (e) { console.warn('[ask] Gemini failed:', e.message); }
+  }
+
+  // ── Step 3b: Portfolio direct answer (AI offline but we have activity data) ─
+  if (!answer && portfolioQ && (movers.length || trades.length)) {
+    answer = formatActivityForPrompt(movers, trades)
+      .replace('POLYMARKET PORTFOLIO ACTIVITY (last 24h):', 'Polymarket activity (last 24h):')
+      .trim();
   }
 
   // ── Step 4: Wikidata direct answer (AI offline but Wikidata worked) ───────
@@ -243,7 +332,7 @@ ${lengthGuide}`;
         body: JSON.stringify({
           model: 'llama-3.1-8b-instant',
           temperature: 0.1,
-          max_tokens: isNewsQuery ? 200 : 80,
+          max_tokens: portfolioQ ? 350 : isNewsQuery ? 200 : 80,
           messages: [{ role: 'user', content: `Today is ${today}. ${lengthGuide}
 
 RECENT HEADLINES:
