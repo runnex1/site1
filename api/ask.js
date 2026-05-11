@@ -5,7 +5,7 @@
  * Returns: { answer, headlines, sources }
  *
  * Pipeline for "who is [role] of [country]":
- *   1. Wikidata SPARQL (authoritative, live, no API key) — runs first, in parallel with feeds
+ *   1. Wikidata entity API (authoritative, live, no API key) — runs first, in parallel with feeds
  *   2. RSS headlines context for AI enrichment
  *   3. Groq 70b (grounded on Wikidata + headlines)
  *   4. Gemini fallback
@@ -84,6 +84,32 @@ async function wikidataLookup({ country, prop }) {
   }
 }
 
+// Parse RSS feed text into [{title, url}] items
+function parseRssItems(text, maxItems = 12) {
+  const items = [];
+  const itemBlocks = [...text.matchAll(/<item[^>]*>([\s\S]*?)<\/item>/gi)];
+  for (const block of itemBlocks.slice(0, maxItems)) {
+    const body = block[1];
+    const titleM = body.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+    // Try <link> then <guid isPermaLink="true">
+    const linkM  = body.match(/<link[^>]*>(?:<!\[CDATA\[)?\s*(https?:\/\/[^\s<]+)\s*(?:\]\]>)?<\/link>/i)
+                || body.match(/<guid[^>]*isPermaLink="true"[^>]*>\s*(https?:\/\/[^\s<]+)\s*<\/guid>/i);
+    const t = (titleM?.[1] || '')
+      .replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim().slice(0, 250);
+    const u = (linkM?.[1] || '').trim();
+    if (t.length > 15) items.push({ title: t, url: u });
+  }
+  // Fallback: no <item> blocks — parse bare <title> tags
+  if (items.length === 0) {
+    const titles = [...text.matchAll(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/gi)];
+    titles.slice(1, maxItems + 1).forEach(m => {
+      const t = (m[1] || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').trim().slice(0, 250);
+      if (t.length > 15) items.push({ title: t, url: '' });
+    });
+  }
+  return items;
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -105,11 +131,11 @@ module.exports = async function handler(req, res) {
   const shortQuery  = entityMatch ? entityMatch[1] : question.split(' ').slice(0, 3).join(' ');
   const RSS_SOURCES = getNewsSources(question.slice(0, 80), shortQuery);
 
-  const googleNewsHeadlines = [];
-  const otherHeadlines      = [];
+  const googleNewsItems = [];   // { title, url }
+  const otherItems      = [];   // { title, url }
 
   const [, wikidataName] = await Promise.all([
-    // RSS fetch
+    // RSS fetch — extract items with title + URL
     Promise.allSettled(RSS_SOURCES.map(async (url, idx) => {
       try {
         const r = await fetch(url, {
@@ -118,19 +144,16 @@ module.exports = async function handler(req, res) {
         });
         if (!r.ok) return;
         const text = await r.text();
-        const titles = [...text.matchAll(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/gi)];
-        const descs  = [...text.matchAll(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/gi)];
-        [...titles.slice(1, 12), ...descs.slice(1, 6)].forEach(m => {
-          const t = (m[1] || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim().slice(0, 250);
-          if (t.length > 15) (idx <= 1 ? googleNewsHeadlines : otherHeadlines).push(t);
-        });
+        const items = parseRssItems(text, 12);
+        items.forEach(it => (idx <= 1 ? googleNewsItems : otherItems).push(it));
       } catch (e) {}
     })),
     // Wikidata lookup (only for role questions)
     roleQ ? wikidataLookup(roleQ) : Promise.resolve(null),
   ]);
 
-  const allHeadlines = [...googleNewsHeadlines, ...otherHeadlines];
+  const allItems     = [...googleNewsItems, ...otherItems];
+  const allHeadlines = allItems.map(it => it.title);
   const today = new Date().toDateString();
   let answer = null;
 
@@ -143,12 +166,20 @@ module.exports = async function handler(req, res) {
     ? allHeadlines.slice(0, 30).join('\n')
     : '(no headlines fetched)';
 
+  const isNewsQuery = !roleQ && /\b(latest|recent|news|update|happen|situation|war|conflict|crisis|election|vote|attack|deal|talks?|summit)\b/i.test(question);
+
+  const lengthGuide = roleQ
+    ? 'Answer in 1 concise sentence — state the name and role only.'
+    : isNewsQuery
+      ? 'Summarise in 3-4 sentences: what happened, who is involved, and current status. Use the headlines as your primary source.'
+      : 'Answer directly in 1-2 sentences. No disclaimers.';
+
   const prompt = `Today is ${today}. Answer the user's question concisely and factually.
 ${wikidataContext}RECENT HEADLINES:\n${headlineBlock}
 
 USER QUESTION: ${question}
 
-Provide a clear, direct answer in 1-2 sentences. Focus on facts. No disclaimers.`;
+${lengthGuide}`;
 
   // ── Step 2: Groq 70b ──────────────────────────────────────────────────────
   if (GROQ_KEY) {
@@ -160,6 +191,7 @@ Provide a clear, direct answer in 1-2 sentences. Focus on facts. No disclaimers.
         body: JSON.stringify({
           model: 'llama-3.3-70b-versatile',
           temperature: 0.1,
+          max_tokens: isNewsQuery ? 220 : 80,
           messages: [{ role: 'user', content: prompt }],
         }),
       });
@@ -174,7 +206,10 @@ Provide a clear, direct answer in 1-2 sentences. Focus on facts. No disclaimers.
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(15000),
-        body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1 } }),
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: isNewsQuery ? 220 : 80 },
+        }),
       });
       if (r.ok) answer = (await r.json()).candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
     } catch (e) { console.warn('[ask] Gemini failed:', e.message); }
@@ -196,11 +231,11 @@ Provide a clear, direct answer in 1-2 sentences. Focus on facts. No disclaimers.
         body: JSON.stringify({
           model: 'llama-3.1-8b-instant',
           temperature: 0.1,
-          max_tokens: 80,
-          messages: [{ role: 'user', content: `Today is ${today}. Answer based on these recent headlines and your knowledge. Be direct and factual, 1-2 sentences.
+          max_tokens: isNewsQuery ? 200 : 80,
+          messages: [{ role: 'user', content: `Today is ${today}. ${lengthGuide}
 
 RECENT HEADLINES:
-${allHeadlines.slice(0,15).join('\n')}
+${allHeadlines.slice(0, 15).join('\n')}
 
 QUESTION: ${question}` }],
         }),
@@ -211,8 +246,9 @@ QUESTION: ${question}` }],
 
   // ── Step 6: Extract name from headlines ───────────────────────────────────
   if (!answer) {
-    const relevant = googleNewsHeadlines.length ? googleNewsHeadlines : allHeadlines;
-    if (relevant.length) {
+    const relevant = googleNewsItems.length ? googleNewsItems : allItems;
+    const relevantTitles = relevant.map(it => it.title);
+    if (relevantTitles.length) {
       const isWhoQ = /^who\s+(is|was|are)/i.test(question.trim());
       if (isWhoQ && roleQ) {
         const titleRole = roleQ.role.replace(/\b\w/g, c => c.toUpperCase());
@@ -222,7 +258,7 @@ QUESTION: ${question}` }],
         const afterRole  = new RegExp(`(?:${variants})\\s+([A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+(?:\\s+[A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+){1,3})`);
         const beforeRole = new RegExp(`([A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+(?:\\s+[A-ZȘȚĂÎÂ][a-zșțăîâ\\-]+){1,3})(?:,?\\s+is(?:\\s+the)?)?\\s+(?:${variants})`);
         let extracted = null;
-        for (const h of relevant) {
+        for (const h of relevantTitles) {
           const m = h.match(afterRole) || h.match(beforeRole);
           if (m?.[1]) {
             const words = m[1].trim().split(/\s+/);
@@ -259,7 +295,7 @@ QUESTION: ${question}` }],
       }
       if (!answer) {
         const keywords = question.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 3);
-        const filtered = relevant.filter(h => keywords.some(k => h.toLowerCase().includes(k)));
+        const filtered = relevantTitles.filter(h => keywords.some(k => h.toLowerCase().includes(k)));
         answer = filtered.length ? filtered[0] : 'AI is temporarily unavailable. Try again in a moment.';
       }
     } else {
@@ -267,5 +303,20 @@ QUESTION: ${question}` }],
     }
   }
 
-  return res.status(200).json({ ok: true, answer, headlines: googleNewsHeadlines.slice(0, 5), sources: allHeadlines.length });
+  // ── Build sources list — top items with URLs ──────────────────────────────
+  const sources = allItems
+    .filter(it => it.url)
+    .slice(0, 5)
+    .map(it => {
+      let domain = '';
+      try { domain = new URL(it.url).hostname.replace(/^www\./, ''); } catch {}
+      return { title: it.title.slice(0, 90), url: it.url, domain };
+    });
+
+  return res.status(200).json({
+    ok: true,
+    answer,
+    headlines: googleNewsItems.slice(0, 5).map(i => i.title),
+    sources,
+  });
 };

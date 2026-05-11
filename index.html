@@ -9215,7 +9215,15 @@ async function terminalSubmit() {
                 const data = await r.json();
                 if (data.answer) {
                     terminalLog('📰 ' + data.answer, 'tl-info');
-                    if (data.sources) terminalLog('↳ Based on ' + data.sources + ' recent headlines', 'tl-system');
+                    if (Array.isArray(data.sources) && data.sources.length) {
+                        const links = data.sources.slice(0, 4).map(s => {
+                            const label = s.domain || 'source';
+                            return s.url
+                                ? '<a href="' + s.url + '" target="_blank" rel="noopener" style="color:var(--acc);opacity:0.75;text-decoration:none;margin-right:10px;font-size:0.8em;border-bottom:1px solid var(--acc-dim,rgba(0,255,170,0.25))">' + label + '</a>'
+                                : '<span style="color:var(--t3);font-size:0.8em;margin-right:10px">' + label + '</span>';
+                        }).join('');
+                        terminalLog('↳ Sources: ' + links, 'tl-system');
+                    }
                 } else {
                     terminalLog('⚠ Could not fetch an answer. Try again.', 'tl-warn');
                 }
