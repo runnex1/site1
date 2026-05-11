@@ -303,13 +303,26 @@ QUESTION: ${question}` }],
     }
   }
 
-  // ── Build sources list — top items with URLs ──────────────────────────────
-  const sources = allItems
-    .filter(it => it.url)
-    .slice(0, 5)
+  // ── Build sources list — query-relevant items only ───────────────────────
+  // Google News items are already filtered by the question query → always relevant.
+  // General feeds (Reuters/BBC/NYT) are top world news → often unrelated, exclude them.
+  // Fallback: keyword-filter otherItems if Google News returned nothing with URLs.
+  const keywords = question.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 3);
+  const googleWithUrl = googleNewsItems.filter(it => it.url);
+  const relevantOther = otherItems.filter(it =>
+    it.url && keywords.some(k => it.title.toLowerCase().includes(k))
+  );
+  const sourceItems = googleWithUrl.length ? googleWithUrl : relevantOther;
+  const sources = sourceItems
+    .slice(0, 4)
     .map(it => {
       let domain = '';
       try { domain = new URL(it.url).hostname.replace(/^www\./, ''); } catch {}
+      // Google News redirect URLs → show clean domain from title suffix if possible
+      if (domain === 'news.google.com') {
+        const m = it.title.match(/ - ([^-]+)$/);
+        domain = m ? m[1].trim().toLowerCase() : 'news.google.com';
+      }
       return { title: it.title.slice(0, 90), url: it.url, domain };
     });
 
