@@ -25,6 +25,8 @@ const DAILY_BRIEF_SOURCES = [
   { url: 'https://www.marketwatch.com/rss/topstories',              label: 'MarketWatch'     },
   { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',  label: 'NYT World'       },
   { url: 'https://www.ft.com/rss/home',                             label: 'FT'              },
+  // ── Telegram channels ────────────────────────────────────────────────────
+  { url: 'https://rsshub.app/telegram/channel/thekobeissiletter',    label: 'Kobeissi Letter' },
 ];
 
 async function safeFetch(url, timeout = 8000) {
