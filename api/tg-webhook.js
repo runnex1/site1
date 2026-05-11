@@ -538,6 +538,44 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true });
   }
 
+  // ── Q&A — same routing logic as the browser terminal ────────────────────
+  // Must run BEFORE processMessage, otherwise questions without numbers
+  // fall into the "no-number → event alert" branch (step 4 of processMessage).
+  {
+    const QUESTION_RE = /^(what|why|how|who|when|where|is|are|was|were|did|does|do|has|have|had|will|would|can|could|tell\s+me|explain|give\s+me)\b/i;
+    const isQuestion    = QUESTION_RE.test(text) || text.trim().endsWith('?');
+    const isAlertIntent = /\balert\b|\bnotify\b|\bping\b/i.test(text) ||
+      (/\bwhen\b/i.test(text) && /\b(hits?|reaches?|drops?|falls?|above|below|over|under|becomes?|wins?|announces?|goes\s+to)\b/i.test(text));
+
+    if (isQuestion && !isAlertIntent) {
+      try {
+        const baseUrl = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || 'testedefi.vercel.app');
+        const r = await fetch(baseUrl + '/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: text }),
+          signal: AbortSignal.timeout(22000),
+        });
+        const data = await r.json();
+        if (data.answer) {
+          let msg = '\u{1F4F0} ' + data.answer;
+          if (Array.isArray(data.sources) && data.sources.length) {
+            const srcLinks = data.sources.slice(0, 3)
+              .map(s => s.url ? '<a href="' + s.url + '">' + (s.domain || 'source') + '</a>' : null)
+              .filter(Boolean).join(' \u00B7 ');
+            if (srcLinks) msg += '\n\n<i>Sources: ' + srcLinks + '</i>';
+          }
+          await tgReply(tgToken, tgChatId, msg);
+        } else {
+          await tgReply(tgToken, tgChatId, '\u26A0\uFE0F Could not fetch an answer. Try again.');
+        }
+      } catch (e) {
+        await tgReply(tgToken, tgChatId, '\u26A0\uFE0F Q&A error: ' + e.message);
+      }
+      return res.status(200).json({ ok: true });
+    }
+  }
+
   // ── Process as alert or AI message ───────────────────────────────────────
 
   try {
