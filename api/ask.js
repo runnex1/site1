@@ -49,6 +49,41 @@ const CRYPTO_NAMES = {
   aptos:'APT', sui:'SUI', arbitrum:'ARB', optimism:'OP',
 };
 
+
+// Named-source RSS map — used when user asks "news from X" or "latest from X"
+const SOURCE_RSS = {
+  'kobeissi letter':    'https://rsshub.app/telegram/channel/thekobeissiletter',
+  'kobeissi':           'https://rsshub.app/telegram/channel/thekobeissiletter',
+  'cnn':                'https://rss.cnn.com/rss/edition.rss',
+  'bbc':                'https://feeds.bbci.co.uk/news/world/rss.xml',
+  'reuters':            'https://feeds.reuters.com/reuters/topNews',
+  'wall street journal':'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',
+  'wsj':                'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',
+  'financial times':    'https://www.ft.com/rss/home',
+  'cnbc':               'https://www.cnbc.com/id/100003114/device/rss/rss.html',
+  'marketwatch':        'https://www.marketwatch.com/rss/topstories',
+  'nyt':                'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',
+  'new york times':     'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',
+  'coindesk':           'https://www.coindesk.com/arc/outboundfeeds/rss/',
+  'cointelegraph':      'https://cointelegraph.com/rss',
+  'the block':          'https://theblock.co/rss.xml',
+  'blockworks':         'https://blockworks.co/feed',
+  'decrypt':            'https://decrypt.co/feed',
+  'the defiant':        'https://thedefiant.io/feed',
+  'dl news':            'https://www.dlnews.com/arc/outboundfeeds/rss/',
+  'cryptopanic':        'https://cryptopanic.com/news/rss/',
+};
+
+function parseSourceQuestion(q) {
+  const s = q.toLowerCase();
+  // Must contain a "from/by" or possession signal to count as source-specific
+  if (!/\b(from|by|on|says?|saying|report|what(('s| is| does) )?(\w+ )?saying|latest from|news from|give me|show me)\b/i.test(s)) return null;
+  for (const [name, url] of Object.entries(SOURCE_RSS)) {
+    if (s.includes(name)) return { name, url };
+  }
+  return null;
+}
+
 // Trim AI answer to the last complete sentence so it never ends mid-word.
 function trimToSentence(text) {
   if (!text) return text;
@@ -199,6 +234,60 @@ module.exports = async function handler(req, res) {
       }
     } catch (e) { console.warn('[ask] price fetch failed:', e.message); }
     // Fall through to AI if live price unavailable
+  }
+
+  // ── Source-specific question — fetch only from that source ─────────────────
+  const sourceQ = parseSourceQuestion(question);
+  if (sourceQ) {
+    try {
+      const r = await fetch(sourceQ.url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VaultBot/1.0)', 'Accept': 'application/rss+xml, */*' },
+        signal: AbortSignal.timeout(9000),
+      });
+      if (r.ok) {
+        const text = await r.text();
+        const items = parseRssItems(text, 8);
+        if (items.length) {
+          const headlineBlock = items.map((it, i) => `${i + 1}. ${it.title}`).join('\n');
+          const today2 = new Date().toDateString();
+          const srcPrompt = `Today is ${today2}. The user wants the latest news from "${sourceQ.name}".\n\nMost recent posts:\n${headlineBlock}\n\nSummarise these in 3-4 sentences covering the key themes. Use ONLY the posts above — do not add outside knowledge.`;
+          let srcAnswer = null;
+          if (GROQ_KEY) {
+            try {
+              const ar = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+                signal: AbortSignal.timeout(12000),
+                body: JSON.stringify({ model: 'llama-3.3-70b-versatile', temperature: 0.1, max_tokens: 220,
+                  messages: [{ role: 'user', content: srcPrompt }] }),
+              });
+              if (ar.ok) srcAnswer = (await ar.json()).choices?.[0]?.message?.content?.trim() || null;
+            } catch (e) {}
+          }
+          if (!srcAnswer && GEMINI_KEY) {
+            try {
+              const ar = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: AbortSignal.timeout(12000),
+                body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: srcPrompt }] }],
+                  generationConfig: { temperature: 0.1, maxOutputTokens: 220 } }),
+              });
+              if (ar.ok) srcAnswer = (await ar.json()).candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
+            } catch (e) {}
+          }
+          if (!srcAnswer) srcAnswer = items.slice(0, 5).map(it => it.title).join(' | ');
+          const srcSources = items.filter(it => it.url).slice(0, 5).map(it => {
+            let domain = sourceQ.name;
+            try { domain = new URL(it.url).hostname.replace(/^www\./, ''); } catch {}
+            return { title: it.title.slice(0, 90), url: it.url, domain };
+          });
+          return res.status(200).json({ ok: true, answer: trimToSentence(srcAnswer),
+            headlines: items.map(i => i.title), sources: srcSources });
+        }
+      }
+    } catch (e) { console.warn('[ask] source-specific fetch failed:', e.message); }
+    // Fall through to general pipeline if source fetch failed
   }
 
   // ── Detect political role question ───────────────────────────────────────
