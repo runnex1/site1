@@ -484,7 +484,10 @@ QUESTION: ${question}` }],
   if (sourceQ) {
     const srcItems = googleNewsItems.filter(it => it.url).slice(0, 5).map(it => {
       let domain = sourceQ.name;
-      try { domain = new URL(it.url).hostname.replace(/^www\./, ''); } catch {}
+      try {
+        const h = new URL(it.url).hostname.replace(/^www\./, '');
+        if (h !== 'news.google.com') domain = h;  // keep sourceQ.name for Google News fallback URLs
+      } catch {}
       return { title: it.title.slice(0, 90), url: it.url, domain };
     });
     if (answer) answer = trimToSentence(answer);
