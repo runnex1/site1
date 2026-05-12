@@ -91,6 +91,43 @@ function trimToSentence(text) {
   return m ? m[1].trim() : text.trim();
 }
 
+// Telegram channel handles — for direct t.me/s/ scraping when rsshub fails
+const TG_CHANNEL_HANDLES = {
+  'kobeissi letter': 'thekobeissiletter',
+  'kobeissi':        'thekobeissiletter',
+};
+
+// Fetch recent posts from a public Telegram channel via t.me/s/<handle>
+// Returns [{title, url}] — title is the post text, url links to the channel
+async function fetchTelegramChannelPosts(handle, maxPosts = 10) {
+  try {
+    const url = `https://t.me/s/${handle}`;
+    const r = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
+      signal: AbortSignal.timeout(9000),
+    });
+    if (!r.ok) { console.warn(`[ask] t.me/s/${handle} HTTP ${r.status}`); return []; }
+    const html = await r.text();
+    const posts = [];
+    // Each post lives inside <div class="tgme_widget_message_text ...">...</div>
+    const re = /<div[^>]+class="[^"]*tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?=<(?:div|a)\s)/gi;
+    let m;
+    while ((m = re.exec(html)) !== null && posts.length < maxPosts) {
+      const text = m[1]
+        .replace(/<br\s*\/?>/gi, ' ')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/\s+/g, ' ').trim().slice(0, 400);
+      if (text.length > 30) posts.push({ title: text, url: `https://t.me/${handle}` });
+    }
+    console.log(`[ask] t.me/s/${handle} → ${posts.length} posts`);
+    return posts;
+  } catch (e) {
+    console.warn(`[ask] t.me/s/${handle} failed:`, e.message);
+    return [];
+  }
+}
+
 function parsePriceQuestion(q) {
   const s = q.toLowerCase().replace(/[?]/g, '').trim();
   const PRICE_INTENT = /\b(price|cost|worth|value|trading\s+at|how\s+much\s+is|how\s+much\s+does|what\s+is.*price|what.*trading)\b/;
@@ -282,9 +319,19 @@ module.exports = async function handler(req, res) {
           items.forEach(it => (sourceQ || idx <= 1 ? googleNewsItems : otherItems).push(it));
         } catch (e) {}
       }));
-      // If source-specific fetch returned nothing, fall back to general RSS pipeline
+      // If source-specific fetch returned nothing:
+      //   1. Try direct t.me/s/ scraping for Telegram channels
+      //   2. Fall back to general RSS pipeline as last resort
       if (sourceQ && googleNewsItems.length === 0) {
-        console.warn('[ask] source feed empty, falling back to general pipeline for:', sourceQ.name);
+        const tgHandle = TG_CHANNEL_HANDLES[sourceQ.name];
+        if (tgHandle) {
+          console.log('[ask] rsshub empty, trying t.me/s/ for:', tgHandle);
+          const tgPosts = await fetchTelegramChannelPosts(tgHandle);
+          tgPosts.forEach(p => googleNewsItems.push(p));
+        }
+      }
+      if (sourceQ && googleNewsItems.length === 0) {
+        console.warn('[ask] all source feeds empty, falling back to general pipeline for:', sourceQ.name);
         const fallbackSources = getNewsSources(question.slice(0, 80), shortQuery);
         await Promise.allSettled(fallbackSources.map(async (url, idx) => {
           try {
@@ -321,9 +368,8 @@ module.exports = async function handler(req, res) {
     ? allHeadlines.slice(0, 30).join('\n')
     : '(no headlines fetched)';
 
-  const isNewsQuery = !roleQ && (/\b(latest|recent|news|update|happen|situation|war|conflict|crisis|election|vote|attack|deal|talks?|summit)\b/i.test(question) || isSourceQuery);
-
   const isSourceQuery = !!sourceQ;
+  const isNewsQuery = !roleQ && (/\b(latest|recent|news|update|happen|situation|war|conflict|crisis|election|vote|attack|deal|talks?|summit)\b/i.test(question) || isSourceQuery);
   const lengthGuide = isSourceQuery
     ? 'Summarise the latest posts from this source in 3-4 sentences. Cover the key themes. Use ONLY the posts above.'
     : roleQ
@@ -486,7 +532,7 @@ QUESTION: ${question}` }],
       let domain = sourceQ.name;
       try {
         const h = new URL(it.url).hostname.replace(/^www\./, '');
-        if (h !== 'news.google.com') domain = h;  // keep sourceQ.name for Google News fallback URLs
+        if (h !== 'news.google.com' && h !== 't.me') domain = h;  // keep name for Google News / Telegram fallback URLs
       } catch {}
       return { title: it.title.slice(0, 90), url: it.url, domain };
     });
