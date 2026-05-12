@@ -277,6 +277,8 @@ module.exports = async function handler(req, res) {
           '',
           '<b>Condition:</b> ' + query,
         ];
+        const sourceLabel = source === 'wikipedia' ? 'Wikipedia' : source === 'headlines' ? 'News' : source;
+        msgLines.push('<b>Source:</b> ' + sourceLabel);
         if (reason)   msgLines.push('<b>What happened:</b> ' + reason);
         if (headline) msgLines.push('<b>Headline:</b> <i>' + headline + '</i>');
         msgLines.push('');
