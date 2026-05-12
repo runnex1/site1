@@ -108,22 +108,18 @@ async function fetchTelegramChannelPosts(handle, maxPosts = 10) {
     });
     if (!r.ok) { console.warn(`[ask] t.me/s/${handle} HTTP ${r.status}`); return []; }
     const html = await r.text();
-    const allPosts = [];
     // t.me/s/ renders posts oldest-first, newest-last.
-    // Use tgme_widget_message_footer as a reliable end-of-post landmark.
-    const re = /class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>[\s\S]*?class="tgme_widget_message_footer/gi;
-    let m;
-    while ((m = re.exec(html)) !== null) {
+    // Collect all match objects (cheap), take the last maxPosts, then parse only those.
+    const allMatches = [...html.matchAll(/class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>[\s\S]*?class="tgme_widget_message_footer/gi)];
+    const recent = allMatches.slice(-maxPosts).reverse().map(m => {
       const text = m[1]
         .replace(/<br\s*\/?>/gi, ' ')
         .replace(/<[^>]+>/g, '')
         .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
         .replace(/\s+/g, ' ').trim().slice(0, 400);
-      if (text.length > 30) allPosts.push({ title: text, url: `https://t.me/${handle}` });
-    }
-    // Return the MOST RECENT posts (end of page = newest)
-    const recent = allPosts.slice(-maxPosts).reverse();
-    console.log(`[ask] t.me/s/${handle} → ${allPosts.length} total posts, returning ${recent.length} most recent`);
+      return text.length > 30 ? { title: text, url: `https://t.me/${handle}` } : null;
+    }).filter(Boolean);
+    console.log(`[ask] t.me/s/${handle} → ${allMatches.length} total, returning ${recent.length} most recent`);
     return recent;
   } catch (e) {
     console.warn(`[ask] t.me/s/${handle} failed:`, e.message);
