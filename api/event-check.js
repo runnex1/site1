@@ -277,7 +277,13 @@ module.exports = async function handler(req, res) {
           '',
           '<b>Condition:</b> ' + query,
         ];
-        const sourceLabel = source === 'wikipedia' ? 'Wikipedia' : source === 'headlines' ? 'News' : source;
+        let sourceLabel;
+        if (source === 'wikipedia') {
+          const wikiUrl = 'https://en.wikipedia.org/wiki/' + encodeURIComponent(entity.replace(/ /g, '_'));
+          sourceLabel = '<a href="' + wikiUrl + '">Wikipedia</a>';
+        } else {
+          sourceLabel = source === 'headlines' ? 'News' : source;
+        }
         msgLines.push('<b>Source:</b> ' + sourceLabel);
         if (reason)   msgLines.push('<b>What happened:</b> ' + reason);
         if (headline) msgLines.push('<b>Headline:</b> <i>' + headline + '</i>');
