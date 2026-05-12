@@ -98,7 +98,7 @@ const TG_CHANNEL_HANDLES = {
 };
 
 // Fetch recent posts from a public Telegram channel via t.me/s/<handle>
-// Returns [{title, url}] — title is the post text, url links to the channel
+// Returns [{title, url}] — newest posts first, up to maxPosts entries
 async function fetchTelegramChannelPosts(handle, maxPosts = 10) {
   try {
     const url = `https://t.me/s/${handle}`;
@@ -108,20 +108,23 @@ async function fetchTelegramChannelPosts(handle, maxPosts = 10) {
     });
     if (!r.ok) { console.warn(`[ask] t.me/s/${handle} HTTP ${r.status}`); return []; }
     const html = await r.text();
-    const posts = [];
-    // Each post lives inside <div class="tgme_widget_message_text ...">...</div>
-    const re = /<div[^>]+class="[^"]*tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>\s*(?=<(?:div|a)\s)/gi;
+    const allPosts = [];
+    // t.me/s/ renders posts oldest-first, newest-last.
+    // Use tgme_widget_message_footer as a reliable end-of-post landmark.
+    const re = /class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>[\s\S]*?class="tgme_widget_message_footer/gi;
     let m;
-    while ((m = re.exec(html)) !== null && posts.length < maxPosts) {
+    while ((m = re.exec(html)) !== null) {
       const text = m[1]
         .replace(/<br\s*\/?>/gi, ' ')
         .replace(/<[^>]+>/g, '')
         .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
         .replace(/\s+/g, ' ').trim().slice(0, 400);
-      if (text.length > 30) posts.push({ title: text, url: `https://t.me/${handle}` });
+      if (text.length > 30) allPosts.push({ title: text, url: `https://t.me/${handle}` });
     }
-    console.log(`[ask] t.me/s/${handle} → ${posts.length} posts`);
-    return posts;
+    // Return the MOST RECENT posts (end of page = newest)
+    const recent = allPosts.slice(-maxPosts).reverse();
+    console.log(`[ask] t.me/s/${handle} → ${allPosts.length} total posts, returning ${recent.length} most recent`);
+    return recent;
   } catch (e) {
     console.warn(`[ask] t.me/s/${handle} failed:`, e.message);
     return [];
