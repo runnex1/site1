@@ -270,4 +270,35 @@ module.exports = async function handler(req, res) {
     try {
       const stored = await kvGet(ALERTS_KEY);
       const alerts = stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : [];
-    
+          const alert  = alerts.find(a => a.id === alertId);
+      if (alert && !alert.tgSent) {
+        const msgLines = [
+          '🔔 <b>Event Alert — ' + (alert.label || query) + '</b>',
+          '',
+          '<b>Condition:</b> ' + query,
+        ];
+        if (reason)   msgLines.push('<b>What happened:</b> ' + reason);
+        if (headline) msgLines.push('<b>Headline:</b> <i>' + headline + '</i>');
+        msgLines.push('');
+        msgLines.push('<i>' + new Date().toUTCString() + '</i>');
+        const msg = msgLines.join('\n');
+        await fetch('https://api.telegram.org/bot' + TG_TOKEN + '/sendMessage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: TG_CHAT_ID, text: msg, parse_mode: 'HTML' }),
+        });
+        alert.triggered = true;
+        alert.tgSent    = true;
+        await kvSet(ALERTS_KEY, JSON.stringify(alerts));
+        console.log('[event-check] Fired + TG sent:', alert.label, '| source:', source);
+      }
+    } catch(e) {
+      console.error('[event-check] KV/TG error:', e.message);
+    }
+  }
+
+  return res.status(200).json({
+    triggered, verdict, source,
+    context: [wikiSummary, wikidataDesc].filter(Boolean).slice(0, 2),
+  });
+};
