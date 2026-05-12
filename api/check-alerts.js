@@ -133,7 +133,7 @@ module.exports = async function handler(req, res) {
         console.log('[event] Checking condition via /api/event-check:', condition);
 
         // Call the same endpoint the browser uses — identical logic, identical result
-        const baseUrl = process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : 'http://localhost:3000';
+        const baseUrl = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL || 'testedefi.vercel.app');
         const ecRes = await fetch(baseUrl + '/api/event-check', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
