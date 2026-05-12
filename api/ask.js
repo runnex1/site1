@@ -236,59 +236,8 @@ module.exports = async function handler(req, res) {
     // Fall through to AI if live price unavailable
   }
 
-  // ── Source-specific question — fetch only from that source ─────────────────
+  // ── Detect source-specific query ───────────────────────────────────────
   const sourceQ = parseSourceQuestion(question);
-  if (sourceQ) {
-    try {
-      const r = await fetch(sourceQ.url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VaultBot/1.0)', 'Accept': 'application/rss+xml, */*' },
-        signal: AbortSignal.timeout(9000),
-      });
-      if (r.ok) {
-        const text = await r.text();
-        const items = parseRssItems(text, 8);
-        if (items.length) {
-          const headlineBlock = items.map((it, i) => `${i + 1}. ${it.title}`).join('\n');
-          const today2 = new Date().toDateString();
-          const srcPrompt = `Today is ${today2}. The user wants the latest news from "${sourceQ.name}".\n\nMost recent posts:\n${headlineBlock}\n\nSummarise these in 3-4 sentences covering the key themes. Use ONLY the posts above — do not add outside knowledge.`;
-          let srcAnswer = null;
-          if (GROQ_KEY) {
-            try {
-              const ar = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
-                signal: AbortSignal.timeout(12000),
-                body: JSON.stringify({ model: 'llama-3.3-70b-versatile', temperature: 0.1, max_tokens: 220,
-                  messages: [{ role: 'user', content: srcPrompt }] }),
-              });
-              if (ar.ok) srcAnswer = (await ar.json()).choices?.[0]?.message?.content?.trim() || null;
-            } catch (e) {}
-          }
-          if (!srcAnswer && GEMINI_KEY) {
-            try {
-              const ar = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                signal: AbortSignal.timeout(12000),
-                body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: srcPrompt }] }],
-                  generationConfig: { temperature: 0.1, maxOutputTokens: 220 } }),
-              });
-              if (ar.ok) srcAnswer = (await ar.json()).candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
-            } catch (e) {}
-          }
-          if (!srcAnswer) srcAnswer = items.slice(0, 5).map(it => it.title).join(' | ');
-          const srcSources = items.filter(it => it.url).slice(0, 5).map(it => {
-            let domain = sourceQ.name;
-            try { domain = new URL(it.url).hostname.replace(/^www\./, ''); } catch {}
-            return { title: it.title.slice(0, 90), url: it.url, domain };
-          });
-          return res.status(200).json({ ok: true, answer: trimToSentence(srcAnswer),
-            headlines: items.map(i => i.title), sources: srcSources });
-        }
-      }
-    } catch (e) { console.warn('[ask] source-specific fetch failed:', e.message); }
-    // Fall through to general pipeline if source fetch failed
-  }
 
   // ── Detect political role question ───────────────────────────────────────
   const roleQ = parseRoleQuestion(question);
@@ -309,7 +258,10 @@ module.exports = async function handler(req, res) {
   const meaningfulWords = question.replace(/[?!.,]/g, '').split(/\s+/)
     .filter(w => !QUERY_STOP_WORDS.has(w.toLowerCase()) && w.length > 1);
   const shortQuery = meaningfulWords.slice(0, 4).join(' ') || question.split(' ').slice(0, 3).join(' ');
-  const RSS_SOURCES = getNewsSources(question.slice(0, 80), shortQuery);
+  // When user asks for news from a specific source, fetch only that source
+  const RSS_SOURCES = sourceQ
+    ? [sourceQ.url]
+    : getNewsSources(question.slice(0, 80), shortQuery);
 
   const googleNewsItems = [];   // { title, url }
   const otherItems      = [];   // { title, url }
@@ -325,7 +277,7 @@ module.exports = async function handler(req, res) {
         if (!r.ok) return;
         const text = await r.text();
         const items = parseRssItems(text, 12);
-        items.forEach(it => (idx <= 1 ? googleNewsItems : otherItems).push(it));
+        items.forEach(it => (sourceQ || idx <= 1 ? googleNewsItems : otherItems).push(it));
       } catch (e) {}
     })),
     // Wikidata lookup (only for role questions)
@@ -349,9 +301,12 @@ module.exports = async function handler(req, res) {
     ? allHeadlines.slice(0, 30).join('\n')
     : '(no headlines fetched)';
 
-  const isNewsQuery = !roleQ && /\b(latest|recent|news|update|happen|situation|war|conflict|crisis|election|vote|attack|deal|talks?|summit)\b/i.test(question);
+  const isNewsQuery = !roleQ && (/\b(latest|recent|news|update|happen|situation|war|conflict|crisis|election|vote|attack|deal|talks?|summit)\b/i.test(question) || isSourceQuery);
 
-  const lengthGuide = roleQ
+  const isSourceQuery = !!sourceQ;
+  const lengthGuide = isSourceQuery
+    ? 'Summarise the latest posts from this source in 3-4 sentences. Cover the key themes. Use ONLY the posts above.'
+    : roleQ
     ? 'Answer in 1 concise sentence — state the name and role only.'
     : portfolioQ
       ? 'Summarise the portfolio activity clearly. List each position or trade. Be concise but complete.'
@@ -505,6 +460,16 @@ QUESTION: ${question}` }],
   // General feeds (Reuters/BBC/NYT) are top world news → often unrelated, exclude them.
   // Fallback: keyword-filter otherItems if Google News returned nothing with URLs.
   const keywords = question.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(w => w.length > 3);
+  // When a named source was requested, all items came from it — show them directly
+  if (sourceQ) {
+    const srcItems = googleNewsItems.filter(it => it.url).slice(0, 5).map(it => {
+      let domain = sourceQ.name;
+      try { domain = new URL(it.url).hostname.replace(/^www\./, ''); } catch {}
+      return { title: it.title.slice(0, 90), url: it.url, domain };
+    });
+    if (answer) answer = trimToSentence(answer);
+    return res.status(200).json({ ok: true, answer, headlines: googleNewsItems.map(i => i.title), sources: srcItems });
+  }
   const googleWithUrl = googleNewsItems.filter(it => it.url);
   const relevantOther = otherItems.filter(it =>
     it.url && keywords.some(k => it.title.toLowerCase().includes(k))
