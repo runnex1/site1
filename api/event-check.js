@@ -83,6 +83,28 @@ module.exports = async function handler(req, res) {
     return { triggered, verdict: triggered ? 'YES' : (g || m || 'ERROR') };
   }
 
+  // JSON-based check — returns triggered, verdict, reason, headline
+  async function askBothJSON(prompt) {
+    let rawText = '{}';
+    try {
+      const [g, m] = await Promise.all([askGroq(prompt), askGemini(prompt)]);
+      rawText = (g || m || '{}');
+    } catch(e) { /* ignore */ }
+    try {
+      const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+      const triggered = !!parsed.triggered;
+      return {
+        triggered,
+        verdict:  triggered ? 'YES' : 'NO',
+        reason:   parsed.reason  || '',
+        headline: parsed.headline || '',
+      };
+    } catch(e) {
+      const triggered = rawText?.startsWith('YES');
+      return { triggered, verdict: triggered ? 'YES' : 'NO', reason: '', headline: '' };
+    }
+  }
+
   // ── Wikipedia summary ─────────────────────────────────────────────────────
   async function fetchWikipedia(searchTerm) {
     try {
@@ -178,6 +200,8 @@ module.exports = async function handler(req, res) {
   let triggered = false;
   let verdict   = 'NO';
   let source    = 'no_data';
+  let reason    = '';
+  let headline  = '';
 
   if (authoritative) {
     const wikiPrompt =
@@ -227,13 +251,16 @@ module.exports = async function handler(req, res) {
         'Today is ' + today + '.\n\n' +
         contextParts.join('\n\n') + '\n\n' +
         'CONDITION TO CHECK: "' + query + '"\n\n' +
-        'Is this condition currently true?\n' +
-        'Say YES if any source confirms it. Say NO only if clearly contradicted.\n' +
-        'One word: YES or NO.';
+        'Has this condition been met based on the sources above?\n' +
+        'Reply with ONLY a JSON object:\n' +
+        '{"triggered": true/false, "reason": "brief explanation of what happened", "headline": "the specific headline that confirmed this, or empty string"}\n\n' +
+        'Be conservative — only say triggered:true if there is clear, direct evidence.';
 
-      const rssResult = await askBoth(rssPrompt);
+      const rssResult = await askBothJSON(rssPrompt);
       triggered = rssResult.triggered;
       verdict   = rssResult.verdict;
+      reason    = rssResult.reason;
+      headline  = rssResult.headline;
       source    = 'headlines';
     }
   }
@@ -243,33 +270,4 @@ module.exports = async function handler(req, res) {
     try {
       const stored = await kvGet(ALERTS_KEY);
       const alerts = stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : [];
-      const alert  = alerts.find(a => a.id === alertId);
-      if (alert && !alert.tgSent) {
-        const msg = [
-          '🔔 <b>Event Alert — ' + (alert.label || query) + '</b>',
-          '',
-          '<b>Condition:</b> ' + query,
-          '<b>Source:</b> ' + source,
-          '',
-          '<i>' + new Date().toUTCString() + '</i>',
-        ].join('\n');
-        await fetch('https://api.telegram.org/bot' + TG_TOKEN + '/sendMessage', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: TG_CHAT_ID, text: msg, parse_mode: 'HTML' }),
-        });
-        alert.triggered = true;
-        alert.tgSent    = true;
-        await kvSet(ALERTS_KEY, JSON.stringify(alerts));
-        console.log('[event-check] Fired + TG sent:', alert.label, '| source:', source);
-      }
-    } catch(e) {
-      console.error('[event-check] KV/TG error:', e.message);
-    }
-  }
-
-  return res.status(200).json({
-    triggered, verdict, source,
-    context: [wikiSummary, wikidataDesc].filter(Boolean).slice(0, 2),
-  });
-};
+    
