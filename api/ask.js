@@ -49,6 +49,13 @@ const CRYPTO_NAMES = {
   aptos:'APT', sui:'SUI', arbitrum:'ARB', optimism:'OP',
 };
 
+// Trim AI answer to the last complete sentence so it never ends mid-word.
+function trimToSentence(text) {
+  if (!text) return text;
+  const m = text.match(/^([\s\S]*[.!?])(?:[\s"'»]*)$/);
+  return m ? m[1].trim() : text.trim();
+}
+
 function parsePriceQuestion(q) {
   const s = q.toLowerCase().replace(/[?]/g, '').trim();
   const PRICE_INTENT = /\b(price|cost|worth|value|trading\s+at|how\s+much\s+is|how\s+much\s+does|what\s+is.*price|what.*trading)\b/;
@@ -426,6 +433,8 @@ QUESTION: ${question}` }],
       }
       return { title: it.title.slice(0, 90), url: it.url, domain };
     });
+
+  if (answer) answer = trimToSentence(answer);
 
   return res.status(200).json({
     ok: true,
