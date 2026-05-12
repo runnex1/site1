@@ -82,6 +82,30 @@ module.exports = async function handler(req, res) {
       await kvSet('vault:tg_channels', JSON.stringify(tgChannels));
     }
 
+    // ── Immediately check brand-new event alerts ────────────────────────────
+    // A "new" alert is one the browser just added (not in previous KV state)
+    // and created within the last 2 minutes (guards against KV-cleared re-saves).
+    const existingIds = new Set(existing.map(a => a.id));
+    const newEventAlerts = browserAlerts.filter(a =>
+      a.type === 'event' &&
+      !existingIds.has(a.id) &&
+      !a.triggered &&
+      (Date.now() - (a.setAt || 0)) < 120000
+    );
+    if (newEventAlerts.length > 0) {
+      const baseUrl = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || 'testedefi.vercel.app');
+      // Await so the function doesn't terminate before checks complete
+      await Promise.allSettled(newEventAlerts.map(a =>
+        fetch(baseUrl + '/api/event-check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          // Pass alertId so event-check sends TG + marks triggered in KV if fired
+          body: JSON.stringify({ condition: a.condition, label: a.label, alertId: a.id }),
+          signal: AbortSignal.timeout(22000),
+        }).catch(e => console.warn('[sync-alerts] immediate check failed:', e.message))
+      ));
+    }
+
     return res.status(200).json({
       ok:          true,
       count:       merged.length,

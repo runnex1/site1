@@ -582,27 +582,81 @@ module.exports = async function handler(req, res) {
     const result = await processMessage(text);
 
     if (result.type === 'alerts' && result.alerts.length > 0) {
-      const alerts = await loadAlerts();
-      for (const a of result.alerts) alerts.push(a);
-      await saveAlerts(alerts);
-
-      // Fetch current prices for non-event alerts to show in confirmation
+      const baseUrl = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || 'testedefi.vercel.app');
       const { fetchPrice, fmtPrice } = require('../lib/price');
-      const lines = await Promise.all(result.alerts.map(async a => {
-        if (a.type === 'event') {
-          return '✅ <b>' + a.label + '</b>';
-        }
-        try {
-          const price = await fetchPrice(a);
-          const priceStr = price != null ? ' (' + fmtPrice(price, a.type) + ')' : '';
-          return '✅ <b>' + a.symbol + priceStr + ' ' + a.dir + ' ' + fmtPrice(a.target, a.type) + '</b>';
-        } catch (e) {
-          return '✅ <b>' + a.label + '</b>';
-        }
-      }));
-      await tgReply(tgToken, tgChatId,
-        lines.join('\n') + '\n\nI\'ll notify you when triggered.'
-      );
+
+      // ── Immediately check event alerts — they may already be true ──────────
+      // Conditions like "Iran no longer has a Shah" are historically settled.
+      // Check BEFORE saving so we never queue an alert that fires instantly.
+      const eventAlerts = result.alerts.filter(a => a.type === 'event');
+      const otherAlerts = result.alerts.filter(a => a.type !== 'event');
+
+      const alreadyTrue  = [];  // event alerts that are already triggered
+      const toSave       = [...otherAlerts];
+
+      if (eventAlerts.length > 0) {
+        await Promise.all(eventAlerts.map(async a => {
+          try {
+            const r = await fetch(baseUrl + '/api/event-check', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              // No alertId — we handle the reply here; event-check just evaluates
+              body: JSON.stringify({ condition: a.condition, label: a.label }),
+              signal: AbortSignal.timeout(22000),
+            });
+            if (!r.ok) { toSave.push(a); return; }
+            const d = await r.json();
+            if (d.triggered) {
+              alreadyTrue.push({ ...a, reason: d.reason || '', headline: d.headline || '' });
+            } else {
+              toSave.push(a);
+            }
+          } catch (e) {
+            console.warn('[tg-webhook] immediate event-check failed:', e.message);
+            toSave.push(a); // save for cron on error
+          }
+        }));
+      }
+
+      // Save only the alerts that are NOT already true
+      if (toSave.length > 0) {
+        const alerts = await loadAlerts();
+        for (const a of toSave) alerts.push(a);
+        await saveAlerts(alerts);
+      }
+
+      // Notify about conditions that fired immediately
+      for (const a of alreadyTrue) {
+        const lines = [
+          '⚡️ <b>' + (a.label || a.condition) + ' — Already True!</b>',
+          '',
+          '<b>Condition:</b> ' + a.condition,
+        ];
+        if (a.reason)   lines.push('<b>What happened:</b> ' + a.reason);
+        if (a.headline) lines.push('<b>Source:</b> <i>' + a.headline + '</i>');
+        lines.push('');
+        lines.push('<i>This condition is already met — no waiting needed.</i>');
+        await tgReply(tgToken, tgChatId, lines.join('\n'));
+      }
+
+      // Confirm saved (pending) alerts
+      if (toSave.length > 0) {
+        const lines = await Promise.all(toSave.map(async a => {
+          if (a.type === 'event') {
+            return '✅ <b>' + a.label + '</b>';
+          }
+          try {
+            const price = await fetchPrice(a);
+            const priceStr = price != null ? ' (' + fmtPrice(price, a.type) + ')' : '';
+            return '✅ <b>' + a.symbol + priceStr + ' ' + a.dir + ' ' + fmtPrice(a.target, a.type) + '</b>';
+          } catch (e) {
+            return '✅ <b>' + a.label + '</b>';
+          }
+        }));
+        await tgReply(tgToken, tgChatId,
+          lines.join('\n') + '\n\nI\'ll notify you when triggered.'
+        );
+      }
     } else if (result.type === 'message') {
       await tgReply(tgToken, tgChatId, result.text);
     } else {
