@@ -8533,9 +8533,10 @@ function terminalSave() {
     // Sync to server so the 24/7 worker picks up the latest alerts
     if (location.protocol !== 'file:') {
         fetch('/api/sync-alerts', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ alerts: terminalAlerts }),
+            method:   'POST',
+            headers:  { 'Content-Type': 'application/json' },
+            body:     JSON.stringify({ alerts: terminalAlerts }),
+            keepalive: true,  // completes even if the tab closes immediately
         }).catch(() => {}); // fire-and-forget
     }
 }
@@ -11638,9 +11639,10 @@ document.addEventListener("click", function(e){
         try { return JSON.parse(localStorage.getItem('vault_tg_channels') || '[]'); } catch(e) { return []; }
       })();
       await fetch(WORKER_URL + '/api/sync-alerts', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
-        body:    JSON.stringify({ alerts: untriggered, tgChannels }),
+        method:    'POST',
+        headers:   { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+        body:      JSON.stringify({ alerts: untriggered, tgChannels }),
+        keepalive: true,  // completes even if the tab closes immediately
       });
       console.log('[VaultSync] Synced', untriggered.length, 'alerts +', tgChannels.length, 'TG channels to server.');
     } catch (e) {
@@ -11779,6 +11781,25 @@ document.addEventListener("click", function(e){
     if (++attempts > 50) clearInterval(poll);
   }, 100);
 })();
+</script>
+<script>
+// Safety net: flush alerts to server when the tab is closed/refreshed.
+// keepalive:true lets the browser complete the request after unload.
+window.addEventListener('beforeunload', function() {
+  try {
+    var stored = localStorage.getItem('terminal-alerts');
+    var alerts = stored ? JSON.parse(stored) : [];
+    var untriggered = Array.isArray(alerts) ? alerts.filter(function(a){ return !a.triggered; }) : [];
+    var tgChannels = [];
+    try { tgChannels = JSON.parse(localStorage.getItem('vault_tg_channels') || '[]'); } catch(e) {}
+    fetch('/api/sync-alerts', {
+      method:    'POST',
+      headers:   { 'Content-Type': 'application/json' },
+      body:      JSON.stringify({ alerts: untriggered, tgChannels: tgChannels }),
+      keepalive: true,
+    });
+  } catch(e) {}
+});
 </script>
 </body>
 </html>
