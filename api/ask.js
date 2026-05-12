@@ -268,18 +268,38 @@ module.exports = async function handler(req, res) {
 
   const [, wikidataName, activityData] = await Promise.all([
     // RSS fetch — extract items with title + URL
-    Promise.allSettled(RSS_SOURCES.map(async (url, idx) => {
-      try {
-        const r = await fetch(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VaultBot/1.0)' },
-          signal: AbortSignal.timeout(6000),
-        });
-        if (!r.ok) return;
-        const text = await r.text();
-        const items = parseRssItems(text, 12);
-        items.forEach(it => (sourceQ || idx <= 1 ? googleNewsItems : otherItems).push(it));
-      } catch (e) {}
-    })),
+    // For source-specific queries use a longer timeout; fall back to general pipeline if empty
+    (async () => {
+      await Promise.allSettled(RSS_SOURCES.map(async (url, idx) => {
+        try {
+          const r = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VaultBot/1.0)' },
+            signal: AbortSignal.timeout(sourceQ ? 10000 : 6000),
+          });
+          if (!r.ok) return;
+          const text = await r.text();
+          const items = parseRssItems(text, 12);
+          items.forEach(it => (sourceQ || idx <= 1 ? googleNewsItems : otherItems).push(it));
+        } catch (e) {}
+      }));
+      // If source-specific fetch returned nothing, fall back to general RSS pipeline
+      if (sourceQ && googleNewsItems.length === 0) {
+        console.warn('[ask] source feed empty, falling back to general pipeline for:', sourceQ.name);
+        const fallbackSources = getNewsSources(question.slice(0, 80), shortQuery);
+        await Promise.allSettled(fallbackSources.map(async (url, idx) => {
+          try {
+            const r = await fetch(url, {
+              headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VaultBot/1.0)' },
+              signal: AbortSignal.timeout(6000),
+            });
+            if (!r.ok) return;
+            const text = await r.text();
+            const items = parseRssItems(text, 12);
+            items.forEach(it => (idx <= 1 ? googleNewsItems : otherItems).push(it));
+          } catch (e) {}
+        }));
+      }
+    })(),
     // Wikidata lookup (only for role questions)
     roleQ ? wikidataLookup(roleQ) : Promise.resolve(null),
     // Polymarket activity (only for portfolio questions)
