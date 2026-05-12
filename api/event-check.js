@@ -209,7 +209,10 @@ module.exports = async function handler(req, res) {
       'AUTHORITATIVE SOURCES:\n' + authoritative + '\n\n' +
       'CONDITION TO CHECK: "' + query + '"\n\n' +
       'Based ONLY on the authoritative sources above, is this condition currently true?\n' +
-      'Answer YES if any source confirms it, NO if contradicted, UNSURE if unclear.\n' +
+      'The condition may be a recent event OR an established/historical fact.\n' +
+      'Say YES if any source confirms it — including as a long-standing or historical fact.\n' +
+      'Say NO only if the sources directly contradict the condition.\n' +
+      'Say UNSURE only if the sources contain no relevant information at all.\n' +
       'One word: YES, NO, or UNSURE.';
 
     const wikiResult = await askBoth(wikiPrompt);
@@ -252,9 +255,11 @@ module.exports = async function handler(req, res) {
         contextParts.join('\n\n') + '\n\n' +
         'CONDITION TO CHECK: "' + query + '"\n\n' +
         'Has this condition been met based on the sources above?\n' +
+        'The condition may be a recent event OR an established/historical fact.\n' +
+        'Set triggered:true if any source confirms it — including as a known historical or current fact.\n' +
+        'Set triggered:false only if a source directly contradicts it or the sources are completely silent.\n' +
         'Reply with ONLY a JSON object:\n' +
-        '{"triggered": true/false, "reason": "brief explanation of what happened", "headline": "the specific headline that confirmed this, or empty string"}\n\n' +
-        'Be conservative — only say triggered:true if there is clear, direct evidence.';
+        '{"triggered": true/false, "reason": "brief explanation", "headline": "the specific headline that confirmed this, or empty string"}';
 
       const rssResult = await askBothJSON(rssPrompt);
       triggered = rssResult.triggered;
