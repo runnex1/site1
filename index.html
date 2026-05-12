@@ -3798,6 +3798,32 @@ async function loadData() {
                         localStorage.setItem('wl-data', JSON.stringify(watchlist));
                         delete parsed._watchlist;
                     }
+                    if (parsed._snapshots && typeof parsed._snapshots === 'object') {
+                        localStorage.setItem('portfolio-snapshots', JSON.stringify(parsed._snapshots));
+                        delete parsed._snapshots;
+                    }
+                    if (parsed._aaveMarkets && Array.isArray(parsed._aaveMarkets)) {
+                        localStorage.setItem('aavecap-markets-v1', JSON.stringify(parsed._aaveMarkets));
+                        delete parsed._aaveMarkets;
+                    }
+                    if (parsed._customTokens && typeof parsed._customTokens === 'object') {
+                        localStorage.setItem('vault-custom-tokens', JSON.stringify(parsed._customTokens));
+                        delete parsed._customTokens;
+                    }
+                    if (parsed._opinionConfig && typeof parsed._opinionConfig === 'object') {
+                        const oc = parsed._opinionConfig;
+                        if (Array.isArray(oc.wallets)) {
+                            opinionConfig.wallets = oc.wallets;
+                            opinionConfig.walletAddress = oc.walletAddress || oc.wallets[0] || '';
+                            localStorage.setItem('opinion-config', JSON.stringify({ wallets: oc.wallets, walletAddress: opinionConfig.walletAddress }));
+                            if (typeof updateOpinionStatusBar === 'function') updateOpinionStatusBar();
+                        }
+                        delete parsed._opinionConfig;
+                    }
+                    if (parsed._tgChannels && Array.isArray(parsed._tgChannels)) {
+                        localStorage.setItem('vault_tg_channels', JSON.stringify(parsed._tgChannels));
+                        delete parsed._tgChannels;
+                    }
 
                     data = parsed;
                     saveData();
@@ -3861,9 +3887,10 @@ async function saveData() {
             tgChannels:     _ls(X_HANDLES_KEY, '[]'),
         };
         await fetch('/api/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            method:    'POST',
+            headers:   { 'Content-Type': 'application/json' },
+            body:      JSON.stringify(payload),
+            keepalive: true,
         });
     } catch(e) { if (location.protocol !== 'file:') console.error('Cloud save error:', e); }
 }

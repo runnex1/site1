@@ -19,10 +19,68 @@ const SYNC_SECRET = process.env.SYNC_SECRET || '';
 module.exports = async function handler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-sync-secret');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // ── GET — load all vault data back to the browser ─────────────────────────
+  if (req.method === 'GET') {
+    try {
+      const [
+        portfolioRaw, watchlistRaw, watcherWalletsRaw, watcherLinksRaw,
+        snapshotsRaw, aaveMarketsRaw, customTokensRaw,
+        opinionWalletsRaw, tgChannelsRaw,
+      ] = await Promise.all([
+        kvGet('vault:portfolio'),
+        kvGet('vault:watchlist'),
+        kvGet('vault:watcherwallets'),
+        kvGet('vault:watcherlinks'),
+        kvGet('vault:snapshots'),
+        kvGet('vault:aavemarkets'),
+        kvGet('vault:customtokens'),
+        kvGet('vault:opinion_wallets'),
+        kvGet('vault:feed_channels'),
+      ]);
+
+      if (!portfolioRaw) return res.status(200).json({ ok: true, result: null });
+
+      const parse = (raw, fallback) => {
+        if (!raw) return fallback;
+        try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { return fallback; }
+      };
+
+      const portfolio      = parse(portfolioRaw, {});
+      const watchlist      = parse(watchlistRaw, []);
+      const watcherWallets = parse(watcherWalletsRaw, []);
+      const watcherLinks   = parse(watcherLinksRaw, []);
+      const snapshots      = parse(snapshotsRaw, {});
+      const aaveMarkets    = parse(aaveMarketsRaw, []);
+      const customTokens   = parse(customTokensRaw, {});
+      const opinionWallets = parse(opinionWalletsRaw, []);
+      const tgChannels     = parse(tgChannelsRaw, []);
+
+      // Embed auxiliary data as _ keys inside the portfolio object.
+      // The browser's loadData() extracts and deletes these before setting data = parsed.
+      const result = {
+        ...portfolio,
+        _watchlist:      watchlist,
+        _watcherWallets: watcherWallets,
+        _watcherLinks:   watcherLinks,
+        _snapshots:      snapshots,
+        _aaveMarkets:    aaveMarkets,
+        _customTokens:   customTokens,
+        _opinionConfig:  { wallets: opinionWallets, walletAddress: opinionWallets[0] || '' },
+        _tgChannels:     tgChannels,
+      };
+
+      return res.status(200).json({ ok: true, result: JSON.stringify(result) });
+    } catch (e) {
+      console.error('[sync] GET error:', e.message);
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   // Auth
