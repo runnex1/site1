@@ -36,6 +36,12 @@ module.exports = async function handler(req, res) {
   const query = (condition || label).slice(0, 120);
   const today = new Date().toDateString();
 
+  // Stagger parallel cron checks to avoid thundering-herd Groq 429s.
+  // alertId is only set when called by check-alerts (cron), not browser manual checks.
+  if (alertId) {
+    await new Promise(r => setTimeout(r, Math.random() * 5000)); // 0–5 s jitter
+  }
+
   // ── AI helper ─────────────────────────────────────────────────────────────
   async function askAI({ url, apiKey, model, messages }) {
     const r = await fetch(url, {
@@ -237,15 +243,21 @@ module.exports = async function handler(req, res) {
   console.log('[event-check] Entity extracted:', entity, '| Query:', query);
 
   // Detect time-sensitive conditions: Wikipedia is an encyclopedia, not a news feed.
-  // For conditions involving recent events ("announced", "said today", "released") Wikipedia
-  // will almost always say NO even when the event HAS happened — so we must always run RSS.
-  const isTimeSensitive = /\b(announc|releas|said|says|stated|declared|tweet|post|today|yesterday|this week|this month|recent|latest|new\b|just\b|breaking|now\b|happen|occur|report|arriv|land|visit|sign|agree|reach|meet|speak|address|publish|confirm|pass|approv|reject|launch|deploy|attack|invad|withdraw|ceasefire|deal|vote|elect|win|lose)\b/i.test(query);
+  // For conditions involving recent events ("announced", "arrived", "said today") Wikipedia
+  // will almost always say NO even when the event HAS happened — skip it and go straight to RSS.
+  const isTimeSensitive = /\b(announc|releas|said|says|stated|declared|tweet|post|today|yesterday|this week|this month|recent|latest|new\b|just\b|breaking|now\b|happen|occur|report|arriv|land|visit|sign|reach|meet|speak|address|confirm|pass|approv|reject|launch|attack|invad|withdraw|deal|vote|elect|win|lose|fire|resign|appoint|nominat)\b/i.test(query);
   console.log('[event-check] Time-sensitive:', isTimeSensitive);
 
-  const [wikiSummary, wikidataDesc] = await Promise.all([
-    fetchWikipedia(entity),
-    fetchWikidata(entity),
-  ]);
+  // For time-sensitive conditions skip Wikipedia entirely:
+  //   - Wikipedia won't have breaking news → always says NO for announcements/arrivals
+  //   - Skipping it saves 1-2 Groq API calls per alert, preventing 429s when 5 alerts check in parallel
+  let wikiSummary = null, wikidataDesc = null;
+  if (!isTimeSensitive) {
+    [wikiSummary, wikidataDesc] = await Promise.all([
+      fetchWikipedia(entity),
+      fetchWikidata(entity),
+    ]);
+  }
 
   const authoritative = [wikiSummary, wikidataDesc].filter(Boolean).join('\n');
 
@@ -255,7 +267,7 @@ module.exports = async function handler(req, res) {
   let reason    = '';
   let headline  = '';
 
-  if (authoritative) {
+  if (authoritative && !isTimeSensitive) {
     const wikiPrompt =
       'Today is ' + today + '.\n\n' +
       'AUTHORITATIVE SOURCES:\n' + authoritative + '\n\n' +
@@ -271,10 +283,8 @@ module.exports = async function handler(req, res) {
       triggered = true;
       verdict   = 'YES';
       source    = 'wikipedia';
-    } else if (!isTimeSensitive && wikiResult.verdict !== 'UNSURE' && wikiResult.verdict !== 'ERROR') {
-      // Only skip RSS for STABLE facts where Wikipedia directly contradicts the condition.
-      // For time-sensitive conditions (announcements, statements, today-events) Wikipedia
-      // will always say NO because it is not a news feed — always fall through to RSS.
+    } else if (wikiResult.verdict !== 'UNSURE' && wikiResult.verdict !== 'ERROR') {
+      // Non-time-sensitive: trust Wikipedia NO for stable facts (leadership, elections, deaths)
       triggered = false;
       verdict   = 'NO';
       source    = 'wikipedia';
@@ -309,7 +319,7 @@ module.exports = async function handler(req, res) {
         'Reply with ONLY a JSON object:\n' +
         '{"triggered": true/false, "reason": "brief explanation of what happened", "headline": "the specific headline that confirmed this, or empty string"}\n\n' +
         (isTimeSensitive
-          ? 'Say triggered:true if the headlines show this event has happened recently (today or this week). Do not require exact wording — infer from context.'
+          ? 'Say triggered:true if ANY headline shows this happened recently (last 48h). News moves faster than Wikipedia — do not require encyclopedia confirmation. When in doubt, trigger.'
           : 'Be conservative — only say triggered:true if there is clear, direct evidence.');
 
       const rssResult = await askBothJSON(rssPrompt);
