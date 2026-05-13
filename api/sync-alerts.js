@@ -8,6 +8,10 @@ const { kvGet, kvSet } = require('../lib/kv');
 const ALERTS_KEY       = 'vault:alerts';
 const RECENT_FIRED_KEY = 'vault:recent_fired';
 
+// Server-only fields that the browser never sets — must be preserved across syncs
+// so the cron throttle and other server state survive browser overwrites.
+const SERVER_FIELDS = ['lastEventCheck', 'tgSent'];
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin',  '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -64,10 +68,24 @@ module.exports = async function handler(req, res) {
       }
     } catch (e) {}
 
+    // Build a lookup for existing KV alerts so we can restore server-only fields
+    const existingMap = new Map(existing.map(a => [a.id, a]));
+
     const browserIds = new Set(browserAlerts.map(a => a.id));
 
-    // Only keep untriggered browser alerts that haven't already fired on the server
-    const merged = browserAlerts.filter(a => !a.triggered && !recentFired.has(a.id));
+    // Merge browser alerts, restoring any server-only fields that the browser doesn't track
+    const merged = browserAlerts
+      .filter(a => !a.triggered && !recentFired.has(a.id))
+      .map(a => {
+        const kv = existingMap.get(a.id);
+        if (!kv) return a;
+        // Keep all browser fields, but layer server-only fields on top
+        const patch = {};
+        for (const f of SERVER_FIELDS) {
+          if (kv[f] !== undefined) patch[f] = kv[f];
+        }
+        return Object.keys(patch).length ? { ...a, ...patch } : a;
+      });
 
     // Add TG-only alerts — but only if browser sent a non-empty list.
     // If browser sends [], the user explicitly cleared everything — don't restore KV alerts.
