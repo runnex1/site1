@@ -84,14 +84,48 @@ module.exports = async function handler(req, res) {
   }
 
   // JSON-based check — returns triggered, verdict, reason, headline
+  // NOTE: does NOT call askGroq/askGemini — those truncate to 10 chars via askAI() which breaks JSON
   async function askBothJSON(prompt) {
-    let rawText = '{}';
+    // Call both AIs in parallel with FULL (untruncated) responses for JSON parsing
+    const [g, m] = await Promise.allSettled([
+      GROQ_KEY   ? (async () => {
+        try {
+          const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+            signal: AbortSignal.timeout(14000),
+            body: JSON.stringify({ model: 'llama-3.3-70b-versatile', temperature: 0, max_tokens: 150,
+              messages: [{ role: 'user', content: prompt }] }),
+          });
+          if (!r.ok) { console.error('[event-check] JSON/Groq HTTP', r.status); return null; }
+          return ((await r.json()).choices?.[0]?.message?.content || '').trim();
+        } catch(e) { console.error('[event-check] JSON/Groq:', e.message); return null; }
+      })() : Promise.resolve(null),
+      GEMINI_KEY ? (async () => {
+        try {
+          const r = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GEMINI_KEY },
+            signal: AbortSignal.timeout(14000),
+            body: JSON.stringify({ model: 'gemini-2.0-flash', temperature: 0, max_tokens: 150,
+              messages: [{ role: 'user', content: prompt }] }),
+          });
+          if (!r.ok) { console.error('[event-check] JSON/Gemini HTTP', r.status); return null; }
+          return ((await r.json()).choices?.[0]?.message?.content || '').trim();
+        } catch(e) { console.error('[event-check] JSON/Gemini:', e.message); return null; }
+      })() : Promise.resolve(null),
+    ]);
+
+    const rawText = (g.status === 'fulfilled' ? g.value : null)
+                 || (m.status === 'fulfilled' ? m.value : null)
+                 || '{}';
+    console.log('[event-check] JSON raw (first 120):', rawText.slice(0, 120));
+
     try {
-      const [g, m] = await Promise.all([askGroq(prompt), askGemini(prompt)]);
-      rawText = (g || m || '{}');
-    } catch(e) { /* ignore */ }
-    try {
-      const parsed = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+      const jsonStr = rawText.replace(/```json|```/g, '').trim();
+      // Find the first { ... } block if the AI prefixed with prose
+      const braceMatch = jsonStr.match(/\{[\s\S]*\}/);
+      const parsed = JSON.parse(braceMatch ? braceMatch[0] : jsonStr);
       const triggered = !!parsed.triggered;
       return {
         triggered,
@@ -100,7 +134,8 @@ module.exports = async function handler(req, res) {
         headline: parsed.headline || '',
       };
     } catch(e) {
-      const triggered = rawText?.startsWith('YES');
+      // Fallback: accept plain YES / true answers if JSON parse fails entirely
+      const triggered = /^\s*(yes|true)\b/i.test(rawText);
       return { triggered, verdict: triggered ? 'YES' : 'NO', reason: '', headline: '' };
     }
   }
@@ -209,10 +244,7 @@ module.exports = async function handler(req, res) {
       'AUTHORITATIVE SOURCES:\n' + authoritative + '\n\n' +
       'CONDITION TO CHECK: "' + query + '"\n\n' +
       'Based ONLY on the authoritative sources above, is this condition currently true?\n' +
-      'The condition may be a recent event OR an established/historical fact.\n' +
-      'Say YES if any source confirms it — including as a long-standing or historical fact.\n' +
-      'Say NO only if the sources directly contradict the condition.\n' +
-      'Say UNSURE only if the sources contain no relevant information at all.\n' +
+      'Answer YES if any source confirms it, NO if contradicted, UNSURE if unclear.\n' +
       'One word: YES, NO, or UNSURE.';
 
     const wikiResult = await askBoth(wikiPrompt);
@@ -255,11 +287,9 @@ module.exports = async function handler(req, res) {
         contextParts.join('\n\n') + '\n\n' +
         'CONDITION TO CHECK: "' + query + '"\n\n' +
         'Has this condition been met based on the sources above?\n' +
-        'The condition may be a recent event OR an established/historical fact.\n' +
-        'Set triggered:true if any source confirms it — including as a known historical or current fact.\n' +
-        'Set triggered:false only if a source directly contradicts it or the sources are completely silent.\n' +
         'Reply with ONLY a JSON object:\n' +
-        '{"triggered": true/false, "reason": "brief explanation", "headline": "the specific headline that confirmed this, or empty string"}';
+        '{"triggered": true/false, "reason": "brief explanation of what happened", "headline": "the specific headline that confirmed this, or empty string"}\n\n' +
+        'Be conservative — only say triggered:true if there is clear, direct evidence.';
 
       const rssResult = await askBothJSON(rssPrompt);
       triggered = rssResult.triggered;
@@ -275,21 +305,13 @@ module.exports = async function handler(req, res) {
     try {
       const stored = await kvGet(ALERTS_KEY);
       const alerts = stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : [];
-          const alert  = alerts.find(a => a.id === alertId);
+      const alert  = alerts.find(a => a.id === alertId);
       if (alert && !alert.tgSent) {
         const msgLines = [
           '🔔 <b>Event Alert — ' + (alert.label || query) + '</b>',
           '',
           '<b>Condition:</b> ' + query,
         ];
-        let sourceLabel;
-        if (source === 'wikipedia') {
-          const wikiUrl = 'https://en.wikipedia.org/wiki/' + encodeURIComponent(entity.replace(/ /g, '_'));
-          sourceLabel = '<a href="' + wikiUrl + '">Wikipedia</a>';
-        } else {
-          sourceLabel = source === 'headlines' ? 'News' : source;
-        }
-        msgLines.push('<b>Source:</b> ' + sourceLabel);
         if (reason)   msgLines.push('<b>What happened:</b> ' + reason);
         if (headline) msgLines.push('<b>Headline:</b> <i>' + headline + '</i>');
         msgLines.push('');

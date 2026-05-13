@@ -1,11 +1,11 @@
 const { kvGet, kvSet } = require('../lib/kv');
 const { fetchPrice, fmtPrice, AAVE_CHAIN_NAMES } = require('../lib/price');
 
-const ALERTS_KEY      = 'vault:alerts';
-const TG_CHAN_KEY     = 'vault:tg_channels';
+const ALERTS_KEY       = 'vault:alerts';
+const TG_CHAN_KEY      = 'vault:tg_channels';
 const RECENT_FIRED_KEY = 'vault:recent_fired';
-const GRACE_MS        = 5000;   // 5 seconds grace period
-const EVENT_CHECK_MS  = 600000; // check event alerts every 10 minutes
+const GRACE_MS         = 5000;   // 5 s grace period before a new alert is eligible
+const EVENT_CHECK_MS   = 600000; // 10 min between checks per event alert
 
 function dedupKey(alert) {
   return alert.id || (alert.symbol + '-' + alert.dir + '-' + alert.target);
@@ -87,11 +87,12 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ skipped: true, reason: 'no_telegram_config' });
   }
 
-  // Load alerts
+  // ── Load alerts ──────────────────────────────────────────────────────────
   let alerts = [];
   try {
     const stored = await kvGet(ALERTS_KEY);
     if (stored) alerts = typeof stored === 'string' ? JSON.parse(stored) : stored;
+    if (!Array.isArray(alerts)) alerts = [];
   } catch (e) {
     console.error('[check-alerts] load error:', e.message);
   }
@@ -104,66 +105,95 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, checked: 0, fired: 0, skippedGrace, reason: 'no_active_alerts' });
   }
 
-  const nowStr        = new Date().toUTCString();
-  const results       = [];
-  const newFired      = [];
-  let alertsModified  = false;
-  const handlerState  = {};
+  const baseUrl  = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL || 'testedefi.vercel.app');
+  const nowStr   = new Date().toUTCString();
+  const results  = [];
+  const newFired = [];
+  let alertsModified = false;
 
-  for (const alert of active) {
-    if (alert.type === 'opinion') continue;
+  // ── EVENT ALERTS — check in PARALLEL ────────────────────────────────────
+  //
+  // FIX: previously these ran in a sequential for-loop with await, so 6 alerts
+  // × up to 25 s each = 150 s total, always timing out at maxDuration=30 s.
+  //
+  // FIX: lastEventCheck is now stamped and saved to KV BEFORE the async checks
+  // start. If the function times out mid-run the stamp still persists, preventing
+  // the same alerts from being re-checked every 10 seconds forever.
 
-    // ── Event alerts — delegate to /api/event-check (same logic as browser) ──
-    if (alert.type === 'event') {
-      try {
-        const lastChecked = alert.lastEventCheck || 0;
-        if ((now - lastChecked) < EVENT_CHECK_MS) {
-          results.push({ id: alert.id, symbol: alert.symbol, type: 'event', triggered: false, reason: 'throttled' });
-          continue;
-        }
-        alert.lastEventCheck = now;
-        alertsModified = true;
+  const eventAlerts = active.filter(a => a.type === 'event');
+  const dueEvents   = eventAlerts.filter(a => (now - (a.lastEventCheck || 0)) >= EVENT_CHECK_MS);
 
-        const condition = (alert.condition || alert.label || '').trim();
-        if (!condition) {
-          results.push({ id: alert.id, type: 'event', triggered: false, reason: 'no_condition' });
-          continue;
-        }
+  if (dueEvents.length > 0) {
+    console.log('[check-alerts] Event alerts due:', dueEvents.length, '/', eventAlerts.length);
 
-        console.log('[event] Checking condition via /api/event-check:', condition);
-
-        // Call the same endpoint the browser uses — identical logic, identical result
-        const baseUrl = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL || 'testedefi.vercel.app');
-        const ecRes = await fetch(baseUrl + '/api/event-check', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ condition, label: alert.label, alertId: alert.id }),
-          signal: AbortSignal.timeout(25000),
-        });
-
-        if (!ecRes.ok) throw new Error('event-check HTTP ' + ecRes.status);
-        const ecData = await ecRes.json();
-
-        console.log('[event] verdict=' + ecData.verdict + ' triggered=' + ecData.triggered + ' source=' + ecData.source);
-        results.push({ id: alert.id, symbol: alert.symbol, type: 'event', triggered: ecData.triggered, verdict: ecData.verdict });
-
-        if (ecData.triggered) {
-          // TG was already sent by event-check — just mark for deletion
-          newFired.push(alert.id);
-          alert._delete  = true;
-          alertsModified = true;
-        }
-      } catch (e) {
-        console.error('[check-alerts] event check error:', e.message);
-      }
-      continue;
+    // STAMP NOW in memory + persist to KV immediately (prevents re-entry)
+    dueEvents.forEach(a => {
+      const live = alerts.find(x => x.id === a.id);
+      if (live) { live.lastEventCheck = now; alertsModified = true; }
+    });
+    try {
+      await kvSet(ALERTS_KEY, JSON.stringify(alerts));
+      alertsModified = false; // freshly saved; track new changes from here
+    } catch (e) {
+      console.error('[check-alerts] KV stamp error (continuing):', e.message);
     }
 
-    // ── Price / market alerts ────────────────────────────────────────────────
-    let price = null;
-    try { price = await fetchPrice(alert); }
-    catch (e) { console.error(`fetchPrice ${alert.symbol}:`, e.message); }
+    // Run all event-checks in parallel
+    const ecResults = await Promise.allSettled(
+      dueEvents.map(async (alert) => {
+        const condition = (alert.condition || alert.label || '').trim();
+        if (!condition) return { alertId: alert.id, triggered: false, reason: 'no_condition' };
 
+        console.log('[event] Checking condition:', condition.slice(0, 80));
+        const ecRes = await fetch(baseUrl + '/api/event-check', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ condition, label: alert.label, alertId: alert.id }),
+          signal:  AbortSignal.timeout(25000),
+        });
+        if (!ecRes.ok) throw new Error('event-check HTTP ' + ecRes.status);
+        const ecData = await ecRes.json();
+        console.log('[event] verdict=' + ecData.verdict + ' triggered=' + ecData.triggered + ' | ' + condition.slice(0, 60));
+        return { alertId: alert.id, triggered: !!ecData.triggered, verdict: ecData.verdict };
+      })
+    );
+
+    for (const r of ecResults) {
+      if (r.status === 'rejected') {
+        console.error('[check-alerts] event check failed:', r.reason?.message || r.reason);
+        continue;
+      }
+      const { alertId, triggered, verdict, reason } = r.value;
+      results.push({ id: alertId, type: 'event', triggered, verdict, reason });
+
+      if (triggered) {
+        // TG message was already sent by /api/event-check (it has the alertId)
+        newFired.push(alertId);
+        const live = alerts.find(a => a.id === alertId);
+        if (live) { live._delete = true; alertsModified = true; }
+      }
+    }
+  } else if (eventAlerts.length > 0) {
+    const nextMs = Math.min(...eventAlerts.map(a => EVENT_CHECK_MS - (now - (a.lastEventCheck || 0))));
+    console.log('[check-alerts] All event alerts throttled. Next check in', Math.round(nextMs / 1000), 's');
+    eventAlerts.forEach(a => results.push({ id: a.id, type: 'event', triggered: false, reason: 'throttled' }));
+  }
+
+  // ── PRICE / MARKET ALERTS — run in PARALLEL ──────────────────────────────
+  const priceAlerts = active.filter(a => a.type !== 'event' && a.type !== 'opinion');
+
+  const priceResults = await Promise.allSettled(
+    priceAlerts.map(async (alert) => {
+      let price = null;
+      try { price = await fetchPrice(alert); }
+      catch (e) { console.error(`fetchPrice ${alert.symbol}:`, e.message); }
+      return { alert, price };
+    })
+  );
+
+  for (const r of priceResults) {
+    if (r.status === 'rejected') continue;
+    const { alert, price } = r.value;
     const triggered = isTriggered(alert, price);
 
     results.push({
@@ -176,25 +206,23 @@ module.exports = async function handler(req, res) {
 
     await tgSend(tgToken, tgChatId, buildMessage(alert, price, nowStr));
     newFired.push(alert.id);
-    alert._delete   = true;
-    alertsModified  = true;
+    const live = alerts.find(a => a.id === alert.id);
+    if (live) { live._delete = true; alertsModified = true; }
     console.log('[vault-alerts] Fired: ' + (alert.label || alert.symbol));
   }
 
-  // Persist
+  // ── Persist ───────────────────────────────────────────────────────────────
   try {
     if (alertsModified) {
       const remaining = alerts.filter(a => !a._delete);
       await kvSet(ALERTS_KEY, JSON.stringify(remaining));
     }
 
-    // Write fired IDs to recent_fired so browser re-syncs don't re-add them
     if (newFired.length > 0) {
       const firedRaw = await kvGet(RECENT_FIRED_KEY);
       const existing = firedRaw
         ? (typeof firedRaw === 'string' ? JSON.parse(firedRaw) : firedRaw)
         : [];
-      // Keep last 100 fired IDs to prevent unbounded growth
       const updated = [...existing, ...newFired].slice(-100);
       await kvSet(RECENT_FIRED_KEY, JSON.stringify(updated));
     }
