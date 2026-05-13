@@ -338,8 +338,19 @@ module.exports = async function handler(req, res) {
 
     // For future-tense alerts, discard headlines published before the alert was set.
     // This prevents "next rate decision" from firing on last month's announcement.
+    // Safety: some feeds publish date-only pubDates (parsed as midnight UTC). If the
+    // headline's date falls on the same calendar day as setAt, keep it — the time
+    // precision is too low to safely reject it and we'd rather fire than miss.
+    const alertDateStart = alertSetAt
+      ? new Date(new Date(alertSetAt).toDateString()).getTime()  // midnight of setAt day
+      : 0;
     const items = (isFutureTense && alertSetAt)
-      ? allItems.filter(h => h.pubTs === 0 || h.pubTs >= alertSetAt)
+      ? allItems.filter(h => {
+          if (h.pubTs === 0) return true;             // no date → keep
+          if (h.pubTs >= alertSetAt) return true;     // published after alert → keep
+          if (h.pubTs >= alertDateStart) return true; // same day, imprecise time → keep
+          return false;                               // clearly older → discard
+        })
       : allItems;
 
     // Format for AI: include publish date when available so the model can reason about recency
