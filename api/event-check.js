@@ -492,7 +492,7 @@ module.exports = async function handler(req, res) {
   }
 
   return res.status(200).json({
-    triggered, verdict, source,
+    triggered, verdict, source, reason, headline,
     context: [wikiSummary, wikidataDesc].filter(Boolean).slice(0, 2),
   });
 };

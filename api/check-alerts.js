@@ -102,7 +102,31 @@ module.exports = async function handler(req, res) {
   const skippedGrace = alerts.filter(a => !a.triggered && a.setAt && (now - a.setAt) < GRACE_MS).length;
 
   if (!active.length) {
+    // Still update the last-ok timestamp so gap detection stays accurate
+    try { await kvSet('vault:last_cron_ok', String(now)); } catch(e) {}
     return res.status(200).json({ ok: true, checked: 0, fired: 0, skippedGrace, reason: 'no_active_alerts' });
+  }
+
+  // ── Cron gap detection ──────────────────────────────────────────────────────
+  // If the cron has been silent for more than 10 minutes AND there are active
+  // alerts, notify via TG so the user knows alerts may have been missed.
+  // This is fire-and-forget — it must not block the main check.
+  const CRON_GAP_ALERT_MS = 10 * 60 * 1000; // 10 minutes
+  try {
+    const lastOkRaw = await kvGet('vault:last_cron_ok');
+    const lastOk    = lastOkRaw ? Number(lastOkRaw) : 0;
+    if (lastOk && (now - lastOk) > CRON_GAP_ALERT_MS && tgToken && tgChatId) {
+      const gapMin = Math.round((now - lastOk) / 60000);
+      tgSend(tgToken, tgChatId,
+        `⚠️ <b>Alert cron was down ~${gapMin} min</b>\n\n` +
+        `${active.length} active alert${active.length !== 1 ? 's' : ''} may have been missed. ` +
+        `The system is back online and checking now.\n\n` +
+        `<i>${new Date(now).toUTCString()}</i>`
+      ).catch(e => console.error('[check-alerts] gap-notify error:', e.message));
+      console.log('[check-alerts] Cron gap detected:', gapMin, 'min — TG notification sent');
+    }
+  } catch(e) {
+    console.warn('[check-alerts] gap check error (non-fatal):', e.message);
   }
 
   const baseUrl  = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL || 'testedefi.vercel.app');
@@ -251,6 +275,9 @@ module.exports = async function handler(req, res) {
       const updated = [...existing, ...newFired].slice(-100);
       await kvSet(RECENT_FIRED_KEY, JSON.stringify(updated));
     }
+
+    // Record successful run — used by gap detection above
+    await kvSet('vault:last_cron_ok', String(now));
   } catch (e) {
     console.error('[check-alerts] KV write:', e.message);
   }

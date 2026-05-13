@@ -500,6 +500,11 @@ module.exports = async function handler(req, res) {
       '  <code>list</code> — show active alerts',
       '  <code>remove 1</code> — remove alert #1',
       '  <code>clear all</code> — remove all alerts',
+      '',
+      '<b>Test an alert condition:</b>',
+      '  <code>/test Fed announces rate decision | 2026-05-11</code>',
+      '  Simulates the alert as if set on that date — checks if it would fire.',
+      '  Omit the date to test against today.',
     ].join('\n'));
     return res.status(200).json({ ok: true });
   }
@@ -534,6 +539,83 @@ module.exports = async function handler(req, res) {
       const updated = alerts.filter(a => a.id !== toRemove.id);
       await saveAlerts(updated);
       await tgReply(tgToken, tgChatId, `✅ Removed: ${toRemove.label}`);
+    }
+    return res.status(200).json({ ok: true });
+  }
+
+  // ── /test — simulate an alert condition with an optional past date ─────────
+  //   Syntax:  /test <condition> | <YYYY-MM-DD>
+  //   Example: /test Fed announces rate decision | 2026-05-11
+  //   This calls /api/event-check with a simulated setAt so you can verify that
+  //   future-tense filtering works and that news from the right date triggers.
+  const testMatch = text.match(/^\/test\s+(.+)$/i);
+  if (testMatch) {
+    const parts      = testMatch[1].split('|');
+    const condition  = parts[0].trim();
+    const dateStr    = parts[1] ? parts[1].trim() : null;
+
+    if (!condition) {
+      await tgReply(tgToken, tgChatId,
+        '❌ Usage: <code>/test &lt;condition&gt; | &lt;YYYY-MM-DD&gt;</code>\n' +
+        'Example: <code>/test Fed announces rate decision | 2026-05-11</code>'
+      );
+      return res.status(200).json({ ok: true });
+    }
+
+    let simulatedSetAt;
+    let dateLabel;
+    if (dateStr) {
+      simulatedSetAt = Date.parse(dateStr);
+      if (isNaN(simulatedSetAt)) {
+        await tgReply(tgToken, tgChatId,
+          `❌ Invalid date: <code>${dateStr}</code>\nUse format: <code>YYYY-MM-DD</code> (e.g. 2026-05-11)`
+        );
+        return res.status(200).json({ ok: true });
+      }
+      dateLabel = new Date(simulatedSetAt).toISOString().slice(0, 10);
+    } else {
+      simulatedSetAt = Date.now();
+      dateLabel = 'today';
+    }
+
+    await tgReply(tgToken, tgChatId,
+      `🔍 <b>Testing condition…</b>\n\n` +
+      `<b>Condition:</b> ${condition}\n` +
+      `<b>Simulated alert date:</b> ${dateLabel}\n\n` +
+      `<i>Checking news — this may take 15–30 seconds…</i>`
+    );
+
+    try {
+      const baseUrl = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || 'testedefi.vercel.app');
+      const r = await fetch(baseUrl + '/api/event-check', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // No alertId — we only want the verdict, not a real TG fire / KV write
+        body:    JSON.stringify({ condition, label: condition.slice(0, 60), setAt: simulatedSetAt }),
+        signal:  AbortSignal.timeout(30000),
+      });
+      if (!r.ok) {
+        await tgReply(tgToken, tgChatId, `❌ event-check returned HTTP ${r.status}`);
+        return res.status(200).json({ ok: true });
+      }
+      const d = await r.json();
+
+      const lines = [];
+      lines.push(d.triggered ? '✅ <b>WOULD TRIGGER</b>' : '❌ <b>Would NOT trigger</b>');
+      lines.push('');
+      lines.push(`<b>Condition:</b> ${condition}`);
+      lines.push(`<b>Simulated date:</b> ${dateLabel}`);
+      if (d.headline) lines.push(`<b>Headline:</b> <i>${d.headline}</i>`);
+      if (d.reason)   lines.push(`<b>Reason:</b> ${d.reason}`);
+      if (d.verdict)  lines.push(`<b>AI verdict:</b> ${d.verdict}`);
+      if (d.source)   lines.push(`<b>Source:</b> ${d.source}`);
+      if (!d.triggered) {
+        lines.push('');
+        lines.push('<i>Tip: if you expected it to trigger, try a later simulated date or check that recent news exists.</i>');
+      }
+      await tgReply(tgToken, tgChatId, lines.join('\n'));
+    } catch (e) {
+      await tgReply(tgToken, tgChatId, `❌ Test failed: ${e.message}`);
     }
     return res.status(200).json({ ok: true });
   }
@@ -601,7 +683,7 @@ module.exports = async function handler(req, res) {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               // No alertId — we handle the reply here; event-check just evaluates
-              body: JSON.stringify({ condition: a.condition, label: a.label }),
+              body: JSON.stringify({ condition: a.condition, label: a.label, setAt: a.setAt || 0 }),
               signal: AbortSignal.timeout(22000),
             });
             if (!r.ok) { toSave.push(a); return; }
