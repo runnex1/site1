@@ -413,7 +413,12 @@ module.exports = async function handler(req, res) {
         earningsFormat + '\n\n' +
         (isTimeSensitive
           ? 'Say triggered:true if ANY headline shows this happened recently (last 48h). News moves faster than Wikipedia — do not require encyclopedia confirmation. When in doubt, trigger.'
-          : 'Be conservative — only say triggered:true if there is clear, direct evidence.');
+          : 'Be conservative — only say triggered:true if there is clear, direct evidence.') +
+        '\n\nENTITY MATCHING: Match the SPECIFIC person or entity named in the condition. ' +
+        'If the condition uses a surname alone in a political or public-figure context (e.g. "Trump", "Biden", "Musk"), ' +
+        'it refers to the most prominent person with that name — NOT family members or others who share the surname. ' +
+        'Example: "Trump makes a statement" is NOT satisfied by a headline about Melania Trump, Ivanka Trump, or any other family member. ' +
+        '"President Trump" or "Trump" alone in a headline DOES satisfy it. Reject partial or family-member matches.';
 
       const rssResult = await askBothJSON(rssPrompt, headlineTexts);
       triggered = rssResult.triggered;
