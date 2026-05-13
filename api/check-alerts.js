@@ -152,6 +152,16 @@ module.exports = async function handler(req, res) {
       console.error('[check-alerts] KV stamp error (continuing):', e.message);
     }
 
+    // Respond immediately so cron-job.org (30s timeout) never times out.
+    // Vercel keeps this function alive until all pending promises settle
+    // (up to maxDuration=60s), so the checks below still run to completion.
+    if (!res.headersSent) {
+      res.status(200).json({
+        ok: true, started: true, timestamp: nowStr,
+        batch: batch.length, skippedGrace,
+      });
+    }
+
     // Run batch event-checks in parallel with dynamic stagger
     const ecResults = await Promise.allSettled(
       batch.map(async (alert, idx) => {
@@ -245,10 +255,13 @@ module.exports = async function handler(req, res) {
     console.error('[check-alerts] KV write:', e.message);
   }
 
-  return res.status(200).json({
-    ok: true, timestamp: nowStr,
-    checked: results.length, fired: newFired.length,
-    recentFired: newFired,
-    skippedGrace, results,
-  });
+  // Only send final response if we didn't already send an early one above
+  if (!res.headersSent) {
+    return res.status(200).json({
+      ok: true, timestamp: nowStr,
+      checked: results.length, fired: newFired.length,
+      recentFired: newFired,
+      skippedGrace, results,
+    });
+  }
 };
