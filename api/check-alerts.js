@@ -124,7 +124,21 @@ module.exports = async function handler(req, res) {
   const dueEvents   = eventAlerts.filter(a => (now - (a.lastEventCheck || 0)) >= EVENT_CHECK_MS);
 
   if (dueEvents.length > 0) {
-    console.log('[check-alerts] Event alerts due:', dueEvents.length, '/', eventAlerts.length);
+    // Cap alerts per run so timing always fits within Vercel's 60 s maxDuration.
+    // Formula: stagger*(n-1) + PER_CHECK_MS < 60000
+    // With PER_CHECK_MS=22s and MAX_PER_RUN=12: 11*3.4s + 22s ≈ 59s (safe).
+    // Alerts beyond the cap are skipped this run but stamped due so they fire next minute.
+    const MAX_PER_RUN  = 12;
+    const PER_CHECK_MS = 22000;
+    const batch        = dueEvents.slice(0, MAX_PER_RUN);
+    // Dynamic stagger: spread batch evenly across (60s - per-check budget - 2s margin)
+    const staggerBudget = 60000 - PER_CHECK_MS - 2000;  // 36 000 ms
+    const staggerMs     = batch.length > 1
+      ? Math.floor(staggerBudget / (batch.length - 1))
+      : 0;
+
+    console.log('[check-alerts] Event alerts due:', dueEvents.length, '/', eventAlerts.length,
+      '| batch:', batch.length, '| stagger:', staggerMs + 'ms');
 
     // STAMP NOW in memory + persist to KV immediately (prevents re-entry)
     dueEvents.forEach(a => {
@@ -138,12 +152,10 @@ module.exports = async function handler(req, res) {
       console.error('[check-alerts] KV stamp error (continuing):', e.message);
     }
 
-    // Run all event-checks in parallel
+    // Run batch event-checks in parallel with dynamic stagger
     const ecResults = await Promise.allSettled(
-      dueEvents.map(async (alert, idx) => {
-        // Stagger 3 s per alert: 12 alerts spread over 33 s = ~22 RPM, safe for
-        // Groq (30 RPM free tier). Keeps total run under 60 s Vercel maxDuration.
-        if (idx > 0) await new Promise(r => setTimeout(r, idx * 3000));
+      batch.map(async (alert, idx) => {
+        if (idx > 0) await new Promise(r => setTimeout(r, idx * staggerMs));
         const condition = (alert.condition || alert.label || '').trim();
         if (!condition) return { alertId: alert.id, triggered: false, reason: 'no_condition' };
 
@@ -152,7 +164,7 @@ module.exports = async function handler(req, res) {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ condition, label: alert.label, alertId: alert.id }),
-          signal:  AbortSignal.timeout(22000),
+          signal:  AbortSignal.timeout(PER_CHECK_MS),
         });
         if (!ecRes.ok) throw new Error('event-check HTTP ' + ecRes.status);
         const ecData = await ecRes.json();
