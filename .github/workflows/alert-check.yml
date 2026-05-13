@@ -1,0 +1,25 @@
+# Backup cron — fires every 5 minutes from GitHub's infrastructure.
+# Primary cron is cron-job.org (every 1 min). This is a safety net: if
+# cron-job.org goes down, gets disabled, or misses a run, GitHub Actions
+# ensures alerts still fire within 5 minutes.
+name: Alert Check (backup)
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # every 5 minutes
+  workflow_dispatch:          # manual trigger from GitHub UI
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Trigger alert check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 90 \
+            "https://testedefi.vercel.app/api/check-alerts")
+          echo "Response status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "Warning: check-alerts returned $STATUS"
+          fi
