@@ -239,7 +239,7 @@ module.exports = async function handler(req, res) {
   // Detect time-sensitive conditions: Wikipedia is an encyclopedia, not a news feed.
   // For conditions involving recent events ("announced", "said today", "released") Wikipedia
   // will almost always say NO even when the event HAS happened — so we must always run RSS.
-  const isTimeSensitive = /\b(announc|releas|said|says|stated|declared|tweet|post|today|yesterday|this week|this month|recent|latest|new\b|just\b|breaking|now\b|happen|occur|report)\b/i.test(query);
+  const isTimeSensitive = /\b(announc|releas|said|says|stated|declared|tweet|post|today|yesterday|this week|this month|recent|latest|new\b|just\b|breaking|now\b|happen|occur|report|arriv|land|visit|sign|agree|reach|meet|speak|address|publish|confirm|pass|approv|reject|launch|deploy|attack|invad|withdraw|ceasefire|deal|vote|elect|win|lose)\b/i.test(query);
   console.log('[event-check] Time-sensitive:', isTimeSensitive);
 
   const [wikiSummary, wikidataDesc] = await Promise.all([
@@ -308,7 +308,9 @@ module.exports = async function handler(req, res) {
         'Has this condition been met based on the sources above?\n' +
         'Reply with ONLY a JSON object:\n' +
         '{"triggered": true/false, "reason": "brief explanation of what happened", "headline": "the specific headline that confirmed this, or empty string"}\n\n' +
-        'Be conservative — only say triggered:true if there is clear, direct evidence.';
+        (isTimeSensitive
+          ? 'Say triggered:true if the headlines show this event has happened recently (today or this week). Do not require exact wording — infer from context.'
+          : 'Be conservative — only say triggered:true if there is clear, direct evidence.');
 
       const rssResult = await askBothJSON(rssPrompt);
       triggered = rssResult.triggered;
