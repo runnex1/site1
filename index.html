@@ -8558,6 +8558,33 @@ function terminalSave() {
     }
 }
 
+
+// ── Event alert limit guard ───────────────────────────────────────────────────
+// The cron job processes MAX_EVENT_ALERTS per run. Beyond this, newer alerts
+// wait an extra minute per overflow batch. Hard-block at the limit so the cron
+// never degrades; warn at WARN_AT so the user has time to clean up.
+const MAX_EVENT_ALERTS = 12;
+const WARN_EVENT_AT    = 10;
+
+function terminalCheckEventLimit() {
+    const active = (terminalAlerts || []).filter(a => !a.triggered && a.type === 'event').length;
+    if (active >= MAX_EVENT_ALERTS) {
+        terminalLog(
+            '⛔ Event alert limit reached (' + active + '/' + MAX_EVENT_ALERTS + '). ' +
+            'Remove an existing event alert before adding a new one.',
+            'tl-error'
+        );
+        return false;  // blocked
+    }
+    if (active >= WARN_EVENT_AT) {
+        terminalLog(
+            '⚠ ' + active + '/' + MAX_EVENT_ALERTS + ' event alerts active — ' +
+            'approaching the limit. Remove old ones to keep the cron job healthy.',
+            'tl-warn'
+        );
+    }
+    return true;  // allowed
+}
 // ── Log helpers ───────────────────────────────────────────────────────────────
 function terminalLog(msg, cls) {
     const log = document.getElementById('terminalLog');
@@ -9536,6 +9563,7 @@ async function terminalSubmit() {
                 triggered: false,
                 setAt: Date.now(),
             };
+            if (!terminalCheckEventLimit()) return;
             terminalAlerts.push(evAlert);
             terminalSave();
             terminalRenderAlerts();
@@ -9574,6 +9602,7 @@ async function terminalSubmit() {
                     triggered: false,
                     setAt: Date.now(),
                 };
+                if (alert.type === 'event' && !terminalCheckEventLimit()) continue;
                 terminalAlerts.push(alert);
                 terminalSave();
                 terminalRenderAlerts();
