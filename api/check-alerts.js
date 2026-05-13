@@ -141,9 +141,9 @@ module.exports = async function handler(req, res) {
     // Run all event-checks in parallel
     const ecResults = await Promise.allSettled(
       dueEvents.map(async (alert, idx) => {
-        // Stagger 5 s per alert: 5 alerts spread over 20 s = ~15 RPM, safe for both
-        // Groq (30 RPM free tier) and Gemini (15 RPM free tier).
-        if (idx > 0) await new Promise(r => setTimeout(r, idx * 5000));
+        // Stagger 3 s per alert: 12 alerts spread over 33 s = ~22 RPM, safe for
+        // Groq (30 RPM free tier). Keeps total run under 60 s Vercel maxDuration.
+        if (idx > 0) await new Promise(r => setTimeout(r, idx * 3000));
         const condition = (alert.condition || alert.label || '').trim();
         if (!condition) return { alertId: alert.id, triggered: false, reason: 'no_condition' };
 
@@ -152,7 +152,7 @@ module.exports = async function handler(req, res) {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({ condition, label: alert.label, alertId: alert.id }),
-          signal:  AbortSignal.timeout(25000),
+          signal:  AbortSignal.timeout(22000),
         });
         if (!ecRes.ok) throw new Error('event-check HTTP ' + ecRes.status);
         const ecData = await ecRes.json();
