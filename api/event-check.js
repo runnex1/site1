@@ -84,43 +84,12 @@ module.exports = async function handler(req, res) {
   }
 
   // JSON-based check — returns triggered, verdict, reason, headline
-  // NOTE: does NOT call askGroq/askGemini — those truncate to 10 chars via askAI() which breaks JSON
-  async function askBothJSON(prompt) {
-    // Call both AIs in parallel with FULL (untruncated) responses for JSON parsing
-    const [g, m] = await Promise.allSettled([
-      GROQ_KEY   ? (async () => {
-        try {
-          const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
-            signal: AbortSignal.timeout(14000),
-            body: JSON.stringify({ model: 'llama-3.3-70b-versatile', temperature: 0, max_tokens: 150,
-              messages: [{ role: 'user', content: prompt }] }),
-          });
-          if (!r.ok) { console.error('[event-check] JSON/Groq HTTP', r.status); return null; }
-          return ((await r.json()).choices?.[0]?.message?.content || '').trim();
-        } catch(e) { console.error('[event-check] JSON/Groq:', e.message); return null; }
-      })() : Promise.resolve(null),
-      GEMINI_KEY ? (async () => {
-        try {
-          const r = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GEMINI_KEY },
-            signal: AbortSignal.timeout(14000),
-            body: JSON.stringify({ model: 'gemini-2.0-flash', temperature: 0, max_tokens: 150,
-              messages: [{ role: 'user', content: prompt }] }),
-          });
-          if (!r.ok) { console.error('[event-check] JSON/Gemini HTTP', r.status); return null; }
-          return ((await r.json()).choices?.[0]?.message?.content || '').trim();
-        } catch(e) { console.error('[event-check] JSON/Gemini:', e.message); return null; }
-      })() : Promise.resolve(null),
-    ]);
-
-    const gText = g.status === 'fulfilled' ? g.value : null;
-    const mText = m.status === 'fulfilled' ? m.value : null;
-    console.log('[event-check] JSON raw Groq (first 100):', (gText || '').slice(0, 100));
-    console.log('[event-check] JSON raw Gemini (first 100):', (mText || '').slice(0, 100));
-
+  // Strategy: Groq first (30 RPM free tier), Gemini only if Groq fails (15 RPM).
+  // Running both in parallel doubled API usage and hit Gemini rate limits when many
+  // alerts checked simultaneously. Sequential Groq→Gemini halves the load.
+  // If BOTH are rate-limited, keyword matching on the headlines fires as a safety net
+  // so events are never silently missed due to free-tier quota exhaustion.
+  async function askBothJSON(prompt, headlines) {
     function tryParse(text) {
       if (!text) return null;
       try {
@@ -128,27 +97,74 @@ module.exports = async function handler(req, res) {
         const braceMatch = jsonStr.match(/\{[\s\S]*\}/);
         return JSON.parse(braceMatch ? braceMatch[0] : jsonStr);
       } catch(e) {
-        // Fallback: plain YES / true response means triggered
-        return /^\s*(yes|true)\b/i.test(text) ? { triggered: true, reason: '', headline: '' } : null;
+        return /^\s*(yes|true)\b/i.test(text) ? { triggered: true, reason: text.slice(0,80), headline: '' } : null;
       }
     }
 
-    const gParsed = tryParse(gText);
-    const mParsed = tryParse(mText);
+    async function callGroq() {
+      if (!GROQ_KEY) return null;
+      try {
+        const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+          signal: AbortSignal.timeout(14000),
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', temperature: 0, max_tokens: 150,
+            messages: [{ role: 'user', content: prompt }] }),
+        });
+        if (!r.ok) { console.error('[event-check] JSON/Groq HTTP', r.status); return null; }
+        return ((await r.json()).choices?.[0]?.message?.content || '').trim();
+      } catch(e) { console.error('[event-check] JSON/Groq:', e.message); return null; }
+    }
 
-    // Trigger if EITHER AI says triggered=true — same principle as askBoth()
-    const triggered = !!(gParsed?.triggered || mParsed?.triggered);
-    const winner = triggered
-      ? (gParsed?.triggered ? gParsed : mParsed)
-      : (gParsed || mParsed || {});
+    async function callGemini() {
+      if (!GEMINI_KEY) return null;
+      try {
+        const r = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GEMINI_KEY },
+          signal: AbortSignal.timeout(14000),
+          body: JSON.stringify({ model: 'gemini-2.0-flash', temperature: 0, max_tokens: 150,
+            messages: [{ role: 'user', content: prompt }] }),
+        });
+        if (!r.ok) { console.error('[event-check] JSON/Gemini HTTP', r.status); return null; }
+        return ((await r.json()).choices?.[0]?.message?.content || '').trim();
+      } catch(e) { console.error('[event-check] JSON/Gemini:', e.message); return null; }
+    }
 
-    console.log('[event-check] JSON verdict:', triggered ? 'YES' : 'NO', '| reason:', (winner.reason || '').slice(0, 80));
-    return {
-      triggered,
-      verdict:  triggered ? 'YES' : 'NO',
-      reason:   winner.reason   || '',
-      headline: winner.headline || '',
-    };
+    // Groq first; only fall back to Gemini if Groq is rate-limited or down
+    let aiText = await callGroq();
+    if (!aiText) {
+      console.warn('[event-check] Groq unavailable, trying Gemini...');
+      aiText = await callGemini();
+    }
+    console.log('[event-check] AI raw (first 120):', (aiText || 'null').slice(0, 120));
+
+    const parsed = tryParse(aiText);
+    if (parsed) {
+      const triggered = !!parsed.triggered;
+      console.log('[event-check] AI verdict:', triggered ? 'YES' : 'NO', '| reason:', (parsed.reason || '').slice(0, 80));
+      return { triggered, verdict: triggered ? 'YES' : 'NO', reason: parsed.reason || '', headline: parsed.headline || '' };
+    }
+
+    // Both AIs unavailable. Keyword-match headlines as safety net — rate-limit
+    // exhaustion should never silently swallow a real event.
+    if (headlines && headlines.length) {
+      const stopWords = new Set(['this','that','have','with','from','what','when','will','been','were','they','them','about','into','also','after','before']);
+      const words = query.toLowerCase()
+        .replace(/[^\w\s]/g, ' ').split(/\s+/)
+        .filter(w => w.length > 3 && !stopWords.has(w));
+      const matchedHl = headlines.find(h => {
+        const hl = h.toLowerCase();
+        return words.filter(w => hl.includes(w)).length >= Math.min(2, words.length);
+      });
+      if (matchedHl) {
+        console.log('[event-check] AI rate-limited — keyword fallback triggered:', matchedHl.slice(0, 100));
+        return { triggered: true, verdict: 'YES', reason: 'Keyword match (AI rate-limited)', headline: matchedHl };
+      }
+    }
+
+    console.log('[event-check] Both AIs unavailable, no keyword match — returning NO');
+    return { triggered: false, verdict: 'NO', reason: 'AI unavailable', headline: '' };
   }
 
   // ── Wikipedia summary ─────────────────────────────────────────────────────
@@ -316,7 +332,7 @@ module.exports = async function handler(req, res) {
           ? 'Say triggered:true if ANY headline shows this happened recently (last 48h). News moves faster than Wikipedia — do not require encyclopedia confirmation. When in doubt, trigger.'
           : 'Be conservative — only say triggered:true if there is clear, direct evidence.');
 
-      const rssResult = await askBothJSON(rssPrompt);
+      const rssResult = await askBothJSON(rssPrompt, headlines);
       triggered = rssResult.triggered;
       verdict   = rssResult.verdict;
       reason    = rssResult.reason;
