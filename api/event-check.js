@@ -36,12 +36,6 @@ module.exports = async function handler(req, res) {
   const query = (condition || label).slice(0, 120);
   const today = new Date().toDateString();
 
-  // Stagger parallel cron checks to avoid thundering-herd Groq 429s.
-  // alertId is only set when called by check-alerts (cron), not browser manual checks.
-  if (alertId) {
-    await new Promise(r => setTimeout(r, Math.random() * 5000)); // 0–5 s jitter
-  }
-
   // ── AI helper ─────────────────────────────────────────────────────────────
   async function askAI({ url, apiKey, model, messages }) {
     const r = await fetch(url, {
