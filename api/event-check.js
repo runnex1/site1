@@ -116,28 +116,39 @@ module.exports = async function handler(req, res) {
       })() : Promise.resolve(null),
     ]);
 
-    const rawText = (g.status === 'fulfilled' ? g.value : null)
-                 || (m.status === 'fulfilled' ? m.value : null)
-                 || '{}';
-    console.log('[event-check] JSON raw (first 120):', rawText.slice(0, 120));
+    const gText = g.status === 'fulfilled' ? g.value : null;
+    const mText = m.status === 'fulfilled' ? m.value : null;
+    console.log('[event-check] JSON raw Groq (first 100):', (gText || '').slice(0, 100));
+    console.log('[event-check] JSON raw Gemini (first 100):', (mText || '').slice(0, 100));
 
-    try {
-      const jsonStr = rawText.replace(/```json|```/g, '').trim();
-      // Find the first { ... } block if the AI prefixed with prose
-      const braceMatch = jsonStr.match(/\{[\s\S]*\}/);
-      const parsed = JSON.parse(braceMatch ? braceMatch[0] : jsonStr);
-      const triggered = !!parsed.triggered;
-      return {
-        triggered,
-        verdict:  triggered ? 'YES' : 'NO',
-        reason:   parsed.reason  || '',
-        headline: parsed.headline || '',
-      };
-    } catch(e) {
-      // Fallback: accept plain YES / true answers if JSON parse fails entirely
-      const triggered = /^\s*(yes|true)\b/i.test(rawText);
-      return { triggered, verdict: triggered ? 'YES' : 'NO', reason: '', headline: '' };
+    function tryParse(text) {
+      if (!text) return null;
+      try {
+        const jsonStr = text.replace(/```json|```/g, '').trim();
+        const braceMatch = jsonStr.match(/\{[\s\S]*\}/);
+        return JSON.parse(braceMatch ? braceMatch[0] : jsonStr);
+      } catch(e) {
+        // Fallback: plain YES / true response means triggered
+        return /^\s*(yes|true)\b/i.test(text) ? { triggered: true, reason: '', headline: '' } : null;
+      }
     }
+
+    const gParsed = tryParse(gText);
+    const mParsed = tryParse(mText);
+
+    // Trigger if EITHER AI says triggered=true — same principle as askBoth()
+    const triggered = !!(gParsed?.triggered || mParsed?.triggered);
+    const winner = triggered
+      ? (gParsed?.triggered ? gParsed : mParsed)
+      : (gParsed || mParsed || {});
+
+    console.log('[event-check] JSON verdict:', triggered ? 'YES' : 'NO', '| reason:', (winner.reason || '').slice(0, 80));
+    return {
+      triggered,
+      verdict:  triggered ? 'YES' : 'NO',
+      reason:   winner.reason   || '',
+      headline: winner.headline || '',
+    };
   }
 
   // ── Wikipedia summary ─────────────────────────────────────────────────────
@@ -225,6 +236,12 @@ module.exports = async function handler(req, res) {
   const entity = extractEntity(query);
   console.log('[event-check] Entity extracted:', entity, '| Query:', query);
 
+  // Detect time-sensitive conditions: Wikipedia is an encyclopedia, not a news feed.
+  // For conditions involving recent events ("announced", "said today", "released") Wikipedia
+  // will almost always say NO even when the event HAS happened — so we must always run RSS.
+  const isTimeSensitive = /\b(announc|releas|said|says|stated|declared|tweet|post|today|yesterday|this week|this month|recent|latest|new\b|just\b|breaking|now\b|happen|occur|report)\b/i.test(query);
+  console.log('[event-check] Time-sensitive:', isTimeSensitive);
+
   const [wikiSummary, wikidataDesc] = await Promise.all([
     fetchWikipedia(entity),
     fetchWikidata(entity),
@@ -244,7 +261,7 @@ module.exports = async function handler(req, res) {
       'AUTHORITATIVE SOURCES:\n' + authoritative + '\n\n' +
       'CONDITION TO CHECK: "' + query + '"\n\n' +
       'Based ONLY on the authoritative sources above, is this condition currently true?\n' +
-      'Answer YES if any source confirms it, NO if contradicted, UNSURE if unclear.\n' +
+      'Answer YES if any source confirms it, NO if directly contradicted, UNSURE if unclear.\n' +
       'One word: YES, NO, or UNSURE.';
 
     const wikiResult = await askBoth(wikiPrompt);
@@ -254,20 +271,22 @@ module.exports = async function handler(req, res) {
       triggered = true;
       verdict   = 'YES';
       source    = 'wikipedia';
-    } else if (wikiResult.verdict !== 'UNSURE' && wikiResult.verdict !== 'ERROR') {
-      // Both AIs said NO based on Wikipedia → very confident, skip RSS
+    } else if (!isTimeSensitive && wikiResult.verdict !== 'UNSURE' && wikiResult.verdict !== 'ERROR') {
+      // Only skip RSS for STABLE facts where Wikipedia directly contradicts the condition.
+      // For time-sensitive conditions (announcements, statements, today-events) Wikipedia
+      // will always say NO because it is not a news feed — always fall through to RSS.
       triggered = false;
       verdict   = 'NO';
       source    = 'wikipedia';
     }
-    // If UNSURE → fall through to RSS
+    // If UNSURE, or time-sensitive, or ERROR → fall through to RSS
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // STEP 2 — RSS headlines (for breaking/recent events not yet on Wikipedia)
   // ═══════════════════════════════════════════════════════════════════════════
 
-  if (!triggered && (source === 'no_data' || verdict === 'UNSURE' || !authoritative)) {
+  if (!triggered && (source === 'no_data' || verdict === 'UNSURE' || !authoritative || isTimeSensitive)) {
     const RSS_SOURCES = getNewsSources(query, entity);
 
     const rssResults = await Promise.all(RSS_SOURCES.map(fetchRSS));
