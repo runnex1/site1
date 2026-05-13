@@ -5,7 +5,7 @@ const ALERTS_KEY       = 'vault:alerts';
 const TG_CHAN_KEY      = 'vault:tg_channels';
 const RECENT_FIRED_KEY = 'vault:recent_fired';
 const GRACE_MS         = 5000;   // 5 s grace period before a new alert is eligible
-const EVENT_CHECK_MS   = 600000; // 10 min between checks per event alert
+const EVENT_CHECK_MS   = 60000;  // 1 min between checks per event alert
 
 function dedupKey(alert) {
   return alert.id || (alert.symbol + '-' + alert.dir + '-' + alert.target);
