@@ -140,7 +140,10 @@ module.exports = async function handler(req, res) {
 
     // Run all event-checks in parallel
     const ecResults = await Promise.allSettled(
-      dueEvents.map(async (alert) => {
+      dueEvents.map(async (alert, idx) => {
+        // Stagger 5 s per alert: 5 alerts spread over 20 s = ~15 RPM, safe for both
+        // Groq (30 RPM free tier) and Gemini (15 RPM free tier).
+        if (idx > 0) await new Promise(r => setTimeout(r, idx * 5000));
         const condition = (alert.condition || alert.label || '').trim();
         if (!condition) return { alertId: alert.id, triggered: false, reason: 'no_condition' };
 
