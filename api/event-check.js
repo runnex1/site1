@@ -143,7 +143,18 @@ module.exports = async function handler(req, res) {
     if (parsed) {
       const triggered = !!parsed.triggered;
       console.log('[event-check] AI verdict:', triggered ? 'YES' : 'NO', '| reason:', (parsed.reason || '').slice(0, 80));
-      return { triggered, verdict: triggered ? 'YES' : 'NO', reason: parsed.reason || '', headline: parsed.headline || '' };
+      return {
+        triggered, verdict: triggered ? 'YES' : 'NO',
+        reason:       parsed.reason       || '',
+        headline:     parsed.headline     || '',
+        eps_actual:   parsed.eps_actual   || null,
+        eps_estimate: parsed.eps_estimate || null,
+        eps_beat:     parsed.eps_beat     ?? null,
+        rev_actual:   parsed.rev_actual   || null,
+        rev_estimate: parsed.rev_estimate || null,
+        rev_beat:     parsed.rev_beat     ?? null,
+        guidance:     parsed.guidance     || '',
+      };
     }
 
     // Both AIs unavailable. Keyword-match headlines as safety net — rate-limit
@@ -239,9 +250,11 @@ module.exports = async function handler(req, res) {
           const titleM = body.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
           const dateM  = body.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i);
           const descM  = body.match(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i);
-          const text   = ((titleM || descM || [])[1] || '').replace(/<[^>]+>/g, '').trim().slice(0, 220);
-          const pubTs  = dateM ? (Date.parse(dateM[1].trim()) || 0) : 0;
-          if (text.length > 10) items.push({ text, pubTs });
+          const titleText = (titleM?.[1] || '').replace(/<[^>]+>/g, '').trim().slice(0, 220);
+          const descText  = (descM?.[1]  || '').replace(/<[^>]+>/g, '').trim().slice(0, 500);
+          const text      = titleText || descText;
+          const pubTs     = dateM ? (Date.parse(dateM[1].trim()) || 0) : 0;
+          if (text.length > 10) items.push({ text, desc: descText, pubTs });
         }
       } else {
         // Fallback: feed has no <item> blocks — grab titles/descs without dates
@@ -282,6 +295,10 @@ module.exports = async function handler(req, res) {
   const alertSetAt    = setAt ? Number(setAt) : 0;
   if (isFutureTense) console.log('[event-check] Future-tense alert — cutoff:', alertSetAt ? new Date(alertSetAt).toUTCString() : 'none');
 
+  // Earnings alerts: extract structured financial data (EPS, revenue, beat/miss)
+  const isEarnings = /\b(earn|eps|revenue|results|quarterly|q[1-4]\s|annual\s+result|profit|guidance|outlook)\b/i.test(query);
+  if (isEarnings) console.log('[event-check] Earnings alert detected');
+
   // For time-sensitive conditions skip Wikipedia entirely:
   //   - Wikipedia won't have breaking news → always says NO for announcements/arrivals
   //   - Skipping it saves 1-2 Groq API calls per alert, preventing 429s when 5 alerts check in parallel
@@ -295,11 +312,12 @@ module.exports = async function handler(req, res) {
 
   const authoritative = [wikiSummary, wikidataDesc].filter(Boolean).join('\n');
 
-  let triggered = false;
-  let verdict   = 'NO';
-  let source    = 'no_data';
-  let reason    = '';
-  let headline  = '';
+  let triggered    = false;
+  let verdict      = 'NO';
+  let source       = 'no_data';
+  let reason       = '';
+  let headline     = '';
+  let earningsData = null;
 
   if (authoritative && !isTimeSensitive) {
     const wikiPrompt =
@@ -353,13 +371,14 @@ module.exports = async function handler(req, res) {
         })
       : allItems;
 
-    // Format for AI: include publish date when available so the model can reason about recency
+    // Format for AI: include publish date + description body for earnings items
     const headlines = items.slice(0, 30).map(h => {
-      if (h.pubTs) {
-        const d = new Date(h.pubTs).toUTCString();
-        return `[${d}] ${h.text}`;
-      }
-      return h.text;
+      const datePfx = h.pubTs ? `[${new Date(h.pubTs).toUTCString()}] ` : '';
+      // For earnings alerts, append description body if it adds financial detail
+      const body = (isEarnings && h.desc && h.desc !== h.text && h.desc.length > 30)
+        ? `\n  Detail: ${h.desc.slice(0, 400)}`
+        : '';
+      return datePfx + h.text + body;
     });
 
     // Plain text array for keyword fallback (no date prefix needed)
@@ -377,13 +396,21 @@ module.exports = async function handler(req, res) {
         : '';
       contextParts.push('RECENT NEWS HEADLINES:\n' + headlines.join('\n') + cutoffNote);
 
+      const earningsFormat = isEarnings
+        ? `\nFor earnings alerts, extract financial details from the text and add these fields to the JSON (use null if not found):\n` +
+          `"eps_actual": "e.g. $2.09", "eps_estimate": "e.g. $1.97", "eps_beat": true/false/null,\n` +
+          `"rev_actual": "e.g. $7.1B", "rev_estimate": "e.g. $6.98B", "rev_beat": true/false/null,\n` +
+          `"guidance": "brief guidance note or empty string"`
+        : '';
+
       const rssPrompt =
         'Today is ' + today + '.\n\n' +
         contextParts.join('\n\n') + '\n\n' +
         'CONDITION TO CHECK: "' + query + '"\n\n' +
         'Has this condition been met based on the sources above?\n' +
         'Reply with ONLY a JSON object:\n' +
-        '{"triggered": true/false, "reason": "brief explanation of what happened", "headline": "the specific headline that confirmed this, or empty string"}\n\n' +
+        '{"triggered": true/false, "reason": "brief explanation of what happened", "headline": "the specific headline that confirmed this, or empty string"}' +
+        earningsFormat + '\n\n' +
         (isTimeSensitive
           ? 'Say triggered:true if ANY headline shows this happened recently (last 48h). News moves faster than Wikipedia — do not require encyclopedia confirmation. When in doubt, trigger.'
           : 'Be conservative — only say triggered:true if there is clear, direct evidence.');
@@ -394,6 +421,18 @@ module.exports = async function handler(req, res) {
       reason    = rssResult.reason;
       headline  = rssResult.headline;
       source    = 'headlines';
+      if (isEarnings) {
+        // Carry earnings fields forward to the TG message builder
+        earningsData = {
+          eps_actual:   rssResult.eps_actual   || null,
+          eps_estimate: rssResult.eps_estimate || null,
+          eps_beat:     rssResult.eps_beat     ?? null,
+          rev_actual:   rssResult.rev_actual   || null,
+          rev_estimate: rssResult.rev_estimate || null,
+          rev_beat:     rssResult.rev_beat     ?? null,
+          guidance:     rssResult.guidance     || '',
+        };
+      }
     }
   }
 
@@ -409,7 +448,25 @@ module.exports = async function handler(req, res) {
           '',
           '<b>Condition:</b> ' + query,
         ];
-        if (reason)   msgLines.push('<b>What happened:</b> ' + reason);
+
+        if (earningsData && (earningsData.eps_actual || earningsData.rev_actual)) {
+          // Structured earnings format
+          msgLines.push('');
+          const beatMiss = v => v === true ? '✅ Beat' : v === false ? '❌ Miss' : '';
+          if (earningsData.eps_actual) {
+            const est = earningsData.eps_estimate ? ' (est. ' + earningsData.eps_estimate + ')' : '';
+            msgLines.push('📊 <b>EPS:</b> ' + earningsData.eps_actual + est + (earningsData.eps_beat !== null ? '  ' + beatMiss(earningsData.eps_beat) : ''));
+          }
+          if (earningsData.rev_actual) {
+            const est = earningsData.rev_estimate ? ' (est. ' + earningsData.rev_estimate + ')' : '';
+            msgLines.push('📈 <b>Revenue:</b> ' + earningsData.rev_actual + est + (earningsData.rev_beat !== null ? '  ' + beatMiss(earningsData.rev_beat) : ''));
+          }
+          if (earningsData.guidance) msgLines.push('🔭 <b>Guidance:</b> ' + earningsData.guidance);
+          if (reason) msgLines.push('', '<b>Summary:</b> ' + reason);
+        } else {
+          if (reason) msgLines.push('<b>What happened:</b> ' + reason);
+        }
+
         if (headline) msgLines.push('<b>Headline:</b> <i>' + headline + '</i>');
         msgLines.push('');
         msgLines.push('<i>' + new Date().toUTCString() + '</i>');
