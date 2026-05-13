@@ -605,10 +605,21 @@ module.exports = async function handler(req, res) {
       lines.push('');
       lines.push(`<b>Condition:</b> ${condition}`);
       lines.push(`<b>Simulated date:</b> ${dateLabel}`);
-      if (d.headline) lines.push(`<b>Headline:</b> <i>${d.headline}</i>`);
-      if (d.reason)   lines.push(`<b>Reason:</b> ${d.reason}`);
-      if (d.verdict)  lines.push(`<b>AI verdict:</b> ${d.verdict}`);
-      if (d.source)   lines.push(`<b>Source:</b> ${d.source}`);
+      if (d.headline) {
+        // Show headline as a hyperlink if we have the article URL
+        const hlText = d.headline.replace(/^\[[^\]]+\]\s*/, ''); // strip echoed date prefix
+        if (d.headlineUrl) {
+          lines.push(`<b>Headline:</b> <a href="${d.headlineUrl}">${hlText}</a>`);
+        } else {
+          lines.push(`<b>Headline:</b> <i>${hlText}</i>`);
+        }
+      }
+      if (d.headlinePubTs) {
+        lines.push(`<b>Published:</b> ${new Date(d.headlinePubTs).toUTCString()}`);
+      }
+      if (d.reason)  lines.push(`<b>Reason:</b> ${d.reason}`);
+      if (d.verdict) lines.push(`<b>AI verdict:</b> ${d.verdict}`);
+      if (d.source)  lines.push(`<b>Source:</b> ${d.source}`);
       if (!d.triggered) {
         lines.push('');
         lines.push('<i>Tip: if you expected it to trigger, try a later simulated date or check that recent news exists.</i>');

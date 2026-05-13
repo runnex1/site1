@@ -260,7 +260,11 @@ module.exports = async function handler(req, res) {
           const descText  = (descM?.[1]  || '').replace(/<[^>]+>/g, '').trim().slice(0, 500);
           const text      = titleText || descText;
           const pubTs     = dateM ? (Date.parse(dateM[1].trim()) || 0) : 0;
-          if (text.length > 10) items.push({ text, desc: descText, pubTs });
+          // Extract article URL from <link> (plain text or CDATA) or <link href="...">
+          const linkM     = body.match(/<link[^>]*>(?:<!\[CDATA\[)?(https?:\/\/[^\s<\]]+)(?:\]\]>)?<\/link>/i)
+                         || body.match(/<link[^>]+href=["'](https?:\/\/[^"']+)["']/i);
+          const link      = linkM ? (linkM[1] || '').trim() : '';
+          if (text.length > 10) items.push({ text, desc: descText, pubTs, link });
         }
       } else {
         // Fallback: feed has no <item> blocks — grab titles/descs without dates
@@ -388,6 +392,10 @@ module.exports = async function handler(req, res) {
         })
       : allItems;
 
+    // Expose items to post-processing (headline URL resolver)
+    // eslint-disable-next-line no-var
+    var _lastItems = items;
+
     // Format for AI: include publish date + description body for earnings items
     const headlines = items.slice(0, 30).map(h => {
       const datePfx = h.pubTs ? `[${new Date(h.pubTs).toUTCString()}] ` : '';
@@ -469,7 +477,9 @@ module.exports = async function handler(req, res) {
       if (!triggered && !cacheHit) {
         try {
           await kvSet(EC_CACHE_KEY, JSON.stringify({
-            triggered: false, verdict, reason, headline, ts: Date.now(),
+            triggered: false, verdict, reason, headline,
+            headlineUrl: '', headlinePubTs: 0,  // resolved below after item lookup
+            ts: Date.now(),
           }));
         } catch(e) { console.warn('[event-check] cache write failed:', e.message); }
       }
@@ -486,6 +496,26 @@ module.exports = async function handler(req, res) {
           guidance:     rssResult.guidance     || '',
         };
       }
+    }
+  }
+
+  // ── Resolve headline URL + publish date from matched RSS item ───────────────
+  // The AI returns headline as plain text. Match it back to the original items
+  // array (which carries link + pubTs) so we can surface the URL and date.
+  let headlineUrl    = '';
+  let headlinePubTs  = 0;
+  if (headline) {
+    // Strip the date prefix the AI may have echoed back (e.g. "[Thu, 12 May…] ")
+    const cleanHl = headline.replace(/^\[[^\]]+\]\s*/, '').trim().toLowerCase();
+    const matched = (typeof _lastItems !== 'undefined' ? _lastItems : []).find(h => {
+      if (!h.text) return false;
+      const ht = h.text.toLowerCase();
+      // Consider matched if either contains the other (first 60 chars)
+      return ht.includes(cleanHl.slice(0, 60)) || cleanHl.includes(ht.slice(0, 60));
+    });
+    if (matched) {
+      headlineUrl   = matched.link  || '';
+      headlinePubTs = matched.pubTs || 0;
     }
   }
 
@@ -540,7 +570,7 @@ module.exports = async function handler(req, res) {
   }
 
   return res.status(200).json({
-    triggered, verdict, source, reason, headline,
+    triggered, verdict, source, reason, headline, headlineUrl, headlinePubTs,
     context: [wikiSummary, wikidataDesc].filter(Boolean).slice(0, 2),
   });
 };
