@@ -2413,24 +2413,10 @@ async function syncAlertsToServer() {
       } catch (e) {}
 }
 
-  function patchTerminalSave() {
-    const original = window.terminalSave;
-    if (typeof original !== 'function') return false;
-    window.terminalSave = function() {
-      original.apply(this, arguments);
-      syncAlertsToServer();
-    };
-    return true;
-  }
-
-  let attempts = 0;
-  const poll = setInterval(() => {
-    if (patchTerminalSave()) {
-      clearInterval(poll);
-      syncAlertsToServer();
-    }
-    if (++attempts > 50) clearInterval(poll);
-  }, 100);
+  // Script 2 (VaultSync block) handles the terminalSave patch and server sync.
+  // We keep syncAlertsToServer above only for its recentFired notification handling
+  // if called explicitly, but we no longer wire it into terminalSave here to avoid
+  // double-POSTing to /api/sync-alerts on every save.
 })();
 </script>
 
@@ -8550,6 +8536,10 @@ function terminalLoad() {
                 localStorage.setItem('terminal-alerts', JSON.stringify(terminalAlerts));
                 terminalRenderAlerts();
                 if (terminalAlerts.some(a => !a.triggered)) terminalStartPolling();
+                // Push local-only alerts up to the server so the 24/7 cron sees them.
+                // Without this, alerts created on Device A and loaded on Device B stay
+                // server-invisible until the user manually adds/removes an alert.
+                if (localOnly.length > 0) setTimeout(terminalSave, 300);
             })
             .catch(() => {}); // offline — no problem, localStorage is fine
     }
