@@ -25,7 +25,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
-  const { condition, label, alertId } = req.body || {};
+  const { condition, label, alertId, setAt } = req.body || {};
   if (!condition && !label) return res.status(400).json({ error: 'condition required' });
 
   const GROQ_KEY   = process.env.GROQ_API_KEY;
@@ -220,6 +220,7 @@ module.exports = async function handler(req, res) {
   }
 
   // ── RSS headlines ─────────────────────────────────────────────────────────
+  // Returns [{text, pubTs}] where pubTs is a Unix ms timestamp (or 0 if missing).
   async function fetchRSS(url) {
     try {
       const r = await fetch(url, {
@@ -227,15 +228,31 @@ module.exports = async function handler(req, res) {
         signal: AbortSignal.timeout(6000),
       });
       if (!r.ok) return [];
-      const text = await r.text();
-      const titles = [...text.matchAll(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/gi)];
-      const descs  = [...text.matchAll(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/gi)];
-      const out = [];
-      [...titles.slice(1, 12), ...descs.slice(1, 6)].forEach(m => {
-        const t = (m[1] || '').replace(/<[^>]+>/g, '').trim().slice(0, 220);
-        if (t.length > 10) out.push(t);
-      });
-      return out;
+      const xml = await r.text();
+
+      // Parse <item> blocks to keep title+pubDate together
+      const items = [];
+      const itemBlocks = [...xml.matchAll(/<item[\s>]([\s\S]*?)<\/item>/gi)];
+      if (itemBlocks.length) {
+        for (const b of itemBlocks.slice(0, 15)) {
+          const body = b[1] || '';
+          const titleM = body.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+          const dateM  = body.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i);
+          const descM  = body.match(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/i);
+          const text   = ((titleM || descM || [])[1] || '').replace(/<[^>]+>/g, '').trim().slice(0, 220);
+          const pubTs  = dateM ? (Date.parse(dateM[1].trim()) || 0) : 0;
+          if (text.length > 10) items.push({ text, pubTs });
+        }
+      } else {
+        // Fallback: feed has no <item> blocks — grab titles/descs without dates
+        const titles = [...xml.matchAll(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/gi)];
+        const descs  = [...xml.matchAll(/<description[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>/gi)];
+        [...titles.slice(1, 12), ...descs.slice(1, 6)].forEach(m => {
+          const t = (m[1] || '').replace(/<[^>]+>/g, '').trim().slice(0, 220);
+          if (t.length > 10) items.push({ text: t, pubTs: 0 });
+        });
+      }
+      return items;
     } catch(e) { return []; }
   }
 
@@ -257,6 +274,13 @@ module.exports = async function handler(req, res) {
   // will almost always say NO even when the event HAS happened — skip it and go straight to RSS.
   const isTimeSensitive = /\b(announc|releas|said|says|stated|declared|tweet|post|today|yesterday|this week|this month|recent|latest|new\b|just\b|breaking|now\b|happen|occur|report|arriv|land|visit|sign|reach|meet|speak|address|confirm|pass|approv|reject|launch|attack|invad|withdraw|deal|vote|elect|win|lose|fire|resign|appoint|nominat)\b/i.test(query);
   console.log('[event-check] Time-sensitive:', isTimeSensitive);
+
+  // Detect future-tense alerts: "next rate decision", "upcoming election", "will announce"…
+  // For these, only headlines published AFTER the alert was created count — otherwise a
+  // headline about last month's rate decision would immediately fire a "next decision" alert.
+  const isFutureTense = /\b(next|upcoming|will\s|future|soon|expected|scheduled|planned|going\s+to|yet\s+to|yet\s+to\s+be|announce[sd]?\s+the\s+next|next\s+time)\b/i.test(query);
+  const alertSetAt    = setAt ? Number(setAt) : 0;
+  if (isFutureTense) console.log('[event-check] Future-tense alert — cutoff:', alertSetAt ? new Date(alertSetAt).toUTCString() : 'none');
 
   // For time-sensitive conditions skip Wikipedia entirely:
   //   - Wikipedia won't have breaking news → always says NO for announcements/arrivals
@@ -310,7 +334,25 @@ module.exports = async function handler(req, res) {
     const RSS_SOURCES = getNewsSources(query, entity);
 
     const rssResults = await Promise.all(RSS_SOURCES.map(fetchRSS));
-    const headlines  = rssResults.flat();
+    const allItems   = rssResults.flat();
+
+    // For future-tense alerts, discard headlines published before the alert was set.
+    // This prevents "next rate decision" from firing on last month's announcement.
+    const items = (isFutureTense && alertSetAt)
+      ? allItems.filter(h => h.pubTs === 0 || h.pubTs >= alertSetAt)
+      : allItems;
+
+    // Format for AI: include publish date when available so the model can reason about recency
+    const headlines = items.slice(0, 30).map(h => {
+      if (h.pubTs) {
+        const d = new Date(h.pubTs).toUTCString();
+        return `[${d}] ${h.text}`;
+      }
+      return h.text;
+    });
+
+    // Plain text array for keyword fallback (no date prefix needed)
+    const headlineTexts = items.map(h => h.text);
 
     if (!headlines.length) {
       verdict = 'NO_NEWS';
@@ -319,7 +361,10 @@ module.exports = async function handler(req, res) {
       // Build full context: Wikipedia (if any) + RSS headlines
       const contextParts = [];
       if (authoritative) contextParts.push('AUTHORITATIVE SOURCES:\n' + authoritative);
-      contextParts.push('RECENT NEWS HEADLINES:\n' + headlines.slice(0, 30).join('\n'));
+      const cutoffNote = (isFutureTense && alertSetAt)
+        ? `\nNOTE: This alert was created on ${new Date(alertSetAt).toUTCString()}. ONLY trigger if a headline published AFTER that date confirms the event. Ignore older headlines.`
+        : '';
+      contextParts.push('RECENT NEWS HEADLINES:\n' + headlines.join('\n') + cutoffNote);
 
       const rssPrompt =
         'Today is ' + today + '.\n\n' +
@@ -332,7 +377,7 @@ module.exports = async function handler(req, res) {
           ? 'Say triggered:true if ANY headline shows this happened recently (last 48h). News moves faster than Wikipedia — do not require encyclopedia confirmation. When in doubt, trigger.'
           : 'Be conservative — only say triggered:true if there is clear, direct evidence.');
 
-      const rssResult = await askBothJSON(rssPrompt, headlines);
+      const rssResult = await askBothJSON(rssPrompt, headlineTexts);
       triggered = rssResult.triggered;
       verdict   = rssResult.verdict;
       reason    = rssResult.reason;

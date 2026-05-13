@@ -118,7 +118,7 @@ module.exports = async function handler(req, res) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           // Pass alertId so event-check sends TG + marks triggered in KV if fired
-          body: JSON.stringify({ condition: a.condition, label: a.label, alertId: a.id }),
+          body: JSON.stringify({ condition: a.condition, label: a.label, alertId: a.id, setAt: a.setAt || 0 }),
           signal: AbortSignal.timeout(22000),
         }).catch(e => console.warn('[sync-alerts] immediate check failed:', e.message))
       ));

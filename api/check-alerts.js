@@ -163,7 +163,7 @@ module.exports = async function handler(req, res) {
         const ecRes = await fetch(baseUrl + '/api/event-check', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ condition, label: alert.label, alertId: alert.id }),
+          body:    JSON.stringify({ condition, label: alert.label, alertId: alert.id, setAt: alert.setAt || 0 }),
           signal:  AbortSignal.timeout(PER_CHECK_MS),
         });
         if (!ecRes.ok) throw new Error('event-check HTTP ' + ecRes.status);
