@@ -75,12 +75,18 @@ module.exports = async function handler(req, res) {
     } catch(e) { console.error('[event-check] Gemini:', e.message); return null; }
   }
 
-  // Either AI saying YES is enough
+  // Sequential: Groq first, Gemini only if Groq fails.
+  // Previously parallel — this doubled API usage and caused rate-limit failures
+  // when multiple alerts checked simultaneously. Sequential halves the call count.
   async function askBoth(prompt) {
-    const [g, m] = await Promise.all([askGroq(prompt), askGemini(prompt)]);
-    console.log('[event-check] Groq: ' + g + ' | Gemini: ' + m);
-    const triggered = g?.startsWith('YES') || m?.startsWith('YES');
-    return { triggered, verdict: triggered ? 'YES' : (g || m || 'ERROR') };
+    let result = await askGroq(prompt);
+    if (!result) {
+      console.warn('[event-check] Wiki/Groq unavailable, trying Gemini...');
+      result = await askGemini(prompt);
+    }
+    console.log('[event-check] Wiki result:', result);
+    const triggered = result?.startsWith('YES');
+    return { triggered, verdict: triggered ? 'YES' : (result || 'ERROR') };
   }
 
   // JSON-based check — returns triggered, verdict, reason, headline
@@ -295,6 +301,17 @@ module.exports = async function handler(req, res) {
   const alertSetAt    = setAt ? Number(setAt) : 0;
   if (isFutureTense) console.log('[event-check] Future-tense alert — cutoff:', alertSetAt ? new Date(alertSetAt).toUTCString() : 'none');
 
+  // ── NO-verdict cache ────────────────────────────────────────────────────────
+  // Cache only NO verdicts for 5 minutes. YES verdicts are never cached — they
+  // fire the alert immediately and the alert is then removed, so caching is pointless.
+  // The cache key includes the condition and setAt calendar day (so future-tense
+  // alerts with different creation dates never share a cache entry).
+  // Headlines are still fetched fresh every minute; only the AI analysis is cached.
+  const CACHE_TTL_MS = 5 * 60 * 1000;
+  const _setAtDay    = alertSetAt ? new Date(alertSetAt).toISOString().slice(0, 10) : '';
+  const _cacheRaw    = (query.toLowerCase().trim() + '|' + _setAtDay).replace(/[^a-z0-9|]/g, '_').slice(0, 80);
+  const EC_CACHE_KEY = 'vault:ec_no:' + _cacheRaw;
+
   // Earnings alerts: extract structured financial data (EPS, revenue, beat/miss)
   const isEarnings = /\b(earn|eps|revenue|results|quarterly|q[1-4]\s|annual\s+result|profit|guidance|outlook)\b/i.test(query);
   if (isEarnings) console.log('[event-check] Earnings alert detected');
@@ -420,13 +437,44 @@ module.exports = async function handler(req, res) {
         'Example: "Trump makes a statement" is NOT satisfied by a headline about Melania Trump, Ivanka Trump, or any other family member. ' +
         '"President Trump" or "Trump" alone in a headline DOES satisfy it. Reject partial or family-member matches.';
 
-      const rssResult = await askBothJSON(rssPrompt, headlineTexts);
+      // Check NO-verdict cache before spending an AI call.
+      // If the last check returned NO less than 5 minutes ago, skip the AI entirely
+      // and return the cached answer. YES results are never cached — they fire immediately.
+      let rssResult = null;
+      let cacheHit  = false;
+      try {
+        const cRaw = await kvGet(EC_CACHE_KEY);
+        if (cRaw) {
+          const c = typeof cRaw === 'string' ? JSON.parse(cRaw) : cRaw;
+          if (c && c.ts && (Date.now() - c.ts) < CACHE_TTL_MS) {
+            rssResult = c;
+            cacheHit  = true;
+            console.log('[event-check] Cache hit — skipping AI for:', query.slice(0, 60));
+          }
+        }
+      } catch(e) { /* cache miss is fine */ }
+
+      if (!cacheHit) {
+        rssResult = await askBothJSON(rssPrompt, headlineTexts);
+      }
+
       triggered = rssResult.triggered;
       verdict   = rssResult.verdict;
-      reason    = rssResult.reason;
-      headline  = rssResult.headline;
-      source    = 'headlines';
-      if (isEarnings) {
+      reason    = rssResult.reason    || '';
+      headline  = rssResult.headline  || '';
+      source    = cacheHit ? 'cache' : 'headlines';
+
+      // Save NO verdicts to cache for 5 minutes so back-to-back cron runs don't
+      // repeat identical AI calls on unchanged headlines.
+      if (!triggered && !cacheHit) {
+        try {
+          await kvSet(EC_CACHE_KEY, JSON.stringify({
+            triggered: false, verdict, reason, headline, ts: Date.now(),
+          }));
+        } catch(e) { console.warn('[event-check] cache write failed:', e.message); }
+      }
+
+      if (isEarnings && !cacheHit) {
         // Carry earnings fields forward to the TG message builder
         earningsData = {
           eps_actual:   rssResult.eps_actual   || null,
