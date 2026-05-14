@@ -8549,15 +8549,10 @@ function terminalSave() {
     try { localStorage.setItem('terminal-alerts', JSON.stringify(terminalAlerts)); } catch(e) {}
     // Sync to server so the 24/7 worker picks up the latest alerts
     if (location.protocol !== 'file:') {
-        let deletedIds = [];
-        try {
-            const deleted = JSON.parse(localStorage.getItem('terminal-deleted-ids') || '{}');
-            deletedIds = Object.keys(deleted);
-        } catch(e) {}
         fetch('/api/sync-alerts', {
             method:   'POST',
             headers:  { 'Content-Type': 'application/json' },
-            body:     JSON.stringify({ alerts: terminalAlerts, deletedIds }),
+            body:     JSON.stringify({ alerts: terminalAlerts }),
             keepalive: true,  // completes even if the tab closes immediately
         }).catch(() => {}); // fire-and-forget
     }
@@ -10260,15 +10255,6 @@ function terminalRenderAlerts() {
 
 function terminalRemoveAlert(id) {
     terminalAlerts = terminalAlerts.filter(a => a.id !== id);
-    // Record the deleted ID so sync-alerts.js won't re-add it from TG-only logic
-    try {
-        const deleted = JSON.parse(localStorage.getItem('terminal-deleted-ids') || '{}');
-        deleted[id] = Date.now();
-        // Prune entries older than 24 hours to keep localStorage lean
-        const cutoff = Date.now() - 86400000;
-        for (const k of Object.keys(deleted)) { if (deleted[k] < cutoff) delete deleted[k]; }
-        localStorage.setItem('terminal-deleted-ids', JSON.stringify(deleted));
-    } catch(e) {}
     terminalSave();
     terminalRenderAlerts();
     const active = terminalAlerts.filter(a => !a.triggered).length;

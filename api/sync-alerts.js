@@ -48,8 +48,6 @@ module.exports = async function handler(req, res) {
   const browserAlerts = body?.alerts;
   const tgChannels    = body?.tgChannels || [];
   // IDs the user explicitly deleted in the browser — never restore these from KV
-  const deletedIds    = new Set(Array.isArray(body?.deletedIds) ? body.deletedIds : []);
-
   if (!Array.isArray(browserAlerts)) {
     return res.status(400).json({ error: 'alerts must be an array' });
   }
@@ -89,13 +87,14 @@ module.exports = async function handler(req, res) {
         return Object.keys(patch).length ? { ...a, ...patch } : a;
       });
 
-    // Add TG-only alerts — but only if browser sent a non-empty list.
-    // If browser sends [], the user explicitly cleared everything — don't restore KV alerts.
-    // Never restore an alert whose ID is in deletedIds — the user explicitly removed it.
+    // Restore TG-created alerts the browser doesn't know about.
+    // Only alerts explicitly tagged source:'tg' (set by tg-webhook.js) are restored —
+    // this prevents browser-deleted alerts from ever being re-added, with no need to
+    // track deleted IDs anywhere.
     if (browserAlerts.length > 0) {
       const tgOnly = existing.filter(a =>
+        a.source === 'tg' &&
         !browserIds.has(a.id) &&
-        !deletedIds.has(a.id) &&
         !a.triggered &&
         !recentFired.has(a.id)
       );

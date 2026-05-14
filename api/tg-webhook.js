@@ -371,14 +371,14 @@ async function processMessage(raw) {
     const label = marketSlug + ' (' + side + ') ' + dir + ' ' + targetFmt;
     return {
       type: 'alerts',
-      alerts: [{ id: uid(), type: 'polymarket', symbol: marketSlug, eventSlug, marketSlug, side, dir, target, label, triggered: false, setAt: Date.now() }],
+      alerts: [{ id: uid(), type: 'polymarket', symbol: marketSlug, eventSlug, marketSlug, side, dir, target, label, triggered: false, setAt: Date.now(), source: 'tg' }],
     };
   }
 
   // 2. Aave cap regex
   const aave = parseAaveCap(raw);
   if (aave) {
-    const alert = { id: uid(), ...aave, triggered: false, setAt: Date.now() };
+    const alert = { id: uid(), ...aave, triggered: false, setAt: Date.now(), source: 'tg' };
     if (!alert.chainId) alert.chainId = 1; // default Ethereum
     return { type: 'alerts', alerts: [alert] };
   }
@@ -386,7 +386,7 @@ async function processMessage(raw) {
   // 3. Simple NL regex
   const nl = parseNL(raw);
   if (nl) {
-    return { type: 'alerts', alerts: [{ id: uid(), ...nl, triggered: false, setAt: Date.now() }] };
+    return { type: 'alerts', alerts: [{ id: uid(), ...nl, triggered: false, setAt: Date.now(), source: 'tg' }] };
   }
 
   // 4. No number in message → definitely a real-world event alert (no AI needed)
@@ -401,7 +401,7 @@ async function processMessage(raw) {
     const label = condition.length > 60 ? condition.slice(0, 57) + '...' : condition;
     return {
       type: 'alerts',
-      alerts: [{ id: uid(), type: 'event', condition, label, symbol: '\u{1F30D}', triggered: false, setAt: Date.now() }],
+      alerts: [{ id: uid(), type: 'event', condition, label, symbol: '\u{1F30D}', triggered: false, setAt: Date.now(), source: 'tg' }],
     };
   }
 
@@ -412,7 +412,7 @@ async function processMessage(raw) {
     if (aiResult.type === 'alerts') {
       return {
         type: 'alerts',
-        alerts: aiResult.alerts.map(a => ({ id: uid(), ...a, triggered: false, setAt: Date.now() })),
+        alerts: aiResult.alerts.map(a => ({ id: uid(), ...a, triggered: false, setAt: Date.now(), source: 'tg' })),
       };
     }
     return { type: 'message', text: aiResult.text };
@@ -423,7 +423,7 @@ async function processMessage(raw) {
     const label = condition.length > 60 ? condition.slice(0, 57) + '...' : condition;
     return {
       type: 'alerts',
-      alerts: [{ id: uid(), type: 'event', condition, label, symbol: '\u{1F30D}', triggered: false, setAt: Date.now() }],
+      alerts: [{ id: uid(), type: 'event', condition, label, symbol: '\u{1F30D}', triggered: false, setAt: Date.now(), source: 'tg' }],
     };
   }
 }
