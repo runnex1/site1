@@ -47,6 +47,8 @@ module.exports = async function handler(req, res) {
 
   const browserAlerts = body?.alerts;
   const tgChannels    = body?.tgChannels || [];
+  // IDs the user explicitly deleted in the browser — never restore these from KV
+  const deletedIds    = new Set(Array.isArray(body?.deletedIds) ? body.deletedIds : []);
 
   if (!Array.isArray(browserAlerts)) {
     return res.status(400).json({ error: 'alerts must be an array' });
@@ -89,8 +91,14 @@ module.exports = async function handler(req, res) {
 
     // Add TG-only alerts — but only if browser sent a non-empty list.
     // If browser sends [], the user explicitly cleared everything — don't restore KV alerts.
+    // Never restore an alert whose ID is in deletedIds — the user explicitly removed it.
     if (browserAlerts.length > 0) {
-      const tgOnly = existing.filter(a => !browserIds.has(a.id) && !a.triggered && !recentFired.has(a.id));
+      const tgOnly = existing.filter(a =>
+        !browserIds.has(a.id) &&
+        !deletedIds.has(a.id) &&
+        !a.triggered &&
+        !recentFired.has(a.id)
+      );
       merged.push(...tgOnly);
     }
 
