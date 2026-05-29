@@ -20548,18 +20548,13 @@ function perpsSaveSnapshot(data) {
     } catch (e) {}
 }
 
-function perpsNetDepositsAtTime(payments, timeMs) {
-    return (payments || []).reduce((sum, p) => (p.time <= timeMs ? sum + p.usdc : sum), 0);
-}
 
 function perpsBuildEquitySeries(data) {
     const capitalFlows = data.capitalFlows || {};
-    const allPayments = [
-        ...(capitalFlows.hl?.payments || []),
-        ...(capitalFlows.nado?.payments || []),
-    ].sort((a, b) => a.time - b.time);
-    const combinedNetDeposits = capitalFlows.combinedNetDeposits
-        ?? allPayments.reduce((sum, p) => sum + p.usdc, 0);
+    const hlPayments = capitalFlows.hl?.payments || [];
+    const nadoPayments = capitalFlows.nado?.payments || [];
+    const combinedNetDeposits = capitalFlows.combinedNetDeposits ?? 0;
+    const crossVenueOffset = capitalFlows.crossVenueOffset ?? 0;
     const snapshots = Object.values(JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}'))
         .filter(s => s.hlAccountValue != null || s.nadoAccountValue != null)
         .sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -20572,7 +20567,7 @@ function perpsBuildEquitySeries(data) {
         const hl = snap.hlAccountValue ?? 0;
         const nado = snap.nadoAccountValue ?? 0;
         const totalEquity = snap.totalEquity ?? hl + nado;
-        const cumulativeNetDeposits = snap.cumulativeNetDeposits ?? perpsNetDepositsAtTime(allPayments, time);
+        const cumulativeNetDeposits = snap.cumulativeNetDeposits ?? combinedNetDeposits;
         points.push({
             time,
             date: snap.date,
@@ -20616,6 +20611,7 @@ function perpsBuildEquitySeries(data) {
         walletPnl: withPnl.at(-1)?.pnl ?? 0,
         dayCount: series.length,
         combinedNetDeposits,
+        crossVenueOffset,
         adjustedEquityNow: withPnl.at(-1)?.adjustedEquity ?? 0,
         lifetimePnl: withPnl.at(-1)?.adjustedEquity ?? 0,
     };
@@ -20625,28 +20621,43 @@ function perpsBuildEquityChart(equitySeries) {
     const pts = Array.isArray(equitySeries?.points) ? equitySeries.points : [];
     const walletPnl = equitySeries?.walletPnl ?? 0;
     const lifetimePnl = equitySeries?.lifetimePnl ?? 0;
+    const width = 760;
+    const height = 160;
+    const padX = 12;
+    const padY = 16;
+    const chartW = width - padX * 2;
+    const chartH = height - padY * 2;
+
     if (pts.length < 2) {
+        const val = lifetimePnl;
+        const min = Math.min(val, 0);
+        const max = Math.max(val, 0);
+        const span = Math.max(max - min, 1);
+        const y = padY + ((max - val) / span) * chartH;
+        const x = padX + chartW / 2;
+        const line = `M ${padX} ${y.toFixed(1)} L ${width - padX} ${y.toFixed(1)}`;
+        const stats = [
+            { label: 'Net deposits', value: perpsFmtUsd(equitySeries?.combinedNetDeposits) },
+            { label: 'Wallet equity', value: perpsFmtUsd((equitySeries?.combinedNetDeposits ?? 0) + lifetimePnl) },
+            { label: 'Days tracked', value: String(equitySeries?.dayCount || pts.length) },
+        ];
+        if ((equitySeries?.crossVenueOffset ?? 0) > 0) {
+            stats[1] = { label: 'HL↔Nado offset', value: perpsFmtUsd(-equitySeries.crossVenueOffset) };
+        }
         return {
-            line: '',
+            line,
             area: '',
-            total: walletPnl,
+            dot: `${x.toFixed(1)},${y.toFixed(1)}`,
+            total: lifetimePnl,
             lifetimePnl,
             insufficient: true,
-            stats: [
-                { label: 'Net deposits', value: perpsFmtUsd(equitySeries?.combinedNetDeposits) },
-                { label: 'Adjusted equity', value: perpsFmtUsd(equitySeries?.adjustedEquityNow) },
-                { label: 'Days tracked', value: String(equitySeries?.dayCount || pts.length) },
-            ],
+            stats,
         };
     }
     const values = pts.map(p => p.pnl);
     const min = Math.min(...values, 0);
     const max = Math.max(...values, 0);
     const span = Math.max(max - min, 1);
-    const width = 760;
-    const height = 160;
-    const padX = 12;
-    const padY = 16;
     const chartW = width - padX * 2;
     const chartH = height - padY * 2;
     const plot = pts.map((p, i) => {
@@ -20678,21 +20689,43 @@ function perpsRenderEquityChart(data) {
     const chart = perpsBuildEquityChart(equitySeries);
     const lineEl = document.getElementById('perpsEquityLine');
     const areaEl = document.getElementById('perpsEquityArea');
+    const svgEl = document.getElementById('perpsEquityChart');
     const totalEl = document.getElementById('perpsEquityChartTotal');
     const statsEl = document.getElementById('perpsEquityChartStats');
     const noteEl = document.getElementById('perpsEquityChartNote');
     const badge = document.getElementById('perpsEquityChartBadge');
     if (lineEl) lineEl.setAttribute('d', chart.line);
-    if (areaEl) areaEl.setAttribute('d', chart.area);
+    if (areaEl) areaEl.setAttribute('d', chart.area || '');
+    if (svgEl) {
+        let dot = svgEl.querySelector('.perps-equity-dot');
+        if (chart.dot) {
+            if (!dot) {
+                dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                dot.setAttribute('class', 'perps-equity-dot');
+                dot.setAttribute('r', '4');
+                dot.setAttribute('fill', '#ffb347');
+                svgEl.appendChild(dot);
+            }
+            const [cx, cy] = chart.dot.split(',');
+            dot.setAttribute('cx', cx);
+            dot.setAttribute('cy', cy);
+            dot.style.display = '';
+        } else if (dot) {
+            dot.style.display = 'none';
+        }
+    }
     const displayPnl = chart.insufficient ? chart.lifetimePnl : chart.total;
     if (totalEl) {
         totalEl.textContent = perpsFmtUsd(displayPnl);
         totalEl.className = 'perps-pnl-total ' + perpsSignedCls(displayPnl);
     }
     if (noteEl) {
+        const offsetNote = (equitySeries.crossVenueOffset ?? 0) > 0
+            ? ` · HL↔Nado transfers deduped ${perpsFmtUsd(equitySeries.crossVenueOffset)}`
+            : '';
         noteEl.textContent = chart.insufficient
-            ? `Lifetime adjusted PnL · refresh daily to build curve (from ${equitySeries.baselineDate || 'today'})`
-            : `Deposit-adjusted HL + Nado equity vs ${equitySeries.baselineDate || 'baseline'}`;
+            ? `Lifetime PnL = combined equity minus net external deposits${offsetNote} · refresh daily for curve`
+            : `Deposit-adjusted HL + Nado vs ${equitySeries.baselineDate || 'baseline'}${offsetNote}`;
     }
     if (badge) badge.textContent = chart.insufficient ? '1d' : `${equitySeries.dayCount}d`;
     if (statsEl) {
