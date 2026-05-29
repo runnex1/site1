@@ -356,6 +356,173 @@ html { height: 100%; }
 .wtab-panel { display: none; }
 .wtab-panel.active { display: block; animation: fadeUp 0.2s ease; }
 
+/* ─── WATCHER V2 LAYOUT ─────────────────────────────────────── */
+.watcher-v2 { display:flex; flex-direction:column; height:calc(100vh - var(--topbar-h, 0px) - 2rem); min-height:520px; max-height:calc(100vh - 120px); }
+.watcher-v2-header {
+  flex-shrink:0; border:1px solid var(--border); border-radius:var(--r-sm);
+  background:var(--surf-1); padding:1rem 1.15rem;
+}
+.watcher-v2-header-top { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin-bottom:0.85rem; }
+.watcher-v2-eyebrow { font-size:0.72rem; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:var(--t3); font-family:var(--ff-mono); }
+.watcher-v2-title { margin:0.25rem 0 0; font-family:var(--ff-display); font-size:1.55rem; font-weight:800; color:var(--t2); line-height:1.05; }
+.watcher-v2-summary { font-family:var(--ff-mono); font-size:0.72rem; color:var(--t3); white-space:nowrap; }
+.watcher-v2-toolbar { display:grid; grid-template-columns:1fr auto; gap:0.75rem; align-items:center; }
+.watcher-v2-search {
+  height:40px; display:flex; align-items:center; gap:0.55rem;
+  border:1px solid var(--border-mid); border-radius:var(--r-xs);
+  background:var(--surf-2); padding:0 0.85rem; color:var(--t3);
+}
+.watcher-v2-search input {
+  flex:1; border:none; background:transparent; color:var(--t1);
+  font-family:var(--ff-body); font-size:0.88rem; outline:none;
+}
+.watcher-v2-search input::placeholder { color:var(--t3); }
+.watcher-v2-search-kbd { color:var(--teal); font-family:var(--ff-mono); font-size:1rem; font-weight:700; }
+.watcher-v2-filters { display:flex; gap:0.45rem; flex-wrap:wrap; align-items:center; }
+.watcher-v2-filter {
+  height:30px; padding:0 0.65rem; border:1px solid var(--border); border-radius:999px;
+  background:var(--surf-2); color:var(--t3); font-family:var(--ff-mono); font-size:0.68rem;
+  font-weight:700; cursor:pointer; transition:all 0.14s;
+}
+.watcher-v2-filter.active, .watcher-v2-filter:hover { color:var(--teal); border-color:rgba(0,212,170,0.35); background:var(--teal-10); }
+.watcher-v2-filter.aave { color:var(--teal); border-color:rgba(0,212,170,0.25); }
+.watcher-v2-layout {
+  flex:1; min-height:0; display:grid;
+  grid-template-columns:minmax(0,1.18fr) minmax(320px,0.82fr);
+  gap:0.85rem; margin-top:0.85rem; align-items:stretch;
+}
+.watcher-v2-panel {
+  border:1px solid var(--border); border-radius:var(--r-sm);
+  background:linear-gradient(180deg, var(--surf-1), var(--surf-2));
+  overflow:hidden; display:flex; flex-direction:column; min-height:0;
+}
+.watcher-v2-panel-pm {
+  align-self:start;
+  height:calc(100% - var(--watcher-yield-h, 210px) / 2);
+  max-height:calc(100% - var(--watcher-yield-h, 210px) / 2);
+}
+.watcher-v2-stack { display:flex; flex-direction:column; gap:0.85rem; min-height:0; height:100%; }
+.watcher-v2-panel-wallet { flex:1; min-height:0; }
+.watcher-v2-panel-yield {
+  flex:0 0 var(--watcher-yield-h, 210px);
+  min-height:var(--watcher-yield-h, 210px);
+  max-height:var(--watcher-yield-h, 210px);
+}
+.watcher-v2-panel-head {
+  flex-shrink:0; min-height:52px; padding:0.7rem 0.95rem;
+  display:flex; align-items:flex-start; justify-content:space-between; gap:0.65rem;
+  border-bottom:1px solid var(--border);
+}
+.watcher-v2-panel-title { font-family:var(--ff-display); font-size:0.95rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--t2); }
+.watcher-v2-panel-note { margin-top:0.2rem; font-size:0.72rem; color:var(--t3); }
+.watcher-v2-pill {
+  border:1px solid rgba(0,212,170,0.28); background:var(--teal-10); color:var(--teal);
+  border-radius:999px; padding:0.25rem 0.6rem; font-family:var(--ff-mono); font-size:0.68rem; font-weight:700; white-space:nowrap;
+}
+.watcher-v2-pill.violet { border-color:rgba(217,70,239,0.28); background:var(--fuchsia-10); color:var(--fuchsia); }
+.watcher-v2-pill.blue { border-color:rgba(56,189,248,0.28); background:rgba(56,189,248,0.1); color:var(--sky); }
+.watcher-v2-scroll { flex:1; min-height:0; overflow-y:auto; }
+.watcher-v2-foot { flex-shrink:0; margin-top:auto; border-top:1px solid var(--border); }
+.watcher-v2-actions { display:flex; justify-content:flex-end; gap:0.45rem; padding:0.55rem 0.85rem 0.65rem; flex-wrap:wrap; }
+.watcher-v2-btn {
+  height:30px; padding:0 0.75rem; border-radius:var(--r-xs); font-size:0.78rem; font-weight:700;
+  border:1px solid rgba(0,212,170,0.28); background:var(--teal-10); color:var(--teal); cursor:pointer;
+}
+.watcher-v2-btn.secondary { border-color:var(--border-mid); background:var(--surf-3); color:var(--t3); }
+.watcher-v2-btn.indigo { border-color:rgba(108,114,255,0.28); background:var(--indigo-10); color:var(--indigo); }
+.watcher-v2-btn.fuchsia { border-color:rgba(217,70,239,0.28); background:var(--fuchsia-10); color:var(--fuchsia); }
+.watcher-v2-pm-row {
+  display:grid; grid-template-columns:34px minmax(160px,1fr) 58px 62px 58px 68px auto;
+  gap:0.65rem; min-height:58px; padding:0.55rem 0.85rem; align-items:center;
+  border-bottom:1px solid var(--border); font-size:0.82rem;
+}
+.watcher-v2-pm-row:hover { background:rgba(255,255,255,0.02); }
+.watcher-v2-pm-logo { width:34px; height:34px; border-radius:50%; overflow:hidden; background:var(--surf-3); border:1px solid var(--border-mid); flex-shrink:0; }
+.watcher-v2-pm-logo img { width:100%; height:100%; object-fit:cover; display:block; }
+.watcher-v2-pm-name { font-weight:700; color:var(--t1); line-height:1.25; }
+.watcher-v2-pm-meta { margin-top:0.15rem; font-family:var(--ff-mono); font-size:0.65rem; color:var(--t3); }
+.watcher-v2-cell-label { font-family:var(--ff-mono); font-size:0.58rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--t3); }
+.watcher-v2-cell-value { margin-top:0.15rem; font-family:var(--ff-mono); font-weight:700; font-size:0.78rem; color:var(--t1); }
+.watcher-v2-tag { display:inline-flex; align-items:center; height:18px; padding:0 6px; border-radius:4px; border:1px solid var(--border-mid); font-family:var(--ff-mono); font-size:0.58rem; font-weight:700; color:var(--t3); margin-top:0.25rem; }
+.watcher-v2-tag.good { color:var(--green); border-color:rgba(34,197,94,0.25); background:rgba(34,197,94,0.08); }
+.watcher-v2-tag.watch { color:var(--amber); border-color:rgba(245,158,11,0.25); background:rgba(245,158,11,0.08); }
+.watcher-v2-tag.pm { color:var(--fuchsia); border-color:rgba(217,70,239,0.25); background:var(--fuchsia-10); }
+.watcher-v2-activity {
+  flex-shrink:0; margin:0.65rem 0.75rem 0; border:1px solid rgba(56,189,248,0.25); border-radius:var(--r-sm);
+  background:linear-gradient(180deg, rgba(56,189,248,0.08), rgba(56,189,248,0.02)); overflow:hidden;
+}
+.watcher-v2-activity-head {
+  min-height:34px; display:flex; align-items:center; justify-content:space-between;
+  padding:0 0.75rem; border-bottom:1px solid var(--border);
+}
+.watcher-v2-activity-title { font-family:var(--ff-mono); font-size:0.62rem; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:var(--sky); }
+.watcher-v2-activity-sub { font-family:var(--ff-mono); font-size:0.62rem; color:var(--t3); }
+.watcher-v2-activity-scroll { max-height:96px; overflow-y:auto; }
+.watcher-v2-act-row {
+  display:grid; grid-template-columns:24px minmax(0,1fr) auto; gap:0.45rem;
+  padding:0.45rem 0.75rem; border-bottom:1px solid var(--border); align-items:start;
+}
+.watcher-v2-act-row:last-child { border-bottom:none; }
+.watcher-v2-act-icon {
+  width:24px; height:24px; border-radius:6px; display:grid; place-items:center;
+  font-family:var(--ff-mono); font-size:0.58rem; font-weight:800; color:var(--green);
+  background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.2);
+}
+.watcher-v2-act-icon.sell { color:var(--amber); background:rgba(245,158,11,0.1); border-color:rgba(245,158,11,0.22); }
+.watcher-v2-act-title { font-size:0.78rem; font-weight:700; color:var(--t1); line-height:1.25; }
+.watcher-v2-act-meta { margin-top:0.1rem; font-family:var(--ff-mono); font-size:0.62rem; color:var(--t3); line-height:1.3; }
+.watcher-v2-act-time { font-family:var(--ff-mono); font-size:0.62rem; color:var(--t3); white-space:nowrap; }
+.watcher-v2-subhead { flex-shrink:0; margin:0.65rem 0.75rem 0; padding-bottom:0.35rem; border-bottom:1px solid var(--border); }
+.watcher-v2-subhead-title { font-family:var(--ff-mono); font-size:0.62rem; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:var(--t3); }
+.watcher-v2-wallet-row, .watcher-v2-tool-row {
+  display:grid; grid-template-columns:32px minmax(0,1fr) auto auto; gap:0.55rem;
+  min-height:50px; padding:0.45rem 0.85rem; align-items:center; border-bottom:1px solid var(--border);
+}
+.watcher-v2-wallet-row:last-child, .watcher-v2-tool-row:last-child { border-bottom:none; }
+.watcher-v2-icon {
+  width:32px; height:32px; border-radius:8px; display:grid; place-items:center;
+  font-family:var(--ff-mono); font-size:0.62rem; font-weight:800;
+}
+.watcher-v2-icon.pm { color:var(--sky); background:rgba(56,189,248,0.1); border:1px solid rgba(56,189,248,0.22); }
+.watcher-v2-icon.yield { color:var(--teal); background:var(--teal-10); border:1px solid rgba(0,212,170,0.22); }
+.watcher-v2-icon.tool { color:var(--green); background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.22); }
+.watcher-v2-row-title { font-size:0.84rem; font-weight:700; color:var(--t1); }
+.watcher-v2-row-meta { margin-top:0.1rem; font-family:var(--ff-mono); font-size:0.65rem; color:var(--t3); }
+.watcher-v2-badge { padding:0.15rem 0.45rem; border-radius:6px; border:1px solid var(--border-mid); font-family:var(--ff-mono); font-size:0.62rem; font-weight:700; color:var(--t2); white-space:nowrap; }
+.watcher-v2-badge.green { color:var(--green); border-color:rgba(34,197,94,0.25); background:rgba(34,197,94,0.08); }
+.watcher-v2-badge.blue { color:var(--sky); border-color:rgba(56,189,248,0.25); background:rgba(56,189,248,0.08); }
+.watcher-v2-add-bar { display:flex; gap:0.45rem; padding:0.55rem 0.85rem; border-top:1px solid var(--border); flex-wrap:wrap; }
+.watcher-v2-add-bar input {
+  flex:1; min-width:140px; background:var(--surf-3); border:1px solid var(--border-mid);
+  border-radius:var(--r-xs); color:var(--t1); font-size:0.78rem; padding:0.4rem 0.55rem; outline:none;
+}
+.watcher-v2-empty { padding:1.25rem 0.85rem; text-align:center; color:var(--t3); font-size:0.8rem; line-height:1.5; }
+.watcher-v2-aavecap-wrap { margin-top:0.85rem; display:none; }
+.watcher-v2-aavecap-wrap.open { display:block; animation:fadeUp 0.2s ease; }
+.watcher-v2-hidden-nav { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+.watcher-v2-pm-row.hidden, .watcher-v2-wallet-row.hidden, .watcher-v2-tool-row.hidden { display:none !important; }
+.watcher-v2-pm-detail {
+  padding:0.65rem 0.85rem 0.75rem; border-bottom:1px solid var(--border);
+  background:rgba(255,255,255,0.015);
+}
+.watcher-v2-pm-detail .wl-chart-wrap { height:120px; margin:0.5rem 0; }
+.watcher-v2-pm-actions { display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.5rem; }
+.watcher-v2-row-btns { display:flex; gap:0.25rem; align-items:center; }
+.watcher-v2-row-btn {
+  background:none; border:1px solid var(--border-mid); border-radius:var(--r-xs);
+  color:var(--t3); cursor:pointer; padding:2px 6px; font-size:0.68rem; font-weight:700;
+}
+.watcher-v2-row-btn:hover { color:var(--teal); border-color:rgba(0,212,170,0.35); }
+.watcher-v2-row-btn.danger:hover { color:var(--red); border-color:rgba(244,63,94,0.35); }
+@media (max-width:1100px) {
+  .watcher-v2 { height:auto; max-height:none; }
+  .watcher-v2-layout { grid-template-columns:1fr; }
+  .watcher-v2-panel-pm { height:auto; max-height:none; align-self:stretch; }
+  .watcher-v2-panel-yield { flex:none; min-height:auto; max-height:none; }
+  .watcher-v2-pm-row { grid-template-columns:34px minmax(140px,1fr) 58px 62px auto; }
+  .watcher-v2-pm-row .hide-sm { display:none; }
+}
+
 /* Section header inside sub-tabs */
 .wsec-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -5672,133 +5839,112 @@ body[data-active-tab="loops"] .loop-pos-val,
       <!-- ═══════════════════════════════════════════════════════
            ALERT TERMINAL TAB
       ═══════════════════════════════════════════════════════ -->
-      <div id="watcherTab" class="tab-pane">
-        <div class="section">
+            <div id="watcherTab" class="tab-pane">
+        <div class="section watcher-v2">
 
-          <!-- Sub-tab row -->
-          <div class="wtab-row">
-            <button class="wtab-btn active" id="wtab-btn-wallets" onclick="switchWTab('wallets',this)">
-              <span class="wtab-live-dot"></span>
-              Wallet Watchlist
-              <span class="wtab-badge" id="wtab-wallets-badge">0 wallets</span>
-            </button>
-            <button class="wtab-btn" id="wtab-btn-markets" onclick="switchWTab('markets',this)">
-              <span class="wtab-live-dot"></span>
-              Prediction Markets
-              <span class="wtab-badge" id="wtab-markets-badge">0 tracked</span>
-            </button>
-            <button class="wtab-btn indigo" id="wtab-btn-yield" onclick="switchWTab('yield',this)">
-              <span class="wtab-live-dot indigo"></span>
-              Yield Tools
-              <span class="wtab-badge" id="wtab-yield-badge">0 tools</span>
-            </button>
-            <button class="wtab-btn" id="wtab-btn-aavecap" onclick="switchWTab('aavecap',this)" style="border-color:rgba(0,212,170,0.3);color:var(--teal);">
-              <span class="wtab-live-dot" id="aavecap-dot" style="background:var(--teal);"></span>
-              Aave Cap Monitor
-              <span class="wtab-badge" id="aavecap-badge" style="background:var(--teal-10);border-color:rgba(0,212,170,0.2);color:var(--teal);">USDe · MegaETH</span>
-            </button>
-          </div>
+          <section class="watcher-v2-header">
+            <div class="watcher-v2-header-top">
+              <div>
+                <div class="watcher-v2-eyebrow">Watcher</div>
+                <h2 class="watcher-v2-title">Find Saved Markets, Wallets, And Tools</h2>
+              </div>
+              <div class="watcher-v2-summary" id="watcherSummaryText">0 saved items · organized by collection</div>
+            </div>
+            <div class="watcher-v2-toolbar">
+              <div class="watcher-v2-search">
+                <span class="watcher-v2-search-kbd">/</span>
+                <input type="search" id="watcherSearchInput" placeholder="Search by market, wallet, protocol, ticker, note, or URL…" autocomplete="off"
+                  oninput="watcherSearchUpdate(this.value)" onkeydown="watcherSearchKeydown(event)">
+              </div>
+              <div class="watcher-v2-filters" id="watcherFilterRow">
+                <button type="button" class="watcher-v2-filter active" data-watcher-filter="all" onclick="watcherSetFilter('all', this)">All</button>
+                <button type="button" class="watcher-v2-filter" data-watcher-filter="markets" onclick="watcherSetFilter('markets', this)">Markets</button>
+                <button type="button" class="watcher-v2-filter" data-watcher-filter="wallets" onclick="watcherSetFilter('wallets', this)">Wallets</button>
+                <button type="button" class="watcher-v2-filter" data-watcher-filter="tools" onclick="watcherSetFilter('tools', this)">Tools</button>
+                <button type="button" class="watcher-v2-filter" data-watcher-filter="pinned" onclick="watcherSetFilter('pinned', this)">Pinned</button>
+                <button type="button" class="watcher-v2-filter aave" onclick="watcherToggleAaveCap()">Aave Cap</button>
+              </div>
+            </div>
+          </section>
 
-          <!-- ── SUB-TAB: Wallet Watchlist ──────────────────────── -->
-          <div class="wtab-panel active" id="wtab-wallets">
-
-            <!-- Section: Yield Farming Wallets -->
-            <div style="margin-bottom:2rem;">
-              <div class="wsec-header" style="margin-bottom:0.85rem;">
-                <div style="display:flex;align-items:center;gap:0.6rem;">
-                  <span style="font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:var(--teal);">🌾 Yield Farming Wallets</span>
-                  <span id="wv-yield-count" style="font-size:0.62rem;font-weight:600;padding:1px 7px;border-radius:100px;background:var(--teal-10);border:1px solid rgba(0,212,170,0.2);color:var(--teal);font-family:var(--ff-mono);">0</span>
+          <section class="watcher-v2-layout">
+            <div class="watcher-v2-panel watcher-v2-panel-pm" data-watcher-section="markets">
+              <div class="watcher-v2-panel-head">
+                <div>
+                  <div class="watcher-v2-panel-title">Prediction Markets</div>
+                  <div class="watcher-v2-panel-note">Saved markets and alert targets</div>
                 </div>
-                <button class="wsec-add-btn" onclick="openWatcherWalletModal('yield')">
-                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                  Add Wallet
-                </button>
+                <span class="watcher-v2-pill violet" id="wtab-markets-badge">0 tracked</span>
               </div>
-              <div class="wv-grid" id="wv-yield-grid"></div>
-            </div>
-
-            <!-- Section: Prediction Market Wallets -->
-            <div>
-              <div class="wsec-header" style="margin-bottom:0.85rem;">
-                <div style="display:flex;align-items:center;gap:0.6rem;">
-                  <span style="font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:var(--fuchsia);">🎯 Prediction Market Wallets</span>
-                  <span id="wv-pm-count" style="font-size:0.62rem;font-weight:600;padding:1px 7px;border-radius:100px;background:var(--fuchsia-10);border:1px solid rgba(217,70,239,0.2);color:var(--fuchsia);font-family:var(--ff-mono);">0</span>
+              <div class="wl-refresh-bar" id="wlRefreshBar" style="display:none;padding:0.45rem 0.85rem;margin:0;border:none;">
+                <span class="wl-loading-dot" id="wlPollDot"></span>
+                <span id="wlRefreshStatus">Prices refresh every 60s</span>
+              </div>
+              <div class="watcher-v2-scroll" id="wlGrid"></div>
+              <div class="watcher-v2-foot">
+                <div class="watcher-v2-add-bar" id="watcherPmAddBar">
+                  <input type="text" id="wlUrlInput" placeholder="Paste Polymarket or Opinion.trade URL…"
+                    onkeydown="if(event.key==='Enter') addWatchlistMarket()">
+                  <button type="button" class="watcher-v2-btn" onclick="addWatchlistMarket()" id="wlAddBtn">Add Market</button>
                 </div>
-                <button class="wsec-add-btn" style="border-color:rgba(217,70,239,0.25);background:var(--fuchsia-10);color:var(--fuchsia);"
-                  onmouseover="this.style.background='rgba(217,70,239,0.2)';this.style.borderColor='var(--fuchsia)'"
-                  onmouseout="this.style.background='var(--fuchsia-10)';this.style.borderColor='rgba(217,70,239,0.25)'"
-                  onclick="openWatcherWalletModal('pm')">
-                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                  Add Wallet
-                </button>
-              </div>
-              <div class="wv-grid" id="wv-pm-grid"></div>
-            </div>
-
-          </div>
-
-          <!-- ── SUB-TAB: Prediction Markets (existing functionality) ── -->
-          <div class="wtab-panel" id="wtab-markets">
-            <div class="wsec-header">
-              <span class="wsec-count" id="wtab-markets-count">0 markets</span>
-            </div>
-            <div class="wl-add-bar">
-              <input type="text" id="wlUrlInput"
-                placeholder="Paste a Polymarket or Opinion.trade market URL…"
-                onkeydown="if(event.key==='Enter') addWatchlistMarket()">
-              <button class="btn-base pm-btn" onclick="addWatchlistMarket()" id="wlAddBtn">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add Market
-              </button>
-            </div>
-            <div class="wl-refresh-bar" id="wlRefreshBar" style="display:none">
-              <span class="wl-loading-dot" id="wlPollDot"></span>
-              <span id="wlRefreshStatus">Prices refresh every 60s</span>
-            </div>
-            <div class="wl-grid" id="wlGrid">
-              <div class="wl-empty">
-                <div class="wl-empty-icon">👁</div>
-                No markets on your watchlist yet.<br>
-                Paste a Polymarket or Opinion.trade URL above to start tracking.
-              </div>
-            </div>
-          </div>
-
-          <!-- ── SUB-TAB: Yield Tools ───────────────────────────── -->
-          <div class="wtab-panel" id="wtab-yield">
-            <div class="wsec-header">
-              <span class="wsec-count" id="wy-tools-count">0 tools saved</span>
-              <button class="wsec-add-btn indigo" onclick="switchWTab('yield', document.getElementById('wtab-btn-yield')); setTimeout(()=>document.getElementById('wlLinkUrlInput').focus(), 50)">
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                Add Yield Tool
-              </button>
-            </div>
-
-            <!-- Saved tools grid (rendered by renderWatcherLinks) -->
-            <div id="watcherLinksGrid" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1.5rem;">
-              <div class="wl-empty" id="watcherLinksEmpty">
-                <div class="wl-empty-icon">🔗</div>
-                No yield tools saved yet.<br>Paste a protocol URL below to add one.
               </div>
             </div>
 
-            <!-- Add bar -->
-            <div class="wl-add-bar">
-              <input type="text" id="wlLinkUrlInput" placeholder="https://pendle.finance, https://morpho.xyz…" style="flex:2;"
-                onkeydown="if(event.key==='Enter') document.getElementById('wlLinkNameInput').focus()">
-              <input type="text" id="wlLinkNameInput" placeholder="Label (optional)" style="flex:1;"
-                onkeydown="if(event.key==='Enter') { addWatcherLink(); updateWyCount(); }">
-              <button class="btn-base" onclick="addWatcherLink(); updateWyCount();" id="wlLinkAddBtn"
-                style="background:var(--indigo-10,rgba(108,114,255,0.12));color:var(--indigo);border-color:rgba(108,114,255,0.3);">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Save Tool
-              </button>
+            <div class="watcher-v2-stack">
+              <div class="watcher-v2-panel watcher-v2-panel-wallet" data-watcher-section="wallets">
+                <div class="watcher-v2-panel-head">
+                  <div>
+                    <div class="watcher-v2-panel-title">Wallet Watchlist</div>
+                    <div class="watcher-v2-panel-note">Wallets plus recent PM activity</div>
+                  </div>
+                  <span class="watcher-v2-pill blue" id="wtab-wallets-badge">0 wallets</span>
+                </div>
+                <div class="watcher-v2-activity">
+                  <div class="watcher-v2-activity-head">
+                    <div class="watcher-v2-activity-title">Recent Polymarket Activity</div>
+                    <div class="watcher-v2-activity-sub">all watched wallets</div>
+                  </div>
+                  <div class="watcher-v2-activity-scroll" id="watcherPmActivity"></div>
+                </div>
+                <div class="watcher-v2-subhead">
+                  <div class="watcher-v2-subhead-title">Wallets</div>
+                </div>
+                <div class="watcher-v2-scroll" id="watcherWalletRows"></div>
+                <div class="watcher-v2-foot">
+                  <div class="watcher-v2-actions">
+                    <button type="button" class="watcher-v2-btn secondary" onclick="openWatcherWalletModal('yield')">Add Yield Wallet</button>
+                    <button type="button" class="watcher-v2-btn fuchsia" onclick="openWatcherWalletModal('pm')">Add PM Wallet</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="watcher-v2-panel watcher-v2-panel-yield" data-watcher-section="tools">
+                <div class="watcher-v2-panel-head">
+                  <div>
+                    <div class="watcher-v2-panel-title">Yield Tools</div>
+                  </div>
+                  <span class="watcher-v2-pill" id="wtab-yield-badge">0 tools</span>
+                </div>
+                <div class="watcher-v2-scroll" id="watcherLinksGrid"></div>
+                <div class="watcher-v2-foot">
+                  <div class="watcher-v2-add-bar">
+                    <input type="text" id="wlLinkUrlInput" placeholder="https://pendle.finance…"
+                      onkeydown="if(event.key==='Enter') document.getElementById('wlLinkNameInput').focus()">
+                    <input type="text" id="wlLinkNameInput" placeholder="Label"
+                      onkeydown="if(event.key==='Enter') { addWatcherLink(); updateWyCount(); }">
+                    <button type="button" class="watcher-v2-btn indigo" onclick="addWatcherLink(); updateWyCount();" id="wlLinkAddBtn">Save</button>
+                  </div>
+                  <div class="watcher-v2-actions">
+                    <button type="button" class="watcher-v2-btn secondary" onclick="watcherOpenAllTools()">Open All</button>
+                    <button type="button" class="watcher-v2-btn" onclick="document.getElementById('wlLinkUrlInput').focus()">Add Tool</button>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          </section>
 
-          <!-- ── SUB-TAB: Aave Cap Monitor ──────────────────────── -->
-          <div class="wtab-panel" id="wtab-aavecap">
-
+          <div class="watcher-v2-aavecap-wrap" id="watcherAaveCapWrap">
+            <div class="wtab-panel active" id="wtab-aavecap">
             <!-- Header -->
             <div class="wsec-header" style="margin-bottom:1.25rem;">
               <span style="font-size:0.65rem;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:var(--teal);">Aave V3 · Supply Cap Monitor</span>
@@ -5848,15 +5994,11 @@ body[data-active-tab="loops"] .loop-pos-val,
               <div id="aavecap-add-error" style="font-size:0.68rem;color:var(--red);font-family:var(--ff-mono);margin-top:6px;display:none;"></div>
             </div>
 
-            <!-- Market cards -->
             <div id="aavecap-cards" style="display:flex;flex-direction:column;gap:10px;margin-bottom:1.25rem;"></div>
-
-            <!-- Empty state -->
             <div id="aavecap-empty" style="display:none;text-align:center;padding:2rem 1rem;color:var(--t3);font-size:0.78rem;">
               No markets tracked yet. Add one above.
             </div>
 
-            <!-- Alert settings -->
             <div style="border-top:1px solid var(--border);padding-top:1.1rem;">
               <div style="font-size:0.62rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--t3);margin-bottom:0.75rem;">Alert Settings (applies to all markets)</div>
               <div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.65rem;">
@@ -5884,6 +6026,24 @@ body[data-active-tab="loops"] .loop-pos-val,
               <span>Source: api.v3.aave.com</span>
               <span id="aavecap-last-updated">Never fetched</span>
             </div>
+            </div>
+          </div>
+
+          <div class="watcher-v2-hidden-nav" aria-hidden="true">
+            <button type="button" id="wtab-btn-wallets" onclick="switchWTab('wallets',this)"></button>
+            <button type="button" id="wtab-btn-markets" onclick="switchWTab('markets',this)"></button>
+            <button type="button" id="wtab-btn-yield" onclick="switchWTab('yield',this)"></button>
+            <button type="button" id="wtab-btn-aavecap" onclick="switchWTab('aavecap',this)"></button>
+            <span id="wtab-markets-count"></span>
+            <span id="wy-tools-count"></span>
+            <span id="wv-yield-count"></span>
+            <span id="wv-pm-count"></span>
+            <div id="wv-yield-grid"></div>
+            <div id="wv-pm-grid"></div>
+            <div id="watcherLinksEmpty"></div>
+            <div class="wtab-panel" id="wtab-wallets"></div>
+            <div class="wtab-panel" id="wtab-markets"></div>
+            <div class="wtab-panel" id="wtab-yield"></div>
           </div>
 
         </div>
@@ -7539,16 +7699,19 @@ function switchTab(tab, opts = {}) {
     }
     if (tab === 'watcher') {
         renderWatchlist();
+        renderWatcherWallets();
         renderWatcherLinks();
         if (watchlist.length > 0) wlStartPolling();
         wlBackfillMissingTokens();
-        // Sync badges
         updateWyCount();
         updateWatcherWalletCount();
+        updateWatcherSummaryText();
+        renderWatcherPmActivity();
+        watcherApplyFilters();
         const badge   = document.getElementById('wtab-markets-badge');
         const countEl = document.getElementById('wtab-markets-count');
         const n = watchlist.length;
-        if (badge)   badge.textContent   = n + (n === 1 ? ' market' : ' markets');
+        if (badge)   badge.textContent   = n + (n === 1 ? ' tracked' : ' tracked');
         if (countEl) countEl.textContent = n + (n === 1 ? ' market' : ' markets');
     } else {
         wlStopPolling();
@@ -15235,6 +15398,7 @@ function addWatcherWallet() {
     if (labelEl) labelEl.value = '';
     renderWatcherWalletList(category);
     renderWatcherWallets();
+    renderWatcherPmActivity();
 }
 
 function removeWatcherWallet(id) {
@@ -15243,12 +15407,52 @@ function removeWatcherWallet(id) {
     saveWatcherWallets();
     if (entry) renderWatcherWalletList(entry.category);
     renderWatcherWallets();
+    renderWatcherPmActivity();
 }
 
 function renderWatcherWallets() {
     renderWatcherWalletSection('yield', 'wv-yield-grid', 'wv-yield-count');
     renderWatcherWalletSection('pm',    'wv-pm-grid',    'wv-pm-count');
     updateWatcherWalletCount();
+
+    const unified = document.getElementById('watcherWalletRows');
+    if (!unified) return;
+
+    if (!watcherWallets.length) {
+        unified.innerHTML = `<div class="watcher-v2-empty">No wallets saved yet.<br><span style="font-size:0.72rem;opacity:0.7">Add yield or PM wallets below.</span></div>`;
+        updateWatcherSummaryText();
+        watcherApplyFilters();
+        return;
+    }
+
+    unified.innerHTML = watcherWallets.map(w => {
+        const label = w.label || (w.address.slice(0, 6) + '…' + w.address.slice(-4));
+        const short = w.address.slice(0, 6) + '…' + w.address.slice(-4);
+        const isYield = w.category === 'yield';
+        const isAddr = w.address.startsWith('0x') || w.address.startsWith('0X');
+        const debankUrl = isAddr ? `https://debank.com/profile/${w.address}` : null;
+        const addedDate = new Date(w.addedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const searchHay = `${label} ${w.address} ${w.category} debank polymarket`.toLowerCase();
+        const iconCls = isYield ? 'yield' : 'pm';
+        const iconTxt = isYield ? 'YF' : 'PM';
+        const badgeCls = isYield ? 'green' : 'blue';
+        const badgeTxt = isYield ? 'Yield' : 'PM';
+        return `<div class="watcher-v2-wallet-row" data-watcher-kind="wallet" data-watcher-search="${dashEsc(searchHay)}" data-watcher-pinned="0">
+            <div class="watcher-v2-icon ${iconCls}">${iconTxt}</div>
+            <div>
+                <div class="watcher-v2-row-title">${dashEsc(label)}</div>
+                <div class="watcher-v2-row-meta">${isYield ? 'DeFi' : 'Polymarket'}${w.label ? ' · ' + dashEsc(short) : ''} · Added ${addedDate}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.35rem;">
+                <span class="watcher-v2-badge ${badgeCls}">${badgeTxt}</span>
+                ${debankUrl ? `<a href="${debankUrl}" target="_blank" rel="noopener" class="watcher-v2-row-btn" title="Open DeBank">↗</a>` : ''}
+                <button type="button" class="watcher-v2-row-btn danger" onclick="removeWatcherWallet('${w.id}')" title="Remove">×</button>
+            </div>
+        </div>`;
+    }).join('');
+
+    updateWatcherSummaryText();
+    watcherApplyFilters();
 }
 
 function renderWatcherWalletSection(category, gridId, countId) {
@@ -15356,35 +15560,31 @@ function renderWatcherLinks() {
     updateWyCount();
     if (!grid) return;
     if (!watcherLinks.length) {
-        grid.innerHTML = `<div class="wl-empty" id="watcherLinksEmpty">
-            <div class="wl-empty-icon">🔗</div>
-            No saved links yet.<br>Paste any URL above to save it here.
+        grid.innerHTML = `<div class="watcher-v2-empty" id="watcherLinksEmpty">
+            No saved tools yet.<br><span style="font-size:0.72rem;opacity:0.7">Paste a URL below to save it here.</span>
         </div>`;
+        updateWatcherSummaryText();
+        watcherApplyFilters();
         return;
     }
     grid.innerHTML = watcherLinks.map(l => {
         const host = (() => { try { return new URL(l.url).hostname.replace(/^www\./, ''); } catch(e) { return l.url; } })();
-        const favicon = `https://www.google.com/s2/favicons?domain=${host}&sz=32`;
-        return `
-        <div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.9rem;
-            background:var(--surf-2);border:1px solid var(--border-low);border-radius:var(--r-sm);
-            transition:border-color 0.15s;"
-            onmouseover="this.style.borderColor='var(--indigo)'"
-            onmouseout="this.style.borderColor='var(--border-low)'">
-            <img src="${favicon}" width="16" height="16" style="border-radius:3px;flex-shrink:0;"
-                onerror="this.style.display='none'">
-            <a href="${l.url}" target="_blank" style="flex:1;font-size:0.85rem;font-weight:600;
-                color:var(--t1);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"
-                onmouseover="this.style.color='var(--indigo)'" onmouseout="this.style.color='var(--t1)'"
-                title="${l.url}">${l.name}</a>
-            <span style="font-size:0.7rem;color:var(--t3);white-space:nowrap;flex-shrink:0;">${host}</span>
-            <button onclick="removeWatcherLink('${l.id}')" title="Remove"
-                style="background:none;border:none;cursor:pointer;color:var(--t3);padding:2px;display:flex;align-items:center;flex-shrink:0;"
-                onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--t3)'">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+        const searchHay = `${l.name} ${l.url} ${host} tool yield`.toLowerCase();
+        return `<div class="watcher-v2-tool-row" data-watcher-kind="tool" data-watcher-search="${dashEsc(searchHay)}" data-watcher-pinned="0">
+            <div class="watcher-v2-icon tool">↗</div>
+            <div>
+                <a href="${l.url}" target="_blank" rel="noopener" class="watcher-v2-row-title" style="color:inherit;text-decoration:none;"
+                    onmouseover="this.style.color='var(--indigo)'" onmouseout="this.style.color='var(--t1)'">${dashEsc(l.name)}</a>
+                <div class="watcher-v2-row-meta">${dashEsc(host)}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.35rem;">
+                <span class="watcher-v2-badge green">Tool</span>
+                <button type="button" class="watcher-v2-row-btn danger" onclick="removeWatcherLink('${l.id}')" title="Remove">×</button>
+            </div>
         </div>`;
     }).join('');
+    updateWatcherSummaryText();
+    watcherApplyFilters();
 }
 async function wlBackfillMissingTokens() {
     const needsBackfill = watchlist.filter(w =>
@@ -16309,8 +16509,9 @@ function wlStopPolling() {
 // ── In-place card price update (no DOM rebuild) ───────────────────────────────
 function wlUpdateCardPrice(entry) {
     const priceEl  = document.getElementById(`wl-price-${entry.id}`);
+    const moveEl   = document.getElementById(`wl-move-${entry.id}`);
+    const statusEl = document.getElementById(`wl-status-${entry.id}`);
     const changeEl = document.getElementById(`wl-change-${entry.id}`);
-    const noEl     = document.getElementById(`wl-no-price-${entry.id}`);
     if (!priceEl) return;
 
     const isViewingNo = entry.viewingSide === 'no';
@@ -16319,21 +16520,22 @@ function wlUpdateCardPrice(entry) {
 
     priceEl.textContent = price != null ? (price * 100).toFixed(1) + '¢' : '—';
 
-    if (prices.length >= 2) {
+    let changeStr = '—', changeCls = '';
+    if (prices.length >= 2 && price != null) {
         const open = prices[0].p;
-        const close = price ?? open;
-        const pct  = ((close - open) / open) * 100;
-        const sign = pct >= 0 ? '+' : '';
-        changeEl.textContent = `${sign}${pct.toFixed(1)}% (all-time)`;
-        changeEl.className   = `wl-price-change ${pct > 0 ? 'up' : pct < 0 ? 'down' : 'flat'}`;
+        const pct  = ((price - open) / open) * 100;
+        changeStr = `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`;
+        changeCls = pct > 0 ? 'good' : pct < 0 ? 'watch' : '';
     }
-
-    // Update the secondary (other side) price chip if it exists
-    if (noEl) {
-        const otherPrice = isViewingNo ? entry.currentPrice : entry.currentPriceNo;
-        const otherLabel = isViewingNo ? (entry.labelYes || 'YES') : (entry.labelNo || 'NO');
-        noEl.textContent  = otherPrice != null ? `${otherLabel} ${(otherPrice * 100).toFixed(1)}¢` : '';
+    if (moveEl) {
+        moveEl.textContent = changeStr;
+        moveEl.className = `watcher-v2-cell-value ${changeCls}`;
     }
+    if (changeEl) {
+        changeEl.textContent = changeStr + (changeStr !== '—' ? ' (all-time)' : '');
+        changeEl.className = `wl-price-change ${changeCls === 'good' ? 'up' : changeCls === 'watch' ? 'down' : 'flat'}`;
+    }
+    if (statusEl) statusEl.textContent = wlEntryStatus(entry);
 
     renderAlertBadges(entry);
 }
@@ -16441,14 +16643,153 @@ function wlRedrawChart(entry) {
 }
 
 // ── Render individual card ────────────────────────────────────────────────────
+function wlEntryLogo(entry) {
+    const letter = (entry.title || '?').charAt(0).toUpperCase();
+    const src = entry.image || entry.icon || '';
+    if (src) {
+        return `<div class="watcher-v2-pm-logo"><img src="${src}" alt="" onerror="this.parentElement.innerHTML='${letter}'"></div>`;
+    }
+    return `<div class="watcher-v2-pm-logo" style="display:grid;place-items:center;font-family:var(--ff-mono);font-size:0.72rem;font-weight:800;color:var(--t3);">${letter}</div>`;
+}
+
+function wlEntryChange(entry) {
+    const isNo = entry.viewingSide === 'no';
+    const price = isNo ? entry.currentPriceNo : entry.currentPrice;
+    const prices = isNo ? (entry.pricesNo || []) : (entry.prices || []);
+    if (prices.length < 2 || price == null) return { str: '—', cls: '' };
+    const open = prices[0].p;
+    const pct = ((price - open) / open) * 100;
+    return { str: `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`, cls: pct > 0 ? 'good' : pct < 0 ? 'watch' : '' };
+}
+
+function wlEntryStatus(entry) {
+    const alerts = entry.alerts || [];
+    if (alerts.some(a => a.triggered)) return 'Triggered';
+    if (alerts.some(a => !a.triggered)) return 'Armed';
+    return 'Live';
+}
+
+function wlEntryMeta(entry) {
+    const src = entry.source === 'opinion' ? 'Opinion' : 'Polymarket';
+    const alerts = entry.alerts || [];
+    const active = alerts.filter(a => !a.triggered);
+    if (active.length) {
+        const a = active[0];
+        const side = a.side === 'no' ? (entry.labelNo || 'NO') : (entry.labelYes || 'YES');
+        return `${src} · alert ${a.dir} ${(a.price * 100).toFixed(0)}¢ on ${side}`;
+    }
+    return `${src} · Added ${new Date(entry.addedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+}
+
+function wlRowHTML(entry) {
+    const isNo = entry.viewingSide === 'no';
+    const price = isNo ? entry.currentPriceNo : entry.currentPrice;
+    const priceStr = price != null ? (price * 100).toFixed(1) + '¢' : '—';
+    const change = wlEntryChange(entry);
+    const status = wlEntryStatus(entry);
+    const labelYes = entry.labelYes || 'YES';
+    const labelNo = entry.labelNo || 'NO';
+    const sideLabel = isNo ? labelNo : labelYes;
+    const hasNo = !!entry.tokenIdNo;
+    const srcTag = entry.source === 'opinion' ? 'OP' : 'PM';
+    const pinned = (entry.alerts || []).some(a => !a.triggered);
+    const searchHay = `${entry.title} ${entry.slug || ''} ${entry.url || ''} ${entry.outcome || ''} market polymarket opinion`.toLowerCase();
+
+    const sideToggle = hasNo ? `
+        <button type="button" class="watcher-v2-row-btn" onclick="wlToggleSide('${entry.id}')" title="Toggle side">${dashEsc(sideLabel)}</button>`
+        : `<span id="wl-side-${entry.id}">${dashEsc(sideLabel)}</span>`;
+
+    return `<div class="watcher-v2-pm-row" id="wl-card-${entry.id}" data-watcher-kind="market" data-watcher-search="${dashEsc(searchHay)}" data-watcher-pinned="${pinned ? '1' : '0'}">
+        ${wlEntryLogo(entry)}
+        <div>
+            <div class="watcher-v2-pm-name"><a href="${entry.url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;" onmouseover="this.style.color='var(--teal)'" onmouseout="this.style.color='var(--t1)'">${dashEsc(entry.title)}</a></div>
+            <div class="watcher-v2-pm-meta">${dashEsc(wlEntryMeta(entry))}</div>
+            ${pinned ? '<span class="watcher-v2-tag pm">Armed</span>' : `<span class="watcher-v2-tag">${srcTag}</span>`}
+        </div>
+        <div><div class="watcher-v2-cell-label">Side</div><div class="watcher-v2-cell-value" id="wl-side-cell-${entry.id}">${sideToggle}</div></div>
+        <div><div class="watcher-v2-cell-label">Price</div><div class="watcher-v2-cell-value" id="wl-price-${entry.id}">${priceStr}</div></div>
+        <div class="hide-sm"><div class="watcher-v2-cell-label">Move</div><div class="watcher-v2-cell-value ${change.cls}" id="wl-move-${entry.id}">${change.str}</div></div>
+        <div class="hide-sm"><div class="watcher-v2-cell-label">Status</div><div class="watcher-v2-cell-value" id="wl-status-${entry.id}">${status}</div></div>
+        <div class="watcher-v2-row-btns">
+            <button type="button" class="watcher-v2-row-btn" onclick="wlToggleExpand('${entry.id}')" title="Alerts & chart">⚙</button>
+            <button type="button" class="watcher-v2-row-btn danger" onclick="removeWatchlistMarket('${entry.id}')" title="Remove">×</button>
+        </div>
+    </div>`;
+}
+
+function wlDetailHTML(entry) {
+    const isNo = entry.viewingSide === 'no';
+    const hasNo = !!entry.tokenIdNo;
+    const labelYes = entry.labelYes || 'YES';
+    const labelNo = entry.labelNo || 'NO';
+    const accent = entry.source === 'opinion' ? 'var(--orange)' : 'var(--teal)';
+    const alertBadges = (entry.alerts || []).map(a => {
+        const side = a.side || 'yes';
+        const lbl = side === 'no' ? labelNo : labelYes;
+        return `<span class="wl-alert-badge ${a.triggered ? 'triggered' : ''}">
+            ${a.triggered ? '🔔' : '🔕'} <span style="opacity:0.6;font-size:0.65rem;">${lbl}</span> ${a.dir} ${(a.price * 100).toFixed(0)}¢
+            <button class="wl-alert-remove" onclick="wlRemoveAlert('${entry.id}','${a.id}')" title="Remove">×</button>
+        </span>`;
+    }).join('');
+
+    return `<div class="watcher-v2-pm-detail" id="wl-detail-${entry.id}" style="display:none;">
+        <div class="wl-chart-wrap"><canvas id="wl-chart-${entry.id}"></canvas></div>
+        <div class="wl-alerts">
+            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem;">
+                <div id="wl-alert-badges-${entry.id}" style="display:flex;gap:0.4rem;flex-wrap:wrap;">${alertBadges}</div>
+            </div>
+            <div class="wl-alert-row">
+                <span style="font-size:0.75rem;color:var(--t3);">Add alert:</span>
+                ${hasNo ? `
+                <select class="wl-alert-select" id="wl-alert-side-${entry.id}">
+                    <option value="yes">${labelYes}</option>
+                    <option value="no" ${isNo ? 'selected' : ''}>${labelNo}</option>
+                </select>` : `<input type="hidden" id="wl-alert-side-${entry.id}" value="yes">`}
+                <select class="wl-alert-select" id="wl-alert-dir-${entry.id}">
+                    <option value="above">Above</option>
+                    <option value="below">Below</option>
+                </select>
+                <input type="number" class="wl-alert-input" id="wl-alert-val-${entry.id}"
+                    min="0.01" max="0.99" step="0.01" placeholder="0.75"
+                    onkeydown="if(event.key==='Enter') wlAddAlert('${entry.id}')">
+                <button class="wl-btn" onclick="wlAddAlert('${entry.id}')" style="border-color:${accent};color:${accent};">Set Alert</button>
+            </div>
+        </div>
+        <div class="watcher-v2-pm-actions">
+            <a href="${entry.url}" target="_blank" rel="noopener" class="watcher-v2-btn" style="text-decoration:none;display:inline-flex;align-items:center;">Open Market</a>
+            <button type="button" class="watcher-v2-btn secondary" onclick="removeWatchlistMarket('${entry.id}')">Remove</button>
+        </div>
+    </div>`;
+}
+
+function wlToggleExpand(id) {
+    const detail = document.getElementById(`wl-detail-${id}`);
+    if (!detail) return;
+    const open = detail.style.display === 'none';
+    detail.style.display = open ? '' : 'none';
+    if (open) {
+        const entry = watchlist.find(w => w.id === id);
+        if (entry) requestAnimationFrame(() => wlDrawChart(entry, `wl-chart-${id}`));
+    }
+}
+
 function renderWatchlistCard(entry) {
     const existing = document.getElementById(`wl-card-${entry.id}`);
+    if (!existing) { renderWatchlist(); return; }
     const tmp = document.createElement('div');
-    tmp.innerHTML = wlCardHTML(entry);
-    const newCard = tmp.firstElementChild;
-    if (existing) existing.replaceWith(newCard);
-    // Draw chart after insertion
-    requestAnimationFrame(() => wlDrawChart(entry, `wl-chart-${entry.id}`));
+    tmp.innerHTML = wlRowHTML(entry) + wlDetailHTML(entry);
+    const newRow = tmp.firstElementChild;
+    const newDetail = tmp.children[1];
+    const wasOpen = document.getElementById(`wl-detail-${entry.id}`)?.style.display !== 'none';
+    existing.replaceWith(newRow);
+    const oldDetail = document.getElementById(`wl-detail-${entry.id}`);
+    if (oldDetail) oldDetail.replaceWith(newDetail);
+    else newRow.after(newDetail);
+    if (wasOpen) {
+        newDetail.style.display = '';
+        requestAnimationFrame(() => wlDrawChart(entry, `wl-chart-${entry.id}`));
+    }
+    watcherApplyFilters();
 }
 
 // ── Toggle YES/NO side ────────────────────────────────────────────────────────
@@ -16675,23 +17016,28 @@ function wlCardHTML(entry) {
 
 // ── Render full grid ──────────────────────────────────────────────────────────
 function renderWatchlist() {
-    // Destroy existing charts first
     Object.values(_wlCharts).forEach(c => c.destroy());
     _wlCharts = {};
 
     const grid = document.getElementById('wlGrid');
     if (!grid) return;
 
+    const badge = document.getElementById('wtab-markets-badge');
+    const countEl = document.getElementById('wtab-markets-count');
+    const n = watchlist.length;
+    if (badge) badge.textContent = n + ' tracked';
+    if (countEl) countEl.textContent = n + (n === 1 ? ' market' : ' markets');
+
     if (watchlist.length === 0) {
-        grid.innerHTML = `<div class="wl-empty"><div class="wl-empty-icon">👁</div>No markets on your watchlist yet.<br>Paste a Polymarket or Opinion.trade URL above to start tracking.</div>`;
+        grid.innerHTML = `<div class="watcher-v2-empty"><div style="font-size:1.5rem;margin-bottom:0.35rem;">👁</div>No markets on your watchlist yet.<br><span style="font-size:0.72rem;opacity:0.7">Paste a Polymarket or Opinion.trade URL below.</span></div>`;
+        updateWatcherSummaryText();
+        watcherApplyFilters();
         return;
     }
 
-    grid.innerHTML = watchlist.map(e => wlCardHTML(e)).join('');
-    // Draw charts after DOM is ready
-    requestAnimationFrame(() => {
-        watchlist.forEach(e => wlDrawChart(e, `wl-chart-${e.id}`));
-    });
+    grid.innerHTML = watchlist.map(e => wlRowHTML(e) + wlDetailHTML(e)).join('');
+    updateWatcherSummaryText();
+    watcherApplyFilters();
 }
 
 // =============================================================================
@@ -19605,6 +19951,140 @@ function opinionAddWalletRow(value = '') {
     row.querySelector('input').focus();
 }
 
+// ── Watcher V2: search, filters, activity ───────────────────────────
+let watcherFilter = 'all';
+let watcherSearchQuery = '';
+
+function updateWatcherSummaryText() {
+    const el = document.getElementById('watcherSummaryText');
+    if (!el) return;
+    const n = (watchlist?.length || 0) + (watcherWallets?.length || 0) + (watcherLinks?.length || 0);
+    el.textContent = `${n} saved item${n === 1 ? '' : 's'} · organized by collection`;
+}
+
+function watcherPmWalletAddresses() {
+    const pm = (watcherWallets || []).filter(w => w.category === 'pm').map(w => w.address);
+    return [...new Set(pm.filter(Boolean))];
+}
+
+async function renderWatcherPmActivity() {
+    const el = document.getElementById('watcherPmActivity');
+    if (!el) return;
+    const wallets = watcherPmWalletAddresses();
+    if (!wallets.length) {
+        el.innerHTML = `<div class="watcher-v2-empty" style="padding:0.75rem;">Add PM wallets to see recent activity.</div>`;
+        return;
+    }
+    el.innerHTML = `<div class="watcher-v2-empty" style="padding:0.75rem;">Loading recent activity…</div>`;
+    try {
+        const trades = (await fetchFilledOrders(wallets)).slice(0, 6);
+        if (!trades.length) {
+            el.innerHTML = `<div class="watcher-v2-empty" style="padding:0.75rem;">No Polymarket trades in the last 48h.</div>`;
+            return;
+        }
+        el.innerHTML = trades.map(t => {
+            const isBuy = /^buy$/i.test(t.side || '');
+            const ts = Number(t.timestamp || 0) * 1000;
+            const timeStr = ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+                + (Date.now() - ts > 86400000 ? ' · ' + new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '') : '';
+            const shares = Number(t.size || t.amount || 0);
+            const side = (t.outcome || t.side || '').toUpperCase();
+            const title = t.title || t.marketTitle || 'Unknown market';
+            const wallet = dashShortAddr(t._wallet || t.user || '');
+            const action = isBuy ? 'Bought' : 'Sold';
+            return `<div class="watcher-v2-act-row">
+                <div class="watcher-v2-act-icon ${isBuy ? '' : 'sell'}">${isBuy ? 'B' : 'S'}</div>
+                <div>
+                    <div class="watcher-v2-act-title">${action} ${Math.round(shares)} ${dashEsc(side)} shares</div>
+                    <div class="watcher-v2-act-meta">${dashEsc(wallet)} · ${dashEsc(title)}</div>
+                </div>
+                <div class="watcher-v2-act-time">${dashEsc(timeStr)}</div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        el.innerHTML = `<div class="watcher-v2-empty" style="padding:0.75rem;">Could not load activity.</div>`;
+    }
+}
+
+function watcherSearchUpdate(value) {
+    watcherSearchQuery = String(value || '').trim().toLowerCase();
+    watcherApplyFilters();
+}
+
+function watcherSearchKeydown(event) {
+    if (event.key === 'Escape') {
+        const input = document.getElementById('watcherSearchInput');
+        if (input) { input.value = ''; watcherSearchUpdate(''); input.blur(); }
+    }
+}
+
+function watcherSetFilter(name, btn) {
+    watcherFilter = name || 'all';
+    document.querySelectorAll('.watcher-v2-filter[data-watcher-filter]').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    else {
+        const match = document.querySelector(`.watcher-v2-filter[data-watcher-filter="${name}"]`);
+        if (match) match.classList.add('active');
+    }
+    const aaveWrap = document.getElementById('watcherAaveCapWrap');
+    if (aaveWrap) aaveWrap.classList.remove('open');
+    watcherApplyFilters();
+}
+
+function watcherToggleAaveCap(forceOpen) {
+    const wrap = document.getElementById('watcherAaveCapWrap');
+    if (!wrap) return;
+    const open = forceOpen === true ? true : forceOpen === false ? false : !wrap.classList.contains('open');
+    wrap.classList.toggle('open', open);
+    if (open) {
+        document.querySelectorAll('.watcher-v2-filter[data-watcher-filter]').forEach(b => b.classList.remove('active'));
+        if (typeof aaveCapFetchAll === 'function') aaveCapFetchAll();
+        wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function watcherOpenAllTools() {
+    if (!watcherLinks.length) return;
+    watcherLinks.forEach(l => { try { window.open(l.url, '_blank', 'noopener'); } catch (e) {} });
+}
+
+function watcherApplyFilters() {
+    const q = watcherSearchQuery;
+    const filter = watcherFilter;
+
+    document.querySelectorAll('[data-watcher-section]').forEach(section => {
+        const kind = section.getAttribute('data-watcher-section');
+        let showSection = filter === 'all' || filter === kind
+            || (filter === 'pinned' && kind === 'markets');
+        if (filter === 'wallets' && kind === 'markets') showSection = false;
+        if (filter === 'tools' && kind !== 'tools') showSection = false;
+        if (filter === 'markets' && kind !== 'markets') showSection = false;
+        section.style.display = showSection ? '' : 'none';
+    });
+
+    const matchRow = row => {
+        const hay = (row.getAttribute('data-watcher-search') || '').toLowerCase();
+        const kind = row.getAttribute('data-watcher-kind');
+        const pinned = row.getAttribute('data-watcher-pinned') === '1';
+        if (q && !hay.includes(q)) return false;
+        if (filter === 'markets' && kind !== 'market') return false;
+        if (filter === 'wallets' && kind !== 'wallet') return false;
+        if (filter === 'tools' && kind !== 'tool') return false;
+        if (filter === 'pinned' && !pinned) return false;
+        return true;
+    };
+
+    document.querySelectorAll('.watcher-v2-pm-row, .watcher-v2-wallet-row, .watcher-v2-tool-row').forEach(row => {
+        const show = matchRow(row);
+        row.classList.toggle('hidden', !show);
+        const detailId = row.id?.replace('wl-card-', 'wl-detail-');
+        if (detailId) {
+            const detail = document.getElementById(detailId);
+            if (detail && !show) detail.style.display = 'none';
+        }
+    });
+}
+
 // ── Watcher sub-tab switching ──────────────────────────────────────
 function updateWyCount() {
     const n = typeof watcherLinks !== 'undefined' ? watcherLinks.length : 0;
@@ -19615,12 +20095,37 @@ function updateWyCount() {
 }
 
 function switchWTab(name, btn) {
+    const v2 = document.querySelector('.watcher-v2');
+    if (v2) {
+        if (name === 'aavecap') {
+            switchTab('watcher');
+            watcherToggleAaveCap(true);
+            return;
+        }
+        const filterMap = { markets: 'markets', wallets: 'wallets', yield: 'tools' };
+        const filter = filterMap[name];
+        if (filter) {
+            switchTab('watcher');
+            const filterBtn = document.querySelector(`.watcher-v2-filter[data-watcher-filter="${filter}"]`);
+            watcherSetFilter(filter, filterBtn);
+            const section = document.querySelector(`[data-watcher-section="${filter}"]`);
+            if (section) section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        if (name === 'markets') {
+            const count = typeof watchlist !== 'undefined' ? watchlist.length : 0;
+            const badge = document.getElementById('wtab-markets-badge');
+            const countEl = document.getElementById('wtab-markets-count');
+            if (badge) badge.textContent = count + ' tracked';
+            if (countEl) countEl.textContent = count + (count === 1 ? ' market' : ' markets');
+        }
+        if (name === 'wallets') updateWatcherWalletCount();
+        return;
+    }
     document.querySelectorAll('.wtab-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.wtab-btn').forEach(b => b.classList.remove('active'));
     const panel = document.getElementById('wtab-' + name);
     if (panel) panel.classList.add('active');
     if (btn) btn.classList.add('active');
-    // Keep markets badge in sync with watchlist length
     if (name === 'markets') {
         const count = typeof watchlist !== 'undefined' ? watchlist.length : 0;
         const badge = document.getElementById('wtab-markets-badge');
