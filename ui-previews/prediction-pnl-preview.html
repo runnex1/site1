@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prediction Markets PNL Preview</title>
+  <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700,800,900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#030b10;
+      --panel:#06121a;
+      --panel2:#081923;
+      --line:rgba(110,231,216,.16);
+      --line2:rgba(148,163,184,.13);
+      --text:#eef5f7;
+      --muted:#91a4b8;
+      --green:#22c55e;
+      --red:#f43f5e;
+      --teal:#00d4aa;
+      --amber:#f59e0b;
+      --violet:#a855f7;
+      --mono:"JetBrains Mono", monospace;
+      --font:"Satoshi", "DM Sans", system-ui, sans-serif;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0;
+      min-height:100vh;
+      background:
+        radial-gradient(circle at 24% 4%, rgba(0,212,170,.07), transparent 32%),
+        radial-gradient(circle at 84% 8%, rgba(108,114,255,.08), transparent 34%),
+        linear-gradient(180deg, #040d13, #02070b);
+      color:var(--text);
+      font-family:var(--font);
+    }
+    .shell {
+      width:min(1820px, calc(100vw - 28px));
+      margin:14px auto;
+      display:grid;
+      gap:10px;
+    }
+    .kpis {
+      display:grid;
+      grid-template-columns:1.45fr 1.12fr 1.12fr 1.12fr 1.3fr;
+      min-height:56px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      overflow:hidden;
+      background:linear-gradient(180deg, rgba(7,18,26,.98), rgba(4,12,18,.99));
+    }
+    .kpi {
+      padding:.46rem 1rem;
+      border-right:1px solid rgba(148,163,184,.15);
+      min-width:0;
+    }
+    .kpi:last-child { border-right:0; }
+    .label {
+      font:800 .66rem/1.15 var(--font);
+      letter-spacing:.12em;
+      text-transform:uppercase;
+      color:rgba(236,238,248,.72);
+    }
+    .value {
+      margin-top:.22rem;
+      display:flex;
+      align-items:baseline;
+      gap:.7rem;
+      font:800 clamp(1.02rem, 1.22vw, 1.38rem)/1.05 var(--mono);
+      white-space:nowrap;
+    }
+    .sub {
+      color:var(--muted);
+      font:600 .58rem/1.1 var(--mono);
+    }
+    .good { color:var(--green); }
+    .bad { color:var(--red); }
+    .status {
+      display:inline-flex;
+      align-items:center;
+      gap:.42rem;
+      margin-top:.28rem;
+      padding:.24rem .56rem;
+      border:1px solid rgba(34,197,94,.22);
+      border-radius:4px;
+      color:var(--green);
+      background:rgba(34,197,94,.07);
+      font-size:.66rem;
+      font-weight:700;
+    }
+    .status::before {
+      content:"";
+      width:7px;
+      height:7px;
+      border-radius:50%;
+      background:var(--green);
+      box-shadow:0 0 10px var(--green);
+    }
+    .ticker {
+      min-height:54px;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:linear-gradient(180deg, rgba(8,20,28,.96), rgba(5,13,19,.98));
+      overflow:hidden;
+    }
+    .ticker-inner {
+      min-height:54px;
+      display:grid;
+      grid-template-columns:repeat(4, minmax(0, 1fr)) auto;
+      gap:.74rem;
+      align-items:center;
+      padding:0 .95rem;
+    }
+    .ticker-item {
+      min-width:0;
+      display:grid;
+      grid-template-columns:30px minmax(0, 1fr);
+      gap:.62rem;
+      align-items:center;
+    }
+    .logo {
+      width:30px;
+      height:30px;
+      border-radius:50%;
+      display:grid;
+      place-items:center;
+      color:white;
+      font:800 .72rem/1 var(--mono);
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.14), 0 0 18px rgba(0,212,170,.16);
+      background:#8959d4;
+    }
+    .logo.blue { background:#265c7e; }
+    .logo.amber { background:#8f5817; }
+    .logo.teal { background:#107764; }
+    .ticker-title {
+      font:800 .66rem/1.22 var(--mono);
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      color:#c1ccd5;
+      display:-webkit-box;
+      -webkit-line-clamp:2;
+      -webkit-box-orient:vertical;
+      overflow:hidden;
+    }
+    .ticker-meta {
+      margin-top:.08rem;
+      display:flex;
+      gap:.7rem;
+      font:600 .58rem/1 var(--mono);
+      color:var(--muted);
+    }
+    .updated {
+      font:600 .6rem/1 var(--mono);
+      color:var(--muted);
+      white-space:nowrap;
+    }
+    .chart {
+      width:100%;
+      height:88px;
+      display:block;
+    }
+    .axis {
+      stroke:rgba(148,163,184,.15);
+      stroke-width:1;
+    }
+    .area {
+      fill:url(#pnlFill);
+      opacity:.92;
+    }
+    .line {
+      fill:none;
+      stroke:#5ef0a0;
+      stroke-width:3;
+      stroke-linecap:round;
+      stroke-linejoin:round;
+      filter:drop-shadow(0 0 8px rgba(34,197,94,.25));
+    }
+    .chart-label {
+      fill:#91a4b8;
+      font:600 10px "JetBrains Mono", monospace;
+    }
+    .stat {
+      min-width:0;
+      padding:.46rem .55rem;
+      border:1px solid rgba(148,163,184,.12);
+      border-radius:5px;
+      background:rgba(255,255,255,.025);
+    }
+    .stat .label {
+      font-size:.55rem;
+    }
+    .stat-value {
+      margin-top:.25rem;
+      font:800 .86rem/1 var(--mono);
+      white-space:nowrap;
+    }
+    .workbench {
+      min-height:520px;
+      display:grid;
+      grid-template-columns:minmax(0, 1.68fr) minmax(390px, .78fr);
+      grid-template-rows:minmax(0, 1fr) 214px;
+      gap:10px;
+    }
+    .panel {
+      min-width:0;
+      min-height:0;
+      border:1px solid var(--line);
+      border-radius:6px;
+      background:linear-gradient(180deg, rgba(7,18,26,.96), rgba(4,12,18,.985));
+      overflow:hidden;
+    }
+    .positions {
+      grid-row:1;
+      display:grid;
+      grid-template-rows:38px minmax(0, 1fr);
+    }
+    .head {
+      min-height:38px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      padding:.62rem .9rem .42rem;
+      border-bottom:1px solid var(--line2);
+    }
+    .title {
+      font:800 1rem/1.15 var(--font);
+      letter-spacing:.04em;
+      text-transform:uppercase;
+      color:rgba(236,238,248,.84);
+    }
+    .chips { display:flex; gap:.35rem; }
+    .chip {
+      border:1px solid rgba(148,163,184,.2);
+      border-radius:999px;
+      padding:3px 9px;
+      color:#91a4b8;
+      background:rgba(255,255,255,.025);
+      font:800 .72rem/1 var(--font);
+    }
+    .chip.active {
+      color:var(--teal);
+      border-color:rgba(0,212,170,.32);
+      background:rgba(0,212,170,.08);
+    }
+    table {
+      width:100%;
+      min-width:780px;
+      border-collapse:collapse;
+      font-family:var(--mono);
+    }
+    th {
+      position:sticky;
+      top:0;
+      z-index:2;
+      padding:.58rem .7rem;
+      color:rgba(236,238,248,.72);
+      background:rgba(8,21,29,.97);
+      border-bottom:1px solid rgba(148,163,184,.15);
+      font:800 .62rem/1 var(--font);
+      letter-spacing:.1em;
+      text-transform:uppercase;
+      text-align:left;
+    }
+    td {
+      padding:.8rem .7rem;
+      border-bottom:1px solid rgba(148,163,184,.1);
+      font-size:.82rem;
+      color:#eef5f7;
+    }
+    .table-scroll {
+      min-height:0;
+      overflow:auto;
+      padding:0 .7rem .55rem;
+    }
+    .market {
+      font-family:var(--font);
+      font-size:.92rem;
+      font-weight:750;
+    }
+    .pulse {
+      display:grid;
+      grid-template-rows:38px minmax(0, 1fr);
+    }
+    .pulse-list {
+      overflow:auto;
+      padding:.3rem .65rem .5rem;
+    }
+    .pulse-row {
+      display:grid;
+      grid-template-columns:24px minmax(0,1fr) auto;
+      gap:.5rem;
+      padding:.58rem .4rem;
+      border-bottom:1px solid rgba(148,163,184,.1);
+    }
+    .pulse-icon {
+      width:22px;
+      height:22px;
+      border-radius:6px;
+      background:rgba(34,197,94,.12);
+    }
+    .kind {
+      font:800 .64rem/1 var(--font);
+      color:var(--green);
+      text-transform:uppercase;
+      letter-spacing:.1em;
+      margin-bottom:.18rem;
+    }
+    .pulse-text {
+      font-size:.84rem;
+      line-height:1.35;
+      display:-webkit-box;
+      -webkit-line-clamp:2;
+      -webkit-box-orient:vertical;
+      overflow:hidden;
+    }
+    .pulse-age {
+      font:600 .66rem/1 var(--mono);
+      color:var(--muted);
+    }
+    .tab-panel {
+      display:grid;
+      grid-template-rows:38px minmax(0, 1fr);
+    }
+    .tab-buttons {
+      display:flex;
+      align-items:center;
+      gap:.35rem;
+    }
+    .tab-content {
+      min-height:0;
+      overflow:hidden;
+    }
+    .tab-pane {
+      display:none;
+      height:100%;
+      min-height:0;
+    }
+    .tab-pane.active {
+      display:block;
+    }
+    .pnl-pane {
+      display:grid;
+      grid-template-rows:auto auto minmax(0, 1fr) auto;
+      height:100%;
+      min-height:0;
+      padding:.65rem .72rem .7rem;
+      gap:.55rem;
+      background:
+        radial-gradient(circle at 72% 18%, rgba(0,212,170,.08), transparent 38%),
+        rgba(255,255,255,.008);
+    }
+    .pnl-pane-top {
+      display:flex;
+      align-items:baseline;
+      justify-content:space-between;
+      gap:.8rem;
+    }
+    .pnl-pane-total {
+      font:800 1.18rem/1 var(--mono);
+      color:var(--green);
+      white-space:nowrap;
+    }
+    .pnl-pane-note {
+      color:var(--muted);
+      font:650 .62rem/1.2 var(--mono);
+      white-space:nowrap;
+    }
+    .pnl-filters {
+      display:flex;
+      gap:.35rem;
+      flex-wrap:wrap;
+    }
+    .pnl-filter {
+      border:1px solid rgba(148,163,184,.2);
+      border-radius:999px;
+      padding:3px 8px;
+      color:#91a4b8;
+      background:rgba(255,255,255,.025);
+      font:800 .62rem/1 var(--font);
+      cursor:pointer;
+    }
+    .pnl-filter.active {
+      color:var(--teal);
+      border-color:rgba(0,212,170,.32);
+      background:rgba(0,212,170,.08);
+    }
+    .pnl-pane .chart {
+      height:86px;
+    }
+    .pnl-pane-stats {
+      display:grid;
+      grid-template-columns:repeat(3, minmax(0, 1fr));
+      gap:.45rem;
+    }
+    .pnl-pane .stat {
+      padding:.42rem .5rem;
+    }
+    .pnl-pane .stat-value {
+      font-size:.78rem;
+    }
+    @media (max-width:1100px) {
+      .kpis, .ticker-inner, .workbench {
+        grid-template-columns:1fr;
+      }
+      .positions { grid-row:auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="kpis">
+      <div class="kpi"><div class="label">Prediction Exposure</div><div class="value">$166,312 <span class="sub">0.0% of total</span></div></div>
+      <div class="kpi"><div class="label">Open Markets</div><div class="value">77 <span class="sub">3 wallets</span></div></div>
+      <div class="kpi"><div class="label">24H PNL</div><div class="value good">+$3,926</div></div>
+      <div class="kpi"><div class="label">NO Carry</div><div class="value good">33.2% <span class="sub">4 above 10% APY</span></div></div>
+      <div class="kpi"><div class="label">System</div><div class="status">All operational</div></div>
+    </section>
+
+    <section class="ticker">
+      <div class="ticker-inner">
+        <div class="ticker-item"><div class="logo">OF</div><div><div class="ticker-title">Will Elon Musk buy OnlyFans?</div><div class="ticker-meta"><span>No 98.6c</span><span class="good">+$213</span></div></div></div>
+        <div class="ticker-item"><div class="logo blue">IR</div><div><div class="ticker-title">Will the Iranian regime fall by May 31?</div><div class="ticker-meta"><span>No 99.8c</span><span class="good">+$114</span></div></div></div>
+        <div class="ticker-item"><div class="logo amber">RP</div><div><div class="ticker-title">Will Reza Pahlavi enter Iran by May 31?</div><div class="ticker-meta"><span>No 99.8c</span><span class="good">+$114</span></div></div></div>
+        <div class="ticker-item"><div class="logo teal">BTC</div><div><div class="ticker-title">Will Bitcoin dip to $50,000 in May?</div><div class="ticker-meta"><span>No 99.8c</span><span class="good">+$43</span></div></div></div>
+        <div class="updated">updated now</div>
+      </div>
+    </section>
+
+    <section class="workbench">
+      <div class="panel positions">
+        <div class="head">
+          <div class="title">Positions</div>
+          <div class="chips"><span class="chip active">Polymarket</span><span class="chip">Opinion</span><span class="chip">NO</span></div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Market</th><th>Side</th><th>Shares</th><th>Avg</th><th>Current</th><th>PNL</th><th>Value</th></tr></thead>
+            <tbody>
+              <tr><td class="market">Will Elon Musk buy OnlyFans?</td><td>NO</td><td>24,200</td><td>96.8c</td><td>98.6c</td><td class="good">+$213</td><td>$23,861</td></tr>
+              <tr><td class="market">Will the Iranian regime fall by May 31?</td><td>NO</td><td>14,821</td><td>99.0c</td><td>99.8c</td><td class="good">+$114</td><td>$14,791</td></tr>
+              <tr><td class="market">Will Reza Pahlavi enter Iran by May 31?</td><td>NO</td><td>12,980</td><td>99.0c</td><td>99.8c</td><td class="good">+$114</td><td>$12,954</td></tr>
+              <tr><td class="market">Will Bitcoin dip to $50,000 in May?</td><td>NO</td><td>8,460</td><td>99.3c</td><td>99.8c</td><td class="good">+$43</td><td>$8,443</td></tr>
+              <tr><td class="market">Will Plasma reach $2.00 by December 31, 2026?</td><td>NO</td><td>7,120</td><td>93.8c</td><td>95.1c</td><td class="good">+$92</td><td>$6,771</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel pulse">
+        <div class="head"><div class="title">Market Pulse</div><span class="chip active">Live</span></div>
+        <div class="pulse-list">
+          <div class="pulse-row"><div class="pulse-icon"></div><div><div class="kind">PM Price Move</div><div class="pulse-text">Will Plasma reach $2.00 by December 31, 2026? moved +11.1% to 95.1c</div></div><div class="pulse-age">11:24</div></div>
+          <div class="pulse-row"><div class="pulse-icon" style="background:rgba(168,85,247,.14)"></div><div><div class="kind" style="color:#b886ff">Carry Opportunity</div><div class="pulse-text">Will UNI reach $11.00 by December 31, 2026? offers NO 84.5c and 31.9% APY</div></div><div class="pulse-age">10:48</div></div>
+          <div class="pulse-row"><div class="pulse-icon" style="background:rgba(245,158,11,.14)"></div><div><div class="kind" style="color:var(--amber)">Expiring Soon</div><div class="pulse-text">BTC $100K in May expires inside 24h with high NO exposure</div></div><div class="pulse-age">09:40</div></div>
+        </div>
+      </div>
+      <div class="panel tab-panel">
+        <div class="head">
+          <div class="title">Insights</div>
+          <div class="tab-buttons">
+            <button class="chip active" type="button" onclick="showInsightTab('smart', this)">Smart Money</button>
+            <button class="chip" type="button" onclick="showInsightTab('pnl', this)">PNL</button>
+          </div>
+        </div>
+        <div class="tab-content">
+          <div class="tab-pane active" id="smartPane">
+            <div class="pulse-list">
+              <div class="pulse-row"><div class="pulse-icon" style="background:rgba(56,189,248,.14)"></div><div><div class="kind" style="color:#38bdf8">Wallet Activity</div><div class="pulse-text">0x67...A21B bought 18,240 shares in ONDO launch market</div></div><div class="pulse-age">21m</div></div>
+              <div class="pulse-row"><div class="pulse-icon" style="background:rgba(244,63,94,.14)"></div><div><div class="kind" style="color:var(--red)">Risk Reducing</div><div class="pulse-text">0x1A...7855 sold SENA launch market, $76K notional</div></div><div class="pulse-age">54m</div></div>
+            </div>
+          </div>
+          <div class="tab-pane" id="pnlPane">
+            <div class="pnl-pane">
+              <div class="pnl-pane-top">
+                <div>
+                  <div class="title">Polymarket PNL</div>
+                  <div class="pnl-pane-note" id="pnlRangeNote">30D cumulative unrealized PNL</div>
+                </div>
+                <div class="pnl-pane-total" id="pnlTotal">+$18,420</div>
+              </div>
+              <div class="pnl-filters" aria-label="PNL timeframe">
+                <button class="pnl-filter" type="button" onclick="setPnlRange('1d', this)">1D</button>
+                <button class="pnl-filter" type="button" onclick="setPnlRange('7d', this)">7D</button>
+                <button class="pnl-filter active" type="button" onclick="setPnlRange('30d', this)">30D</button>
+                <button class="pnl-filter" type="button" onclick="setPnlRange('all', this)">All</button>
+              </div>
+              <svg class="chart" viewBox="0 0 920 110" preserveAspectRatio="none" role="img" aria-label="Polymarket PNL chart">
+                <defs>
+                  <linearGradient id="pnlFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#22c55e" stop-opacity=".32"/>
+                    <stop offset="100%" stop-color="#22c55e" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <line class="axis" x1="0" y1="82" x2="920" y2="82"/>
+                <line class="axis" x1="0" y1="44" x2="920" y2="44"/>
+                <path class="area" id="pnlArea" d="M0,78 C70,70 118,88 174,75 C240,58 280,62 342,48 C410,32 472,46 530,38 C598,28 648,54 714,42 C780,30 836,24 920,18 L920,110 L0,110 Z"/>
+                <path class="line" id="pnlLine" d="M0,78 C70,70 118,88 174,75 C240,58 280,62 342,48 C410,32 472,46 530,38 C598,28 648,54 714,42 C780,30 836,24 920,18"/>
+              </svg>
+              <div class="pnl-pane-stats">
+                <div class="stat"><div class="label" id="pnlStatOneLabel">24H</div><div class="stat-value good" id="pnlStatOne">+$3,926</div></div>
+                <div class="stat"><div class="label" id="pnlStatTwoLabel">7D</div><div class="stat-value good" id="pnlStatTwo">+$8,114</div></div>
+                <div class="stat"><div class="label">Drawdown</div><div class="stat-value bad" id="pnlDrawdown">-$1,280</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const pnlRanges = {
+      "1d": {
+        total:"+$3,926",
+        note:"1D realized and unrealized PNL",
+        statOneLabel:"Open",
+        statOne:"+$1,180",
+        statTwoLabel:"Close",
+        statTwo:"+$3,926",
+        drawdown:"-$420",
+        line:"M0,76 C90,74 130,82 205,70 C285,54 335,66 420,48 C515,30 590,40 680,28 C770,18 842,24 920,14",
+        area:"M0,76 C90,74 130,82 205,70 C285,54 335,66 420,48 C515,30 590,40 680,28 C770,18 842,24 920,14 L920,110 L0,110 Z"
+      },
+      "7d": {
+        total:"+$8,114",
+        note:"7D cumulative unrealized PNL",
+        statOneLabel:"Best Day",
+        statOne:"+$3,926",
+        statTwoLabel:"Worst Day",
+        statTwo:"-$880",
+        drawdown:"-$1,050",
+        line:"M0,82 C80,88 132,72 208,76 C280,82 322,62 392,60 C470,56 522,34 600,38 C690,43 746,27 820,30 C870,32 900,22 920,20",
+        area:"M0,82 C80,88 132,72 208,76 C280,82 322,62 392,60 C470,56 522,34 600,38 C690,43 746,27 820,30 C870,32 900,22 920,20 L920,110 L0,110 Z"
+      },
+      "30d": {
+        total:"+$18,420",
+        note:"30D cumulative unrealized PNL",
+        statOneLabel:"24H",
+        statOne:"+$3,926",
+        statTwoLabel:"7D",
+        statTwo:"+$8,114",
+        drawdown:"-$1,280",
+        line:"M0,78 C70,70 118,88 174,75 C240,58 280,62 342,48 C410,32 472,46 530,38 C598,28 648,54 714,42 C780,30 836,24 920,18",
+        area:"M0,78 C70,70 118,88 174,75 C240,58 280,62 342,48 C410,32 472,46 530,38 C598,28 648,54 714,42 C780,30 836,24 920,18 L920,110 L0,110 Z"
+      },
+      "all": {
+        total:"+$42,860",
+        note:"All-time Polymarket PNL",
+        statOneLabel:"Best Month",
+        statOne:"+$18,420",
+        statTwoLabel:"Win Rate",
+        statTwo:"61%",
+        drawdown:"-$6,900",
+        line:"M0,92 C70,84 120,96 190,80 C260,58 306,76 370,56 C450,34 500,62 580,42 C660,18 720,34 790,22 C845,12 886,16 920,8",
+        area:"M0,92 C70,84 120,96 190,80 C260,58 306,76 370,56 C450,34 500,62 580,42 C660,18 720,34 790,22 C845,12 886,16 920,8 L920,110 L0,110 Z"
+      }
+    };
+
+    function showInsightTab(name, button) {
+      document.getElementById('smartPane').classList.toggle('active', name === 'smart');
+      document.getElementById('pnlPane').classList.toggle('active', name === 'pnl');
+      button.parentElement.querySelectorAll('.chip').forEach(chip => chip.classList.remove('active'));
+      button.classList.add('active');
+    }
+
+    function setPnlRange(range, button) {
+      const data = pnlRanges[range] || pnlRanges["30d"];
+      document.getElementById('pnlTotal').textContent = data.total;
+      document.getElementById('pnlRangeNote').textContent = data.note;
+      document.getElementById('pnlStatOneLabel').textContent = data.statOneLabel;
+      document.getElementById('pnlStatOne').textContent = data.statOne;
+      document.getElementById('pnlStatTwoLabel').textContent = data.statTwoLabel;
+      document.getElementById('pnlStatTwo').textContent = data.statTwo;
+      document.getElementById('pnlDrawdown').textContent = data.drawdown;
+      document.getElementById('pnlLine').setAttribute('d', data.line);
+      document.getElementById('pnlArea').setAttribute('d', data.area);
+      button.parentElement.querySelectorAll('.pnl-filter').forEach(filter => filter.classList.remove('active'));
+      button.classList.add('active');
+    }
+  </script>
+</body>
+</html>

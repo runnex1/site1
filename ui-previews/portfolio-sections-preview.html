@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vault Portfolio Section Previews</title>
+<style>
+:root{--bg:#050b10;--panel:#08141c;--panel2:#0b1822;--line:#1b3442;--text:#e8f0f5;--muted:#8fa3b3;--teal:#32e6c7;--green:#52d273;--red:#ff5f57;--amber:#f7b84b;--blue:#43a7ff;--violet:#a77dff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,#0b1d29,#050b10 44%);color:var(--text);font-family:Inter,Arial,sans-serif;padding:22px}
+.wrap{max-width:1560px;margin:auto;display:grid;gap:18px}.top{display:flex;justify-content:space-between;align-items:end;border-bottom:1px solid var(--line);padding-bottom:14px}.brand{font-size:28px;font-weight:800;letter-spacing:.16em}.sub{color:var(--muted);font-size:13px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.panel{background:linear-gradient(180deg,rgba(12,28,38,.96),rgba(6,15,22,.98));border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden}.wide{grid-column:1/-1}
+.head{display:flex;justify-content:space-between;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line)}.title{text-transform:uppercase;font:700 12px/1.2 ui-monospace,monospace;letter-spacing:.12em}.hint{color:var(--muted);font-size:12px}.body{padding:14px 16px}
+table{width:100%;border-collapse:collapse}th{text-align:left;color:var(--muted);font:700 10px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.12em;padding:8px 10px;border-bottom:1px solid var(--line)}td{padding:10px;border-bottom:1px solid rgba(143,163,179,.13);font-size:13px}tr:last-child td{border-bottom:0}.mono{font-family:ui-monospace,monospace}.pos{color:var(--green)}.neg{color:var(--red)}.pill{display:inline-flex;border:1px solid rgba(50,230,199,.28);background:rgba(50,230,199,.08);color:var(--teal);border-radius:4px;padding:2px 7px;font:700 11px ui-monospace,monospace}.pill.v{border-color:rgba(167,125,255,.3);background:rgba(167,125,255,.1);color:var(--violet)}.pill.a{border-color:rgba(247,184,75,.3);background:rgba(247,184,75,.1);color:var(--amber)}.bar{height:7px;background:#172733;border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--teal),var(--blue));border-radius:99px}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.card{border:1px solid var(--line);background:rgba(255,255,255,.025);border-radius:7px;padding:13px}.k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}.v{font-size:22px;font-weight:800;margin-top:6px}.mini{color:var(--muted);font-size:12px;margin-top:4px}.loop{display:grid;grid-template-columns:1.2fr .8fr .8fr .8fr;gap:12px}.route{display:flex;align-items:center;gap:8px}.dot{width:9px;height:9px;border-radius:50%;background:var(--teal);box-shadow:0 0 14px var(--teal)}.snapshot{display:grid;grid-template-columns:1.1fr .9fr .9fr;gap:14px}.snapbox{border:1px solid var(--line);border-radius:7px;padding:14px;background:rgba(255,255,255,.025)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div><div class="brand">VAULT PORTFOLIO</div><div class="sub">Section UI previews, compact institutional layout</div></div><div class="sub">Preview only</div></div>
+
+  <div class="grid">
+    <section class="panel wide">
+      <div class="head"><div class="title">DeFi Positions</div><div class="hint">Filter: Wallet tokens over $10,000</div></div>
+      <div class="body">
+        <div class="cards">
+          <div class="card"><div class="k">Net DeFi Value</div><div class="v">$438,210</div><div class="mini pos">+$38 daily yield</div></div>
+          <div class="card"><div class="k">Avg APR</div><div class="v">8.7%</div><div class="mini">based on May 16 data</div></div>
+          <div class="card"><div class="k">Lowest Health</div><div class="v pos">1.08</div><div class="mini">Aave V3 loop</div></div>
+          <div class="card"><div class="k">Wallet Tokens</div><div class="v">$159,420</div><div class="mini">delete + min value controls</div></div>
+        </div>
+        <table><thead><tr><th>Protocol</th><th>Position</th><th>Net Value</th><th>APR</th><th>Health</th><th>Notes</th></tr></thead>
+        <tbody><tr><td>Aave V3</td><td>USDe/USDm loop</td><td class="mono">$214,560</td><td class="pos">+8.7%</td><td class="pos">1.08</td><td>Monitor borrow APY</td></tr><tr><td>Pendle</td><td>USDe PT Jun 26</td><td class="mono">$112,430</td><td class="pos">+11.4%</td><td>-</td><td>Unlocking on Jun 26</td></tr></tbody></table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="head"><div class="title">Prediction Markets</div><div class="hint">NO carry focus</div></div>
+      <div class="body"><table><thead><tr><th>Market</th><th>Side</th><th>Odds</th><th>APY</th><th>Exposure</th></tr></thead><tbody>
+        <tr><td>Trump out by Jun 30?</td><td><span class="pill v">NO</span></td><td>98.6%</td><td class="pos">12.4%</td><td>$101,821</td></tr>
+        <tr><td>JD Vance 2028?</td><td><span class="pill v">NO</span></td><td>81.3%</td><td class="pos">10%+</td><td>$903,889</td></tr>
+        <tr><td>BTC $100k in May?</td><td><span class="pill">YES</span></td><td>0.9%</td><td>-</td><td>$18,420</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section class="panel">
+      <div class="head"><div class="title">Loops</div><div class="hint">Separate each lending loop</div></div>
+      <div class="body loop">
+        <div class="route"><span class="dot"></span><div><b>USDe/USDm</b><div class="mini">Aave V3 Arbitrum</div></div></div><div><div class="k">Net</div><b>$214k</b></div><div><div class="k">APR</div><b class="pos">8.7%</b></div><div><div class="k">Health</div><b class="pos">1.08</b></div>
+        <div class="route"><span class="dot" style="background:var(--blue)"></span><div><b>USDC/WBTC</b><div class="mini">Morpho Blue</div></div></div><div><div class="k">Net</div><b>$285k</b></div><div><div class="k">APR</div><b class="pos">6.2%</b></div><div><div class="k">Health</div><b class="pos">1.21</b></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="head"><div class="title">ETF & Stocks</div><div class="hint">Live prices + daily DCA</div></div>
+      <div class="body"><table><thead><tr><th>Ticker</th><th>Shares</th><th>Current</th><th>Value</th><th>DCA</th></tr></thead><tbody>
+        <tr><td>STRC</td><td>1,400</td><td>$98.61</td><td>$138,054</td><td>$100/day</td></tr>
+        <tr><td>SPY</td><td>22.5</td><td>$530.15</td><td>$11,928</td><td>-</td></tr>
+      </tbody></table></div>
+    </section>
+
+    <section class="panel">
+      <div class="head"><div class="title">Weekly Snapshot</div><div class="hint">PnL attribution first</div></div>
+      <div class="body snapshot">
+        <div class="snapbox"><div class="k">Total Value</div><div class="v">$597,215</div><div class="mini neg">-$1.14M since prior snapshot</div></div>
+        <div class="snapbox"><div class="k">Category PnL</div><div class="mini">Prediction Markets <span class="pos">+$42,180</span></div><div class="mini">DeFi Positions <span class="pos">+$812</span></div><div class="mini">Tokens <span class="neg">-$8,430</span></div></div>
+        <div class="snapbox"><div class="k">Allocation</div><div class="bar"><i style="width:42%"></i></div><div class="mini">DeFi 42% · Prediction 27% · Tokens 18%</div></div>
+      </div>
+    </section>
+  </div>
+</div>
+</body>
+</html>

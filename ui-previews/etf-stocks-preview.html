@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ETF & Stocks Preview</title>
+  <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700,800,900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --void:#050b10;
+      --base:#07121a;
+      --panel:#081923;
+      --panel2:#06131b;
+      --line:rgba(110,231,216,.16);
+      --line2:rgba(148,163,184,.13);
+      --text:#eceef8;
+      --muted:#91a4b8;
+      --teal:#45e2c0;
+      --green:#61e48b;
+      --red:#ff5d74;
+      --amber:#ffb33f;
+      --sky:#58c7ff;
+      --mono:"JetBrains Mono", monospace;
+      --sans:"Satoshi", "DM Sans", sans-serif;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0;
+      min-height:100vh;
+      background:
+        radial-gradient(circle at 72% 0%, rgba(88,199,255,.08), transparent 34%),
+        radial-gradient(circle at 18% 100%, rgba(69,226,192,.08), transparent 30%),
+        var(--void);
+      color:var(--text);
+      font-family:var(--sans);
+      padding:18px;
+    }
+    .page { max-width:1780px; margin:0 auto; display:flex; flex-direction:column; gap:12px; }
+    .topbar {
+      display:grid;
+      grid-template-columns:1.15fr .9fr .9fr .9fr 1fr;
+      min-height:78px;
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:linear-gradient(180deg, rgba(7,18,26,.98), rgba(4,12,18,.99));
+      overflow:hidden;
+    }
+    .kpi { padding:15px 20px; border-right:1px solid var(--line2); min-width:0; }
+    .kpi:last-child { border-right:0; }
+    .label {
+      font-size:11px;
+      letter-spacing:.13em;
+      text-transform:uppercase;
+      color:rgba(236,238,248,.68);
+      font-weight:850;
+      line-height:1;
+    }
+    .value {
+      margin-top:8px;
+      font-family:var(--mono);
+      font-size:28px;
+      line-height:1;
+      font-weight:800;
+      letter-spacing:-.01em;
+    }
+    .sub { margin-top:6px; color:var(--muted); font-family:var(--mono); font-size:12px; font-weight:600; }
+    .good { color:var(--green); }
+    .bad { color:var(--red); }
+    .warn { color:var(--amber); }
+    .main {
+      display:grid;
+      grid-template-columns:minmax(0,1.42fr) minmax(420px,.72fr);
+      gap:12px;
+      min-height:720px;
+    }
+    .panel {
+      border:1px solid var(--line);
+      border-radius:8px;
+      background:linear-gradient(180deg, rgba(7,19,28,.98), rgba(3,10,15,.99));
+      overflow:hidden;
+      min-width:0;
+    }
+    .head {
+      min-height:58px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      padding:15px 18px;
+      border-bottom:1px solid var(--line2);
+      background:rgba(7,18,26,.72);
+    }
+    .title { display:flex; align-items:baseline; gap:10px; font-size:20px; line-height:1; font-weight:900; letter-spacing:.1em; text-transform:uppercase; }
+    .badge { padding:3px 9px; border:1px solid rgba(88,199,255,.26); border-radius:5px; color:var(--sky); background:rgba(88,199,255,.08); font-family:var(--mono); font-size:12px; font-weight:700; letter-spacing:0; text-transform:none; }
+    .actions { display:flex; gap:8px; align-items:center; }
+    button {
+      min-height:30px;
+      border:1px solid rgba(148,163,184,.2);
+      border-radius:6px;
+      background:rgba(255,255,255,.035);
+      color:var(--text);
+      font-family:var(--sans);
+      font-size:13px;
+      font-weight:700;
+      padding:0 11px;
+    }
+    button.primary { color:var(--teal); border-color:rgba(69,226,192,.32); background:rgba(69,226,192,.09); }
+    .table { min-width:980px; }
+    .row, .thead {
+      display:grid;
+      grid-template-columns:1.45fr .72fr .88fr .88fr 1fr 1fr .78fr .82fr;
+      align-items:center;
+      min-height:58px;
+      border-bottom:1px solid rgba(148,163,184,.1);
+    }
+    .thead {
+      min-height:40px;
+      background:rgba(4,13,19,.92);
+      color:rgba(236,238,248,.68);
+      font-family:var(--mono);
+      font-size:10px;
+      font-weight:800;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+      position:sticky;
+      top:0;
+      z-index:2;
+    }
+    .row > div, .thead > div { padding:0 16px; min-width:0; }
+    .ticker { display:flex; align-items:center; gap:11px; }
+    .logo {
+      width:32px; height:32px; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      font-family:var(--mono); font-weight:900; font-size:11px;
+      color:white; box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);
+      flex:0 0 auto;
+    }
+    .spy { background:#1c6a58; }
+    .qqq { background:#4f46e5; }
+    .nvda { background:#62a142; }
+    .msft { background:#2469c9; }
+    .meta { background:#255ad6; }
+    .name { font-size:15px; font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .type { color:var(--muted); font-size:12px; margin-top:2px; font-weight:650; }
+    .cell { font-family:var(--mono); font-size:14px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .weight {
+      display:flex;
+      align-items:center;
+      gap:8px;
+      font-family:var(--mono);
+      font-size:13px;
+      color:var(--muted);
+      font-weight:700;
+    }
+    .bar { width:62px; height:6px; border-radius:999px; background:rgba(148,163,184,.13); overflow:hidden; }
+    .fill { height:100%; border-radius:999px; background:linear-gradient(90deg,var(--teal),var(--sky)); }
+    .holdings-body { overflow:auto; max-height:650px; }
+    .activity-body { padding:14px; display:flex; flex-direction:column; gap:12px; }
+    .chart-card {
+      border:1px solid rgba(148,163,184,.13);
+      border-radius:7px;
+      background:rgba(4,13,19,.72);
+      padding:14px 14px 12px;
+      position:relative;
+      overflow:hidden;
+    }
+    .chart-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:8px; }
+    .chart-title { font-size:18px; font-weight:900; line-height:1; }
+    .chart-note { margin-top:5px; color:var(--muted); font-family:var(--mono); font-size:12px; font-weight:650; }
+    .range { display:flex; gap:4px; }
+    .range span { padding:4px 8px; border:1px solid rgba(148,163,184,.18); border-radius:999px; color:var(--muted); font-family:var(--mono); font-size:11px; font-weight:800; }
+    .range .active { color:var(--teal); border-color:rgba(69,226,192,.34); background:rgba(69,226,192,.09); }
+    .chart {
+      height:190px;
+      margin-top:8px;
+      border-bottom:1px solid rgba(148,163,184,.12);
+      background:
+        linear-gradient(180deg, rgba(97,228,139,.14), rgba(97,228,139,0) 62%),
+        repeating-linear-gradient(to top, transparent 0 47px, rgba(148,163,184,.07) 48px);
+      position:relative;
+    }
+    svg { width:100%; height:100%; display:block; }
+    .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:11px; }
+    .stat { border:1px solid rgba(148,163,184,.12); border-radius:6px; padding:10px; background:rgba(255,255,255,.025); }
+    .stat .label { font-size:10px; }
+    .stat .value { font-size:18px; margin-top:6px; }
+    .feed { border:1px solid rgba(148,163,184,.13); border-radius:7px; overflow:hidden; }
+    .feed-row { display:grid; grid-template-columns:34px minmax(0,1fr) auto; gap:10px; align-items:start; padding:13px 14px; border-bottom:1px solid rgba(148,163,184,.1); background:rgba(4,13,19,.48); }
+    .feed-row:last-child { border-bottom:0; }
+    .icon { width:28px; height:28px; border-radius:7px; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:12px; font-weight:900; }
+    .buy { color:var(--green); background:rgba(97,228,139,.12); }
+    .sell { color:var(--red); background:rgba(255,93,116,.12); }
+    .div { color:var(--amber); background:rgba(255,179,63,.12); }
+    .reb { color:var(--sky); background:rgba(88,199,255,.12); }
+    .feed-title { font-size:14px; font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .feed-meta { margin-top:3px; color:var(--muted); font-family:var(--mono); font-size:11px; font-weight:650; }
+    .feed-money { text-align:right; font-family:var(--mono); font-size:13px; font-weight:800; }
+    .hint { color:var(--muted); font-family:var(--mono); font-size:11px; font-weight:650; }
+    @media (max-width:1100px) {
+      .topbar { grid-template-columns:1fr 1fr; }
+      .kpi { border-bottom:1px solid var(--line2); }
+      .main { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="topbar">
+      <div class="kpi"><div class="label">ETF / Stock Value</div><div class="value">$96,420</div><div class="sub">9 positions tracked</div></div>
+      <div class="kpi"><div class="label">Total PNL</div><div class="value good">+$8,734</div><div class="sub">+9.96% all time</div></div>
+      <div class="kpi"><div class="label">Today</div><div class="value good">+$612</div><div class="sub">+0.64% weighted</div></div>
+      <div class="kpi"><div class="label">Daily DCA</div><div class="value">$145</div><div class="sub">4 active plans</div></div>
+      <div class="kpi"><div class="label">Largest Holding</div><div class="value">SPY</div><div class="sub">31.2% of ETF book</div></div>
+    </section>
+
+    <section class="main">
+      <section class="panel">
+        <div class="head">
+          <div class="title">Holdings <span class="badge">9 positions</span></div>
+          <div class="actions"><button>Import</button><button class="primary">Add Position</button></div>
+        </div>
+        <div class="holdings-body">
+          <div class="table">
+            <div class="thead"><div>Asset</div><div>Shares</div><div>Avg Cost</div><div>Price</div><div>Value</div><div>PNL</div><div>DCA</div><div>Weight</div></div>
+            <div class="row">
+              <div class="ticker"><div class="logo spy">SPY</div><div><div class="name">SPY</div><div class="type">S&P 500 ETF</div></div></div>
+              <div class="cell">52.40</div><div class="cell">$482.10</div><div class="cell">$573.84</div><div class="cell">$30,070.42</div><div class="cell good">+$4,807.18</div><div class="cell">$45/day</div><div class="weight"><div class="bar"><div class="fill" style="width:92%"></div></div>31.2%</div>
+            </div>
+            <div class="row">
+              <div class="ticker"><div class="logo qqq">QQQ</div><div><div class="name">QQQ</div><div class="type">Nasdaq 100 ETF</div></div></div>
+              <div class="cell">33.10</div><div class="cell">$412.50</div><div class="cell">$469.22</div><div class="cell">$15,532.18</div><div class="cell good">+$1,877.43</div><div class="cell">$35/day</div><div class="weight"><div class="bar"><div class="fill" style="width:48%"></div></div>16.1%</div>
+            </div>
+            <div class="row">
+              <div class="ticker"><div class="logo nvda">NVDA</div><div><div class="name">NVDA</div><div class="type">Semiconductor</div></div></div>
+              <div class="cell">84.00</div><div class="cell">$104.20</div><div class="cell">$126.58</div><div class="cell">$10,632.72</div><div class="cell good">+$1,879.92</div><div class="cell">-</div><div class="weight"><div class="bar"><div class="fill" style="width:33%"></div></div>11.0%</div>
+            </div>
+            <div class="row">
+              <div class="ticker"><div class="logo msft">MSFT</div><div><div class="name">MSFT</div><div class="type">Software</div></div></div>
+              <div class="cell">18.00</div><div class="cell">$421.30</div><div class="cell">$458.91</div><div class="cell">$8,260.38</div><div class="cell good">+$676.98</div><div class="cell">$20/day</div><div class="weight"><div class="bar"><div class="fill" style="width:26%"></div></div>8.6%</div>
+            </div>
+            <div class="row">
+              <div class="ticker"><div class="logo meta">META</div><div><div class="name">META</div><div class="type">Communication Services</div></div></div>
+              <div class="cell">12.00</div><div class="cell">$529.00</div><div class="cell">$506.44</div><div class="cell">$6,077.28</div><div class="cell bad">-$270.72</div><div class="cell">-</div><div class="weight"><div class="bar"><div class="fill" style="width:19%"></div></div>6.3%</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="head">
+          <div class="title">Recent Activity</div>
+          <div class="hint">updated now</div>
+        </div>
+        <div class="activity-body">
+          <div class="chart-card">
+            <div class="chart-top">
+              <div><div class="chart-title">ETF & Stock PNL</div><div class="chart-note">30D cumulative realized + unrealized PNL</div></div>
+              <div class="range"><span>1D</span><span>7D</span><span class="active">30D</span><span>ALL</span></div>
+            </div>
+            <div class="chart">
+              <svg viewBox="0 0 760 190" preserveAspectRatio="none">
+                <path d="M0 142 C60 135 88 148 126 128 C178 101 212 116 252 94 C294 72 340 82 384 69 C430 54 474 62 520 44 C574 24 626 38 760 18 L760 190 L0 190 Z" fill="rgba(97,228,139,.16)"></path>
+                <path d="M0 142 C60 135 88 148 126 128 C178 101 212 116 252 94 C294 72 340 82 384 69 C430 54 474 62 520 44 C574 24 626 38 760 18" fill="none" stroke="#7cf0a0" stroke-width="3"></path>
+                <circle cx="520" cy="44" r="4" fill="#7cf0a0"></circle>
+                <line x1="520" y1="44" x2="520" y2="190" stroke="rgba(236,238,248,.22)" stroke-dasharray="4 5"></line>
+              </svg>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="label">30D PNL</div><div class="value good">+$2,184</div></div>
+              <div class="stat"><div class="label">Best Day</div><div class="value good">+$718</div></div>
+              <div class="stat"><div class="label">Drawdown</div><div class="value bad">-$386</div></div>
+            </div>
+          </div>
+
+          <div class="feed">
+            <div class="feed-row"><div class="icon buy">B</div><div><div class="feed-title">DCA bought SPY</div><div class="feed-meta">0.078 shares @ $573.84 · Today, 12:00</div></div><div class="feed-money good">$45</div></div>
+            <div class="feed-row"><div class="icon buy">B</div><div><div class="feed-title">DCA bought QQQ</div><div class="feed-meta">0.075 shares @ $469.22 · Today, 12:00</div></div><div class="feed-money good">$35</div></div>
+            <div class="feed-row"><div class="icon reb">R</div><div><div class="feed-title">Portfolio drift detected</div><div class="feed-meta">NVDA is 2.4% above target allocation</div></div><div class="feed-money warn">Review</div></div>
+            <div class="feed-row"><div class="icon div">D</div><div><div class="feed-title">Dividend received from SPY</div><div class="feed-meta">Quarterly distribution · 2 days ago</div></div><div class="feed-money good">+$91.40</div></div>
+            <div class="feed-row"><div class="icon sell">S</div><div><div class="feed-title">Trimmed META position</div><div class="feed-meta">Sold 2 shares @ $511.20 · May 24</div></div><div class="feed-money bad">-$1,022</div></div>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

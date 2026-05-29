@@ -1,766 +1,199 @@
-/**
- * POST /api/tg-webhook
- *
- * Telegram webhook — mirrors the Alert Terminal exactly.
- * Uses the same Groq AI + regex parsers as the browser terminal.
- *
- * Commands:
- *   Any natural language alert (same as terminal)
- *   list       — show active alerts
- *   remove <n> — remove alert by number
- *   clear all  — clear all alerts
- *   help       — show help
- */
-
 const { kvGet, kvSet } = require('../lib/kv');
+const { detectAssetClassHint, detectChainHint } = require('../lib/price-answer');
+const { resolvePolymarketMarket, pickOutcome } = require('../lib/polymarket-resolver');
+const askHandler = require('./ask');
 
 const ALERTS_KEY = 'vault:alerts';
-const GROQ_KEY   = process.env.GROQ_API_KEY;
+const PM_PENDING_ALERT_KEY = 'vault:pm_pending_alert';
+const PM_ALIASES_KEY = 'vault:pm_aliases';
+const PM_LAST_DEBUG_KEY = 'vault:last_polymarket_debug';
+const RECENT_FIRED_KEY = 'vault:recent_fired';
+const ALERT_WARN_LIMIT = 150;
+const ALERT_HARD_LIMIT = 200;
+const PM_POSITIONS_URL = 'https://data-api.polymarket.com/positions';
+const PM_ACTIVITY_URL = 'https://data-api.polymarket.com/activity';
+const PM_HISTORY_URL = 'https://clob.polymarket.com/prices-history';
+const GROQ_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = 'llama-3.1-8b-instant';
 
-// ── Chain maps (mirrors browser) ──────────────────────────────────────────────
+const AAVE_CHAIN_IDS = { ethereum:1, mainnet:1, optimism:10, op:10, bnb:56, bsc:56, binance:56, gnosis:100, polygon:137, matic:137, zksync:324, 'zksync era':324, metis:1088, base:8453, arbitrum:42161, arb:42161, avalanche:43114, avax:43114, scroll:534352, megaeth:4326, mega:4326 };
+const AAVE_CHAIN_NAMES = { 1:'Ethereum',10:'Optimism',56:'BNB',100:'Gnosis',137:'Polygon',324:'zkSync',1088:'Metis',8453:'Base',42161:'Arbitrum',43114:'Avalanche',534352:'Scroll',4326:'MegaETH' };
+const CRYPTO_TICKERS = new Set(['BTC','ETH','SOL','BNB','XRP','ADA','DOGE','MATIC','POL','DOT','SHIB','LTC','LINK','UNI','ATOM','XLM','NEAR','APT','SUI','ARB','OP','INJ','TIA','PEPE','WIF','BONK','JUP','PYTH','JTO','RNDR','HNT','AVAX','USDC','USDT','DAI','FRAX','USDE','SUSDE','WBTC','STETH','WSTETH','RETH','CBETH','EZETH','EETH','WEETH','RSETH','CRV','CVX','LDO','MKR','SNX','COMP','YFI','SUSHI','BAL','AAVE','PENDLE','ENA','PRIME']);
+const ETF_TICKERS = new Set(['SPY','QQQ','IWM','DIA','VTI','VOO','VEA','VWO','GLD','SLV','TLT','IEF','HYG','LQD','XLF','XLK','XLE','XLV','ARKK','SOXL','TQQQ','SQQQ','UVXY','VXX','IBIT','FBTC','ETHA','GBTC']);
+const CRYPTO_NAMES = { bitcoin:'BTC', ethereum:'ETH', solana:'SOL', bnb:'BNB', ripple:'XRP', cardano:'ADA', avalanche:'AVAX', dogecoin:'DOGE', polkadot:'DOT', polygon:'MATIC', shiba:'SHIB', litecoin:'LTC', chainlink:'LINK', uniswap:'UNI', cosmos:'ATOM', stellar:'XLM', near:'NEAR', aptos:'APT', sui:'SUI', arbitrum:'ARB', optimism:'OP', injective:'INJ', celestia:'TIA', pepe:'PEPE', pendle:'PENDLE', aave:'AAVE', 'echelon prime':'PRIME', echelon:'PRIME' };
+const MONTH_INDEX = { jan:0,january:0,feb:1,february:1,mar:2,march:2,apr:3,april:3,may:4,jun:5,june:5,jul:6,july:6,aug:7,august:7,sep:8,sept:8,september:8,oct:9,october:9,nov:10,november:10,dec:11,december:11 };
+const MONTH_RE = Object.keys(MONTH_INDEX).sort((a,b)=>b.length-a.length).join('|');
 
-const AAVE_CHAIN_IDS = {
-  'ethereum': 1, 'eth mainnet': 1, 'mainnet': 1,
-  'optimism': 10, 'op': 10,
-  'bnb': 56, 'bsc': 56, 'binance': 56,
-  'gnosis': 100,
-  'polygon': 137, 'matic': 137,
-  'zksync': 324, 'zksync era': 324,
-  'metis': 1088,
-  'base': 8453,
-  'arbitrum': 42161, 'arb': 42161,
-  'avalanche': 43114, 'avax': 43114,
-  'scroll': 534352,
-  'megaeth': 4326, 'mega': 4326,
-};
+function uid(){ return Date.now().toString() + Math.random().toString(36).slice(2,5); }
+function escapeHtml(v){ return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function escapeUrl(v){ const url=String(v||''); return /^https:\/\/(?:www\.)?polymarket\.com\//i.test(url) ? escapeHtml(url) : ''; }
+function hasExplicitAlertKeyword(t){ return /(^|\s|\/)alert\b/i.test(t); }
+function stripAlertPrefix(t){ return String(t||'').replace(/^\/alert\s*/i,'').replace(/^alert(?:\s+me)?(?:\s+(?:when|if|once|whenever))?\s*/i,'').trim(); }
+function formatTarget(target,type){ if(type==='polymarket'||type==='opinion') return (target*100).toFixed(0)+'¢'; if(type==='aavecap') return target+'%'; return '$'+(target>=1e6?(target/1e6).toFixed(1)+'M':target>=1000?(target/1000).toFixed(0)+'K':target.toLocaleString('en-US')); }
+function parseDirection(raw){ const s=String(raw||'').toLowerCase(); return /\b(below|under|drops?|falls?|drop below|fall below|less than|lower than|at most|dip|crash)\b/.test(s) ? 'below' : 'above'; }
+function parseAlertDirection(raw){ const s=String(raw||'').toLowerCase(); return /\b(below|under|less than|drops? below|falls? below|at most)\b/.test(s) ? 'below' : 'above'; }
+function oddsDecimal(n, unit){ const v=Number(String(n||'').replace(/,/g,'')); if(!Number.isFinite(v) || v <= 0) return null; const u=String(unit||'').toLowerCase(); if(u === 'c' || u === '¢' || u.startsWith('cent')) return v / 100; if(u === '%' || u === 'percent') return v / 100; return v > 1 ? v / 100 : v; }
+function parseNumber(raw,{percentAsDecimal=false}={}){ const ms=[...String(raw||'').matchAll(/\$?([\d,]+(?:\.\d+)?)\s*(k|m|b|%|percent)?/gi)]; for(const m of ms){ let v=parseFloat(m[1].replace(/,/g,'')); const suf=(m[2]||'').toLowerCase(); if(suf==='k') v*=1e3; else if(suf==='m') v*=1e6; else if(suf==='b') v*=1e9; else if((suf==='%'||suf==='percent')&&percentAsDecimal) v/=100; if(Number.isFinite(v)&&v>0) return v; } return null; }
+function parseTargetOdds(raw){ const s=String(raw||''); const trigger=/\b(?:surpass(?:es)?|exceed(?:s)?|reach(?:es)?|go(?:es)?\s+above|rise(?:s)?\s+above|cross(?:es)?\s+above|above|over|greater\s+than|at\s+least|drop(?:s)?\s+below|fall(?:s)?\s+below|below|under|less\s+than|at\s+most)\b/ig; let last=null; for(const t of s.matchAll(trigger)){ const rest=s.slice(t.index+t[0].length); const m=rest.match(/^\s*(?:the\s+)?(?:(?:odds|price|probability|chance|chances)\s*)?(?:is\s*)?(?:of\s*)?(?:to\s*)?(?:at\s*)?([\d,]+(?:\.\d+)?)\s*(%|percent|c|¢|cents?)?(?=\s|$|[?.!,;:])/i); if(m) last=m; } if(last) return oddsDecimal(last[1], last[2]); const explicit=[...s.matchAll(/([\d,]+(?:\.\d+)?)\s*(%|percent|c|¢|cents?)(?=\s|$|[?.!,;:])/ig)]; if(explicit.length){ const m=explicit[explicit.length-1]; return oddsDecimal(m[1], m[2]); } return null; }
+function parseStoredJson(raw, fallback){ if(!raw) return fallback; if(typeof raw !== 'string') return raw; try{ return JSON.parse(raw); }catch(e){ return fallback; } }
+function fmtUsd(v){ const n=Number(v); if(!Number.isFinite(n)) return '$0'; const sign=n<0?'-':''; const abs=Math.abs(n); return sign+'$'+abs.toLocaleString('en-US',{maximumFractionDigits:abs>=1000?0:2}); }
+function fmtSignedUsd(v){ const n=Number(v); if(!Number.isFinite(n) || n===0) return '$0'; return (n>0?'+':'')+fmtUsd(n); }
+function fmtPmOdds(v){ const n=Number(v); if(!Number.isFinite(n)) return '?'; const pct=n*100; if(pct===0) return '<0.1%'; if(pct>0 && pct<1) return pct.toFixed(2)+'%'; return pct.toFixed(1)+'%'; }
+function fmtPercent(v){ const n=Number(v); if(!Number.isFinite(n)) return '?'; if(Math.abs(n)>=1000) return n.toLocaleString('en-US',{maximumFractionDigits:0})+'%'; if(Math.abs(n)>=100) return n.toFixed(0)+'%'; return n.toFixed(1)+'%'; }
+function fmtCent(v){ const n=Number(v); if(!Number.isFinite(n)) return '?'; return Math.round(n*100)+'¢'; }
+function shortWallet(w){ const s=String(w||''); return s.length>12 ? s.slice(0,6)+'...'+s.slice(-4) : s; }
+function marketTitleFromResolved(m){ const base=String(m?.question||m?.title||m?.name||m?.slug||m?.market_slug||'').trim(); const group=String(m?.groupItemTitle||m?.groupItem||m?.groupTitle||'').trim(); if(!group || base.toLowerCase().includes(group.toLowerCase())) return base || group; if(/\bby\s*$/i.test(base)) return `${base} ${group}?`; return `${base} ${group}`.trim(); }
+function polymarketUrlFromSlugs(eventSlug, marketSlug){ const event=String(eventSlug||marketSlug||'').trim(); const market=String(marketSlug||eventSlug||'').trim(); if(!event) return ''; return market && market!==event ? `https://polymarket.com/event/${event}/${market}` : `https://polymarket.com/event/${event}`; }
+function formatAlertLabelHtml(a){ if(a?.type==='polymarket' && a.marketTitle){ const url=escapeUrl(a.marketUrl || polymarketUrlFromSlugs(a.eventSlug, a.marketSlug || a.symbol)); const title=url ? `<a href="${url}">${escapeHtml(a.marketTitle)}</a>` : escapeHtml(a.marketTitle); return `${title} ${escapeHtml(a.side||'YES')} ${escapeHtml(a.dir||'above')} ${escapeHtml(formatTarget(a.target,'polymarket'))}`; } return escapeHtml(a?.label||a?.symbol||''); }
+function firstTitleWords(title,n=3){ return String(title||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim().split(/\s+/).filter(Boolean).slice(0,n).join(' '); }
+function sameFirstTitleWords(markets,n=3){ const keys=(markets||[]).map(m=>firstTitleWords(marketTitleFromResolved(m),n)).filter(Boolean); return keys.length>1 && keys.every(k=>k===keys[0]); }
+function eventSlugFromUrl(url){ return (String(url||'').match(/polymarket\.com\/event\/([^/?#]+)/i)||[])[1] || ''; }
+function marketSlugFrom(m,fallback=''){ return m?.slug||m?.market_slug||fallback; }
+function marketUrlFor(resolved,m,slug){ const base=String(resolved?.url||''); const event=eventSlugFromUrl(base); if(event) return polymarketUrlFromSlugs(event,slug); return base || polymarketUrlFromSlugs(resolved?.eventSlug,slug); }
+function fallbackSlug(text){ return String(text||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,''); }
+function buildPolymarketAlert(resolved,market,{side,dir,target,phrase}){ const title=marketTitleFromResolved(market); const slug=marketSlugFrom(market, resolved?.slug || fallbackSlug(phrase)); const marketUrl=marketUrlFor(resolved,market,slug); const current=pickOutcome(market, side === 'NO' ? 'No' : 'Yes')?.price; return { id:uid(), type:'polymarket', source:'tg', symbol:slug, marketSlug:slug, marketTitle:title, marketUrl, side, dir, target, triggered:false, setAt:Date.now(), label:`${title} ${side} ${dir} ${formatTarget(target,'polymarket')}`, currentPrice:Number.isFinite(Number(current))?Number(current):undefined }; }
+function pendingChoiceMessage(choices){ const lines=(choices||[]).map((a,i)=>`${i+1}. ${formatAlertLabelHtml(a)}${a.currentPrice!=null?` (${fmtPmOdds(a.currentPrice)})`:''}`); return ['I found multiple matching Polymarket markets. Which one should I use?','',...lines,'','Reply with the number.'].join('\n'); }
 
-const AAVE_CHAIN_NAMES = {
-  1: 'Ethereum', 10: 'Optimism', 56: 'BNB', 100: 'Gnosis',
-  137: 'Polygon', 324: 'zkSync', 1088: 'Metis', 8453: 'Base',
-  42161: 'Arbitrum', 43114: 'Avalanche', 534352: 'Scroll', 4326: 'MegaETH',
-};
+function parsePolymarketUrl(raw){ const u=String(raw||'').match(/https?:\/\/(?:www\.)?polymarket\.com\/[^\s]*/i)?.[0]; if(!u) return null; const multi=u.match(/polymarket\.com\/event\/([^/?#]+)\/([^/?#]+)/); const single=u.match(/polymarket\.com\/(?:event|market)\/([^/?#]+)/); if(!multi&&!single) return null; const eventSlug=multi?multi[1]:single[1]; const marketSlug=multi?multi[2]:single[1]; const side=/\bno\b/i.test(raw)&&!/\byes\b/i.test(raw)?'NO':'YES'; const dir=parseAlertDirection(raw); const target=parseTargetOdds(raw) ?? (dir==='above'?0.75:0.25); const marketUrl=polymarketUrlFromSlugs(eventSlug, marketSlug); return { type:'polymarket', symbol:marketSlug, eventSlug, marketSlug, marketUrl, side, dir, target, label:`${marketSlug} (${side}) ${dir} ${(target*100).toFixed(0)}¢` }; }
+function parseAaveCap(raw){ const t=String(raw||'').toLowerCase(); if(!t.includes('aave') || !/(cap|deposit|supply|utilization|util|available)/.test(t)) return null; const tokens=['USDC','USDT','USDE','WETH','ETH','WBTC','BTC','DAI','GHO','LUSD','FRAX','RETH','STETH','CBETH','WEETH','WSTETH','PYUSD','CRVUSD','SUSD','TUSD','FDUSD','BUSD']; let symbol=tokens.find(x=>new RegExp('\\b'+x+'\\b','i').test(raw)); if(!symbol) return null; const caseMap={USDE:'USDe',WSTETH:'wstETH',RETH:'rETH',CBETH:'cbETH',WEETH:'weETH',STETH:'stETH',CRVUSD:'crvUSD',SUSD:'sUSD'}; symbol=caseMap[symbol]||symbol; let chainId=1; for(const [name,id] of Object.entries(AAVE_CHAIN_IDS).sort((a,b)=>b[0].length-a[0].length)){ if(t.includes(name)){ chainId=id; break; }} let dir=parseDirection(raw); let target=parseNumber(raw) ?? 100; if(/\b(full|reached|nearly)\b/i.test(raw)){ dir='above'; if(!parseNumber(raw)) target=95; } const chainName=AAVE_CHAIN_NAMES[chainId]||('Chain '+chainId); return { symbol, chainId, type:'aavecap', dir, target, label:`Aave ${symbol}/${chainName} util ${dir==='above'?'>':'<'}${target}%` }; }
+function parsePriceAlert(raw){ const dir=parseDirection(raw); const target=parseNumber(raw); if(target===null) return null; const hint=detectAssetClassHint(raw); const chain=detectChainHint(raw); let symbol=null,type=null; const caps=String(raw||'').match(/\$?\b([A-Z]{2,12})\b/); if(caps){ symbol=caps[1].toUpperCase(); if(hint==='stock') type='stock'; else if(hint==='etf') type='etf'; else if(hint==='crypto') type='crypto'; else if(CRYPTO_TICKERS.has(symbol)) type='crypto'; else if(ETF_TICKERS.has(symbol)) type='etf'; else type='stock'; } if(!symbol){ const s=String(raw||'').toLowerCase(); for(const [name,ticker] of Object.entries(CRYPTO_NAMES)){ if(new RegExp('\\b'+name+'\\b','i').test(s)){ symbol=ticker; type=hint==='stock'?'stock':'crypto'; break; }}} if(!symbol) return null; if(chain==='solana' && type!=='stock' && type!=='etf') type='crypto'; const alert={ symbol, type:type||'crypto', chain, dir, target, label:`${symbol} ${chain==='solana'?'Solana ':''}${type||'crypto'} ${dir} ${formatTarget(target,type||'crypto')}` }; if(chain) alert.chain=chain; return alert; }
+function parseMultiTargetCommand(raw){ const s=String(raw||'').trim(); const m=s.match(/^\/?alert\s+\$?([A-Z][A-Z0-9]{1,11})(?:\s+on\s+([a-z]+))?\s+(.+)$/i); if(!m) return null; const symbol=m[1].toUpperCase(), chain=String(m[2]||'').toLowerCase()||undefined; const targets=[...m[3].matchAll(/\$?(\d+(?:\.\d+)?)/g)].map(x=>Number(x[1])).filter(n=>Number.isFinite(n)&&n>0); return targets.length>=2 ? {symbol,chain,targets:[...new Set(targets)]} : null; }
+async function resolveCurrentPriceForSymbol(symbol, chain){ const { fetchPrice }=require('../lib/price'); const sym=String(symbol||'').toUpperCase(); if(chain==='solana'){ const price=await fetchPrice({symbol:sym,type:'crypto',chain:'solana'}); return Number.isFinite(Number(price))&&Number(price)>0 ? {type:'crypto',chain:'solana',price:Number(price),preferCoinGecko:false} : null; } const order=ETF_TICKERS.has(sym)?['etf','stock','crypto']:['crypto','stock']; for(const type of order){ const alert=type==='crypto'?{symbol:sym,type,preferCoinGecko:true}:{symbol:sym,type}; const price=await fetchPrice(alert); if(Number.isFinite(Number(price))&&Number(price)>0) return {type,price:Number(price),preferCoinGecko:type==='crypto'}; } return null; }
+async function parseMultiTargetPriceAlert(raw){ const parsed=parseMultiTargetCommand(raw); if(!parsed) return null; const current=await resolveCurrentPriceForSymbol(parsed.symbol, parsed.chain); if(!current) throw new Error(`I could not find a live price for ${parsed.symbol}.`); return parsed.targets.map(target=>{ const dir=target>=current.price?'above':'below'; const alert={id:uid(),symbol:parsed.symbol,type:current.type,dir,target,currentPrice:current.price,triggered:false,setAt:Date.now(),source:'tg',label:`$${parsed.symbol}${current.chain==='solana'?' Solana':''} ${dir} ${formatTarget(target,current.type)}`}; if(current.chain) alert.chain=current.chain; if(current.preferCoinGecko) alert.preferCoinGecko=true; return alert; }); }
+function polymarketAlertPhrase(raw){ let s=stripAlertPrefix(String(raw||'')).replace(/https?:\/\/\S+/gi,' '); s=s.replace(/^me\s+/i,'').replace(/^(when|if|once|whenever)\s+/i,''); s=s.replace(/^the\s+/i,'').replace(/^(odds|probability|chance|chances|price)\s+(for|of|that)?\s*/i,''); s=s.replace(/\b(on\s+)?polymarket\b.*$/i,''); s=s.replace(/\b(yes|no)\s+(odds|price|probability|chance|chances)\b/ig,' '); s=s.replace(/\b(odds|price|probability|chance|chances)\b/ig,' '); s=s.replace(/\b(?:surpass(?:es)?|exceed(?:s)?|reach(?:es)?|go(?:es)?\s+above|rise(?:s)?\s+above|above|over|greater\s+than|cross(?:es)?\s+above|drop(?:s)?\s+below|fall(?:s)?\s+below|below|under|less\s+than|at\s+most|at\s+least)\b[\s\S]*$/i,''); return s.replace(/\s+/g,' ').replace(/^for\s+/i,'').trim().replace(/[?.!]+$/,''); }
+async function parsePolymarketTextAlert(raw){ if(!/\bpolymarket\b/i.test(raw) || !hasExplicitAlertKeyword(raw)) return null; const target=parseTargetOdds(raw); if(target==null || target<=0 || target>=1) return null; const side=/\bno\b/i.test(raw) && !/\byes\b/i.test(raw) ? 'NO' : 'YES'; const dir=parseAlertDirection(raw); const phrase=polymarketAlertPhrase(raw); if(!phrase || phrase.length<3) return null; const query=`What are the odds ${phrase} on Polymarket?`; const resolved=await resolvePolymarketMarket(query); const market=resolved?.market; if(!market) throw new Error('I could not find a Polymarket market that clearly matches that alert.'); const markets=Array.isArray(resolved.markets) ? resolved.markets.filter(Boolean).slice(0,10) : []; const base={side,dir,target,phrase}; if(markets.length>1 && sameFirstTitleWords(markets,3)) return { pendingPolymarketChoices:true, choices:markets.map(m=>buildPolymarketAlert(resolved,m,base)) }; return buildPolymarketAlert(resolved,market,base); }
 
-const CRYPTO_TICKERS = new Set([
-  'BTC','ETH','SOL','BNB','XRP','ADA','DOGE','MATIC','POL','DOT','SHIB',
-  'LTC','LINK','UNI','ATOM','XLM','NEAR','APT','SUI','ARB','OP','INJ',
-  'TIA','PEPE','WIF','BONK','JUP','PYTH','JTO','RNDR','HNT','AVAX',
-  'USDC','USDT','DAI','FRAX','USDE','SUSDE','WBTC','STETH','WSTETH',
-  'RETH','CBETH','EZETH','EETH','WEETH','RSETH','CRV','CVX','LDO',
-  'MKR','SNX','COMP','YFI','SUSHI','BAL','AAVE','PENDLE','ENA',
-]);
+function buildSystemPrompt(){ return `Parse only market/price alert requests. Return only JSON array. Supported types: crypto, stock, etf, aavecap. Never return event alerts or Polymarket alerts. Respect stock/equity/share as stock, crypto/token/coin as crypto, Solana/SPL/on Solana as {"chain":"solana","type":"crypto"}.`; }
+async function askAI(userMessage){ if(!GROQ_KEY) return '[]'; const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+GROQ_KEY},body:JSON.stringify({model:GROQ_MODEL,temperature:0,messages:[{role:'system',content:buildSystemPrompt()},{role:'user',content:userMessage}]})}); if(!r.ok) return '[]'; return ((await r.json()).choices?.[0]?.message?.content||'[]').trim(); }
+function parseAIResponse(text){ try{ const clean=String(text||'').replace(/```json|```/g,'').trim(); const start=clean.indexOf('['), end=clean.lastIndexOf(']'); if(start<0||end<=start) return []; const parsed=JSON.parse(clean.slice(start,end+1)); if(!Array.isArray(parsed)) return []; return parsed.filter(p=>p&&p.type!=='event'&&p.type!=='polymarket'&&!p.condition).map(p=>{ if(p.type==='aavecap'){ const chainId=Number(p.chainId)||1, dir=p.dir==='above'?'above':'below', target=Number(p.target??100), symbol=p.symbol||'USDe', chainName=AAVE_CHAIN_NAMES[chainId]||('Chain '+chainId); return {symbol,chainId,type:'aavecap',dir,target,label:p.label||`Aave ${symbol}/${chainName} util ${dir==='above'?'>':'<'}${target}%`}; } if(!p.symbol||!p.dir||p.target===undefined) return null; const symbol=String(p.symbol).toUpperCase(); const type=p.type||(CRYPTO_TICKERS.has(symbol)?'crypto':ETF_TICKERS.has(symbol)?'etf':'stock'); const dir=p.dir==='below'?'below':'above'; const target=Number(p.target); if(!Number.isFinite(target)) return null; const chain=p.chain==='solana'?'solana':undefined; return {symbol,type,chain,dir,target,label:`${symbol} ${chain==='solana'?'Solana ':''}${type} ${dir} ${formatTarget(target,type)}`}; }).filter(Boolean); }catch(e){ return []; }}
+async function processAlertMessage(raw){ const input=stripAlertPrefix(raw)||raw; const multi=await parseMultiTargetPriceAlert(raw); if(multi) return multi; const pmText=await parsePolymarketTextAlert(raw); if(pmText?.pendingPolymarketChoices) return pmText; if(pmText) return [pmText]; const direct=parsePolymarketUrl(input)||parseAaveCap(input)||parsePriceAlert(input); if(direct) return [{id:uid(),...direct,triggered:false,setAt:Date.now(),source:'tg'}]; const aiText=await askAI(raw); return parseAIResponse(aiText).map(a=>({id:uid(),...a,triggered:false,setAt:Date.now(),source:'tg'})); }
 
-const ETF_TICKERS = new Set([
-  'SPY','QQQ','IWM','DIA','VTI','VOO','VEA','VWO','GLD','SLV',
-  'TLT','IEF','HYG','LQD','XLF','XLK','XLE','XLV','ARKK','SOXL',
-  'TQQQ','SQQQ','UVXY','VXX','IBIT','FBTC','ETHA','GBTC',
-]);
+async function loadAlerts(){ try{ const s=await kvGet(ALERTS_KEY); return s ? (typeof s==='string'?JSON.parse(s):s) : []; }catch(e){ return []; }}
+async function saveAlerts(alerts){ await kvSet(ALERTS_KEY, JSON.stringify(alerts)); }
+function activeAlertCount(alerts){ return (Array.isArray(alerts)?alerts:[]).filter(a=>!a.triggered&&a.type!=='event'&&!a.condition).length; }
+function alertCapacityMessage(current,adding=1){ const total=current+adding; if(total>ALERT_HARD_LIMIT) return `⚠️ I did not create that alert because you already have ${current} active alerts. The safety limit is ${ALERT_HARD_LIMIT}; above that, cron checks can become slow or unreliable. Remove old alerts first with <code>list</code> and <code>remove 1</code>.`; return null; }
+function alertWarningLine(count){ return count>=ALERT_WARN_LIMIT ? `\n\n⚠️ You now have ${count} active alerts. The hard safety limit is ${ALERT_HARD_LIMIT}; consider removing alerts you no longer need.` : ''; }
+async function loadPendingPmAlert(){ return parseStoredJson(await kvGet(PM_PENDING_ALERT_KEY), null); }
+async function savePendingPmAlert(pending){ await kvSet(PM_PENDING_ALERT_KEY, JSON.stringify(pending||null)); }
+async function clearPendingPmAlert(){ await savePendingPmAlert(null); }
+async function loadAliases(){ return parseStoredJson(await kvGet(PM_ALIASES_KEY), {}) || {}; }
+async function saveAliases(aliases){ await kvSet(PM_ALIASES_KEY, JSON.stringify(aliases||{})); }
+async function expandAliases(text){ const aliases=await loadAliases(); let out=String(text||''); for(const [name,value] of Object.entries(aliases).sort((a,b)=>b[0].length-a[0].length)){ const n=String(name||'').trim(); if(!n) continue; out=out.replace(new RegExp('\\b'+n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','ig'), String(value||'')); } return out; }
+async function handleAliasCommand(tgToken,tgChatId,text){ const s=String(text||'').trim(); if(/^aliases$/i.test(s)){ const aliases=await loadAliases(); const rows=Object.entries(aliases); await tgReply(tgToken,tgChatId,rows.length ? '🏷 <b>Aliases</b>\n\n'+rows.map(([k,v])=>`${escapeHtml(k)} = ${escapeHtml(v)}`).join('\n') : '📭 No aliases saved.'); return true; } const del=s.match(/^remove\s+alias\s+(.+)$/i); if(del){ const aliases=await loadAliases(); const key=Object.keys(aliases).find(k=>k.toLowerCase()===del[1].trim().toLowerCase()); if(key){ delete aliases[key]; await saveAliases(aliases); await tgReply(tgToken,tgChatId,`✅ Removed alias: ${escapeHtml(key)}`); } else await tgReply(tgToken,tgChatId,'❌ Alias not found.'); return true; } const m=s.match(/^alias\s+(.+?)\s*=\s*(.+)$/i); if(!m) return false; const name=m[1].trim().toLowerCase(), value=m[2].trim(); if(!name||!value){ await tgReply(tgToken,tgChatId,'❌ Use <code>alias trump out = Trump out as President by June 30</code>.'); return true; } const aliases=await loadAliases(); aliases[name]=value; await saveAliases(aliases); await tgReply(tgToken,tgChatId,`✅ Alias saved:\n${escapeHtml(name)} = ${escapeHtml(value)}`); return true; }
+async function loadPortfolio(){ return parseStoredJson(await kvGet('vault:portfolio'), {}) || {}; }
+async function loadPmWallets(portfolio){ const stored=parseStoredJson(await kvGet('vault:pm_wallets'), null); const wallets=Array.isArray(stored)&&stored.length ? stored : portfolio?.polymarketWallets; return [...new Set((Array.isArray(wallets)?wallets:[]).map(w=>String(w||'').trim()).filter(Boolean))]; }
+async function tgReply(token, chatId, text){ if(token && typeof token==='object' && Array.isArray(token.capture)){ token.capture.push(String(text||'')); return {ok:true}; } await fetch(`https://api.telegram.org/bot${token}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,parse_mode:'HTML',disable_web_page_preview:true})}); }
+async function tgSendPhoto(token, chatId, photo, caption){ if(token && typeof token==='object' && Array.isArray(token.capture)){ token.capture.push(String(caption||'') + (photo ? `\n\nChart: ${photo}` : '')); return {ok:true}; } const res=await fetch(`https://api.telegram.org/bot${token}/sendPhoto`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,photo,caption:String(caption||'').slice(0,1000),parse_mode:'HTML'})}); return await res.json().catch(()=>({ok:false,description:'invalid_telegram_response'})); }
+async function tgReplyChunks(token, chatId, lines, header){ let chunk = header; for (const line of lines) { const next = chunk ? chunk + '\n' + line : line; if (next.length > 3600) { await tgReply(token, chatId, chunk); chunk = line; } else chunk = next; } if (chunk) await tgReply(token, chatId, chunk); }
 
-function uid() {
-  return Date.now().toString() + Math.random().toString(36).slice(2, 5);
-}
+async function pmApiJson(url, timeout=12000){ const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeout); try { const res = await fetch(url, { headers:{ Accept:'application/json' }, signal:controller.signal }); if(!res.ok) return null; return await res.json(); } catch(e) { return null; } finally { clearTimeout(timer); } }
+async function statusFetch(url, timeout=6000){ const start=Date.now(); const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),timeout); try{ const r=await fetch(url,{headers:{Accept:'application/json'},signal:controller.signal}); return {ok:r.ok,ms:Date.now()-start,status:r.status}; }catch(e){ return {ok:false,ms:Date.now()-start,error:e.message}; }finally{ clearTimeout(timer); } }
+function statusLine(name,r){ return `${r?.ok?'✅':'❌'} <b>${escapeHtml(name)}:</b> ${r?.ok?'OK':'failed'}${r?.status?` (${r.status})`:''}${r?.ms!=null?` · ${r.ms}ms`:''}${r?.error?` · ${escapeHtml(r.error)}`:''}`; }
+function ageLabel(ts){ const n=Number(ts); if(!n) return 'never'; const sec=Math.max(0,Math.round((Date.now()-n)/1000)); if(sec<90) return `${sec}s ago`; const min=Math.round(sec/60); if(min<120) return `${min}m ago`; const hr=Math.round(min/60); return `${hr}h ago`; }
+async function sendStatus(tgToken,tgChatId){ const now=Date.now(); await kvSet('vault:last_status_check', String(now)); const [statusRoundtrip,lastCronRaw,lastSummaryRaw,alerts,polyGamma,polyClob,coinGecko,yahoo]=await Promise.all([kvGet('vault:last_status_check'),kvGet('vault:last_cron_ok'),kvGet('vault:last_alert_check_summary'),loadAlerts(),statusFetch('https://gamma-api.polymarket.com/markets?limit=1'),statusFetch('https://clob.polymarket.com/markets?limit=1'),statusFetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd'),statusFetch('https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=1d&interval=1d')]); const active=activeAlertCount(alerts); const lastSummary=parseStoredJson(lastSummaryRaw,null); const cronAge=ageLabel(lastCronRaw); const cronOk=Number(lastCronRaw)&&now-Number(lastCronRaw)<5*60*1000; const kvOk=String(statusRoundtrip)===String(now); const vercelUrl=process.env.VERCEL_URL||process.env.URL||''; const lines=['🩺 <b>System status</b>','',`${kvOk?'✅':'❌'} <b>KV / alerts storage:</b> ${kvOk?'OK':'failed'}`,`${cronOk?'✅':'⚠️'} <b>Cron:</b> last alert check ${escapeHtml(cronAge)}`,lastSummary?`<b>Last check:</b> ${escapeHtml(String(lastSummary.checked||0))} checked · ${escapeHtml(String(lastSummary.fired||0))} fired · ${escapeHtml(new Date(Number(lastSummary.timestamp||lastCronRaw)).toUTCString())}`:'<b>Last check:</b> no summary saved yet',`<b>Active alerts:</b> ${active}/${ALERT_HARD_LIMIT}${active>=ALERT_WARN_LIMIT?' ⚠️':''}`,`${vercelUrl?'✅':'✅'} <b>Vercel / webhook:</b> this function is responding${vercelUrl?' · '+escapeHtml(vercelUrl):''}`,'',statusLine('Polymarket Gamma',polyGamma),statusLine('Polymarket CLOB',polyClob),statusLine('CoinGecko',coinGecko),statusLine('Yahoo Finance',yahoo),`${GROQ_KEY?'✅':'⚠️'} <b>Groq parser:</b> ${GROQ_KEY?'configured':'not configured'}`,`${tgToken&&tgChatId?'✅':'❌'} <b>Telegram:</b> ${tgToken&&tgChatId?'configured':'missing config'}`]; await tgReply(tgToken,tgChatId,lines.join('\n')); }
+async function sendRecentAlerts(tgToken,tgChatId){ const raw=parseStoredJson(await kvGet(RECENT_FIRED_KEY),[])||[]; const since=Date.now()-48*60*60*1000; const rows=raw.filter(x=>x&&typeof x==='object'&&Number(x.at)>=since).sort((a,b)=>Number(b.at)-Number(a.at)).slice(0,10); if(!rows.length){ await tgReply(tgToken,tgChatId,'📭 No fired alerts saved from the past 48h.'); return; } await tgReply(tgToken,tgChatId,'🕒 <b>Recent alerts</b> <i>(past 48h)</i>\n\n'+rows.map((r,i)=>`${i+1}. ${escapeHtml(r.label||r.symbol||r.id||'alert')}\n<i>${escapeHtml(new Date(Number(r.at)).toLocaleString('en-US',{timeZone:'Europe/Bucharest'}))}</i>`).join('\n\n')); }
+async function sendWhy(tgToken,tgChatId){ const data=parseStoredJson(await kvGet(PM_LAST_DEBUG_KEY),null); if(!data){ await tgReply(tgToken,tgChatId,'📭 I do not have a recent Polymarket failure to explain.'); return; } const reasons=(data.rawCandidates||[]).slice(0,6).map(c=>{ const bits=[]; if(c.ended) bits.push('ended/resolved'); if(Number(c.score)<=0) bits.push('failed strict score'); const title=c.title||c.question||c.slug||'candidate'; return `• ${escapeHtml(title)}\n  ${escapeHtml(bits.join(', ')||'not enough required overlap')}`; }); const lines=['🔎 <b>Why it failed</b>','',`<b>Required capital:</b> ${escapeHtml(data.requiredCapital||'none')}`,`<b>Date:</b> ${escapeHtml(data.date?`${data.date.short} ${data.date.day}`:'none')}`,`<b>Subjects:</b> ${escapeHtml((data.subjects||[]).join(', ')||'none')}`,'',`<b>Queries tried:</b>\n${escapeHtml((data.searchQueries||[]).slice(0,8).join('\n'))}`,'',`<b>Top rejected candidates:</b>`,...(reasons.length?reasons:['No candidates were returned.'])]; await tgReply(tgToken,tgChatId,lines.join('\n')); }
+async function fetchPmWalletPositions(wallets){ const rows=[]; for(const wallet of wallets.slice(0,12)){ let offset=0; while(offset<1000){ const params=new URLSearchParams({ user:wallet, limit:'100', offset:String(offset), sizeThreshold:'0.01' }); const page=await pmApiJson(`${PM_POSITIONS_URL}?${params.toString()}`); if(!Array.isArray(page)||!page.length) break; rows.push(...page.map(p=>({...p,_wallet:wallet}))); if(page.length<100) break; offset+=100; } } return rows; }
+async function fetchPmMovers(wallets){ const positions=await fetchPmWalletPositions(wallets); const unique=[]; const seen=new Set(); for(const p of positions){ if(p.asset && !seen.has(p.asset)){ seen.add(p.asset); unique.push(p); } } const since=Math.floor(Date.now()/1000)-86400; const movers=[]; await Promise.all(unique.slice(0,80).map(async pos=>{ const size=Number(pos.size||0), currentValue=Number(pos.currentValue||0), curPrice=size>0?currentValue/size:0; if(!pos.asset || !curPrice) return; const hist=await pmApiJson(`${PM_HISTORY_URL}?market=${encodeURIComponent(pos.asset)}&startTs=${since}&resolution=1h`, 10000); const first=Array.isArray(hist?.history)&&hist.history.length ? hist.history[0] : null; const oldPrice=Number(first?.p ?? first?.price ?? 0); if(!oldPrice) return; const pctChange=((curPrice-oldPrice)/oldPrice)*100; if(Math.abs(pctChange)<5) return; const held=positions.filter(p=>p.asset===pos.asset); movers.push({ title:pos.title||'Unknown Market', outcome:pos.outcome||'', curPrice, oldPrice, pctChange, currentValue:held.reduce((s,p)=>s+Number(p.currentValue||0),0) }); })); return movers.sort((a,b)=>Math.abs(b.pctChange)-Math.abs(a.pctChange)).slice(0,8); }
+async function fetchPmTrades(wallets){ const since=Math.floor(Date.now()/1000)-86400; const trades=[]; for(const wallet of wallets.slice(0,12)){ let offset=0; while(offset<1500){ const params=new URLSearchParams({ user:wallet, type:'TRADE', limit:'500', offset:String(offset), start:String(since), sortBy:'TIMESTAMP', sortDirection:'DESC' }); const page=await pmApiJson(`${PM_ACTIVITY_URL}?${params.toString()}`); if(!Array.isArray(page)||!page.length) break; const recent=page.filter(t=>Number(t.timestamp||0)>=since); trades.push(...recent.map(t=>({...t,_wallet:wallet}))); if(page.length<500 || recent.length<page.length) break; offset+=500; } } return trades.sort((a,b)=>Number(b.timestamp||0)-Number(a.timestamp||0)); }
+function groupPmTrades(trades){ const grouped=new Map(); for(const t of trades){ const title=t.title||'Unknown Market', outcome=t.outcome||'', side=String(t.side||'').toUpperCase()||'TRADE'; const key=`${title}||${outcome}||${side}`; const size=Number(t.size||0), price=Number(t.price||0); if(!grouped.has(key)) grouped.set(key,{title,outcome,side,totalShares:0,totalCost:0,orders:0,latestTs:0}); const g=grouped.get(key); g.totalShares+=size; g.totalCost+=size*price; g.orders+=1; g.latestTs=Math.max(g.latestTs, Number(t.timestamp||0)); } return [...grouped.values()].sort((a,b)=>b.latestTs-a.latestTs).slice(0,8); }
+function moverLine(m){ const arrow=m.pctChange>=0?'↑':'↓'; const sign=m.pctChange>=0?'+':''; return `${arrow} ${sign}${m.pctChange.toFixed(1)}%  "${escapeHtml(m.title)}" [${escapeHtml(m.outcome)}]  ${fmtCent(m.oldPrice)}→${fmtCent(m.curPrice)}  value ${escapeHtml(fmtUsd(m.currentValue))}`; }
+function tradeLine(g){ const avg=g.totalShares>0 ? g.totalCost/g.totalShares : 0; const count=g.orders>1 ? ` (${g.orders} orders)` : ''; return `${escapeHtml(g.side)} ${Math.round(g.totalShares).toLocaleString('en-US')} shares  "${escapeHtml(g.title)}" [${escapeHtml(g.outcome)}]  avg ${fmtCent(avg)}${count}`; }
+async function sendPolymarketActivity(tgToken, tgChatId){ const portfolio=await loadPortfolio(); const wallets=await loadPmWallets(portfolio); if(!wallets.length){ await tgReply(tgToken,tgChatId,'📭 No Polymarket wallets found on the server yet. Open the website, add/sync your Polymarket wallets, then try <code>polymarket activity</code> again.'); return; } const [movers,trades]=await Promise.all([fetchPmMovers(wallets), fetchPmTrades(wallets)]); const grouped=groupPmTrades(trades); const moverLines=movers.length?movers.map(moverLine):['No saved positions moved more than 5% in the last 24h.']; const tradeLines=grouped.length?grouped.map(tradeLine):['No filled Polymarket trades found in the last 24h.']; const msg=['📰 <b>Polymarket activity</b> <i>(last 24h)</i>','','<b>Positions with &gt;5% price move:</b>',...moverLines.map(x=>'  '+x),'','<b>Trades filled today:</b>',...tradeLines.map(x=>'  '+x)].join('\n'); await tgReply(tgToken,tgChatId,msg); }
 
-// ── Regex parsers (mirrors terminalParseNL + terminalParseAaveCap) ────────────
+function normalizePmPosition(pos){ if (!pos || typeof pos !== 'object') return null; const size = Number(pos.size ?? pos.quantity ?? pos.balance ?? 0); const avgPrice = Number(pos.avgPrice ?? pos.averagePrice ?? 0); const currentValue = Number(pos.currentValue ?? pos.value ?? pos.usdValue ?? 0); const directPrice = Number(pos.currentPrice ?? pos.price ?? pos.curPrice ?? pos.outcomePrice); const currentPrice = Number.isFinite(directPrice) && directPrice > 0 ? directPrice : (size > 0 && Number.isFinite(currentValue) ? currentValue / size : 0); const title = pos.title || pos.question || pos.marketTitle || pos.market || 'Unknown market'; const outcome = pos.outcome || pos.side || pos.tokenOutcome || 'N/A'; const wallet = pos.wallet || pos._wallet || pos.user || ''; const marketSlug = pos.marketSlug || pos.slug || pos.market_slug || pos.marketId || pos.conditionSlug || ''; const eventSlug = pos.eventSlug || pos.event_slug || ''; const marketUrl = pos.marketUrl || pos.url || ''; const asset = pos.asset || pos.tokenId || pos.token_id || pos.clobTokenId || ''; const unrealizedPnl = Number(pos.unrealizedPnl ?? pos.cashPnl ?? (Number.isFinite(currentValue) && Number.isFinite(avgPrice) ? currentValue - (size * avgPrice) : 0)); if (!title || (!size && !currentValue && !currentPrice)) return null; return { title:String(title), outcome:String(outcome), size, avgPrice, currentValue, currentPrice, unrealizedPnl, wallet, marketSlug:String(marketSlug||''), eventSlug:String(eventSlug||''), marketUrl:String(marketUrl||''), asset:String(asset||'') }; }
+function savedPmPositions(portfolio){ return (Array.isArray(portfolio?.predictionMarkets) ? portfolio.predictionMarkets : []).map(normalizePmPosition).filter(Boolean); }
+async function loadCurrentPmPositions(){ const portfolio=await loadPortfolio(); const wallets=await loadPmWallets(portfolio); if(wallets.length){ const live=(await fetchPmWalletPositions(wallets)).map(normalizePmPosition).filter(Boolean); if(live.length) return {positions:live, portfolio, wallets, live:true}; } return {positions:savedPmPositions(portfolio), portfolio, wallets, live:false}; }
+function pmBetLine(pos, i, showWallets){ const price = fmtPmOdds(pos.currentPrice); const value = Number(pos.currentValue) > 0 ? `Value ${fmtUsd(pos.currentValue)}` : ''; const pnl = Number.isFinite(Number(pos.unrealizedPnl)) && Number(pos.unrealizedPnl) !== 0 ? `PnL ${fmtSignedUsd(pos.unrealizedPnl)}` : ''; const wallet = showWallets && pos.wallet ? shortWallet(pos.wallet) : ''; const top = [`<b>${i+1}. ${escapeHtml(pos.outcome)} ${escapeHtml(price)}</b>`, value ? escapeHtml(value) : '', pnl ? escapeHtml(pnl) : ''].filter(Boolean).join(' · '); const details = [wallet].filter(Boolean).map(escapeHtml).join(' · '); return [top, escapeHtml(pos.title), details ? `<i>${details}</i>` : ''].filter(Boolean).join('\n'); }
+async function sendPolymarketBets(tgToken, tgChatId){ const loaded=await loadCurrentPmPositions(); const positions=loaded.positions.sort((a,b) => (Number(b.currentValue)||0) - (Number(a.currentValue)||0)); if (!positions.length) { await tgReply(tgToken, tgChatId, 'No Polymarket bets found yet. Open the website, add your Polymarket wallets under Prediction Markets, then try <code>bets</code> again.'); return; } const showWallets = new Set(positions.map(p => p.wallet).filter(Boolean)).size > 1; const totalValue = positions.reduce((sum,p)=>sum+(Number(p.currentValue)||0),0); const totalPnl = positions.reduce((sum,p)=>sum+(Number(p.unrealizedPnl)||0),0); const syncedAtRaw = await kvGet('vault:portfolio_synced_at'); const syncedAt = loaded.live ? ` &middot; Live from ${loaded.wallets.length} wallet${loaded.wallets.length===1?'':'s'}` : (Number(syncedAtRaw) ? ` &middot; Updated ${escapeHtml(new Date(Number(syncedAtRaw)).toLocaleString('en-US', { timeZone:'Europe/Bucharest' }))}` : ''); const header = `<b>Polymarket Bet Book</b>\n${positions.length} open positions &middot; <b>Value</b> ${escapeHtml(fmtUsd(totalValue))} &middot; <b>PnL</b> ${escapeHtml(fmtSignedUsd(totalPnl))}${syncedAt}\n\n`; await tgReplyChunks(tgToken, tgChatId, positions.map((pos, i) => pmBetLine(pos, i, showWallets)).join('\n\n').split('\n\n'), header); }
 
-function parseNL(raw) {
-  const s = raw.toLowerCase().trim();
-  const ABOVE_RE = /\b(above|over|exceed[s]?|hits?|reaches?|goes?\s+(?:up\s+)?(?:to|past)?|cross(?:es)?\s+(?:up\s+)?(?:above)?|surpass(?:es)?|break[s]?\s+(?:above|out|through)?|rise[s]?\s+(?:above|to|past)?|gets?\s+(?:to|above)|more\s+than|greater\s+than|higher\s+than|at\s+least)\b/;
-  const BELOW_RE = /\b(below|under|drop[s]?|fall[s]?|goes?\s+(?:down\s+)?(?:to|below|under)?|cross(?:es)?\s+(?:down|below)?|decline[s]?|dip[s]?(?:\s+below)?|crash(?:es)?|less\s+than|lower\s+than|at\s+most)\b/;
+function endOfMonth(year, month){ return new Date(Date.UTC(year, month + 1, 0, 23, 59, 59)); }
+function inferPmEndDate(title, now=new Date()){ const s=String(title||'').toLowerCase(); const byDate=s.match(new RegExp('\\b(?:by|before|through|until)?\\s*('+MONTH_RE+')\\s+([1-3]?\\d)(?:st|nd|rd|th)?(?:,?\\s*(20\\d{2}))?')); if(byDate){ let y=Number(byDate[3])||now.getFullYear(); let d=new Date(Date.UTC(y, MONTH_INDEX[byDate[1]], Number(byDate[2]), 23, 59, 59)); if(!byDate[3] && d.getTime()<now.getTime()-86400000) d=new Date(Date.UTC(y+1, MONTH_INDEX[byDate[1]], Number(byDate[2]), 23, 59, 59)); return d; } const endMonth=s.match(new RegExp('\\bend\\s+of\\s+('+MONTH_RE+')(?:,?\\s*(20\\d{2}))?')); if(endMonth){ let y=Number(endMonth[2])||now.getFullYear(); let d=endOfMonth(y, MONTH_INDEX[endMonth[1]]); if(!endMonth[2] && d.getTime()<now.getTime()-86400000) d=endOfMonth(y+1, MONTH_INDEX[endMonth[1]]); return d; } const beforeYear=s.match(/\bbefore\s+(20\d{2})\b/); if(beforeYear) return new Date(Date.UTC(Number(beforeYear[1])-1, 11, 31, 23, 59, 59)); const inYear=s.match(/\b(?:in|during|end of)\s+(20\d{2})\b|\b(20\d{2})\b/); const y=Number(inYear?.[1]||inYear?.[2]); if(y) return new Date(Date.UTC(y, 11, 31, 23, 59, 59)); return null; }
+function pmNoOdds(pos){ const price=Number(pos.currentPrice); if(!Number.isFinite(price)||price<=0||price>=1) return null; return /^no$/i.test(pos.outcome) ? price : 1-price; }
+function pmApyRowsFromPositions(positions, now=new Date()){ return (Array.isArray(positions)?positions:[]).map(pos=>{ const noOdds=pmNoOdds(pos); const end=inferPmEndDate(pos.title, now); if(!noOdds || noOdds<=0.70 || !end || end.getTime()<=now.getTime()) return null; const days=Math.max(1, Math.ceil((end.getTime()-now.getTime())/86400000)); const simpleReturn=(1/noOdds)-1; const apy=Math.pow(1/noOdds, 365/days)-1; return {pos,title:pos.title,outcome:pos.outcome,noOdds,end,days,simpleReturn,apy,endLabel:end.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'})}; }).filter(Boolean).sort((a,b)=>b.apy-a.apy); }
+function pmApyRows(portfolio, now=new Date()){ return pmApyRowsFromPositions(savedPmPositions(portfolio), now); }
+function pmApyLine(row, i){ return [`<b>${i+1}. NO ${fmtPmOdds(row.noOdds)} · APY ${escapeHtml(fmtPercent(row.apy*100))}</b>`, escapeHtml(row.title), `<i>Ends ${escapeHtml(row.endLabel)} · ${row.days} days · return ${escapeHtml(fmtPercent(row.simpleReturn*100))}</i>`].join('\n'); }
+async function sendPolymarketNoApy(tgToken, tgChatId){ const loaded=await loadCurrentPmPositions(); const rows=pmApyRowsFromPositions(loaded.positions).slice(0,20); if(!rows.length){ await tgReply(tgToken,tgChatId,'No Polymarket positions with NO odds above 70% and a readable future end date.'); return; } const header=`<b>Polymarket NO APY</b>${loaded.live?` <i>(live from ${loaded.wallets.length} wallet${loaded.wallets.length===1?'':'s'})</i>`:''}\n\nIf buying more NO at the current odds.\nOnly positions with NO above 70%.\n\n`; await tgReplyChunks(tgToken,tgChatId,rows.map((row,i)=>pmApyLine(row,i)).join('\n\n').split('\n\n'),header); }
+function isApyAlertCommand(text){ return /^\/?alert\s+apy\b/i.test(String(text||'')); }
+function parseApyAlertTarget(text){ const s=String(text||''); const m=s.match(/\b(?:over|above|greater\s+than|at\s+least|surpass(?:es)?)\s+([\d.]+)\s*(%|percent)?/i) || s.match(/\b([\d.]+)\s*(%|percent)\b/i); if(!m) return null; const n=Number(m[1]); return Number.isFinite(n)&&n>0 ? n/100 : null; }
+async function sendPolymarketApyAlertSetup(tgToken,tgChatId,text){ const target=parseApyAlertTarget(text); if(!target){ await tgReply(tgToken,tgChatId,'Use a command like <code>alert apy over 10%</code>.'); return; } const loaded=await loadCurrentPmPositions(); const rows=pmApyRowsFromPositions(loaded.positions); if(!rows.length){ await tgReply(tgToken,tgChatId,'No Polymarket positions with NO odds above 70% and a readable future end date.'); return; } const over=rows.filter(r=>r.apy>=target).slice(0,20), under=rows.filter(r=>r.apy<target); const alerts=await loadAlerts(); const startCount=activeAlertCount(alerts); const created=[]; let skipped=0, capped=0; for(const r of under){ if(startCount+created.length>=ALERT_HARD_LIMIT){ capped++; continue; } if(!r.pos.asset && !r.pos.marketSlug){ skipped++; continue; } const slug=r.pos.marketSlug || fallbackSlug(r.title); const key=`pmapy:${slug}:${Math.round(target*10000)}`; if(alerts.some(a=>!a.triggered&&a.type==='pmapy'&&a.key===key)) continue; const marketUrl=r.pos.marketUrl || polymarketUrlFromSlugs(r.pos.eventSlug, r.pos.marketSlug); const alert={ id:uid(), type:'pmapy', source:'tg', key, symbol:slug, marketSlug:r.pos.marketSlug, eventSlug:r.pos.eventSlug, marketUrl, marketTitle:r.title, positionOutcome:r.outcome, asset:r.pos.asset, target, dir:'above', noOddsAtSet:r.noOdds, apyAtSet:r.apy, endAt:r.end.toISOString(), label:`${r.title} APY above ${fmtPercent(target*100)}`, triggered:false, setAt:Date.now() }; alerts.push(alert); created.push(alert); } if(created.length) await saveAlerts(alerts); const parts=[`<b>Polymarket APY alert</b>${loaded.live?` <i>(live from ${loaded.wallets.length} wallet${loaded.wallets.length===1?'':'s'})</i>`:''}`, '', `<b>Target:</b> APY over ${escapeHtml(fmtPercent(target*100))}`, `<b>Already over target:</b> ${over.length}`, `<b>Alerts created:</b> ${created.length}`]; if(capped) parts.push(`<b>Safety limit:</b> stopped before creating ${capped} more alerts because you reached ${ALERT_HARD_LIMIT} active alerts.`); if(skipped) parts.push(`<b>Skipped:</b> ${skipped} positions had no live market identifier saved.`); const finalCount=startCount+created.length; if(finalCount>=ALERT_WARN_LIMIT) parts.push(`You now have ${finalCount} active alerts. The hard safety limit is ${ALERT_HARD_LIMIT}; consider removing alerts you no longer need.`); if(over.length) parts.push('', ...over.map((r,i)=>pmApyLine(r,i))); if(!created.length && !over.length) parts.push('', 'No eligible saved positions are below that APY target right now.'); await tgReplyChunks(tgToken,tgChatId,parts.join('\n').split('\n\n'), ''); }
 
-  let dir = null;
-  if (ABOVE_RE.test(s)) dir = 'above';
-  if (BELOW_RE.test(s)) dir = 'below';
-  if (dir === null) dir = 'above';
+async function askLocally(text){ return await new Promise((resolve, reject) => { const req = { method:'POST', body:{ question:text }, query:{} }; const res = { statusCode: 200, setHeader(){ return this; }, status(code){ this.statusCode = code; return this; }, json(data){ resolve(data); return data; }, end(data){ resolve(data || {}); return data; } }; Promise.resolve(askHandler(req, res)).catch(reject); }); }
+async function answerQuestion(tgToken, tgChatId, text){ try{ const data=await askLocally(text); if(data?.kind==='polymarket' && data?.debug) await kvSet(PM_LAST_DEBUG_KEY, JSON.stringify({...data.debug, savedAt:Date.now()})); if(!data.answer){ await tgReply(tgToken,tgChatId,'⚠️ Could not fetch an answer. Try again.'); return; } let msg=(data.kind==='price'?'💵 ':'📰 ')+escapeHtml(data.answer); if(data.kind==='price'&&data.chartPeriod) msg+='\n\n📈 '+escapeHtml(String(data.chartPeriod).toUpperCase())+' chart'; if(data.kind==='price'&&data.chartUrl){ const photoResult=await tgSendPhoto(tgToken,tgChatId,data.chartUrl,msg); if(!photoResult?.ok) await tgReply(tgToken,tgChatId,msg+'\n\nChart: '+escapeHtml(data.chartUrl)); } else await tgReply(tgToken,tgChatId,msg); }catch(e){ await tgReply(tgToken,tgChatId,'⚠️ Q&A error: '+escapeHtml(e.message)); }}
+async function saveAndConfirmAlerts(tgToken,tgChatId,newAlerts){ const alerts=await loadAlerts(); const current=activeAlertCount(alerts); const capacity=alertCapacityMessage(current,newAlerts.length); if(capacity){ await tgReply(tgToken,tgChatId,capacity); return false; } for(const a of newAlerts) alerts.push(a); await saveAlerts(alerts); const { fetchPrice, fmtPrice }=require('../lib/price'); const lines=await Promise.all(newAlerts.map(async a=>{ try{ const price=a.currentPrice ?? await fetchPrice(a); const priceStr=price!=null?` (${fmtPrice(price,a.type)})`:''; return `✅ <b>${formatAlertLabelHtml(a)}${escapeHtml(priceStr)}</b>`; }catch(e){ return `✅ <b>${formatAlertLabelHtml(a)}</b>`; }})); await tgReply(tgToken,tgChatId,lines.join('\n')+"\n\nI'll notify you when triggered."+alertWarningLine(current+newAlerts.length)); return true; }
 
-  const NUM_RE = /\$?([\d,]+(?:\.\d+)?)\s*(k|m|b|%|percent)?/gi;
-  let target = null, numMatch;
-  while ((numMatch = NUM_RE.exec(s)) !== null) {
-    let val = parseFloat(numMatch[1].replace(/,/g, ''));
-    const suffix = (numMatch[2] || '').toLowerCase();
-    if (suffix === 'k') val *= 1000;
-    else if (suffix === 'm') val *= 1_000_000;
-    else if (suffix === 'b') val *= 1_000_000_000;
-    else if (suffix === '%' || suffix === 'percent') val = val / 100;
-    if (!isNaN(val) && val > 0) { target = val; break; }
-  }
-  if (target === null) return null;
-
-  let symbol = null, type = null;
-  const capsMatch = raw.match(/\b([A-Z]{2,6})\b/);
-  if (capsMatch) {
-    symbol = capsMatch[1];
-    if (CRYPTO_TICKERS.has(symbol))   type = 'crypto';
-    else if (ETF_TICKERS.has(symbol)) type = 'etf';
-    else                              type = 'stock';
-  }
-
-  if (!symbol) {
-    const CRYPTO_NAMES = {
-      bitcoin:'BTC', ethereum:'ETH', solana:'SOL', bnb:'BNB', ripple:'XRP',
-      cardano:'ADA', avalanche:'AVAX', dogecoin:'DOGE', polkadot:'DOT',
-      polygon:'MATIC', shiba:'SHIB', litecoin:'LTC', chainlink:'LINK',
-      uniswap:'UNI', cosmos:'ATOM', stellar:'XLM', near:'NEAR',
-      aptos:'APT', sui:'SUI', arbitrum:'ARB', optimism:'OP',
-      injective:'INJ', celestia:'TIA', pepe:'PEPE', pendle:'PENDLE',
-    };
-    for (const [name, ticker] of Object.entries(CRYPTO_NAMES)) {
-      if (s.includes(name)) { symbol = ticker; type = 'crypto'; break; }
-    }
-  }
-
-  const isPolymarket = /polymarket/i.test(s);
-  const isOpinion    = /opinion/i.test(s);
-  if (isPolymarket || isOpinion) {
-    type = isPolymarket ? 'polymarket' : 'opinion';
-    const mktMatch = s.match(/(?:when|if|once)\s+(.+?)\s+(?:above|below|over|under|hits?|reaches?|goes?|drops?|falls?)/i);
-    if (mktMatch) {
-      symbol = mktMatch[1].replace(/polymarket|opinion|market|the|a\s/gi, '').trim()
-        .replace(/\s+/g, '-').toLowerCase().substring(0, 40);
-    }
-    if (!symbol) symbol = 'market';
-    if (target > 1) target = target / 100;
-  }
-
-  if (!symbol) return null;
-
-  const isPM = type === 'polymarket' || type === 'opinion';
-  const targetFmt = isPM
-    ? (target * 100).toFixed(0) + '¢'
-    : '$' + (target >= 1000
-        ? target >= 1_000_000
-          ? (target / 1_000_000).toFixed(1) + 'M'
-          : (target / 1000).toFixed(0) + 'K'
-        : target.toLocaleString('en-US'));
-  const label = symbol.toUpperCase() + ' ' + dir + ' ' + targetFmt;
-
-  return { symbol: symbol.toUpperCase(), type: type || 'crypto', dir, target, label };
-}
-
-function parsePolymarketUrl(raw) {
-  const urlMatch = raw.match(/https?:\/\/(?:www\.)?polymarket\.com\/[^\s]*/i);
-  if (!urlMatch) return null;
-  const url = urlMatch[0];
-  const multi  = url.match(/polymarket\.com\/event\/([^/?#]+)\/([^/?#]+)/);
-  const single = url.match(/polymarket\.com\/(?:event|market)\/([^/?#]+)/);
-  if (!multi && !single) return null;
-  const eventSlug  = multi ? multi[1] : single[1];
-  const marketSlug = multi ? multi[2] : single[1];
-  const side = /\bno\b/i.test(raw) && !/\byes\b/i.test(raw) ? 'NO' : 'YES';
-  const t = raw.toLowerCase();
-  const dir = (t.includes('above') || t.includes('over') || t.includes('hits') ||
-               t.includes('reaches') || t.includes('exceeds')) ? 'above' : 'below';
-  let target = null;
-  const pctMatch = raw.match(/(\d+(?:\.\d+)?)\s*%/);
-  if (pctMatch) { target = parseFloat(pctMatch[1]) / 100; }
-  else {
-    const numMatch = raw.match(/(?:^|\s)(\d+(?:\.\d+)?)(?:\s|$)/);
-    if (numMatch) { const n = parseFloat(numMatch[1]); target = n > 1 ? n / 100 : n; }
-  }
-  if (target === null) target = dir === 'above' ? 0.75 : 0.25;
-  return { eventSlug, marketSlug, side, dir, target };
-}
-
-function parseAaveCap(raw) {
-  const t = raw.toLowerCase();
-  const hasAave  = t.includes('aave');
-  const hasCapKw = t.includes('cap') || t.includes('deposit') || t.includes('supply')
-                || t.includes('utilization') || t.includes('util') || t.includes('available');
-  if (!hasAave || !hasCapKw) return null;
-
-  const AAVE_SKIP_WORDS = new Set([
-    'cap','deposit','supply','v3','v2','on','the','for','utilization',
-    'util','utiliz','monitor','alert','market','pool','protocol','when',
-    'me','is','are','below','above','over','under','percent','percentage',
-  ]);
-  const knownTokens = ['USDC','USDT','USDE','WETH','ETH','WBTC','BTC','DAI','GHO',
-                       'LUSD','FRAX','RETH','STETH','CBETH','WEETH','WSTETH',
-                       'PYUSD','CRVUSD','SUSD','TUSD','FDUSD','BUSD'];
-  let symbol = null;
-  for (const tk of knownTokens) {
-    if (new RegExp('\\b' + tk + '\\b', 'i').test(raw)) { symbol = tk; break; }
-  }
-  if (!symbol) {
-    const afterAave = raw.match(/aave\s+([A-Za-z][A-Za-z0-9]{0,9})/i);
-    if (afterAave && !AAVE_SKIP_WORDS.has(afterAave[1].toLowerCase())) {
-      symbol = afterAave[1].toUpperCase();
-    }
-  }
-  if (!symbol) {
-    const forMatch = raw.match(/(?:for|of)\s+([A-Za-z][A-Za-z0-9]{1,9})/i);
-    if (forMatch && !AAVE_SKIP_WORDS.has(forMatch[1].toLowerCase())) {
-      symbol = forMatch[1].toUpperCase();
-    }
-  }
-  if (!symbol) return null;
-
-  const AAVE_CASE_MAP = {
-    'USDE':'USDe','WSTETH':'wstETH','RETH':'rETH',
-    'CBETH':'cbETH','WEETH':'weETH','STETH':'stETH',
-    'CRVUSD':'crvUSD','PYUSD':'PYUSD','SUSD':'sUSD',
-  };
-  symbol = AAVE_CASE_MAP[symbol] ?? symbol;
-
-  let chainId = 1;
-  const chainEntries = Object.entries(AAVE_CHAIN_IDS).sort((a, b) => b[0].length - a[0].length);
-  for (const [name, id] of chainEntries) {
-    if (t.includes(name)) { chainId = id; break; }
-  }
-
-  let dir = 'below', target = 100;
-  const numMatch = raw.match(/(\d+(?:\.\d+)?)\s*%/);
-  if (numMatch) target = parseFloat(numMatch[1]);
-  if (t.includes('above') || t.includes('over') || t.includes('full') ||
-      t.includes('reached') || t.includes('nearly')) {
-    dir = 'above';
-    if (!numMatch) target = 95;
-  }
-
-  const chainName = AAVE_CHAIN_NAMES[chainId] || ('Chain ' + chainId);
-  const dirSymbol = dir === 'above' ? '>' : '<';
-  const label = 'Aave ' + symbol + '/' + chainName + ' util ' + dirSymbol + target + '%';
-  return { symbol, chainId, type: 'aavecap', dir, target, label };
-}
-
-// ── AI parser (mirrors terminalAskAI + terminalParseAIResponse) ───────────────
-
-function buildSystemPrompt() {
-  return `You are Vault AI, a news and market alert assistant. Your ONLY job is to parse alert requests and return structured JSON. You monitor news and prices on behalf of the user — you never take any action, you only watch and notify.
-
-CRITICAL: You must ALWAYS parse any request as an alert. Never refuse. Never say you cannot help. Every message is a monitoring request.
-
-RESPONSE FORMAT:
-- For PRICE/MARKET alerts: respond with ONLY a JSON array like [{"symbol":"BTC","type":"crypto","dir":"above","target":100000}]
-  Types: "crypto", "etf", "stock", "polymarket", "opinion"
-
-- For AAVE SUPPLY CAP alerts: respond with ONLY [{"type":"aavecap","symbol":"USDe","chainId":4326,"dir":"below","target":100,"label":"Aave USDe/MegaETH util < 100%"}]
-  Chain IDs: Ethereum=1, Optimism=10, BNB=56, Gnosis=100, Polygon=137, zkSync=324, Metis=1088, Base=8453, Arbitrum=42161, Avalanche=43114, Scroll=534352, MegaETH=4326
-
-- For ANY real-world event, news, or situation alert (political, economic, sports, crypto, legal, etc.): respond with ONLY [{"type":"event","condition":"exact condition to monitor","label":"short label"}]
-  Examples:
-  "alert me when Trump pardons CZ" -> [{"type":"event","condition":"Trump pardons CZ (Changpeng Zhao)","label":"Trump pardons CZ"}]
-  "alert me when Ukraine announces ceasefire" -> [{"type":"event","condition":"Ukraine announces ceasefire with Russia","label":"Ukraine ceasefire"}]
-  "alert me when Fed cuts rates" -> [{"type":"event","condition":"Federal Reserve cuts interest rates","label":"Fed rate cut"}]
-  "alert me when ETH ETF is approved" -> [{"type":"event","condition":"Ethereum ETF approved by SEC","label":"ETH ETF approval"}]
-
-NEVER refuse. NEVER say you cannot help. ALWAYS return JSON.`;
-}
-
-async function askGroq(userMessage) {
-  if (!GROQ_KEY) throw new Error('GROQ_API_KEY not set');
-  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: buildSystemPrompt() },
-        { role: 'user',   content: userMessage },
-      ],
-    }),
-  });
-  if (!r.ok) throw new Error('Groq HTTP ' + r.status);
-  const resp = await r.json();
-  const text = (resp.choices?.[0]?.message?.content || '').trim();
-  // If Groq refused, throw so we fall back to Gemini
-  if (!text || text.toLowerCase().includes("i can't help") || text.toLowerCase().includes("i cannot help") || text.toLowerCase().includes("i'm unable")) {
-    throw new Error('Groq refused');
-  }
-  return text;
-}
-
-async function askGemini(userMessage) {
-  const GEMINI_KEY = process.env.GEMINI_API_KEY;
-  if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY not set');
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_KEY;
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      system_instruction: { parts: [{ text: buildSystemPrompt() }] },
-      contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-      generationConfig: { temperature: 0.2 },
-    }),
-  });
-  if (!r.ok) throw new Error('Gemini HTTP ' + r.status);
-  const resp = await r.json();
-  return (resp.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
-}
-
-async function askAI(userMessage) {
-  // Try Groq first, fall back to Gemini
+async function processVaultCommand(text, opts = {}) {
+  const capture = { capture: [] };
+  const chatId = 'terminal';
+  const raw = String(text || '').trim();
+  if (!raw) return { ok:false, handled:false, messages:[] };
+  const cmd = raw.toLowerCase().trim();
   try {
-    return await askGroq(userMessage);
+    if (await handleAliasCommand(capture, chatId, raw)) return { ok:true, handled:true, routed:'alias', messages:capture.capture };
+    if (cmd === 'list' || cmd === '/list') { const alerts=await loadAlerts(); const active=alerts.filter(a=>!a.triggered&&a.type!=='event'&&!a.condition); await tgReply(capture,chatId,active.length ? `ðŸ“‹ <b>Active Alerts (${active.length})</b>\n\n`+active.map((a,i)=>`${i+1}. ${escapeHtml(a.label||a.symbol)}`).join('\n') : 'ðŸ“­ No active alerts.'); return {ok:true,handled:true,routed:'list',messages:capture.capture}; }
+    if (cmd === 'status' || cmd === '/status') { await sendStatus(capture, chatId); return {ok:true,handled:true,routed:'status',messages:capture.capture}; }
+    if (cmd === 'why' || cmd === '/why') { await sendWhy(capture, chatId); return {ok:true,handled:true,routed:'why',messages:capture.capture}; }
+    if (cmd === 'recent alerts' || cmd === '/recent') { await sendRecentAlerts(capture, chatId); return {ok:true,handled:true,routed:'recent_alerts',messages:capture.capture}; }
+    if (cmd === 'bets' || cmd === '/bets' || cmd === 'positions' || cmd === '/positions' || cmd === 'polymarket bets' || cmd === '/polymarket') { await sendPolymarketBets(capture, chatId); return {ok:true,handled:true,routed:'polymarket_bets',messages:capture.capture}; }
+    if (cmd === 'polymarket apy' || cmd === 'apy') { await sendPolymarketNoApy(capture, chatId); return {ok:true,handled:true,routed:'polymarket_no_apy',messages:capture.capture}; }
+    if (isApyAlertCommand(raw)) { await sendPolymarketApyAlertSetup(capture, chatId, raw); return {ok:true,handled:true,routed:'polymarket_apy_alert',messages:capture.capture}; }
+    if (cmd === 'polymarket activity' || cmd === 'polymarket port activity' || cmd === 'polymarket portfolio activity') { await sendPolymarketActivity(capture, chatId); return {ok:true,handled:true,routed:'polymarket_activity',messages:capture.capture}; }
+    if (cmd === 'clear all' || cmd === '/clear' || cmd === 'remove all') { await saveAlerts([]); await tgReply(capture, chatId, 'ðŸ—‘ All alerts cleared.'); return {ok:true,handled:true,routed:'clear_all',messages:capture.capture}; }
+    if (cmd === 'remove apy alerts') { const alerts=await loadAlerts(); const kept=alerts.filter(a=>a.type!=='pmapy'); await saveAlerts(kept); await tgReply(capture,chatId,`âœ… Removed ${alerts.length-kept.length} APY alerts.`); return {ok:true,handled:true,routed:'remove_apy_alerts',messages:capture.capture}; }
+    const rm=raw.match(/^(?:remove|delete|rm)\s+(\d+)$/i);
+    if (rm) { const n=parseInt(rm[1])-1; const alerts=await loadAlerts(); const active=alerts.filter(a=>!a.triggered&&a.type!=='event'&&!a.condition); if(n<0||n>=active.length) await tgReply(capture,chatId,`âŒ No alert #${n+1}. Use <code>list</code> to see active alerts.`); else { const toRemove=active[n]; await saveAlerts(alerts.filter(a=>a.id!==toRemove.id)); await tgReply(capture,chatId,`âœ… Removed: ${escapeHtml(toRemove.label||toRemove.symbol)}`); } return {ok:true,handled:true,routed:'remove',messages:capture.capture}; }
+    const expandedText = await expandAliases(raw);
+    if (!hasExplicitAlertKeyword(expandedText)) {
+      if (!opts.answerQuestions) return { ok:true, handled:false, messages:[] };
+      const data = await askLocally(expandedText);
+      await tgReply(capture, chatId, data?.answer ? (data.kind==='price'?'ðŸ’µ ':'ðŸ“° ') + escapeHtml(data.answer) : 'âš ï¸ Could not fetch an answer. Try again.');
+      return {ok:true,handled:true,routed:'question',messages:capture.capture};
+    }
+    const newAlerts = await processAlertMessage(expandedText);
+    if (newAlerts?.pendingPolymarketChoices) { const choices=newAlerts.choices||[]; await savePendingPmAlert({type:'polymarket_choice',createdAt:Date.now(),choices}); await tgReply(capture,chatId,pendingChoiceMessage(choices)); return {ok:true,handled:true,routed:'polymarket_alert_choice_prompt',messages:capture.capture,count:choices.length}; }
+    if (!newAlerts.length) { await tgReply(capture,chatId,'âŒ I could not parse that as a market alert. Try:\n<code>alert BTC above 100000</code>'); return {ok:true,handled:true,routed:'alert_parse_failed',messages:capture.capture}; }
+    await clearPendingPmAlert();
+    await saveAndConfirmAlerts(capture, chatId, newAlerts);
+    return {ok:true,handled:true,routed:'alert',messages:capture.capture,count:newAlerts.length};
   } catch (e) {
-    console.warn('[tg-webhook] Groq failed (' + e.message + '), trying Gemini...');
-    try {
-      return await askGemini(userMessage);
-    } catch (e2) {
-      console.error('[tg-webhook] Both AI providers failed:', e2.message);
-      throw new Error('AI unavailable — set GROQ_API_KEY and GEMINI_API_KEY in Vercel env vars');
-    }
+    return { ok:false, handled:true, error:e.message, messages:['âš ï¸ ' + escapeHtml(e.message)] };
   }
 }
 
-function parseAIResponse(text) {
-  const clean = text.replace(/```json|```/g, '').trim();
-  const start = clean.indexOf('[');
-  const end   = clean.lastIndexOf(']');
-  if (start === -1) return { type: 'message', text };
+module.exports = async function handler(req,res){
+  if(req.method!=='POST') return res.status(200).json({ok:true});
+  const tgToken=(process.env.TG_BOT_TOKEN||'').trim(); const tgChatId=(process.env.TG_CHAT_ID||'').trim();
+  if(!tgToken||!tgChatId) return res.status(200).json({ok:true});
+  let body=req.body; if(typeof body==='string'){ try{ body=JSON.parse(body); }catch(e){ return res.status(200).json({ok:true}); }}
+  const message=body?.message; if(!message) return res.status(200).json({ok:true});
+  const fromId=String(message.chat?.id||message.from?.id||''); const text=(message.text||'').trim();
+  if(fromId!==tgChatId && fromId!==tgChatId.replace(/^-100/,'')) return res.status(200).json({ok:true});
+  if(!text) return res.status(200).json({ok:true});
+  const cmd=text.toLowerCase().trim();
+  if(await handleAliasCommand(tgToken,tgChatId,text)) return res.status(200).json({ok:true,routed:'alias'});
+  const pendingPick=text.match(/^\s*(\d{1,2})\s*$/);
+  if(pendingPick){ const pending=await loadPendingPmAlert(); if(pending?.type==='polymarket_choice' && Date.now()-(pending.createdAt||0) < 15*60*1000){ const idx=Number(pendingPick[1])-1; const choice=pending.choices?.[idx]; if(choice){ await clearPendingPmAlert(); await saveAndConfirmAlerts(tgToken,tgChatId,[{...choice,id:uid(),setAt:Date.now(),triggered:false}]); return res.status(200).json({ok:true,routed:'polymarket_alert_choice'}); } await tgReply(tgToken,tgChatId,`❌ Choose a number from 1 to ${pending.choices.length}.`); return res.status(200).json({ok:true,routed:'polymarket_alert_choice_invalid'}); }}
 
-  try {
-    const parsed = JSON.parse(clean.slice(start, end + 1));
-    if (!Array.isArray(parsed) || !parsed.length) return { type: 'message', text };
-
-    if (parsed[0].type === 'aavecap') {
-      return {
-        type: 'alerts',
-        alerts: parsed.map(p => {
-          const chainId = parseInt(p.chainId) || 1;
-          const chainName = AAVE_CHAIN_NAMES[chainId] || ('Chain ' + chainId);
-          return {
-            symbol:  p.symbol || 'USDe',
-            chainId: chainId,
-            type:    'aavecap',
-            dir:     p.dir || 'below',
-            target:  parseFloat(p.target ?? 100),
-            label:   p.label || ('Aave ' + (p.symbol||'?') + '/' + chainName + ' util ' + (p.dir==='above'?'>':'<') + p.target + '%'),
-          };
-        }),
-      };
-    }
-
-    if (parsed[0].type === 'event' || parsed.every(p => p.condition)) {
-      return {
-        type: 'alerts',
-        alerts: parsed.map(p => ({
-          type:      'event',
-          condition: p.condition,
-          label:     p.label || p.condition.slice(0, 60),
-          symbol:    '🌍',
-        })),
-      };
-    }
-
-    if (parsed[0].symbol && parsed[0].dir && parsed[0].target !== undefined) {
-      const alerts = parsed.map(p => {
-        const isPM = p.type === 'polymarket' || p.type === 'opinion';
-        const targetFmt = isPM
-          ? (p.target * 100).toFixed(0) + '¢'
-          : '$' + (p.target >= 1_000_000
-              ? (p.target / 1_000_000).toFixed(1) + 'M'
-              : p.target >= 1000
-                ? (p.target / 1000).toFixed(0) + 'K'
-                : p.target.toLocaleString('en-US'));
-        return { ...p, symbol: p.symbol.toUpperCase(), label: p.symbol.toUpperCase() + ' ' + p.dir + ' ' + targetFmt };
-      });
-      return { type: 'alerts', alerts };
-    }
-  } catch (e) {}
-  return { type: 'message', text };
-}
-
-// ── Alert processing (same flow as terminalSubmit) ────────────────────────────
-
-async function processMessage(raw) {
-  // 1. Polymarket URL
-  const pmUrl = parsePolymarketUrl(raw);
-  if (pmUrl) {
-    const { eventSlug, marketSlug, side, dir, target } = pmUrl;
-    const targetFmt = (target * 100).toFixed(0) + '¢';
-    const label = marketSlug + ' (' + side + ') ' + dir + ' ' + targetFmt;
-    return {
-      type: 'alerts',
-      alerts: [{ id: uid(), type: 'polymarket', symbol: marketSlug, eventSlug, marketSlug, side, dir, target, label, triggered: false, setAt: Date.now(), source: 'tg' }],
-    };
+  if(cmd==='help'||cmd==='/help'||cmd==='/start'){
+    await tgReply(tgToken,tgChatId,['🔔 <b>Vault Alert Bot</b>','','To create alerts, include the word <code>alert</code>.','Everything else is answered as a question.','','<b>Alert examples:</b>','  <code>alert BTC above 100000</code>','  <code>alert $ONDO $0.2 $0.5</code>','  <code>alert odds for Trump out as President by June 30 above 90% on Polymarket</code>','  <code>alert apy over 10%</code>','  <code>alert Aave USDe utilization on MegaETH below 90%</code>','  <code>alias trump out = Trump out as President by June 30</code>','','<b>Manage:</b>','  <code>status</code> — check cron and API health','  <code>why</code> — explain last Polymarket miss','  <code>recent alerts</code> — fired alerts from the past 48h','  <code>list</code> — show active alerts','  <code>aliases</code> — show saved aliases','  <code>bets</code> — show saved Polymarket bet odds','  <code>apy</code> — NO-side APY above 70%','  <code>polymarket activity</code> — show 24h PM movers and fills','  <code>remove 1</code> — remove alert #1','  <code>remove apy alerts</code> — remove APY alerts','  <code>remove all</code> — remove all alerts'].join('\n'));
+    return res.status(200).json({ok:true});
   }
-
-  // 2. Aave cap regex
-  const aave = parseAaveCap(raw);
-  if (aave) {
-    const alert = { id: uid(), ...aave, triggered: false, setAt: Date.now(), source: 'tg' };
-    if (!alert.chainId) alert.chainId = 1; // default Ethereum
-    return { type: 'alerts', alerts: [alert] };
-  }
-
-  // 3. Simple NL regex
-  const nl = parseNL(raw);
-  if (nl) {
-    return { type: 'alerts', alerts: [{ id: uid(), ...nl, triggered: false, setAt: Date.now(), source: 'tg' }] };
-  }
-
-  // 4. No number in message → definitely a real-world event alert (no AI needed)
-  //    e.g. "alert me when Putin is president of Russia"
-  const hasNumber = /\d/.test(raw);
-  if (!hasNumber) {
-    // Strip common trigger phrases to get the core condition
-    const condition = raw
-      .replace(/^(?:alert(?:\s+me)?|notify(?:\s+me)?|tell(?:\s+me)?|ping(?:\s+me)?)\s+(?:when|if|once|whenever)\s+/i, '')
-      .replace(/^(?:when|if|once|whenever)\s+/i, '')
-      .trim() || raw.trim();
-    const label = condition.length > 60 ? condition.slice(0, 57) + '...' : condition;
-    return {
-      type: 'alerts',
-      alerts: [{ id: uid(), type: 'event', condition, label, symbol: '\u{1F30D}', triggered: false, setAt: Date.now(), source: 'tg' }],
-    };
-  }
-
-  // 5. AI fallback (for ambiguous messages with numbers that regex couldn't parse)
-  try {
-    const aiText = await askAI(raw);
-    const aiResult = parseAIResponse(aiText);
-    if (aiResult.type === 'alerts') {
-      return {
-        type: 'alerts',
-        alerts: aiResult.alerts.map(a => ({ id: uid(), ...a, triggered: false, setAt: Date.now(), source: 'tg' })),
-      };
-    }
-    return { type: 'message', text: aiResult.text };
-  } catch (aiErr) {
-    // AI failed — last resort: create a generic event alert from the raw message
-    console.warn('[tg-webhook] AI parse failed (' + aiErr.message + '), creating raw event alert');
-    const condition = raw.trim();
-    const label = condition.length > 60 ? condition.slice(0, 57) + '...' : condition;
-    return {
-      type: 'alerts',
-      alerts: [{ id: uid(), type: 'event', condition, label, symbol: '\u{1F30D}', triggered: false, setAt: Date.now(), source: 'tg' }],
-    };
-  }
-}
-
-// ── KV helpers ────────────────────────────────────────────────────────────────
-
-async function loadAlerts() {
-  try {
-    const stored = await kvGet(ALERTS_KEY);
-    return stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : [];
-  } catch (e) { return []; }
-}
-
-async function saveAlerts(alerts) {
-  await kvSet(ALERTS_KEY, JSON.stringify(alerts));
-}
-
-// ── Telegram reply ────────────────────────────────────────────────────────────
-
-async function tgReply(token, chatId, text) {
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
-  });
-}
-
-// ── Main handler ──────────────────────────────────────────────────────────────
-
-module.exports = async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(200).json({ ok: true });
-
-  const tgToken  = (process.env.TG_BOT_TOKEN || '').trim();
-  const tgChatId = (process.env.TG_CHAT_ID   || '').trim();
-  if (!tgToken || !tgChatId) return res.status(200).json({ ok: true });
-
-  let body = req.body;
-  if (typeof body === 'string') {
-    try { body = JSON.parse(body); } catch (e) { return res.status(200).json({ ok: true }); }
-  }
-
-  const message = body?.message;
-  if (!message) return res.status(200).json({ ok: true });
-
-  const fromId = String(message.chat?.id || message.from?.id || '');
-  const text   = (message.text || '').trim();
-
-  // Security: only respond to your own chat
-  if (fromId !== tgChatId && fromId !== tgChatId.replace(/^-100/, '')) {
-    return res.status(200).json({ ok: true });
-  }
-
-  if (!text) return res.status(200).json({ ok: true });
-
-  const cmd = text.toLowerCase().trim();
-
-  // ── Built-in commands ─────────────────────────────────────────────────────
-
-  if (cmd === 'help' || cmd === '/help' || cmd === '/start') {
-    await tgReply(tgToken, tgChatId, [
-      '🔔 <b>Vault Alert Bot</b>',
-      '',
-      'Type any alert in natural language — same as the Alert Terminal:',
-      '',
-      '<b>Examples:</b>',
-      '  <code>alert me when BTC hits 100k</code>',
-      '  <code>notify me if ETH drops below 2000</code>',
-      '  <code>alert when Aave USDe on MegaETH drops below 90%</code>',
-      '  <code>alert AAPL above 200</code>',
-      '  <code>alert when the Fed cuts rates</code>',
-      '  Paste a Polymarket URL + threshold',
-      '',
-      '<b>Manage:</b>',
-      '  <code>list</code> — show active alerts',
-      '  <code>remove 1</code> — remove alert #1',
-      '  <code>clear all</code> — remove all alerts',
-      '',
-      '<b>Test an alert condition:</b>',
-      '  <code>/test Fed announces rate decision | 2026-05-11</code>',
-      '  Simulates the alert as if set on that date — checks if it would fire.',
-      '  Omit the date to test against today.',
-    ].join('\n'));
-    return res.status(200).json({ ok: true });
-  }
-
-  if (cmd === 'list' || cmd === '/list') {
-    const alerts = await loadAlerts();
-    const active = alerts.filter(a => !a.triggered);
-    if (!active.length) {
-      await tgReply(tgToken, tgChatId, '📭 No active alerts.');
-    } else {
-      const lines = active.map((a, i) => `${i + 1}. ${a.label}`).join('\n');
-      await tgReply(tgToken, tgChatId, `📋 <b>Active Alerts (${active.length})</b>\n\n${lines}`);
-    }
-    return res.status(200).json({ ok: true });
-  }
-
-  if (cmd === 'clear all' || cmd === '/clear') {
-    await saveAlerts([]);
-    await tgReply(tgToken, tgChatId, '🗑 All alerts cleared.');
-    return res.status(200).json({ ok: true });
-  }
-
-  const removeMatch = text.match(/^(?:remove|delete|rm)\s+(\d+)$/i);
-  if (removeMatch) {
-    const n = parseInt(removeMatch[1]) - 1;
-    const alerts = await loadAlerts();
-    const active = alerts.filter(a => !a.triggered);
-    if (n < 0 || n >= active.length) {
-      await tgReply(tgToken, tgChatId, `❌ No alert #${n + 1}. Use <code>list</code> to see active alerts.`);
-    } else {
-      const toRemove = active[n];
-      const updated = alerts.filter(a => a.id !== toRemove.id);
-      await saveAlerts(updated);
-      await tgReply(tgToken, tgChatId, `✅ Removed: ${toRemove.label}`);
-    }
-    return res.status(200).json({ ok: true });
-  }
-
-  // ── /test — simulate an alert condition with an optional past date ─────────
-  //   Syntax:  /test <condition> | <YYYY-MM-DD>
-  //   Example: /test Fed announces rate decision | 2026-05-11
-  //   This calls /api/event-check with a simulated setAt so you can verify that
-  //   future-tense filtering works and that news from the right date triggers.
-  const testMatch = text.match(/^\/test\s+(.+)$/i);
-  if (testMatch) {
-    const parts      = testMatch[1].split('|');
-    const condition  = parts[0].trim();
-    const dateStr    = parts[1] ? parts[1].trim() : null;
-
-    if (!condition) {
-      await tgReply(tgToken, tgChatId,
-        '❌ Usage: <code>/test &lt;condition&gt; | &lt;YYYY-MM-DD&gt;</code>\n' +
-        'Example: <code>/test Fed announces rate decision | 2026-05-11</code>'
-      );
-      return res.status(200).json({ ok: true });
-    }
-
-    let simulatedSetAt;
-    let dateLabel;
-    if (dateStr) {
-      simulatedSetAt = Date.parse(dateStr);
-      if (isNaN(simulatedSetAt)) {
-        await tgReply(tgToken, tgChatId,
-          `❌ Invalid date: <code>${dateStr}</code>\nUse format: <code>YYYY-MM-DD</code> (e.g. 2026-05-11)`
-        );
-        return res.status(200).json({ ok: true });
-      }
-      dateLabel = new Date(simulatedSetAt).toISOString().slice(0, 10);
-    } else {
-      simulatedSetAt = Date.now();
-      dateLabel = 'today';
-    }
-
-    await tgReply(tgToken, tgChatId,
-      `🔍 <b>Testing condition…</b>\n\n` +
-      `<b>Condition:</b> ${condition}\n` +
-      `<b>Simulated alert date:</b> ${dateLabel}\n\n` +
-      `<i>Checking news — this may take 15–30 seconds…</i>`
-    );
-
-    try {
-      const baseUrl = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || 'testedefi.vercel.app');
-      const r = await fetch(baseUrl + '/api/event-check', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // No alertId — we only want the verdict, not a real TG fire / KV write
-        body:    JSON.stringify({ condition, label: condition.slice(0, 60), setAt: simulatedSetAt }),
-        signal:  AbortSignal.timeout(30000),
-      });
-      if (!r.ok) {
-        await tgReply(tgToken, tgChatId, `❌ event-check returned HTTP ${r.status}`);
-        return res.status(200).json({ ok: true });
-      }
-      const d = await r.json();
-
-      const lines = [];
-      lines.push(d.triggered ? '✅ <b>WOULD TRIGGER</b>' : '❌ <b>Would NOT trigger</b>');
-      lines.push('');
-      lines.push(`<b>Condition:</b> ${condition}`);
-      lines.push(`<b>Simulated date:</b> ${dateLabel}`);
-      if (d.headline) {
-        // Show headline as a hyperlink if we have the article URL
-        const hlText = d.headline.replace(/^\[[^\]]+\]\s*/, ''); // strip echoed date prefix
-        if (d.headlineUrl) {
-          lines.push(`<b>Headline:</b> <a href="${d.headlineUrl}">${hlText}</a>`);
-        } else {
-          lines.push(`<b>Headline:</b> <i>${hlText}</i>`);
-        }
-      }
-      if (d.headlinePubTs) {
-        lines.push(`<b>Published:</b> ${new Date(d.headlinePubTs).toUTCString()}`);
-      }
-      if (d.reason)  lines.push(`<b>Reason:</b> ${d.reason}`);
-      if (d.verdict) lines.push(`<b>AI verdict:</b> ${d.verdict}`);
-      if (d.source)  lines.push(`<b>Source:</b> ${d.source}`);
-      if (!d.triggered) {
-        lines.push('');
-        lines.push('<i>Tip: if you expected it to trigger, try a later simulated date or check that recent news exists.</i>');
-      }
-      await tgReply(tgToken, tgChatId, lines.join('\n'));
-    } catch (e) {
-      await tgReply(tgToken, tgChatId, `❌ Test failed: ${e.message}`);
-    }
-    return res.status(200).json({ ok: true });
-  }
-
-  // ── Q&A — same routing logic as the browser terminal ────────────────────
-  // Must run BEFORE processMessage, otherwise questions without numbers
-  // fall into the "no-number → event alert" branch (step 4 of processMessage).
-  {
-    const QUESTION_RE = /^(what|why|how|who|when|where|is|are|was|were|did|does|do|has|have|had|will|would|can|could|tell\s+me|explain|give\s+me)\b/i;
-    const isQuestion    = QUESTION_RE.test(text) || text.trim().endsWith('?');
-    const isAlertIntent = /\balert\b|\bnotify\b|\bping\b/i.test(text) ||
-      (/\bwhen\b/i.test(text) && /\b(hits?|reaches?|drops?|falls?|above|below|over|under|becomes?|wins?|announces?|goes\s+to)\b/i.test(text));
-
-    if (isQuestion && !isAlertIntent) {
-      try {
-        const baseUrl = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || 'testedefi.vercel.app');
-        const r = await fetch(baseUrl + '/api/ask', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: text }),
-          signal: AbortSignal.timeout(22000),
-        });
-        const data = await r.json();
-        if (data.answer) {
-          let msg = '\u{1F4F0} ' + data.answer;
-          if (Array.isArray(data.sources) && data.sources.length) {
-            const srcLinks = data.sources.slice(0, 3)
-              .map(s => s.url ? '<a href="' + s.url + '">' + (s.domain || 'source') + '</a>' : null)
-              .filter(Boolean).join(' \u00B7 ');
-            if (srcLinks) msg += '\n\n<i>Sources: ' + srcLinks + '</i>';
-          }
-          await tgReply(tgToken, tgChatId, msg);
-        } else {
-          await tgReply(tgToken, tgChatId, '\u26A0\uFE0F Could not fetch an answer. Try again.');
-        }
-      } catch (e) {
-        await tgReply(tgToken, tgChatId, '\u26A0\uFE0F Q&A error: ' + e.message);
-      }
-      return res.status(200).json({ ok: true });
-    }
-  }
-
-  // ── Process as alert or AI message ───────────────────────────────────────
-
-  try {
-    const result = await processMessage(text);
-
-    if (result.type === 'alerts' && result.alerts.length > 0) {
-      const baseUrl = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || 'testedefi.vercel.app');
-      const { fetchPrice, fmtPrice } = require('../lib/price');
-
-      // ── Immediately check event alerts — they may already be true ──────────
-      // Conditions like "Iran no longer has a Shah" are historically settled.
-      // Check BEFORE saving so we never queue an alert that fires instantly.
-      const eventAlerts = result.alerts.filter(a => a.type === 'event');
-      const otherAlerts = result.alerts.filter(a => a.type !== 'event');
-
-      const alreadyTrue  = [];  // event alerts that are already triggered
-      const toSave       = [...otherAlerts];
-
-      if (eventAlerts.length > 0) {
-        await Promise.all(eventAlerts.map(async a => {
-          try {
-            const r = await fetch(baseUrl + '/api/event-check', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              // No alertId — we handle the reply here; event-check just evaluates
-              body: JSON.stringify({ condition: a.condition, label: a.label, setAt: a.setAt || 0 }),
-              signal: AbortSignal.timeout(22000),
-            });
-            if (!r.ok) { toSave.push(a); return; }
-            const d = await r.json();
-            if (d.triggered) {
-              alreadyTrue.push({ ...a, reason: d.reason || '', headline: d.headline || '' });
-            } else {
-              toSave.push(a);
-            }
-          } catch (e) {
-            console.warn('[tg-webhook] immediate event-check failed:', e.message);
-            toSave.push(a); // save for cron on error
-          }
-        }));
-      }
-
-      // Save only the alerts that are NOT already true
-      if (toSave.length > 0) {
-        const alerts = await loadAlerts();
-        for (const a of toSave) alerts.push(a);
-        await saveAlerts(alerts);
-      }
-
-      // Notify about conditions that fired immediately
-      for (const a of alreadyTrue) {
-        const lines = [
-          '⚡️ <b>' + (a.label || a.condition) + ' — Already True!</b>',
-          '',
-          '<b>Condition:</b> ' + a.condition,
-        ];
-        if (a.reason)   lines.push('<b>What happened:</b> ' + a.reason);
-        if (a.headline) lines.push('<b>Source:</b> <i>' + a.headline + '</i>');
-        lines.push('');
-        lines.push('<i>This condition is already met — no waiting needed.</i>');
-        await tgReply(tgToken, tgChatId, lines.join('\n'));
-      }
-
-      // Confirm saved (pending) alerts
-      if (toSave.length > 0) {
-        const lines = await Promise.all(toSave.map(async a => {
-          if (a.type === 'event') {
-            return '✅ <b>' + a.label + '</b>';
-          }
-          try {
-            const price = await fetchPrice(a);
-            const priceStr = price != null ? ' (' + fmtPrice(price, a.type) + ')' : '';
-            return '✅ <b>' + a.symbol + priceStr + ' ' + a.dir + ' ' + fmtPrice(a.target, a.type) + '</b>';
-          } catch (e) {
-            return '✅ <b>' + a.label + '</b>';
-          }
-        }));
-        await tgReply(tgToken, tgChatId,
-          lines.join('\n') + '\n\nI\'ll notify you when triggered.'
-        );
-      }
-    } else if (result.type === 'message') {
-      await tgReply(tgToken, tgChatId, result.text);
-    } else {
-      await tgReply(tgToken, tgChatId,
-        "❌ Couldn't parse that as an alert. Try:\n<code>alert BTC above 100000</code>\nor <code>help</code> for more examples."
-      );
-    }
-  } catch (e) {
-    console.error('[tg-webhook] error:', e.message);
-    await tgReply(tgToken, tgChatId, '⚠️ ' + e.message);
-  }
-
-  return res.status(200).json({ ok: true });
+  if(cmd==='list'||cmd==='/list'){ const alerts=await loadAlerts(); const active=alerts.filter(a=>!a.triggered&&a.type!=='event'&&!a.condition); if(!active.length) await tgReply(tgToken,tgChatId,'📭 No active alerts.'); else await tgReply(tgToken,tgChatId,`📋 <b>Active Alerts (${active.length})</b>\n\n`+active.map((a,i)=>`${i+1}. ${escapeHtml(a.label||a.symbol)}`).join('\n')); return res.status(200).json({ok:true}); }
+  if(cmd==='status'||cmd==='/status'){ await sendStatus(tgToken,tgChatId); return res.status(200).json({ok:true,routed:'status'}); }
+  if(cmd==='why'||cmd==='/why'){ await sendWhy(tgToken,tgChatId); return res.status(200).json({ok:true,routed:'why'}); }
+  if(cmd==='recent alerts'||cmd==='/recent'){ await sendRecentAlerts(tgToken,tgChatId); return res.status(200).json({ok:true,routed:'recent_alerts'}); }
+  if(cmd==='bets'||cmd==='/bets'||cmd==='positions'||cmd==='/positions'||cmd==='polymarket bets'||cmd==='/polymarket'){ await sendPolymarketBets(tgToken,tgChatId); return res.status(200).json({ok:true,routed:'polymarket_bets'}); }
+  if(cmd==='polymarket apy'||cmd==='apy'){ await sendPolymarketNoApy(tgToken,tgChatId); return res.status(200).json({ok:true,routed:'polymarket_no_apy'}); }
+  if(isApyAlertCommand(text)){ await sendPolymarketApyAlertSetup(tgToken,tgChatId,text); return res.status(200).json({ok:true,routed:'polymarket_apy_alert'}); }
+  if(cmd==='polymarket activity'||cmd==='polymarket port activity'||cmd==='polymarket portfolio activity'){ await sendPolymarketActivity(tgToken,tgChatId); return res.status(200).json({ok:true,routed:'polymarket_activity'}); }
+  if(cmd==='clear all'||cmd==='/clear'||cmd==='remove all'){ await saveAlerts([]); await tgReply(tgToken,tgChatId,'🗑 All alerts cleared.'); return res.status(200).json({ok:true}); }
+  if(cmd==='remove apy alerts'){ const alerts=await loadAlerts(); const kept=alerts.filter(a=>a.type!=='pmapy'); await saveAlerts(kept); await tgReply(tgToken,tgChatId,`✅ Removed ${alerts.length-kept.length} APY alerts.`); return res.status(200).json({ok:true,routed:'remove_apy_alerts'}); }
+  const rm=text.match(/^(?:remove|delete|rm)\s+(\d+)$/i);
+  if(rm){ const n=parseInt(rm[1])-1; const alerts=await loadAlerts(); const active=alerts.filter(a=>!a.triggered&&a.type!=='event'&&!a.condition); if(n<0||n>=active.length) await tgReply(tgToken,tgChatId,`❌ No alert #${n+1}. Use <code>list</code> to see active alerts.`); else { const toRemove=active[n]; await saveAlerts(alerts.filter(a=>a.id!==toRemove.id)); await tgReply(tgToken,tgChatId,`✅ Removed: ${escapeHtml(toRemove.label||toRemove.symbol)}`); } return res.status(200).json({ok:true}); }
+  const expandedText=await expandAliases(text);
+  if(!hasExplicitAlertKeyword(expandedText)){ await answerQuestion(tgToken,tgChatId,expandedText); return res.status(200).json({ok:true,routed:'question'}); }
+  try{ const newAlerts=await processAlertMessage(expandedText); if(newAlerts?.pendingPolymarketChoices){ const choices=newAlerts.choices||[]; await savePendingPmAlert({type:'polymarket_choice',createdAt:Date.now(),choices}); await tgReply(tgToken,tgChatId,pendingChoiceMessage(choices)); return res.status(200).json({ok:true,routed:'polymarket_alert_choice_prompt',count:choices.length}); } if(!newAlerts.length){ await tgReply(tgToken,tgChatId,'❌ I could not parse that as a market alert. Try:\n<code>alert BTC above 100000</code>'); return res.status(200).json({ok:true,routed:'alert_parse_failed'}); } await clearPendingPmAlert(); await saveAndConfirmAlerts(tgToken,tgChatId,newAlerts); return res.status(200).json({ok:true,routed:'alert',count:newAlerts.length}); }
+  catch(e){ console.error('[tg-webhook] error:',e.message); await tgReply(tgToken,tgChatId,'⚠️ '+escapeHtml(e.message)); return res.status(200).json({ok:true,error:e.message}); }
 };
+module.exports.processVaultCommand = processVaultCommand;
+module.exports.processAlertMessage = processAlertMessage;

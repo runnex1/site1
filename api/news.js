@@ -1,45 +1,70 @@
-/**
- * News fetcher for event alert checking.
- * Fetches from the same RSS sources as the Daily Brief + user TG channels via RSS.
- */
+const { kvGet } = require('../lib/kv');
 
-const DAILY_BRIEF_SOURCES = [
-  // ── Crypto / DeFi ────────────────────────────────────────────────────────
-  { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/',          label: 'CoinDesk'        },
-  { url: 'https://cointelegraph.com/rss',                            label: 'CoinTelegraph'   },
-  { url: 'https://thedefiant.io/feed',                               label: 'The Defiant'     },
-  { url: 'https://blockworks.co/feed',                               label: 'Blockworks'      },
-  { url: 'https://decrypt.co/feed',                                  label: 'Decrypt'         },
-  { url: 'https://theblock.co/rss.xml',                              label: 'The Block'       },
-  { url: 'https://unchainedcrypto.com/feed/',                        label: 'Unchained'       },
-  { url: 'https://www.dlnews.com/arc/outboundfeeds/rss/',            label: 'DL News'         },
-  { url: 'https://cryptopanic.com/news/rss/',                        label: 'CryptoPanic'     },
-  // ── Macro / Traditional Finance ──────────────────────────────────────────
-  { url: 'https://feeds.reuters.com/reuters/businessNews',           label: 'Reuters Business'},
-  { url: 'https://feeds.reuters.com/reuters/politicsNews',           label: 'Reuters Politics'},
-  { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',          label: 'BBC Business'    },
-  { url: 'https://feeds.bbci.co.uk/news/world/rss.xml',             label: 'BBC World'       },
-  { url: 'https://www.investing.com/rss/news_25.rss',               label: 'Investing.com'   },
-  { url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',           label: 'WSJ Markets'     },
-  { url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html',    label: 'CNBC Finance'    },
-  { url: 'https://www.marketwatch.com/rss/topstories',              label: 'MarketWatch'     },
-  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',  label: 'NYT World'       },
-  { url: 'https://www.ft.com/rss/home',                             label: 'FT'              },
-  // ── Telegram channels ────────────────────────────────────────────────────
-  { url: 'https://rsshub.app/telegram/channel/thekobeissiletter',    label: 'Kobeissi Letter' },
+const SOURCES_WITH_TYPE = [
+  { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/',         label: 'CoinDesk',         type: 'crypto' },
+  { url: 'https://cointelegraph.com/rss',                           label: 'CoinTelegraph',    type: 'crypto' },
+  { url: 'https://decrypt.co/feed',                                 label: 'Decrypt',          type: 'crypto' },
+  { url: 'https://theblock.co/rss.xml',                             label: 'The Block',        type: 'crypto' },
+  { url: 'https://unchainedcrypto.com/feed/',                       label: 'Unchained',        type: 'crypto' },
+  { url: 'https://cryptopanic.com/news/rss/',                       label: 'CryptoPanic',      type: 'crypto' },
+  { url: 'https://thedefiant.io/api/feed',                          label: 'The Defiant',      type: 'defi' },
+  { url: 'https://blockworks.co/feed',                              label: 'Blockworks',       type: 'defi' },
+  { url: 'https://www.dlnews.com/arc/outboundfeeds/rss/',           label: 'DL News',          type: 'defi' },
+  { url: 'https://news.google.com/rss/search?q=DeFi%20protocol%20upgrade%20OR%20DeFi%20exploit%20OR%20DeFi%20TVL%20OR%20DeFi%20token&hl=en-US&gl=US&ceid=US:en', label: 'Google News DeFi', type: 'defi' },
+  { url: 'https://feeds.reuters.com/reuters/businessNews',          label: 'Reuters Business', type: 'macro' },
+  { url: 'https://feeds.reuters.com/reuters/politicsNews',          label: 'Reuters Politics', type: 'macro' },
+  { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',          label: 'BBC Business',     type: 'macro' },
+  { url: 'https://feeds.bbci.co.uk/news/world/rss.xml',             label: 'BBC World',        type: 'macro' },
+  { url: 'https://www.investing.com/rss/news_25.rss',               label: 'Investing.com',    type: 'macro' },
+  { url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',           label: 'WSJ Markets',      type: 'macro' },
+  { url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html',    label: 'CNBC Finance',     type: 'macro' },
+  { url: 'https://www.marketwatch.com/rss/topstories',              label: 'MarketWatch',      type: 'macro' },
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',  label: 'NYT World',        type: 'macro' },
+  { url: 'https://www.ft.com/rss/home',                             label: 'FT',               type: 'macro' },
 ];
 
-async function safeFetch(url, timeout = 8000) {
+const ASSET_ALIASES = {
+  btc: ['btc', 'bitcoin'],
+  xbt: ['xbt', 'bitcoin'],
+  eth: ['eth', 'ethereum'],
+  sol: ['sol', 'solana'],
+  bnb: ['bnb', 'binance'],
+  xrp: ['xrp', 'ripple'],
+  doge: ['doge', 'dogecoin'],
+  ada: ['ada', 'cardano'],
+  avax: ['avax', 'avalanche'],
+  link: ['link', 'chainlink'],
+  aave: ['aave'],
+  ondo: ['ondo'],
+  ena: ['ena', 'ethena'],
+  usde: ['usde', 'ethena usde'],
+  hype: ['hype', 'hyperliquid'],
+};
+
+function cleanText(s) {
+  return String(s || '')
+    .replace(/<!\[CDATA\[|\]\]>/g, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function safeFetch(url, timeout = 9000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { 'Accept': 'application/rss+xml, application/xml, text/xml, */*' },
+      headers: { Accept: 'application/rss+xml, application/xml, text/xml, */*' },
     });
     if (!res.ok) return null;
     return await res.text();
-  } catch (e) {
+  } catch {
     return null;
   } finally {
     clearTimeout(timer);
@@ -47,94 +72,234 @@ async function safeFetch(url, timeout = 8000) {
 }
 
 function parseRSS(xml) {
-  // Simple regex-based RSS parser (no DOM on server)
   const items = [];
-  const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
+  const itemRegex = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
   let itemMatch;
   while ((itemMatch = itemRegex.exec(xml)) !== null) {
     const block = itemMatch[1];
-    const title = (block.match(/<title[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) ||
-                   block.match(/<title[^>]*>([\s\S]*?)<\/title>/) || [])[1] || '';
-    const desc  = (block.match(/<description[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) ||
-                   block.match(/<description[^>]*>([\s\S]*?)<\/description>/) || [])[1] || '';
-    const link  = (block.match(/<link[^>]*>([\s\S]*?)<\/link>/) || [])[1] || '';
-    const pubDate = (block.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/) || [])[1] || '';
-    
-    const cleanTitle = title.replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
-    const cleanDesc  = desc.replace(/<[^>]+>/g, '').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim().slice(0, 200);
-    
-    if (cleanTitle) items.push({ title: cleanTitle, desc: cleanDesc, link: link.trim(), pubDate: pubDate.trim() });
-    if (items.length >= 3) break;
+    const get = name => {
+      const re = new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, 'i');
+      return cleanText((block.match(re) || [])[1] || '');
+    };
+    const title = get('title');
+    const desc = get('description');
+    const link = get('link') || get('guid') || '#';
+    const pubDate = get('pubDate') || get('dc:date') || get('updated') || get('published');
+    if (title) items.push({ title, desc: desc.slice(0, 240), link, pubDate });
+    if (items.length >= 8) break;
+  }
+  return items;
+}
+
+function parseAtom(xml) {
+  const items = [];
+  const entryRegex = /<entry\b[^>]*>([\s\S]*?)<\/entry>/gi;
+  let entryMatch;
+  while ((entryMatch = entryRegex.exec(xml)) !== null) {
+    const block = entryMatch[1];
+    const get = name => {
+      const re = new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, 'i');
+      return cleanText((block.match(re) || [])[1] || '');
+    };
+    const linkMatch = block.match(/<link[^>]+href=["']([^"']+)["'][^>]*>/i);
+    const title = get('title');
+    const desc = get('summary') || get('content');
+    const link = cleanText(linkMatch?.[1] || get('link') || get('id') || '#');
+    const pubDate = get('published') || get('updated');
+    if (title) items.push({ title, desc: desc.slice(0, 240), link, pubDate });
+    if (items.length >= 8) break;
   }
   return items;
 }
 
 async function fetchRSSFeed(url) {
-  // Try direct first, then CORS proxies
-  const urls = [
-    url,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  ];
+  const urls = [url, `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`];
   for (const u of urls) {
     const text = await safeFetch(u);
-    if (text && text.includes('<item>')) {
-      return parseRSS(text);
-    }
+    if (text && /<item\b/i.test(text)) return parseRSS(text);
+    if (text && /<entry\b/i.test(text)) return parseAtom(text);
   }
   return [];
 }
 
-// Build TG channel RSS URL from handle
 function tgChannelRSSUrl(handle) {
-  // Clean handle — remove t.me/ prefix if present
-  const clean = handle.replace(/^(?:https?:\/\/)?t\.me\//, '').replace(/^@/, '').trim();
-  // Telegram channels have RSS via nitter or rsshub
+  const clean = String(handle || '').replace(/^(?:https?:\/\/)?t\.me\/(?:s\/)?/i, '').replace(/^@/, '').trim();
   return `https://rsshub.app/telegram/channel/${clean}`;
 }
 
-/**
- * Fetch recent headlines from all sources.
- * tgChannels: array of channel handles from vault_tg_channels
- * Returns array of { title, desc, source } strings
- */
-async function fetchRecentHeadlines(tgChannels = []) {
-  const sources = [...DAILY_BRIEF_SOURCES];
-
-  // Add TG channels as RSS sources
-  for (const handle of (tgChannels || [])) {
-    sources.push({ url: tgChannelRSSUrl(handle), label: handle });
-  }
-
-  const results = await Promise.allSettled(
-    sources.map(async (src) => {
-      const items = await fetchRSSFeed(src.url);
-      return items.map(i => ({ ...i, source: src.label }));
-    })
-  );
-
-  return results
-    .filter(r => r.status === 'fulfilled')
-    .flatMap(r => r.value)
-    .slice(0, 60); // max 60 headlines across all sources
+function parseTs(pubDate) {
+  const ts = Date.parse(pubDate || '');
+  return Number.isFinite(ts) ? ts : null;
 }
 
-/**
- * Check if an event condition has been met based on recent headlines.
- * Uses Groq AI.
- */
-function buildEventPrompt(condition, headlineText) {
-  return 'You are checking if a specific condition has been met based on recent news headlines.\n\n' +
-    'CONDITION TO CHECK: "' + condition + '"\n\n' +
-    'RECENT HEADLINES:\n' + headlineText + '\n\n' +
-    'Has the condition been met? Reply with ONLY a JSON object:\n' +
-    '{"triggered": true/false, "reason": "brief explanation"}\n\n' +
-    'Be conservative — only say triggered:true if there is clear, direct evidence in the headlines.';
+function publishedAt(pubDate) {
+  const ts = parseTs(pubDate);
+  return ts ? new Date(ts).toISOString() : '';
+}
+
+function isWithinLast24h(item, now = Date.now()) {
+  const ts = parseTs(item.pubDate);
+  return ts !== null && ts <= now + 5 * 60 * 1000 && now - ts <= 24 * 60 * 60 * 1000;
+}
+
+function isPricePrediction(item) {
+  const text = `${item.title || ''} ${item.desc || ''}`.toLowerCase();
+  return /\b(price prediction|price forecast|price target|analyst predicts?|analyst says .* could|could (?:hit|reach|surge)|will .* (?:hit|reach) \$?\d|top crypto to buy|best coins? to buy|next .*x crypto)\b/.test(text);
+}
+
+function normalizeTitle(title) {
+  return String(title || '').toLowerCase()
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/[^a-z0-9\s$]/g, ' ')
+    .replace(/\b(the|a|an|to|of|and|or|for|on|in|with|as|is|are|from|after|before|amid)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function titleOverlap(a, b) {
+  const aw = new Set(normalizeTitle(a).split(' ').filter(w => w.length > 3));
+  const bw = new Set(normalizeTitle(b).split(' ').filter(w => w.length > 3));
+  if (!aw.size || !bw.size) return 0;
+  const hit = [...aw].filter(w => bw.has(w)).length;
+  return hit / Math.min(aw.size, bw.size);
+}
+
+function dedupeNews(items) {
+  const out = [];
+  const exact = new Set();
+  for (const item of items) {
+    const key = normalizeTitle(item.title).split(' ').slice(0, 10).join(' ');
+    if (!key || exact.has(key)) continue;
+    if (out.some(prev => titleOverlap(prev.title, item.title) >= 0.72)) continue;
+    exact.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+function marketMovingScore(item) {
+  const text = `${item.title || ''} ${item.desc || ''} ${item.source || ''}`.toLowerCase();
+  let score = 0;
+
+  const cryptoStrong = [
+    'strategy', 'microstrategy', 'saylor', 'bitcoin purchase', 'buys bitcoin', 'bought bitcoin',
+    'institutional adoption', 'etf inflow', 'etf approval', 'spot etf', 'treasury company',
+    'reserve', 'sec', 'cftc', 'lawsuit', 'settlement', 'regulation', 'regulatory',
+    'hack', 'exploit', 'breach', 'stolen', 'liquidation', 'crash', 'selloff',
+  ];
+  const defiStrong = [
+    'upgrade', 'mainnet', 'token upgrade', 'tokenomics', 'governance', 'proposal passed',
+    'airdrop', 'tvl', 'fastest growing', 'launches', 'partnership', 'integration',
+    'exploit', 'hack', 'audit', 'stablecoin', 'restaking', 'lending', 'dex',
+  ];
+  const macroStrong = [
+    'federal reserve', 'fed', 'powell', 'trump', 'xi', 'china', 'united states',
+    'tariff', 'sanction', 'war', 'ceasefire', 'iran', 'russia', 'ukraine', 'israel',
+    'cpi', 'ppi', 'inflation', 'jobs report', 'unemployment', 'gdp', 'oil', 'opec',
+    'market crash', 'stocks fall', 'stocks rally', 'bond yields', 'dollar',
+  ];
+
+  for (const w of cryptoStrong) if (text.includes(w)) score += 5;
+  for (const w of defiStrong) if (text.includes(w)) score += item.type === 'defi' ? 5 : 3;
+  for (const w of macroStrong) if (text.includes(w)) score += 5;
+
+  if (/\b(breaking|urgent|exclusive)\b/.test(text)) score += 4;
+  if (/[+-]?\d+(?:\.\d+)?%/.test(text)) score += 2;
+  if (/\b(record|surge|plunge|crash|rally|soar|slump|halts?|ban|approves?|rejects?|launches?|passes?)\b/.test(text)) score += 3;
+  if (item.type === 'defi') score += 2;
+  if (/kobeissi/i.test(item.source || '')) score += 6;
+  if (item.type === 'tg') score += 2;
+  if (/\b(opinion|guide|explainer|sponsored|podcast|newsletter roundup)\b/.test(text)) score -= 4;
+  if (isPricePrediction(item)) score -= 100;
+  return score;
+}
+
+function holdingsFromQuery(query) {
+  return String(query || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+async function holdingsFromServer() {
+  try {
+    const raw = await kvGet('vault:portfolio');
+    const portfolio = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!portfolio) return [];
+    const names = [];
+    for (const token of (portfolio.tokens || [])) {
+      if (token.symbol) names.push(token.symbol);
+      if (token.name) names.push(token.name);
+    }
+    return names;
+  } catch {
+    return [];
+  }
+}
+
+function expandHoldingTerms(holdings) {
+  const terms = new Set();
+  const generic = new Set([
+    'usd', 'usdc', 'usdt', 'dai', 'eur', 'weth', 'wbtc', 'btc.b', 'pool', 'vault', 'token',
+    'yield', 'lending', 'borrow', 'borrowed', 'supplied', 'staking', 'market', 'position',
+    'long', 'short', 'yes', 'no', 'trump', 'iran', 'china', 'russia', 'oil',
+  ]);
+  for (const raw of holdings || []) {
+    const clean = String(raw || '').trim();
+    if (!clean) continue;
+    const lower = clean.toLowerCase();
+    if (!generic.has(lower)) terms.add(lower);
+    for (const part of lower.split(/[^a-z0-9$]+/).filter(Boolean)) {
+      const normalized = part.replace(/^\$/, '');
+      if (part.length >= 2 && !generic.has(normalized)) terms.add(normalized);
+      for (const alias of (ASSET_ALIASES[part.replace(/^\$/, '')] || [])) terms.add(alias);
+    }
+    for (const alias of (ASSET_ALIASES[lower.replace(/^\$/, '')] || [])) terms.add(alias);
+  }
+  return [...terms].filter(t => t.length >= 2 && (!generic.has(t) || ['btc', 'eth'].includes(t)));
+}
+
+function matchesHolding(item, terms) {
+  const text = normalizeTitle(`${item.title || ''} ${item.desc || ''}`);
+  return terms.some(term => {
+    const t = normalizeTitle(term);
+    if (!t) return false;
+    if (t.length <= 4) return new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text);
+    return text.includes(t);
+  });
+}
+
+function overlapsAny(item, list, threshold = 0.72) {
+  return (list || []).some(prev => titleOverlap(prev.title, item.title) >= threshold);
+}
+
+function ensureTypeCoverage(selected, clean) {
+  const out = [...selected];
+  const seen = new Set(out.map(i => i.idx));
+  for (const type of ['crypto', 'defi', 'macro']) {
+    if (out.some(i => (i.type || 'macro') === type)) continue;
+    const best = clean
+      .filter(i => (i.type || 'macro') === type)
+      .filter(i => !seen.has(i.idx))
+      .filter(i => i.marketImpactScore >= (type === 'defi' ? -2 : 3))
+      .sort((a, b) => b.marketImpactScore - a.marketImpactScore)[0];
+    if (best) {
+      seen.add(best.idx);
+      out.push(best);
+    }
+  }
+  return out;
+}
+
+function selectPortfolioItems(clean, holdingTerms, mainItems) {
+  return clean
+    .filter(item => matchesHolding(item, holdingTerms))
+    .filter(item => item.marketImpactScore >= 4)
+    .filter(item => !overlapsAny(item, mainItems))
+    .slice(0, 2);
 }
 
 async function checkWithGroq(prompt, groqKey) {
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + groqKey },
     body: JSON.stringify({
       model: 'llama-3.1-8b-instant',
       temperature: 0,
@@ -146,77 +311,67 @@ async function checkWithGroq(prompt, groqKey) {
   return (data.choices?.[0]?.message?.content || '{}').replace(/```json|```/g, '').trim();
 }
 
-async function checkWithGemini(prompt) {
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error('No Gemini key');
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + geminiKey;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0 },
-    }),
-  });
-  if (!res.ok) throw new Error('Gemini HTTP ' + res.status);
-  const data = await res.json();
-  return (data.candidates?.[0]?.content?.parts?.[0]?.text || '{}').replace(/```json|```/g, '').trim();
-}
+async function rankDailyBriefItems(items, holdingTerms) {
+  const clean = dedupeNews((items || [])
+    .filter(i => i && i.title)
+    .filter(i => isWithinLast24h(i))
+    .filter(i => !isPricePrediction(i)))
+    .map((i, idx) => ({ ...i, idx, marketImpactScore: marketMovingScore(i) }))
+    .sort((a, b) => b.marketImpactScore - a.marketImpactScore);
 
-async function checkEventCondition(condition, headlines, groqKey) {
-  if (!headlines.length) return { triggered: false, reason: 'no headlines fetched' };
+  const fallback = () => {
+    const order = { tg: 0, crypto: 1, defi: 2, macro: 3 };
+    const byType = clean.reduce((acc, item) => {
+      const type = item.type || 'macro';
+      (acc[type] ||= []).push(item);
+      return acc;
+    }, {});
+    const orderedTypes = [...new Set(['tg', 'crypto', 'defi', 'macro', ...Object.keys(byType)])];
+    const items = ensureTypeCoverage(orderedTypes
+      .flatMap(type => (byType[type] || []).slice(0, 4))
+      .sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9) || b.marketImpactScore - a.marketImpactScore), clean);
+    const portfolioItems = selectPortfolioItems(clean, holdingTerms, items);
+    return { items, portfolioItems };
+  };
 
-  const headlineText = headlines
-    .map((h, i) => (i + 1) + '. [' + h.source + '] ' + h.title + (h.desc ? ' — ' + h.desc : ''))
-    .join('\n');
+  const key = process.env.GROQ_API_KEY;
+  if (!key || !clean.length) return fallback();
 
-  const prompt = buildEventPrompt(condition, headlineText);
+  const compact = clean.slice(0, 90).map((item, i) =>
+    `${i}. [${item.type || 'macro'} score=${item.marketImpactScore}] ${item.source || ''}: ${item.title}`
+  ).join('\n');
+  const prompt =
+    'You are the editor of a crypto/DeFi portfolio Daily Brief.\n' +
+    'Return ONLY JSON: {"keep":[numbers],"portfolio":[numbers]}.\n' +
+    'Keep rules: all headlines must be important and market-moving from the last 24h; keep up to 4 per type; reject price predictions, generic analysis, duplicates, guides, sponsored posts, and weak chatter.\n' +
+    'Crypto priorities: Saylor/Strategy BTC purchases or actions, major BTC institutional adoption, causes of market crashes, major regulation, big exploits.\n' +
+    'DeFi priorities: protocol upgrades, major announcements from leading projects, important industry developments, market-moving token upgrades, major achievements, fastest-growing DeFi sectors.\n' +
+    'Macro priorities: causes of the latest market move, major conflicts, US/China president statements, breaking Kobeissi-style market news.\n' +
+    'Portfolio rules: choose up to 2 items directly tied to these holding terms and only if important: ' + holdingTerms.slice(0, 50).join(', ') + '.\n\n' +
+    compact;
 
-  let rawText = '{}';
   try {
-    rawText = await checkWithGroq(prompt, groqKey);
-  } catch (e) {
-    console.warn('[news] Groq failed (' + e.message + '), trying Gemini...');
-    try {
-      rawText = await checkWithGemini(prompt);
-    } catch (e2) {
-      return { triggered: false, reason: 'AI unavailable: ' + e2.message };
+    const parsed = JSON.parse(await checkWithGroq(prompt, key));
+    const pick = arr => (Array.isArray(arr) ? arr.map(Number).filter(Number.isInteger).map(i => clean[i]).filter(Boolean) : []);
+    const selected = ensureTypeCoverage(dedupeNews(pick(parsed.keep)).filter(i => i.marketImpactScore > -50), clean);
+    if (!selected.length) return fallback();
+    const byType = {};
+    for (const item of selected) {
+      const type = item.type || 'macro';
+      (byType[type] ||= []);
+      if (byType[type].length < 4) byType[type].push(item);
     }
-  }
-
-  try {
-    const parsed = JSON.parse(rawText);
-    return { triggered: !!parsed.triggered, reason: parsed.reason || '' };
+    const mainItems = [...new Set(['tg', 'crypto', 'defi', 'macro', ...Object.keys(byType)])].flatMap(t => byType[t] || []);
+    const aiPortfolio = dedupeNews(pick(parsed.portfolio))
+      .filter(i => matchesHolding(i, holdingTerms))
+      .filter(i => i.marketImpactScore >= 4)
+      .filter(i => !overlapsAny(i, mainItems));
+    return { items: mainItems, portfolioItems: aiPortfolio.length ? aiPortfolio.slice(0, 2) : selectPortfolioItems(clean, holdingTerms, mainItems) };
   } catch (e) {
-    return { triggered: false, reason: 'Parse error' };
+    console.warn('[news] Daily Brief AI ranking failed:', e.message);
+    return fallback();
   }
 }
-
-module.exports = { fetchRecentHeadlines, checkEventCondition };
-
-// ── Vercel HTTP handler ───────────────────────────────────────────────────────
-
-const SOURCES_WITH_TYPE = [
-  { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/',          label: 'CoinDesk',        type: 'crypto' },
-  { url: 'https://cointelegraph.com/rss',                            label: 'CoinTelegraph',   type: 'crypto' },
-  { url: 'https://thedefiant.io/feed',                               label: 'The Defiant',     type: 'defi'   },
-  { url: 'https://blockworks.co/feed',                               label: 'Blockworks',      type: 'defi'   },
-  { url: 'https://decrypt.co/feed',                                  label: 'Decrypt',         type: 'crypto' },
-  { url: 'https://theblock.co/rss.xml',                              label: 'The Block',       type: 'crypto' },
-  { url: 'https://unchainedcrypto.com/feed/',                        label: 'Unchained',       type: 'crypto' },
-  { url: 'https://www.dlnews.com/arc/outboundfeeds/rss/',            label: 'DL News',         type: 'defi'   },
-  { url: 'https://cryptopanic.com/news/rss/',                        label: 'CryptoPanic',     type: 'crypto' },
-  { url: 'https://feeds.reuters.com/reuters/businessNews',           label: 'Reuters Business',type: 'macro'  },
-  { url: 'https://feeds.reuters.com/reuters/politicsNews',           label: 'Reuters Politics',type: 'macro'  },
-  { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',          label: 'BBC Business',    type: 'macro'  },
-  { url: 'https://feeds.bbci.co.uk/news/world/rss.xml',             label: 'BBC World',       type: 'macro'  },
-  { url: 'https://www.investing.com/rss/news_25.rss',               label: 'Investing.com',   type: 'macro'  },
-  { url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml',           label: 'WSJ Markets',     type: 'macro'  },
-  { url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html',    label: 'CNBC Finance',    type: 'macro'  },
-  { url: 'https://www.marketwatch.com/rss/topstories',              label: 'MarketWatch',     type: 'macro'  },
-  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml',  label: 'NYT World',       type: 'macro'  },
-  { url: 'https://www.ft.com/rss/home',                             label: 'FT',              type: 'macro'  },
-];
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -225,30 +380,33 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
 
   const tgParam = req.query?.tg || '';
-  const tgChannels = tgParam ? tgParam.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const tgChannels = tgParam ? String(tgParam).split(',').map(s => s.trim()).filter(Boolean) : [];
+  const queryHoldings = holdingsFromQuery(req.query?.holdings || '');
+  const serverHoldings = queryHoldings.length ? [] : await holdingsFromServer();
+  const holdingTerms = expandHoldingTerms([...queryHoldings, ...serverHoldings]);
 
   const sources = [...SOURCES_WITH_TYPE];
   for (const handle of tgChannels) {
-    const clean = handle.replace(/^(?:https?:\/\/)?t\.me\//, '').replace(/^@/, '').trim();
-    sources.push({ url: `https://rsshub.app/telegram/channel/${clean}`, label: handle, type: 'tg' });
+    const clean = String(handle || '').replace(/^(?:https?:\/\/)?t\.me\/(?:s\/)?/i, '').replace(/^@/, '').trim();
+    if (clean) sources.push({ url: tgChannelRSSUrl(clean), label: clean, type: /kobeissi/i.test(clean) ? 'macro' : 'tg' });
   }
 
   const settled = await Promise.allSettled(
-    sources.map(async (src) => {
+    sources.map(async src => {
       const items = await fetchRSSFeed(src.url);
       return items.map(i => ({
-        title:  i.title,
-        url:    i.link || '#',
-        type:   src.type,
+        title: i.title,
+        desc: i.desc,
+        url: i.link || '#',
+        type: src.type,
         source: src.label,
+        pubDate: i.pubDate,
+        publishedAt: publishedAt(i.pubDate),
       }));
     })
   );
 
-  const items = settled
-    .filter(r => r.status === 'fulfilled')
-    .flatMap(r => r.value)
-    .slice(0, 30);
-
-  return res.status(200).json({ ok: true, items, ts: Date.now() });
+  const rawItems = settled.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
+  const ranked = await rankDailyBriefItems(rawItems, holdingTerms);
+  return res.status(200).json({ ok: true, ...ranked, ts: Date.now() });
 };

@@ -1,6 +1,7 @@
 /**
  * POST /api/sync-alerts
- * Merges browser alerts with KV alerts (preserves TG-set alerts).
+ * Syncs browser alerts to KV.
+ * Real-world event alerts are intentionally disabled and stripped here.
  */
 
 const { kvGet, kvSet } = require('../lib/kv');
@@ -8,9 +9,56 @@ const { kvGet, kvSet } = require('../lib/kv');
 const ALERTS_KEY       = 'vault:alerts';
 const RECENT_FIRED_KEY = 'vault:recent_fired';
 
-// Server-only fields that the browser never sets — must be preserved across syncs
-// so the cron throttle and other server state survive browser overwrites.
 const SERVER_FIELDS = ['lastEventCheck', 'tgSent'];
+const ALLOWED_TYPES = new Set(['crypto', 'stock', 'etf', 'polymarket', 'opinion', 'aavecap', 'contract', 'pmapy']);
+const CRYPTO_TICKERS = new Set([
+  'BTC','ETH','SOL','BNB','XRP','ADA','DOGE','MATIC','POL','DOT','SHIB','LTC','LINK','UNI','ATOM','XLM','NEAR','APT','SUI','ARB','OP','INJ','TIA','PEPE','WIF','BONK','JUP','PYTH','JTO','RNDR','HNT','AVAX','USDC','USDT','DAI','FRAX','USDE','SUSDE','WBTC','STETH','WSTETH','RETH','CBETH','EZETH','EETH','WEETH','RSETH','CRV','CVX','LDO','MKR','SNX','COMP','YFI','SUSHI','BAL','AAVE','PENDLE','ENA','PRIME'
+]);
+
+function isEventAlert(alert) {
+  return alert?.type === 'event' || !!alert?.condition;
+}
+
+function sanitizeAlert(alert) {
+  if (!alert || typeof alert !== 'object') return null;
+  if (isEventAlert(alert)) return null;
+
+  const a = { ...alert };
+  if (!a.id) a.id = Date.now().toString() + Math.random().toString(36).slice(2, 5);
+  if (!a.type && a.symbol) a.type = 'crypto';
+  if (!ALLOWED_TYPES.has(a.type)) return null;
+
+  if (a.symbol && typeof a.symbol === 'string') {
+    a.symbol = a.type === 'aavecap' ? a.symbol.trim() : a.symbol.trim().toUpperCase();
+  }
+
+  // Browser/AI sometimes misclassifies lowercase crypto tickers as stocks.
+  if ((a.type === 'stock' || a.type === 'etf') && CRYPTO_TICKERS.has(String(a.symbol || '').toUpperCase())) {
+    a.type = 'crypto';
+    a.symbol = String(a.symbol).toUpperCase();
+  }
+
+  if (a.type === 'aavecap') {
+    if (!a.symbol || !a.chainId) return null;
+    a.chainId = Number(a.chainId);
+    a.target = Number(a.target);
+    if (!Number.isFinite(a.chainId) || !Number.isFinite(a.target)) return null;
+    if (a.dir !== 'above' && a.dir !== 'below') return null;
+    return { ...a, triggered: !!a.triggered };
+  }
+
+  if (a.type === 'contract') {
+    if (!a.contractAddress || !a.contractChain) return null;
+  } else if (!a.symbol) {
+    return null;
+  }
+
+  a.target = Number(a.target);
+  if (!Number.isFinite(a.target)) return null;
+  if (a.dir !== 'above' && a.dir !== 'below') return null;
+
+  return { ...a, triggered: !!a.triggered };
+}
 
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin',  '*');
@@ -19,12 +67,22 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  // GET — return current alerts from KV (used by terminalLoad to merge on startup)
   if (req.method === 'GET') {
     try {
       const stored = await kvGet(ALERTS_KEY);
       const alerts = stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : [];
-      return res.status(200).json({ ok: true, alerts });
+      const firedRaw = await kvGet(RECENT_FIRED_KEY);
+      const fired = firedRaw ? (typeof firedRaw === 'string' ? JSON.parse(firedRaw) : firedRaw) : [];
+      const clean = Array.isArray(alerts) ? alerts.map(sanitizeAlert).filter(Boolean) : [];
+      if (Array.isArray(alerts) && clean.length !== alerts.length) {
+        await kvSet(ALERTS_KEY, JSON.stringify(clean));
+      }
+      return res.status(200).json({
+        ok: true,
+        alerts: clean,
+        recentFired: Array.isArray(fired) ? fired.slice(-20) : [],
+        removed: Array.isArray(alerts) ? alerts.length - clean.length : 0,
+      });
     } catch (e) {
       return res.status(500).json({ error: e.message });
     }
@@ -47,13 +105,21 @@ module.exports = async function handler(req, res) {
 
   const browserAlerts = body?.alerts;
   const tgChannels    = body?.tgChannels || [];
-  // IDs the user explicitly deleted in the browser — never restore these from KV
+  if (body?.command) {
+    try {
+      const { processVaultCommand } = require('./tg-webhook');
+      if (typeof processVaultCommand !== 'function') throw new Error('server command processor unavailable');
+      const result = await processVaultCommand(String(body.command || ''), { answerQuestions: true });
+      return res.status(200).json({ ok: !!result.ok, ...result });
+    } catch (e) {
+      return res.status(500).json({ ok:false, handled:true, error:e.message, messages:['Server command error: ' + e.message] });
+    }
+  }
   if (!Array.isArray(browserAlerts)) {
     return res.status(400).json({ error: 'alerts must be an array' });
   }
 
   try {
-    // Load existing KV alerts and recently fired IDs
     let existing = [];
     let recentFired = new Set();
     try {
@@ -64,22 +130,20 @@ module.exports = async function handler(req, res) {
       const firedRaw = await kvGet(RECENT_FIRED_KEY);
       if (firedRaw) {
         const firedArr = typeof firedRaw === 'string' ? JSON.parse(firedRaw) : firedRaw;
-        recentFired = new Set(firedArr);
+        recentFired = new Set((Array.isArray(firedArr) ? firedArr : []).map(r => typeof r === 'object' ? r.id : r).filter(Boolean));
       }
     } catch (e) {}
 
-    // Build a lookup for existing KV alerts so we can restore server-only fields
-    const existingMap = new Map(existing.map(a => [a.id, a]));
+    const existingClean = (Array.isArray(existing) ? existing : []).map(sanitizeAlert).filter(Boolean);
+    const existingMap = new Map(existingClean.map(a => [a.id, a]));
+    const sanitizedBrowserAlerts = browserAlerts.map(sanitizeAlert).filter(Boolean);
+    const browserIds = new Set(sanitizedBrowserAlerts.map(a => a.id));
 
-    const browserIds = new Set(browserAlerts.map(a => a.id));
-
-    // Merge browser alerts, restoring any server-only fields that the browser doesn't track
-    const merged = browserAlerts
+    const browserMerged = sanitizedBrowserAlerts
       .filter(a => !a.triggered && !recentFired.has(a.id))
       .map(a => {
         const kv = existingMap.get(a.id);
         if (!kv) return a;
-        // Keep all browser fields, but layer server-only fields on top
         const patch = {};
         for (const f of SERVER_FIELDS) {
           if (kv[f] !== undefined) patch[f] = kv[f];
@@ -87,19 +151,18 @@ module.exports = async function handler(req, res) {
         return Object.keys(patch).length ? { ...a, ...patch } : a;
       });
 
-    // Restore TG-created alerts the browser doesn't know about.
-    // Only alerts explicitly tagged source:'tg' (set by tg-webhook.js) are restored —
-    // this prevents browser-deleted alerts from ever being re-added, with no need to
-    // track deleted IDs anywhere.
-    if (browserAlerts.length > 0) {
-      const tgOnly = existing.filter(a =>
-        a.source === 'tg' &&
-        !browserIds.has(a.id) &&
-        !a.triggered &&
-        !recentFired.has(a.id)
-      );
-      merged.push(...tgOnly);
-    }
+    // Browser localStorage is not allowed to erase Telegram-created alerts.
+    // Those can be removed with the Telegram remove/clear commands.
+    const tgOnly = existingClean.filter(a =>
+      a.source === 'tg' &&
+      !a.triggered &&
+      !browserIds.has(a.id) &&
+      !recentFired.has(a.id)
+    );
+
+    const mergedMap = new Map();
+    for (const a of [...browserMerged, ...tgOnly]) mergedMap.set(a.id, a);
+    const merged = [...mergedMap.values()];
 
     await kvSet(ALERTS_KEY, JSON.stringify(merged));
 
@@ -107,37 +170,15 @@ module.exports = async function handler(req, res) {
       await kvSet('vault:tg_channels', JSON.stringify(tgChannels));
     }
 
-    // ── Immediately check brand-new event alerts ────────────────────────────
-    // A "new" alert is one the browser just added (not in previous KV state)
-    // and created within the last 2 minutes (guards against KV-cleared re-saves).
-    const existingIds = new Set(existing.map(a => a.id));
-    const newEventAlerts = browserAlerts.filter(a =>
-      a.type === 'event' &&
-      !existingIds.has(a.id) &&
-      !a.triggered &&
-      (Date.now() - (a.setAt || 0)) < 120000
-    );
-    if (newEventAlerts.length > 0) {
-      const baseUrl = 'https://' + (process.env.VERCEL_PROJECT_PRODUCTION_URL || 'testedefi.vercel.app');
-      // Await so the function doesn't terminate before checks complete
-      await Promise.allSettled(newEventAlerts.map(a =>
-        fetch(baseUrl + '/api/event-check', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          // Pass alertId so event-check sends TG + marks triggered in KV if fired
-          body: JSON.stringify({ condition: a.condition, label: a.label, alertId: a.id, setAt: a.setAt || 0 }),
-          signal: AbortSignal.timeout(22000),
-        }).catch(e => console.warn('[sync-alerts] immediate check failed:', e.message))
-      ));
-    }
-
     return res.status(200).json({
-      ok:          true,
-      count:       merged.length,
-      active:      merged.filter(a => !a.triggered).length,
-      browser:     browserAlerts.length,
-      tgOnly:      0,
-      recentFired: [...recentFired], // let browser remove these from localStorage
+      ok: true,
+      count: merged.length,
+      active: merged.filter(a => !a.triggered).length,
+      browser: browserAlerts.length,
+      rejected: browserAlerts.length - sanitizedBrowserAlerts.length,
+      eventAlertsDisabled: true,
+      tgOnly: tgOnly.length,
+      recentFired: [...recentFired],
     });
   } catch (e) {
     console.error('[sync-alerts] KV write error:', e.message);

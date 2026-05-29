@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Polymarket PNL Custom Range Preview</title>
+<style>
+:root{--bg:#050d13;--panel:#07131b;--line:#14313b;--text:#e8edf4;--muted:#93a3b5;--green:#55d878;--red:#ff5d70;--teal:#62e6cf;--amber:#f0b949;--font:Inter,system-ui,-apple-system,Segoe UI,sans-serif;--mono:"JetBrains Mono",ui-monospace,Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -20%,rgba(42,107,123,.20),transparent 36%),var(--bg);color:var(--text);font-family:var(--font);padding:28px}
+.shell{max-width:1120px;margin:0 auto}
+.top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:14px}
+.eyebrow{font:800 12px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+h1{margin:8px 0 4px;font-size:30px}
+.wallet{font:700 12px/1.45 var(--mono);color:var(--muted);word-break:break-all}
+.pill{border:1px solid rgba(98,230,207,.24);background:rgba(98,230,207,.08);color:var(--teal);border-radius:6px;padding:8px 10px;font:800 12px var(--mono)}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+.stat{border:1px solid var(--line);background:linear-gradient(180deg,rgba(10,28,39,.96),rgba(5,15,22,.98));border-radius:8px;padding:14px}
+.label{font:850 11px/1 var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--muted)}
+.value{margin-top:8px;font:850 25px/1 var(--mono)}
+.good{color:var(--green)}.bad{color:var(--red)}
+.panel{position:relative;border:1px solid rgba(98,230,207,.2);background:linear-gradient(180deg,rgba(7,19,27,.98),rgba(3,10,15,.99));border-radius:8px;overflow:hidden}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;border-bottom:1px solid rgba(148,163,184,.12)}
+.title{font:850 17px/1 var(--font)}
+.chart-wrap{position:relative;padding:18px}
+.chart{width:100%;height:380px;display:block;overflow:visible}
+.axis{stroke:rgba(148,163,184,.16);stroke-width:1}
+.area{fill:url(#areaGrad)}
+.line{fill:none;stroke:var(--green);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.point{fill:#07131b;stroke:var(--teal);stroke-width:2}
+.zero{stroke:rgba(240,185,73,.38);stroke-width:1;stroke-dasharray:6 6}
+.hover-line{stroke:rgba(226,232,240,.32);stroke-width:1;display:none}
+.hover-dot{fill:var(--bg);stroke:var(--teal);stroke-width:3;display:none}
+.tooltip{position:fixed;z-index:5;transform:translate(-50%,-112%);display:none;min-width:190px;border:1px solid rgba(98,230,207,.36);background:#08131b;border-radius:8px;padding:10px 12px;box-shadow:0 18px 40px rgba(0,0,0,.35);font:850 16px/1 var(--mono)}
+.tooltip span{display:block;margin-top:6px;font:750 11px/1.35 var(--mono);color:var(--muted)}
+.note{padding:0 18px 18px;color:var(--muted);font-size:13px;line-height:1.45}
+.note code{font-family:var(--mono);color:var(--text)}
+@media(max-width:760px){body{padding:16px}.top{display:block}.grid{grid-template-columns:1fr 1fr}.panel-head{align-items:flex-start;flex-direction:column}.chart{height:300px}.value{font-size:20px}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="top">
+    <div>
+      <div class="eyebrow">Custom range simulation</div>
+      <h1>Polymarket 7D PNL, 3H Points</h1>
+      <div class="wallet" id="walletLabel"></div>
+    </div>
+    <div class="pill" id="pointCount">Loading points</div>
+  </div>
+  <div class="grid">
+    <div class="stat"><div class="label">Range PNL</div><div class="value" id="statTotal">...</div></div>
+    <div class="stat"><div class="label">Start PNL</div><div class="value" id="statStart">...</div></div>
+    <div class="stat"><div class="label">Range High</div><div class="value good" id="statHigh">...</div></div>
+    <div class="stat"><div class="label">Drawdown</div><div class="value bad" id="statDrawdown">...</div></div>
+  </div>
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <div class="title">May 19 6:00 PM to May 26 3:00 PM</div>
+        <div class="wallet" id="rangeCopy">Every chart point is spaced by 3 hours.</div>
+      </div>
+      <div class="pill">3H cadence</div>
+    </div>
+    <div class="chart-wrap">
+      <svg class="chart" viewBox="0 0 920 360" preserveAspectRatio="none" id="chart">
+        <defs><linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#55d878" stop-opacity=".34"/><stop offset="1" stop-color="#55d878" stop-opacity="0"/></linearGradient></defs>
+        <line class="axis" x1="0" y1="52" x2="920" y2="52"/>
+        <line class="axis" x1="0" y1="180" x2="920" y2="180"/>
+        <line class="axis" x1="0" y1="308" x2="920" y2="308"/>
+        <line class="zero" id="zeroLine" x1="0" y1="180" x2="920" y2="180"/>
+        <path class="area" id="area"></path>
+        <path class="line" id="line"></path>
+        <g id="points"></g>
+        <line class="hover-line" id="hoverLine" y1="24" y2="330"></line>
+        <circle class="hover-dot" id="hoverDot" r="5"></circle>
+      </svg>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+    <div class="note">Data source: <code>user-pnl-api.polymarket.com/user-pnl?interval=1w&amp;fidelity=1h</code>, filtered to the requested range and sampled every 3 hours. The visible PNL is rebased to <code>$0</code> at May 19, 2026, 6:00 PM Europe/Bucharest.</div>
+  </section>
+</div>
+<script src="./polymarket-pnl-custom-range-data.js"></script>
+<script>
+const wallet = '0x2Ec0aa99D26b703585f58bdEd217a640d09e976b';
+const points = (window.__POLYMARKET_CUSTOM_RANGE_PNL__ || [])
+  .map(d => ({ t: Number(d.t), p: Number(d.p) }))
+  .filter(d => Number.isFinite(d.t) && Number.isFinite(d.p))
+  .sort((a, b) => a.t - b.t);
+let currentPairs = [];
+
+const fmtUsd2 = v => (v < 0 ? '-' : '+') + '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtDateTime = t => new Date(t * 1000).toLocaleString('en-US', { timeZone: 'Europe/Bucharest', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+document.getElementById('walletLabel').textContent = wallet;
+
+function setSigned(id, value) {
+  const el = document.getElementById(id);
+  el.textContent = fmtUsd2(value);
+  el.className = 'value ' + (value >= 0 ? 'good' : 'bad');
+}
+
+function draw() {
+  if (!points.length) {
+    document.getElementById('rangeCopy').textContent = 'No points were generated for the selected range.';
+    return;
+  }
+
+  const base = points[0].p;
+  const rebased = points.map(p => ({ ...p, r: p.p - base }));
+  const w = 920, h = 360, padTop = 24, padBottom = 30;
+  const minP = Math.min(0, ...rebased.map(p => p.r));
+  const maxP = Math.max(0, ...rebased.map(p => p.r));
+  const span = Math.max(1, maxP - minP);
+  const x = (p, i) => rebased.length < 2 ? w : (i / (rebased.length - 1)) * w;
+  const y = p => padTop + ((maxP - p.r) / span) * (h - padTop - padBottom);
+  currentPairs = rebased.map((p, i) => [x(p, i), y(p), p]);
+
+  const d = currentPairs.map(([px, py], i) => (i ? 'L' : 'M') + px.toFixed(2) + ',' + py.toFixed(2)).join(' ');
+  document.getElementById('line').setAttribute('d', d);
+  document.getElementById('area').setAttribute('d', d + ' L920,360 L0,360 Z');
+  document.getElementById('points').innerHTML = currentPairs.map(([px, py]) => `<circle class="point" cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="2.25"/>`).join('');
+
+  const zeroY = padTop + ((maxP - 0) / span) * (h - padTop - padBottom);
+  document.getElementById('zeroLine').setAttribute('y1', zeroY);
+  document.getElementById('zeroLine').setAttribute('y2', zeroY);
+
+  let peak = rebased[0].r;
+  let maxDrawdown = 0;
+  for (const point of rebased) {
+    peak = Math.max(peak, point.r);
+    maxDrawdown = Math.min(maxDrawdown, point.r - peak);
+  }
+
+  setSigned('statTotal', rebased.at(-1).r);
+  document.getElementById('statStart').textContent = fmtUsd2(points[0].p);
+  document.getElementById('statStart').className = 'value ' + (points[0].p >= 0 ? 'good' : 'bad');
+  document.getElementById('statHigh').textContent = fmtUsd2(maxP);
+  document.getElementById('statDrawdown').textContent = fmtUsd2(maxDrawdown);
+  document.getElementById('pointCount').textContent = `${points.length} points`;
+  document.getElementById('rangeCopy').textContent = `${fmtDateTime(points[0].t)} to ${fmtDateTime(points.at(-1).t)} | raw latest ${fmtUsd2(points.at(-1).p)}`;
+}
+
+const svg = document.getElementById('chart');
+const tip = document.getElementById('tooltip');
+const hoverLine = document.getElementById('hoverLine');
+const hoverDot = document.getElementById('hoverDot');
+svg.addEventListener('mousemove', e => {
+  if (!currentPairs.length) return;
+  const rect = svg.getBoundingClientRect();
+  const sx = ((e.clientX - rect.left) / rect.width) * 920;
+  const pair = currentPairs.reduce((best, p) => Math.abs(p[0] - sx) < Math.abs(best[0] - sx) ? p : best, currentPairs[0]);
+  hoverLine.style.display = 'block';
+  hoverDot.style.display = 'block';
+  hoverLine.setAttribute('x1', pair[0]);
+  hoverLine.setAttribute('x2', pair[0]);
+  hoverDot.setAttribute('cx', pair[0]);
+  hoverDot.setAttribute('cy', pair[1]);
+  tip.innerHTML = `${fmtUsd2(pair[2].r)}<span>${fmtDateTime(pair[2].t)} | raw ${fmtUsd2(pair[2].p)}</span>`;
+  tip.style.left = rect.left + (pair[0] / 920) * rect.width + 'px';
+  tip.style.top = rect.top + (pair[1] / 360) * rect.height + 'px';
+  tip.style.display = 'block';
+});
+svg.addEventListener('mouseleave', () => {
+  tip.style.display = 'none';
+  hoverLine.style.display = 'none';
+  hoverDot.style.display = 'none';
+});
+
+draw();
+</script>
+</body>
+</html>

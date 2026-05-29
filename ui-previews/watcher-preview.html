@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vault Watcher Preview</title>
+<link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700,800,900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --void:#05080d;
+  --base:#071017;
+  --panel:#091720;
+  --panel-2:#0b1c27;
+  --line:rgba(134,159,179,.16);
+  --line-hi:rgba(134,159,179,.28);
+  --text:#eef4fb;
+  --muted:#9eafbf;
+  --faint:#6e8090;
+  --teal:#59f0c8;
+  --green:#55d66f;
+  --blue:#63b7ff;
+  --violet:#b78cff;
+  --amber:#ffc857;
+  --red:#ff5c7a;
+  --mono:"JetBrains Mono", monospace;
+  --sans:"Satoshi", "Inter", sans-serif;
+}
+* { box-sizing:border-box; }
+body {
+  margin:0;
+  min-height:100vh;
+  background:
+    radial-gradient(circle at 78% -10%, rgba(68,89,255,.12), transparent 34%),
+    linear-gradient(180deg, #081019, #03070b 68%);
+  color:var(--text);
+  font-family:var(--sans);
+}
+.shell { display:grid; grid-template-columns:212px 1fr; min-height:100vh; }
+.side {
+  border-right:1px solid var(--line);
+  background:rgba(3,10,14,.7);
+  padding:28px 22px;
+}
+.brand {
+  font-weight:900;
+  letter-spacing:.18em;
+  font-size:27px;
+  line-height:.95;
+}
+.brand span { display:block; color:var(--teal); font-size:12px; margin-top:8px; letter-spacing:.28em; }
+.nav-title {
+  margin:42px 0 14px;
+  color:var(--muted);
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+}
+.nav-item {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  height:42px;
+  padding:0 12px;
+  border-radius:8px;
+  color:var(--text);
+  font-weight:750;
+}
+.nav-item.active {
+  background:linear-gradient(90deg, rgba(89,240,200,.18), rgba(255,255,255,.03));
+  box-shadow:inset 3px 0 0 var(--teal);
+}
+.status { position:absolute; bottom:28px; display:flex; gap:9px; align-items:center; color:var(--text); font-size:13px; }
+.dot { width:9px; height:9px; border-radius:50%; background:var(--green); box-shadow:0 0 12px rgba(85,214,111,.7); }
+.main { padding:20px 18px 28px; }
+.topbar {
+  display:grid;
+  grid-template-columns:1.1fr .9fr .9fr .9fr .8fr;
+  border:1px solid var(--line);
+  border-radius:10px;
+  overflow:hidden;
+  background:rgba(6,16,23,.88);
+}
+.metric {
+  min-height:88px;
+  padding:18px 22px;
+  border-right:1px solid var(--line);
+}
+.metric:last-child { border-right:0; }
+.label {
+  color:var(--muted);
+  font-family:var(--mono);
+  font-size:12px;
+  font-weight:800;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+}
+.value {
+  margin-top:10px;
+  font-family:var(--mono);
+  font-size:29px;
+  font-weight:800;
+  line-height:1;
+}
+.sub { margin-top:7px; color:var(--muted); font-family:var(--mono); font-size:12px; font-weight:650; }
+.green { color:var(--green); }
+.blue { color:var(--blue); }
+.violet { color:var(--violet); }
+.layout {
+  display:grid;
+  grid-template-columns:minmax(0,1.18fr) minmax(360px,.82fr);
+  gap:14px;
+  margin-top:14px;
+  align-items:start;
+}
+.panel {
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:linear-gradient(180deg, rgba(8,20,29,.97), rgba(4,11,16,.98));
+  overflow:hidden;
+}
+.panel-head {
+  min-height:58px;
+  padding:0 18px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  border-bottom:1px solid var(--line);
+}
+.title {
+  font-family:var(--sans);
+  font-weight:900;
+  font-size:22px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.pill {
+  border:1px solid rgba(89,240,200,.3);
+  background:rgba(89,240,200,.08);
+  color:var(--teal);
+  border-radius:999px;
+  padding:6px 12px;
+  font-family:var(--mono);
+  font-size:12px;
+  font-weight:800;
+}
+.market-list { display:flex; flex-direction:column; }
+.market-row {
+  display:grid;
+  grid-template-columns:34px minmax(250px,1fr) 88px 80px 90px 92px;
+  gap:16px;
+  min-height:72px;
+  padding:13px 18px;
+  align-items:center;
+  border-bottom:1px solid var(--line);
+}
+.market-row:last-child { border-bottom:0; }
+.logo {
+  width:34px;
+  height:34px;
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  font-family:var(--mono);
+  font-weight:900;
+  font-size:11px;
+  background:linear-gradient(135deg, rgba(99,183,255,.9), rgba(183,140,255,.9));
+  border:1px solid rgba(255,255,255,.16);
+}
+.market-name { font-size:15px; font-weight:800; line-height:1.25; }
+.market-meta { margin-top:5px; color:var(--muted); font-family:var(--mono); font-size:11px; }
+.cell-label { color:var(--muted); font-family:var(--mono); font-size:10px; font-weight:850; letter-spacing:.11em; text-transform:uppercase; }
+.cell-value { margin-top:5px; font-family:var(--mono); font-weight:800; font-size:14px; }
+.grid-stack { display:grid; gap:14px; }
+.wallet-row, .tool-row {
+  display:grid;
+  grid-template-columns:34px 1fr auto;
+  gap:13px;
+  min-height:68px;
+  padding:14px 16px;
+  align-items:center;
+  border-bottom:1px solid var(--line);
+}
+.wallet-row:last-child, .tool-row:last-child { border-bottom:0; }
+.wallet-icon {
+  width:34px;
+  height:34px;
+  border-radius:8px;
+  display:grid;
+  place-items:center;
+  font-family:var(--mono);
+  font-size:12px;
+  font-weight:900;
+  color:var(--teal);
+  background:rgba(89,240,200,.09);
+  border:1px solid rgba(89,240,200,.22);
+}
+.row-title { font-size:15px; font-weight:850; }
+.row-meta { margin-top:5px; color:var(--muted); font-family:var(--mono); font-size:11px; }
+.badge {
+  padding:5px 9px;
+  border-radius:7px;
+  border:1px solid var(--line-hi);
+  color:var(--text);
+  font-family:var(--mono);
+  font-size:12px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.action-row {
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  padding:12px 16px 16px;
+}
+.btn {
+  border:1px solid rgba(89,240,200,.28);
+  background:rgba(89,240,200,.08);
+  color:var(--teal);
+  border-radius:7px;
+  height:32px;
+  padding:0 12px;
+  font-family:var(--sans);
+  font-size:13px;
+  font-weight:850;
+}
+.btn.secondary { border-color:var(--line-hi); color:var(--muted); background:rgba(255,255,255,.025); }
+@media (max-width:1100px) {
+  .shell { grid-template-columns:1fr; }
+  .side { display:none; }
+  .topbar { grid-template-columns:1fr 1fr; }
+  .layout { grid-template-columns:1fr; }
+  .market-row { grid-template-columns:34px minmax(180px,1fr) 80px 80px; }
+  .hide-sm { display:none; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand">VAULT<span>PORTFOLIO</span></div>
+    <div class="nav-title">Overview</div>
+    <div class="nav-item">Dashboard</div>
+    <div class="nav-title">Positions</div>
+    <div class="nav-item">DeFi Positions</div>
+    <div class="nav-item">Prediction Markets</div>
+    <div class="nav-title">Tools</div>
+    <div class="nav-item active">Watcher</div>
+    <div class="status"><span class="dot"></span> Ready</div>
+  </aside>
+  <main class="main">
+    <section class="topbar">
+      <div class="metric">
+        <div class="label">Watcher Coverage</div>
+        <div class="value">42</div>
+        <div class="sub">markets, wallets, tools</div>
+      </div>
+      <div class="metric">
+        <div class="label">PM Alerts</div>
+        <div class="value violet">18</div>
+        <div class="sub">6 close to trigger</div>
+      </div>
+      <div class="metric">
+        <div class="label">Watched Wallets</div>
+        <div class="value blue">9</div>
+        <div class="sub">3 active today</div>
+      </div>
+      <div class="metric">
+        <div class="label">Yield Tools</div>
+        <div class="value green">15</div>
+        <div class="sub">saved research links</div>
+      </div>
+      <div class="metric">
+        <div class="label">System</div>
+        <div class="value green">Live</div>
+        <div class="sub">updated now</div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <div class="panel">
+        <div class="panel-head">
+          <div class="title">Prediction Markets</div>
+          <span class="pill">18 tracked</span>
+        </div>
+        <div class="market-list">
+          <div class="market-row">
+            <div class="logo">PM</div>
+            <div>
+              <div class="market-name">Will Elon Musk buy OnlyFans?</div>
+              <div class="market-meta">Polymarket · alert above 99.0c · watched wallets active</div>
+            </div>
+            <div><div class="cell-label">Side</div><div class="cell-value">NO</div></div>
+            <div><div class="cell-label">Price</div><div class="cell-value">98.6c</div></div>
+            <div class="hide-sm"><div class="cell-label">Move</div><div class="cell-value green">+2.4%</div></div>
+            <div class="hide-sm"><div class="cell-label">Status</div><div class="cell-value">Armed</div></div>
+          </div>
+          <div class="market-row">
+            <div class="logo">IR</div>
+            <div>
+              <div class="market-name">Will the Iranian regime fall by May 31?</div>
+              <div class="market-meta">Polymarket · 4 wallet fills in last 48h</div>
+            </div>
+            <div><div class="cell-label">Side</div><div class="cell-value">NO</div></div>
+            <div><div class="cell-label">Price</div><div class="cell-value">99.7c</div></div>
+            <div class="hide-sm"><div class="cell-label">Move</div><div class="cell-value green">+1.1%</div></div>
+            <div class="hide-sm"><div class="cell-label">Status</div><div class="cell-value">Live</div></div>
+          </div>
+          <div class="market-row">
+            <div class="logo">BTC</div>
+            <div>
+              <div class="market-name">Will Bitcoin dip to $50,000 in May?</div>
+              <div class="market-meta">Polymarket · high carry watch</div>
+            </div>
+            <div><div class="cell-label">Side</div><div class="cell-value">NO</div></div>
+            <div><div class="cell-label">Price</div><div class="cell-value">99.8c</div></div>
+            <div class="hide-sm"><div class="cell-label">Move</div><div class="cell-value green">+0.6%</div></div>
+            <div class="hide-sm"><div class="cell-label">Status</div><div class="cell-value">Armed</div></div>
+          </div>
+          <div class="market-row">
+            <div class="logo">OP</div>
+            <div>
+              <div class="market-name">Will Plasma reach $2.00 by December 31, 2026?</div>
+              <div class="market-meta">Opinion · carry monitor · manual alert</div>
+            </div>
+            <div><div class="cell-label">Side</div><div class="cell-value">NO</div></div>
+            <div><div class="cell-label">Price</div><div class="cell-value">93.8c</div></div>
+            <div class="hide-sm"><div class="cell-label">Move</div><div class="cell-value">-0.3%</div></div>
+            <div class="hide-sm"><div class="cell-label">Status</div><div class="cell-value">Quiet</div></div>
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="btn secondary">Import</button>
+          <button class="btn">Add Market</button>
+        </div>
+      </div>
+
+      <div class="grid-stack">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="title">Wallet Watchlist</div>
+            <span class="pill">9 wallets</span>
+          </div>
+          <div class="wallet-row">
+            <div class="wallet-icon">0x</div>
+            <div><div class="row-title">0x2Ec0...976b</div><div class="row-meta">Polymarket · 3 fills today · last seen 03:09 PM</div></div>
+            <span class="badge green">Active</span>
+          </div>
+          <div class="wallet-row">
+            <div class="wallet-icon">YL</div>
+            <div><div class="row-title">Yield research wallet</div><div class="row-meta">DeBank · Fluid, Pendle, loop flows</div></div>
+            <span class="badge">Synced</span>
+          </div>
+          <div class="wallet-row">
+            <div class="wallet-icon">SM</div>
+            <div><div class="row-title">Smart money cluster</div><div class="row-meta">Grouped wallet set · suppress duplicate rows</div></div>
+            <span class="badge blue">Watching</span>
+          </div>
+          <div class="action-row">
+            <button class="btn secondary">Manage</button>
+            <button class="btn">Add Wallet</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div class="title">Yield Tools</div>
+            <span class="pill">15 saved</span>
+          </div>
+          <div class="tool-row">
+            <div class="wallet-icon">FL</div>
+            <div><div class="row-title">Fluid Loop Dashboard</div><div class="row-meta">Liquidity, LTV, net APY, health ratio</div></div>
+            <span class="badge green">Pinned</span>
+          </div>
+          <div class="tool-row">
+            <div class="wallet-icon">PD</div>
+            <div><div class="row-title">Pendle Expiry Board</div><div class="row-meta">PT/YT expiries and fixed yield checks</div></div>
+            <span class="badge">Saved</span>
+          </div>
+          <div class="tool-row">
+            <div class="wallet-icon">HL</div>
+            <div><div class="row-title">Hyperliquid Vaults</div><div class="row-meta">Vault deposits, unlocks, and risk notes</div></div>
+            <span class="badge">Saved</span>
+          </div>
+          <div class="action-row">
+            <button class="btn secondary">Open All</button>
+            <button class="btn">Add Tool</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>
