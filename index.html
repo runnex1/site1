@@ -20707,17 +20707,23 @@ function perpsRenderSpread(rows) {
     </tr>`).join('')}</tbody></table>`;
 }
 
-function perpsRenderFundingHistory(hlPayments, nadoPayments) {
+function perpsRenderFundingHistory(hlPayments, nadoPayments, days = 30) {
     const el = document.getElementById('perpsFundingHistory');
     if (!el) return;
-    const merged = [...hlPayments, ...nadoPayments]
-        .sort((a, b) => b.time - a.time)
-        .slice(0, 40);
+    const hlSorted = [...(hlPayments || [])].sort((a, b) => b.time - a.time);
+    const nadoSorted = [...(nadoPayments || [])].sort((a, b) => b.time - a.time);
+    const merged = [
+        ...hlSorted.slice(0, 20),
+        ...nadoSorted.slice(0, 20),
+    ].sort((a, b) => b.time - a.time);
     if (!merged.length) {
-        el.innerHTML = '<div class="perps-empty">No funding payments in the last 30 days.</div>';
+        el.innerHTML = `<div class="perps-empty">No funding payments in the last ${days} days.</div>`;
         return;
     }
-    el.innerHTML = `<table class="perps-table"><thead><tr>
+    const hlInView = merged.filter(p => p.venue === 'hyperliquid').length;
+    const nadoInView = merged.filter(p => p.venue === 'nado').length;
+    el.innerHTML = `<div class="perps-status" style="margin:0 0.5rem 0.35rem;">Showing ${merged.length} recent rows (${hlInView} HL · ${nadoInView} Nado). Nado pays hourly; HL can look sparse if only the latest hour is shown.</div>
+    <table class="perps-table"><thead><tr>
         <th>Time</th><th>Venue</th><th>Market</th><th>Size</th><th>Payment</th>
     </tr></thead><tbody>${merged.map(p => {
         const ts = new Date(p.time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -20769,7 +20775,7 @@ function perpsRenderDashboard(data) {
     perpsRenderPositions('perpsHlPositions', data.hyperliquid.state.positions, 'hyperliquid');
     perpsRenderPositions('perpsNadoPositions', data.nado.state.positions, 'nado');
     perpsRenderSpread(data.rateSpread || []);
-    perpsRenderFundingHistory(data.hyperliquid.funding.payments, data.nado.funding.payments);
+    perpsRenderFundingHistory(data.hyperliquid.funding.payments, data.nado.funding.payments, data.days);
     perpsSaveSnapshot(data);
 
     const t = new Date(data.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

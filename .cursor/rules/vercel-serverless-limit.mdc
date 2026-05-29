@@ -1,0 +1,23 @@
+---
+description: Vercel Hobby serverless function limit — max 12 API routes
+globs: api/**/*.js,vercel.json
+alwaysApply: true
+---
+
+# Vercel serverless function limit (12)
+
+This project is on **Vercel Hobby**, which allows **at most 12 serverless functions** (`api/*.js` files).
+
+Before adding a new `api/*.js` file:
+
+1. Count existing handlers: `(Get-ChildItem api -Filter *.js).Count` must stay **≤ 12**.
+2. Prefer **merging** into an existing handler + a `vercel.json` rewrite (see `/api/perps` → `/api/aave-proxy`).
+3. Do **not** add a standalone route if it would exceed 12 — deployment fails at "Deploying outputs" with no clear build error.
+
+Current pattern for new endpoints:
+
+```json
+{ "source": "/api/new-route", "destination": "/api/existing-handler" }
+```
+
+Branch on `req.method`, `req.query`, or path in the shared handler.
