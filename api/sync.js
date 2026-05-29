@@ -401,7 +401,7 @@ module.exports = async function handler(req, res) {
         portfolioRaw, watchlistRaw, watcherWalletsRaw, watcherLinksRaw,
         snapshotsRaw, aaveMarketsRaw, customTokensRaw,
         opinionWalletsRaw, tgChannelsRaw, pmWalletsRaw, opportunityMonitorsRaw,
-        eventHistoryRaw, dismissedMarketsRaw,
+        eventHistoryRaw, dismissedMarketsRaw, perpsConfigRaw, perpsSnapshotsRaw,
       ] = await Promise.all([
         kvGet('vault:portfolio'),
         kvGet('vault:watchlist'),
@@ -416,6 +416,8 @@ module.exports = async function handler(req, res) {
         kvGet('vault:opportunitymonitors'),
         kvGet('vault:event_history'),
         kvGet('vault:dismissed_markets'),
+        kvGet('vault:perps_config'),
+        kvGet('vault:perps_snapshots'),
       ]);
 
       const parse = (raw, fallback) => {
@@ -436,6 +438,8 @@ module.exports = async function handler(req, res) {
       const opportunityMonitors = parse(opportunityMonitorsRaw, { pegTokens: [], includePmNoApy: true });
       const eventHistory        = parse(eventHistoryRaw, []);
       const dismissedMarkets    = parse(dismissedMarketsRaw, []);
+      const perpsConfig         = parse(perpsConfigRaw, {});
+      const perpsSnapshots      = parse(perpsSnapshotsRaw, {});
 
       if (Array.isArray(pmWallets)) {
         const seen = new Set();
@@ -467,6 +471,8 @@ module.exports = async function handler(req, res) {
         _opportunityMonitors: opportunityMonitors,
         _eventHistory:        eventHistory,
         _dismissedMarkets:    dismissedMarkets,
+        _perpsConfig:         perpsConfig,
+        _perpsSnapshots:      perpsSnapshots,
       };
 
       return res.status(200).json({ ok: true, result: JSON.stringify(result) });
@@ -586,6 +592,16 @@ module.exports = async function handler(req, res) {
     if (body.tgChannels) {
       await kvSet('vault:feed_channels', JSON.stringify(body.tgChannels));
       saved.tgChannels = true;
+    }
+
+    // Perps arb wallets + equity snapshots
+    if (body.perpsConfig) {
+      await kvSet('vault:perps_config', JSON.stringify(body.perpsConfig));
+      saved.perpsConfig = true;
+    }
+    if (body.perpsSnapshots) {
+      await kvSet('vault:perps_snapshots', JSON.stringify(body.perpsSnapshots));
+      saved.perpsSnapshots = true;
     }
 
     // Timestamp of last sync

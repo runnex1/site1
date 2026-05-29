@@ -7516,6 +7516,14 @@ async function loadData() {
                         localStorage.setItem('vault_tg_channels', JSON.stringify(parsed._tgChannels));
                         delete parsed._tgChannels;
                     }
+                    if (parsed._perpsConfig && typeof parsed._perpsConfig === 'object') {
+                        localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify(parsed._perpsConfig));
+                        delete parsed._perpsConfig;
+                    }
+                    if (parsed._perpsSnapshots && typeof parsed._perpsSnapshots === 'object') {
+                        perpsMergeSnapshotsFromServer(parsed._perpsSnapshots);
+                        delete parsed._perpsSnapshots;
+                    }
 
                     parsed.polymarketWallets = mergeWalletAddresses(parsed.polymarketWallets);
 
@@ -7597,6 +7605,9 @@ async function saveData() {
             },
             // Telegram / news feed channel handles
             tgChannels:     _ls(X_HANDLES_KEY, '[]'),
+            // Perps arb exchange wallets + equity snapshots
+            perpsConfig:    _ls(PERPS_CONFIG_KEY, '{}'),
+            perpsSnapshots: _ls(PERPS_SNAPSHOTS_KEY, '{}'),
             // Dismissed opportunities (market IDs)
             dismissedMarkets: _dismissedMarkets || [],
         };
@@ -20433,10 +20444,117 @@ function watcherApplyFilters() {
 // ── Perps Funding Arb (Hyperliquid + Nado) ───────────────────────────
 const PERPS_CONFIG_KEY = 'vault-perps-config';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
+const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
 let _perpsCache = null;
 let _perpsDays = 30;
 
+function perpsMergeSnapshotsFromServer(serverSnaps) {
+    try {
+        const local = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
+        const merged = { ...serverSnaps };
+        for (const [date, snap] of Object.entries(local)) {
+            const serverSnap = merged[date];
+            const localAt = Number(snap?.fetchedAt) || Date.parse(snap?.date) || 0;
+            const serverAt = Number(serverSnap?.fetchedAt) || Date.parse(serverSnap?.date) || 0;
+            if (!serverSnap || localAt >= serverAt) merged[date] = snap;
+        }
+        localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(merged));
+    } catch (e) {}
+}
+
+function perpsMigrateSnapshots() {
+    try {
+        const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
+        let changed = false;
+        for (const snap of Object.values(store)) {
+            const total = snap.totalEquity ?? ((snap.hlAccountValue ?? 0) + (snap.nadoAccountValue ?? 0));
+            const dep = snap.cumulativeNetDeposits;
+            if (dep != null && dep > total + 5000 && (snap.adjustedEquity ?? 0) < -5000) {
+                delete snap.cumulativeNetDeposits;
+                delete snap.adjustedEquity;
+                delete snap.walletPnl;
+                changed = true;
+            }
+        }
+        if (changed) localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(store));
+    } catch (e) {}
+}
+
+function perpsHlStrategyPayments(payments) {
+    return (payments || []).filter(p => p.kind === 'deposit' || p.kind === 'withdraw');
+}
+
+function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, windowMs = PERPS_CROSS_VENUE_WINDOW_MS) {
+    const hlP = perpsHlStrategyPayments(hlPayments);
+    const nadoP = [...(nadoPayments || [])];
+    const hlNetDeposits = hlP.reduce((s, p) => s + p.usdc, 0);
+    const nadoNetDeposits = nadoP.reduce((s, p) => s + p.usdc, 0);
+    const rawCombinedNetDeposits = hlNetDeposits + nadoNetDeposits;
+    const hlDep = hlP.filter(p => p.usdc > 0);
+    const hlWdr = hlP.filter(p => p.usdc < 0);
+    const nadoDep = nadoP.filter(p => p.usdc > 0);
+    const nadoWdr = nadoP.filter(p => p.usdc < 0);
+    let crossVenueOffset = 0;
+    const usedHlDep = new Set();
+    const usedHlWdr = new Set();
+
+    for (const nd of nadoDep) {
+        let bestIdx = -1;
+        let bestDist = Infinity;
+        let bestKind = null;
+        hlDep.forEach((hd, i) => {
+            if (usedHlDep.has(i)) return;
+            const dist = Math.abs(nd.time - hd.time);
+            if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; bestKind = 'dep'; }
+        });
+        hlWdr.forEach((hw, i) => {
+            if (usedHlWdr.has(i)) return;
+            const dist = Math.abs(nd.time - hw.time);
+            if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; bestKind = 'wdr'; }
+        });
+        if (bestIdx >= 0 && bestKind) {
+            const hlRow = bestKind === 'dep' ? hlDep[bestIdx] : hlWdr[bestIdx];
+            const overlap = Math.min(nd.usdc, Math.abs(hlRow.usdc));
+            if (overlap > 50) {
+                crossVenueOffset += overlap;
+                if (bestKind === 'dep') usedHlDep.add(bestIdx);
+                else usedHlWdr.add(bestIdx);
+            }
+        }
+    }
+
+    for (const nw of nadoWdr) {
+        let bestIdx = -1;
+        let bestDist = Infinity;
+        hlDep.forEach((hd, i) => {
+            if (usedHlDep.has(i)) return;
+            const dist = Math.abs(nw.time - hd.time);
+            if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; }
+        });
+        if (bestIdx >= 0) {
+            const overlap = Math.min(Math.abs(nw.usdc), hlDep[bestIdx].usdc);
+            if (overlap > 50) {
+                crossVenueOffset += overlap;
+                usedHlDep.add(bestIdx);
+            }
+        }
+    }
+
+    return {
+        combinedNetDeposits: rawCombinedNetDeposits - crossVenueOffset,
+        rawCombinedNetDeposits,
+        crossVenueOffset,
+    };
+}
+
+function perpsNetDepositsAtTime(hlPayments, nadoPayments, timeMs) {
+    const hlP = perpsHlStrategyPayments(hlPayments).filter(p => p.time <= timeMs);
+    const nadoP = (nadoPayments || []).filter(p => p.time <= timeMs);
+    return perpsComputeCombinedNetDeposits(hlP, nadoP).combinedNetDeposits;
+}
+
 function perpsLoadConfig() {
+    perpsMigrateSnapshots();
     const hlEl = document.getElementById('perpsHlWallet');
     const nadoEl = document.getElementById('perpsNadoWallet');
     if (!hlEl) return;
@@ -20450,12 +20568,24 @@ function perpsLoadConfig() {
     document.querySelectorAll('.perps-range-btn').forEach(btn => {
         btn.classList.toggle('active', Number(btn.dataset.perpsDays) === _perpsDays);
     });
+    perpsBindConfigInputs();
+}
+
+function perpsBindConfigInputs() {
+    ['perpsHlWallet', 'perpsNadoWallet'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el || el.dataset.perpsBound) return;
+        el.dataset.perpsBound = '1';
+        el.addEventListener('change', perpsSaveConfig);
+        el.addEventListener('blur', perpsSaveConfig);
+    });
 }
 
 function perpsSaveConfig() {
     const hl = document.getElementById('perpsHlWallet')?.value.trim() || '';
     const nado = document.getElementById('perpsNadoWallet')?.value.trim() || '';
     try { localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({ hyperliquid: hl, nado, days: _perpsDays })); } catch (e) {}
+    if (typeof saveData === 'function') saveData();
 }
 
 function perpsSetRange(days, btn) {
@@ -20545,6 +20675,7 @@ function perpsSaveSnapshot(data) {
         const pruned = {};
         keys.forEach(k => { pruned[k] = store[k]; });
         localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(pruned));
+        if (typeof saveData === 'function') saveData();
     } catch (e) {}
 }
 
@@ -20553,8 +20684,15 @@ function perpsBuildEquitySeries(data) {
     const capitalFlows = data.capitalFlows || {};
     const hlPayments = capitalFlows.hl?.payments || [];
     const nadoPayments = capitalFlows.nado?.payments || [];
-    const combinedNetDeposits = capitalFlows.combinedNetDeposits ?? 0;
-    const crossVenueOffset = capitalFlows.crossVenueOffset ?? 0;
+    const flowTotals = capitalFlows.combinedNetDeposits != null
+        ? {
+            combinedNetDeposits: capitalFlows.combinedNetDeposits,
+            crossVenueOffset: capitalFlows.crossVenueOffset ?? 0,
+            rawCombinedNetDeposits: capitalFlows.rawCombinedNetDeposits,
+        }
+        : perpsComputeCombinedNetDeposits(hlPayments, nadoPayments);
+    const combinedNetDeposits = flowTotals.combinedNetDeposits ?? 0;
+    const crossVenueOffset = flowTotals.crossVenueOffset ?? 0;
     const snapshots = Object.values(JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}'))
         .filter(s => s.hlAccountValue != null || s.nadoAccountValue != null)
         .sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -20567,12 +20705,14 @@ function perpsBuildEquitySeries(data) {
         const hl = snap.hlAccountValue ?? 0;
         const nado = snap.nadoAccountValue ?? 0;
         const totalEquity = snap.totalEquity ?? hl + nado;
-        const cumulativeNetDeposits = snap.cumulativeNetDeposits ?? combinedNetDeposits;
+        const cumulativeNetDeposits = hlPayments.length || nadoPayments.length
+            ? perpsNetDepositsAtTime(hlPayments, nadoPayments, time)
+            : combinedNetDeposits;
         points.push({
             time,
             date: snap.date,
             totalEquity,
-            adjustedEquity: snap.adjustedEquity ?? totalEquity - cumulativeNetDeposits,
+            adjustedEquity: totalEquity - cumulativeNetDeposits,
             cumulativeNetDeposits,
             source: 'snapshot',
         });
@@ -20583,12 +20723,15 @@ function perpsBuildEquitySeries(data) {
     const nadoNow = s.nadoAccountValue ?? data.equityNow?.nado ?? 0;
     const totalNow = hlNow + nadoNow;
     const fetchedAt = data.fetchedAt || Date.now();
+    const liveNetDeposits = data.equityNow?.adjustedTotal != null
+        ? totalNow - data.equityNow.adjustedTotal
+        : combinedNetDeposits;
     points.push({
         time: fetchedAt,
         date: new Date(fetchedAt).toISOString().slice(0, 10),
         totalEquity: totalNow,
-        cumulativeNetDeposits: combinedNetDeposits,
-        adjustedEquity: totalNow - combinedNetDeposits,
+        cumulativeNetDeposits: liveNetDeposits,
+        adjustedEquity: data.equityNow?.adjustedTotal ?? totalNow - combinedNetDeposits,
         source: 'live',
     });
 
@@ -20604,16 +20747,19 @@ function perpsBuildEquitySeries(data) {
         ...p,
         pnl: p.adjustedEquity - baselineAdjustedEquity,
     }));
+    const lifetimePnl = data.equityNow?.adjustedTotal
+        ?? data.walletPnl
+        ?? (withPnl.at(-1)?.adjustedEquity ?? 0);
 
     return {
         points: withPnl,
         baselineDate: series[0]?.date ?? null,
         walletPnl: withPnl.at(-1)?.pnl ?? 0,
         dayCount: series.length,
-        combinedNetDeposits,
+        combinedNetDeposits: liveNetDeposits,
         crossVenueOffset,
-        adjustedEquityNow: withPnl.at(-1)?.adjustedEquity ?? 0,
-        lifetimePnl: withPnl.at(-1)?.adjustedEquity ?? 0,
+        adjustedEquityNow: lifetimePnl,
+        lifetimePnl,
     };
 }
 
@@ -20998,13 +21144,14 @@ function perpsRenderDashboard(data) {
     setKpi('perpsKpiHlNadoFunding', `${perpsFmtUsd(s.pairedHlFundingSinceOpen)} / ${perpsFmtUsd(s.pairedNadoFundingSinceOpen)}`);
     setKpi('perpsKpiAccountValue', `${perpsFmtUsd(s.hlAccountValue)} HL · ${perpsFmtUsd(s.nadoAccountValue)} Nado`);
     const equitySeries = perpsRenderEquityChart(data);
-    const walletPnlDisplay = equitySeries.dayCount < 2 ? equitySeries.lifetimePnl : equitySeries.walletPnl;
+    const lifetimePnl = data.equityNow?.adjustedTotal ?? data.walletPnl ?? equitySeries.lifetimePnl;
+    const walletPnlDisplay = equitySeries.dayCount >= 2 ? equitySeries.walletPnl : lifetimePnl;
     setKpi('perpsKpiWalletPnl', perpsFmtUsd(walletPnlDisplay), perpsSignedCls(walletPnlDisplay));
     const walletPnlSub = document.getElementById('perpsKpiWalletPnlSub');
     if (walletPnlSub) {
-        walletPnlSub.textContent = equitySeries.dayCount < 2
-            ? `lifetime · ${perpsFmtUsd(s.adjustedEquity ?? data.equityNow?.adjustedTotal)} adj equity`
-            : `since ${equitySeries.baselineDate || 'tracking'} · net deposits ${perpsFmtUsd(equitySeries.combinedNetDeposits)}`;
+        walletPnlSub.textContent = equitySeries.dayCount >= 2
+            ? `since ${equitySeries.baselineDate || 'tracking'} · net deposits ${perpsFmtUsd(equitySeries.combinedNetDeposits)}`
+            : `lifetime · net deposits ${perpsFmtUsd(equitySeries.combinedNetDeposits)} · equity ${perpsFmtUsd((equitySeries.combinedNetDeposits ?? 0) + lifetimePnl)}`;
     }
     const reconcileEl = document.getElementById('perpsReconcileNote');
     if (reconcileEl) {
