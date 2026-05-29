@@ -4,5 +4,8 @@
     "api/*.js": {
       "maxDuration": 60
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/api/perps", "destination": "/api/aave-proxy" }
+  ]
 }
