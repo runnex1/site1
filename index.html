@@ -688,6 +688,14 @@ body[data-active-tab="perps"] .page-content,
 .perps-pnl-area { fill:rgba(89,240,200,0.12); stroke:none; }
 .perps-pnl-line.net { stroke:#63b7ff; }
 .perps-pnl-area.net { fill:rgba(99,183,255,0.1); }
+.perps-pnl-line.equity { stroke:#ffb347; }
+.perps-pnl-area.equity { fill:rgba(255,179,71,0.12); }
+.perps-charts-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.perps-reconcile {
+  font-family:var(--ff-mono); font-size:0.65rem; color:#9dacbb; margin:-2px 0 8px;
+  padding:0.45rem 0.65rem; border-radius:8px; border:1px solid rgba(134,159,179,0.12);
+  background:rgba(255,255,255,0.02);
+}
 .perps-pnl-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0.5rem; margin-top:0.55rem; }
 .perps-pnl-stat-label { font-family:var(--ff-mono); font-size:0.58rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#9dacbb; }
 .perps-pnl-stat-val { font-family:var(--ff-mono); font-size:0.82rem; font-weight:800; color:var(--t1); margin-top:0.15rem; }
@@ -697,6 +705,7 @@ body[data-active-tab="perps"] .page-content,
   .perps-kpi-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .perps-kpi-grid.wide { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .perps-grid { grid-template-columns:1fr; }
+  .perps-charts-grid { grid-template-columns:1fr; }
 }
 
 /* Section header inside sub-tabs */
@@ -6371,6 +6380,32 @@ body[data-active-tab="loops"] .loop-pos-val,
             <div class="perps-kpi"><div class="perps-kpi-label">Net arb APR</div><div class="perps-kpi-value" id="perpsKpiArbApr">—</div><div class="perps-kpi-sub">after fees</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">HL / Nado funding</div><div class="perps-kpi-value" id="perpsKpiHlNadoFunding">—</div><div class="perps-kpi-sub" id="perpsKpiHlNadoFundingSub">paired · since open</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">Account value</div><div class="perps-kpi-value" id="perpsKpiAccountValue">—</div><div class="perps-kpi-sub" id="perpsKpiPositionsSub">—</div></div>
+            <div class="perps-kpi"><div class="perps-kpi-label">Wallet PnL (adjusted)</div><div class="perps-kpi-value" id="perpsKpiWalletPnl">—</div><div class="perps-kpi-sub" id="perpsKpiWalletPnlSub">deposit-adjusted HL + Nado</div></div>
+          </section>
+          <div class="perps-reconcile" id="perpsReconcileNote">Wallet PnL − paired funding ≈ directional exposure + unallocated costs</div>
+
+          <div class="perps-charts-grid">
+          <section class="perps-panel">
+            <div class="perps-panel-head">
+              <div class="perps-panel-title">Wallet Equity PnL (adjusted)</div>
+              <span class="perps-pill" style="border-color:rgba(255,179,71,0.35);color:#ffb347;background:rgba(255,179,71,0.08);" id="perpsEquityChartBadge">—</span>
+            </div>
+            <div class="perps-pnl-card" style="margin:0 0.5rem 0.5rem;">
+              <div class="perps-pnl-top">
+                <div>
+                  <div class="perps-pnl-title">Ground-truth profitability</div>
+                  <div class="perps-pnl-note" id="perpsEquityChartNote">Includes all positions, fees, slippage · net of deposits</div>
+                </div>
+                <div class="perps-pnl-total" id="perpsEquityChartTotal">—</div>
+              </div>
+              <div class="perps-pnl-chart">
+                <svg id="perpsEquityChart" viewBox="0 0 760 160" preserveAspectRatio="none" role="img" aria-label="Wallet equity PnL chart">
+                  <path class="perps-pnl-area equity" id="perpsEquityArea" d=""></path>
+                  <path class="perps-pnl-line equity" id="perpsEquityLine" d=""></path>
+                </svg>
+              </div>
+              <div class="perps-pnl-stats" id="perpsEquityChartStats"></div>
+            </div>
           </section>
 
           <section class="perps-panel">
@@ -6381,8 +6416,8 @@ body[data-active-tab="loops"] .loop-pos-val,
             <div class="perps-pnl-card" style="margin:0 0.5rem 0.5rem;">
               <div class="perps-pnl-top">
                 <div>
-                  <div class="perps-pnl-title">Profit over time</div>
-                  <div class="perps-pnl-note" id="perpsChartNote">Cumulative net funding vs net arb (funding − fees)</div>
+                  <div class="perps-pnl-title">ONDO arb attribution</div>
+                  <div class="perps-pnl-note" id="perpsChartNote">Paired funding − fees over selected range</div>
                 </div>
                 <div class="perps-pnl-total" id="perpsChartTotal">—</div>
               </div>
@@ -6397,6 +6432,7 @@ body[data-active-tab="loops"] .loop-pos-val,
               <div class="perps-pnl-stats" id="perpsChartStats"></div>
             </div>
           </section>
+          </div>
 
           <section class="perps-panel">
             <div class="perps-panel-head">
@@ -20478,6 +20514,15 @@ function perpsSaveSnapshot(data) {
     try {
         const today = new Date(data.fetchedAt).toISOString().slice(0, 10);
         const s = data.summary;
+        const equity = data._equitySeries || data.equitySeries || {};
+        const combinedNetDeposits = s.combinedNetDeposits
+            ?? data.capitalFlows?.combinedNetDeposits
+            ?? equity.combinedNetDeposits
+            ?? 0;
+        const hlAccountValue = s.hlAccountValue ?? data.equityNow?.hl ?? 0;
+        const nadoAccountValue = s.nadoAccountValue ?? data.equityNow?.nado ?? 0;
+        const totalEquity = hlAccountValue + nadoAccountValue;
+        const adjustedEquity = s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalEquity - combinedNetDeposits;
         const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
         store[today] = {
             date: today,
@@ -20485,8 +20530,12 @@ function perpsSaveSnapshot(data) {
             feesCum: s.pairedFees ?? s.totalFees,
             combinedUpnl: s.combinedUpnl,
             netArbPnl: s.netArbPnl,
-            hlAccountValue: s.hlAccountValue,
-            nadoAccountValue: s.nadoAccountValue,
+            hlAccountValue,
+            nadoAccountValue,
+            totalEquity,
+            adjustedEquity,
+            cumulativeNetDeposits: combinedNetDeposits,
+            walletPnl: s.walletPnl ?? data.walletPnl ?? equity.walletPnl,
             avgNotional: s.avgNotional,
             netFundingApr: s.netFundingApr,
             netArbApr: s.netArbApr,
@@ -20497,6 +20546,161 @@ function perpsSaveSnapshot(data) {
         keys.forEach(k => { pruned[k] = store[k]; });
         localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(pruned));
     } catch (e) {}
+}
+
+function perpsNetDepositsAtTime(payments, timeMs) {
+    return (payments || []).reduce((sum, p) => (p.time <= timeMs ? sum + p.usdc : sum), 0);
+}
+
+function perpsBuildEquitySeries(data) {
+    const capitalFlows = data.capitalFlows || {};
+    const allPayments = [
+        ...(capitalFlows.hl?.payments || []),
+        ...(capitalFlows.nado?.payments || []),
+    ].sort((a, b) => a.time - b.time);
+    const combinedNetDeposits = capitalFlows.combinedNetDeposits
+        ?? allPayments.reduce((sum, p) => sum + p.usdc, 0);
+    const snapshots = Object.values(JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}'))
+        .filter(s => s.hlAccountValue != null || s.nadoAccountValue != null)
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const points = [];
+    const sourcePriority = { live: 3, snapshot: 2, backfill: 1 };
+
+    for (const snap of snapshots) {
+        const time = Number(snap.fetchedAt) || Date.parse(snap.date) || 0;
+        if (!time) continue;
+        const hl = snap.hlAccountValue ?? 0;
+        const nado = snap.nadoAccountValue ?? 0;
+        const totalEquity = snap.totalEquity ?? hl + nado;
+        const cumulativeNetDeposits = snap.cumulativeNetDeposits ?? perpsNetDepositsAtTime(allPayments, time);
+        points.push({
+            time,
+            date: snap.date,
+            totalEquity,
+            adjustedEquity: snap.adjustedEquity ?? totalEquity - cumulativeNetDeposits,
+            cumulativeNetDeposits,
+            source: 'snapshot',
+        });
+    }
+
+    const s = data.summary || {};
+    const hlNow = s.hlAccountValue ?? data.equityNow?.hl ?? 0;
+    const nadoNow = s.nadoAccountValue ?? data.equityNow?.nado ?? 0;
+    const totalNow = hlNow + nadoNow;
+    const fetchedAt = data.fetchedAt || Date.now();
+    points.push({
+        time: fetchedAt,
+        date: new Date(fetchedAt).toISOString().slice(0, 10),
+        totalEquity: totalNow,
+        cumulativeNetDeposits: combinedNetDeposits,
+        adjustedEquity: totalNow - combinedNetDeposits,
+        source: 'live',
+    });
+
+    const byDate = {};
+    for (const p of points.sort((a, b) => a.time - b.time)) {
+        if (!byDate[p.date] || sourcePriority[p.source] >= sourcePriority[byDate[p.date].source]) {
+            byDate[p.date] = p;
+        }
+    }
+    const series = Object.values(byDate).sort((a, b) => a.time - b.time);
+    const baselineAdjustedEquity = series[0]?.adjustedEquity ?? 0;
+    const withPnl = series.map(p => ({
+        ...p,
+        pnl: p.adjustedEquity - baselineAdjustedEquity,
+    }));
+
+    return {
+        points: withPnl,
+        baselineDate: series[0]?.date ?? null,
+        walletPnl: withPnl.at(-1)?.pnl ?? 0,
+        dayCount: series.length,
+        combinedNetDeposits,
+        adjustedEquityNow: withPnl.at(-1)?.adjustedEquity ?? 0,
+        lifetimePnl: withPnl.at(-1)?.adjustedEquity ?? 0,
+    };
+}
+
+function perpsBuildEquityChart(equitySeries) {
+    const pts = Array.isArray(equitySeries?.points) ? equitySeries.points : [];
+    const walletPnl = equitySeries?.walletPnl ?? 0;
+    const lifetimePnl = equitySeries?.lifetimePnl ?? 0;
+    if (pts.length < 2) {
+        return {
+            line: '',
+            area: '',
+            total: walletPnl,
+            lifetimePnl,
+            insufficient: true,
+            stats: [
+                { label: 'Net deposits', value: perpsFmtUsd(equitySeries?.combinedNetDeposits) },
+                { label: 'Adjusted equity', value: perpsFmtUsd(equitySeries?.adjustedEquityNow) },
+                { label: 'Days tracked', value: String(equitySeries?.dayCount || pts.length) },
+            ],
+        };
+    }
+    const values = pts.map(p => p.pnl);
+    const min = Math.min(...values, 0);
+    const max = Math.max(...values, 0);
+    const span = Math.max(max - min, 1);
+    const width = 760;
+    const height = 160;
+    const padX = 12;
+    const padY = 16;
+    const chartW = width - padX * 2;
+    const chartH = height - padY * 2;
+    const plot = pts.map((p, i) => {
+        const x = padX + (i / Math.max(pts.length - 1, 1)) * chartW;
+        const y = padY + ((max - p.pnl) / span) * chartH;
+        return { x, y, val: p.pnl, day: p.date };
+    });
+    const linePath = plot.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+    const areaPath = plot.length
+        ? `M ${padX} ${height - padY} L ${linePath.slice(2)} L ${width - padX} ${height - padY} Z`
+        : '';
+    return {
+        line: linePath,
+        area: areaPath,
+        total: walletPnl,
+        lifetimePnl,
+        insufficient: false,
+        stats: [
+            { label: 'Peak PnL', value: perpsFmtUsd(max) },
+            { label: 'Net deposits', value: perpsFmtUsd(equitySeries?.combinedNetDeposits) },
+            { label: 'Days tracked', value: String(pts.length) },
+        ],
+    };
+}
+
+function perpsRenderEquityChart(data) {
+    const equitySeries = perpsBuildEquitySeries(data);
+    data._equitySeries = equitySeries;
+    const chart = perpsBuildEquityChart(equitySeries);
+    const lineEl = document.getElementById('perpsEquityLine');
+    const areaEl = document.getElementById('perpsEquityArea');
+    const totalEl = document.getElementById('perpsEquityChartTotal');
+    const statsEl = document.getElementById('perpsEquityChartStats');
+    const noteEl = document.getElementById('perpsEquityChartNote');
+    const badge = document.getElementById('perpsEquityChartBadge');
+    if (lineEl) lineEl.setAttribute('d', chart.line);
+    if (areaEl) areaEl.setAttribute('d', chart.area);
+    const displayPnl = chart.insufficient ? chart.lifetimePnl : chart.total;
+    if (totalEl) {
+        totalEl.textContent = perpsFmtUsd(displayPnl);
+        totalEl.className = 'perps-pnl-total ' + perpsSignedCls(displayPnl);
+    }
+    if (noteEl) {
+        noteEl.textContent = chart.insufficient
+            ? `Lifetime adjusted PnL · refresh daily to build curve (from ${equitySeries.baselineDate || 'today'})`
+            : `Deposit-adjusted HL + Nado equity vs ${equitySeries.baselineDate || 'baseline'}`;
+    }
+    if (badge) badge.textContent = chart.insufficient ? '1d' : `${equitySeries.dayCount}d`;
+    if (statsEl) {
+        statsEl.innerHTML = chart.stats.map(s =>
+            `<div><div class="perps-pnl-stat-label">${dashEsc(s.label)}</div><div class="perps-pnl-stat-val">${dashEsc(s.value)}</div></div>`
+        ).join('');
+    }
+    return equitySeries;
 }
 
 function perpsBuildChart(series, netSeries) {
@@ -20659,7 +20863,7 @@ function perpsRenderFundingChart(data) {
         totalEl.textContent = perpsFmtUsd(chart.netTotal);
         totalEl.className = 'perps-pnl-total ' + perpsSignedCls(chart.netTotal);
     }
-    if (noteEl) noteEl.textContent = `${data.days}d cumulative funding (${perpsFmtUsd(chart.total)}) vs net arb after fees`;
+    if (noteEl) noteEl.textContent = `${data.days}d paired funding (${perpsFmtUsd(chart.total)}) vs net arb after fees`;
     if (badge) badge.textContent = data.days + 'd';
     if (statsEl) {
         statsEl.innerHTML = chart.stats.map(s =>
@@ -20759,7 +20963,22 @@ function perpsRenderDashboard(data) {
     setKpi('perpsKpiFundingApr', perpsFmtPct(s.netFundingApr), perpsSignedCls(s.netFundingApr));
     setKpi('perpsKpiArbApr', perpsFmtPct(s.netArbApr), perpsSignedCls(s.netArbApr));
     setKpi('perpsKpiHlNadoFunding', `${perpsFmtUsd(s.pairedHlFundingSinceOpen)} / ${perpsFmtUsd(s.pairedNadoFundingSinceOpen)}`);
-    setKpi('perpsKpiAccountValue', `${perpsFmtUsd(s.hlAccountValue)} HL`);
+    setKpi('perpsKpiAccountValue', `${perpsFmtUsd(s.hlAccountValue)} HL · ${perpsFmtUsd(s.nadoAccountValue)} Nado`);
+    const equitySeries = perpsRenderEquityChart(data);
+    const walletPnlDisplay = equitySeries.dayCount < 2 ? equitySeries.lifetimePnl : equitySeries.walletPnl;
+    setKpi('perpsKpiWalletPnl', perpsFmtUsd(walletPnlDisplay), perpsSignedCls(walletPnlDisplay));
+    const walletPnlSub = document.getElementById('perpsKpiWalletPnlSub');
+    if (walletPnlSub) {
+        walletPnlSub.textContent = equitySeries.dayCount < 2
+            ? `lifetime · ${perpsFmtUsd(s.adjustedEquity ?? data.equityNow?.adjustedTotal)} adj equity`
+            : `since ${equitySeries.baselineDate || 'tracking'} · net deposits ${perpsFmtUsd(equitySeries.combinedNetDeposits)}`;
+    }
+    const reconcileEl = document.getElementById('perpsReconcileNote');
+    if (reconcileEl) {
+        const gap = walletPnlDisplay - (s.pairedFundingSinceOpen ?? 0);
+        reconcileEl.textContent = `Wallet PnL − paired funding ≈ ${perpsFmtUsd(gap)} (directional legs + unallocated costs)`;
+    }
+    data.summary = { ...s, walletPnl: walletPnlDisplay, combinedNetDeposits: equitySeries.combinedNetDeposits, adjustedEquity: equitySeries.adjustedEquityNow };
     const subEl = document.getElementById('perpsKpiPositionsSub');
     if (subEl) subEl.textContent = `${s.hlPositionCount} HL · ${s.nadoPositionCount} Nado · ${s.pairedCount} paired`;
     const netFundSub = document.getElementById('perpsKpiNetFundingSub');
