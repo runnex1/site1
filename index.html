@@ -7246,6 +7246,9 @@ function mergeEtfPositions(localEtfs = [], incomingEtfs = []) {
 let charts = { portfolio: null, protocols: null, etf: null };
 const chartColors = ['#00D4AA','#6C72FF','#38BDF8','#D946EF','#F97316','#F59E0B','#F43F5E','#E879F9','#22C55E','#FB923C','#A78BFA','#34D399'];
 const OPPORTUNITY_MONITORS_KEY = 'vault-opportunity-monitors';
+const PERPS_CONFIG_KEY = 'vault-perps-config';
+const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
+const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
 const OPPORTUNITY_ODDS_CACHE_KEY = 'vault-opportunity-odds-cache';
 const OPPORTUNITY_ODDS_LAST_REFRESH_KEY = 'vault-opportunity-odds-last-refresh';
 const OPPORTUNITY_SEEN_KEY = 'vault-opportunity-seen';
@@ -20442,9 +20445,6 @@ function watcherApplyFilters() {
 }
 
 // ── Perps Funding Arb (Hyperliquid + Nado) ───────────────────────────
-const PERPS_CONFIG_KEY = 'vault-perps-config';
-const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
-const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
 let _perpsCache = null;
 let _perpsDays = 30;
 
@@ -20804,8 +20804,6 @@ function perpsBuildEquityChart(equitySeries) {
     const min = Math.min(...values, 0);
     const max = Math.max(...values, 0);
     const span = Math.max(max - min, 1);
-    const chartW = width - padX * 2;
-    const chartH = height - padY * 2;
     const plot = pts.map((p, i) => {
         const x = padX + (i / Math.max(pts.length - 1, 1)) * chartW;
         const y = padY + ((max - p.pnl) / span) * chartH;
