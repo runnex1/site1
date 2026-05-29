@@ -6364,12 +6364,12 @@ body[data-active-tab="loops"] .loop-pos-val,
 
           <section class="perps-kpi-grid wide" id="perpsKpiGrid">
             <div class="perps-kpi"><div class="perps-kpi-label">Net arb PnL</div><div class="perps-kpi-value" id="perpsKpiNetArb">—</div><div class="perps-kpi-sub" id="perpsKpiNetArbSub">funding + basis − fees</div></div>
-            <div class="perps-kpi"><div class="perps-kpi-label">Net funding</div><div class="perps-kpi-value" id="perpsKpiNetFunding">—</div><div class="perps-kpi-sub" id="perpsKpiNetFundingSub">HL + Nado</div></div>
+            <div class="perps-kpi"><div class="perps-kpi-label">Net funding</div><div class="perps-kpi-value" id="perpsKpiNetFunding">—</div><div class="perps-kpi-sub" id="perpsKpiNetFundingSub">paired · since open</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">Combined uPnL</div><div class="perps-kpi-value" id="perpsKpiCombinedUpnl">—</div><div class="perps-kpi-sub">hedged pairs only</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">Fees paid</div><div class="perps-kpi-value" id="perpsKpiFees">—</div><div class="perps-kpi-sub" id="perpsKpiFeesSub">HL + Nado fills</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">Net funding APR</div><div class="perps-kpi-value" id="perpsKpiFundingApr">—</div><div class="perps-kpi-sub">on deployed notional</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">Net arb APR</div><div class="perps-kpi-value" id="perpsKpiArbApr">—</div><div class="perps-kpi-sub">after fees</div></div>
-            <div class="perps-kpi"><div class="perps-kpi-label">HL / Nado funding</div><div class="perps-kpi-value" id="perpsKpiHlNadoFunding">—</div></div>
+            <div class="perps-kpi"><div class="perps-kpi-label">HL / Nado funding</div><div class="perps-kpi-value" id="perpsKpiHlNadoFunding">—</div><div class="perps-kpi-sub" id="perpsKpiHlNadoFundingSub">paired · since open</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">Account value</div><div class="perps-kpi-value" id="perpsKpiAccountValue">—</div><div class="perps-kpi-sub" id="perpsKpiPositionsSub">—</div></div>
           </section>
 
@@ -20481,7 +20481,7 @@ function perpsSaveSnapshot(data) {
         const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
         store[today] = {
             date: today,
-            netFundingCum: s.pairedFunding ?? s.netFundingTotal,
+            netFundingCum: s.pairedFundingSinceOpen ?? s.pairedFunding,
             feesCum: s.pairedFees ?? s.totalFees,
             combinedUpnl: s.combinedUpnl,
             netArbPnl: s.netArbPnl,
@@ -20753,15 +20753,19 @@ function perpsRenderDashboard(data) {
         el.className = 'perps-kpi-value' + (cls ? ' ' + cls : '');
     };
     setKpi('perpsKpiNetArb', perpsFmtUsd(s.netArbPnl), perpsSignedCls(s.netArbPnl));
-    setKpi('perpsKpiNetFunding', perpsFmtUsd(s.pairedFunding ?? s.netFundingTotal), perpsSignedCls(s.pairedFunding ?? s.netFundingTotal));
+    setKpi('perpsKpiNetFunding', perpsFmtUsd(s.pairedFundingSinceOpen), perpsSignedCls(s.pairedFundingSinceOpen));
     setKpi('perpsKpiCombinedUpnl', perpsFmtUsd(s.combinedUpnl), perpsSignedCls(s.combinedUpnl));
     setKpi('perpsKpiFees', perpsFmtUsd(-(s.pairedFees ?? s.totalFees)), 'neg');
     setKpi('perpsKpiFundingApr', perpsFmtPct(s.netFundingApr), perpsSignedCls(s.netFundingApr));
     setKpi('perpsKpiArbApr', perpsFmtPct(s.netArbApr), perpsSignedCls(s.netArbApr));
-    setKpi('perpsKpiHlNadoFunding', `${perpsFmtUsd(s.hlFundingTotal)} / ${perpsFmtUsd(s.nadoFundingTotal)}`);
+    setKpi('perpsKpiHlNadoFunding', `${perpsFmtUsd(s.pairedHlFundingSinceOpen)} / ${perpsFmtUsd(s.pairedNadoFundingSinceOpen)}`);
     setKpi('perpsKpiAccountValue', `${perpsFmtUsd(s.hlAccountValue)} HL`);
     const subEl = document.getElementById('perpsKpiPositionsSub');
     if (subEl) subEl.textContent = `${s.hlPositionCount} HL · ${s.nadoPositionCount} Nado · ${s.pairedCount} paired`;
+    const netFundSub = document.getElementById('perpsKpiNetFundingSub');
+    if (netFundSub) netFundSub.textContent = `${s.pairedCount} paired · ${data.days}d window ${perpsFmtUsd(s.pairedFundingWindow)}`;
+    const hlNadoSub = document.getElementById('perpsKpiHlNadoFundingSub');
+    if (hlNadoSub) hlNadoSub.textContent = `all accounts ${data.days}d: ${perpsFmtUsd(s.hlFundingTotal)} / ${perpsFmtUsd(s.nadoFundingTotal)}`;
     const feesSub = document.getElementById('perpsKpiFeesSub');
     if (feesSub) feesSub.textContent = `paired ${perpsFmtUsd(s.pairedFees)} · all ${perpsFmtUsd(s.totalFees)}`;
     const netArbSub = document.getElementById('perpsKpiNetArbSub');
