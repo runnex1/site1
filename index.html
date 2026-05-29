@@ -6403,6 +6403,7 @@ body[data-active-tab="loops"] .loop-pos-val,
               <div class="perps-panel-title">Hedged Pairs</div>
               <span class="perps-pill" id="perpsPairsBadge">0 pairs</span>
             </div>
+            <div class="perps-status" style="padding:0 0.5rem 0.35rem;">Funding = since position open (matches exchange). KPIs above use the selected range.</div>
             <div class="perps-table-wrap" id="perpsPairedTable"></div>
           </section>
 
@@ -6410,6 +6411,7 @@ body[data-active-tab="loops"] .loop-pos-val,
             <div class="perps-panel-head">
               <div class="perps-panel-title">Per-Pair PnL Breakdown</div>
             </div>
+            <div class="perps-status" style="padding:0 0.5rem 0.35rem;">HL / Nado fund = since open. Fees and realized use the selected range.</div>
             <div class="perps-table-wrap" id="perpsPairBreakdown"></div>
           </section>
 
@@ -20576,7 +20578,7 @@ function perpsRenderPairedTable(paired) {
     }
     el.innerHTML = `<table class="perps-table"><thead><tr>
         <th>Asset</th><th>HL size</th><th>Nado size</th><th>HL entry</th><th>Nado entry</th>
-        <th>HL uPnL</th><th>Nado uPnL</th><th>Combined</th><th>Funding</th>
+        <th>HL uPnL</th><th>Nado uPnL</th><th>Combined</th><th>HL funding</th><th>Nado funding</th>
     </tr></thead><tbody>${paired.map(p => {
         const mismatch = p.sizeMismatchPct > 1;
         return `<tr>
@@ -20588,25 +20590,28 @@ function perpsRenderPairedTable(paired) {
             <td class="${perpsSignedCls(p.hlUpnl)}">${perpsFmtUsd(p.hlUpnl)}</td>
             <td class="${perpsSignedCls(p.nadoUpnl)}">${perpsFmtUsd(p.nadoUpnl)}</td>
             <td class="${perpsSignedCls(p.combinedUpnl)}">${perpsFmtUsd(p.combinedUpnl)}</td>
-            <td class="${perpsSignedCls(p.funding)}">${perpsFmtUsd(p.funding)}</td>
+            <td class="${perpsSignedCls(p.hlFundingSinceOpen)}">${perpsFmtUsd(p.hlFundingSinceOpen)}</td>
+            <td class="${perpsSignedCls(p.nadoFundingSinceOpen)}">${perpsFmtUsd(p.nadoFundingSinceOpen)}</td>
         </tr>`;
     }).join('')}</tbody></table>`;
 }
 
-function perpsRenderPairBreakdown(paired) {
+function perpsRenderPairBreakdown(paired, days = 30) {
     const el = document.getElementById('perpsPairBreakdown');
     if (!el) return;
     if (!paired.length) {
         el.innerHTML = '<div class="perps-empty">No paired positions to break down.</div>';
         return;
     }
+    const daysLabel = days + 'd';
     const sorted = [...paired].sort((a, b) => b.netArbPnl - a.netArbPnl);
     el.innerHTML = `<table class="perps-table"><thead><tr>
-        <th>Asset</th><th>Funding</th><th>Fees</th><th>Realized</th><th>Entry slip (est.)</th>
+        <th>Asset</th><th>HL fund</th><th>Nado fund</th><th>Fees (${daysLabel})</th><th>Realized (${daysLabel})</th><th>Entry slip (est.)</th>
         <th>Combined uPnL</th><th>Net arb</th><th>Spread 8h</th><th>Break-even</th>
     </tr></thead><tbody>${sorted.map(p => `<tr>
         <td>${dashEsc(p.symbol)}</td>
-        <td class="${perpsSignedCls(p.funding)}">${perpsFmtUsd(p.funding)}</td>
+        <td class="${perpsSignedCls(p.hlFundingSinceOpen)}">${perpsFmtUsd(p.hlFundingSinceOpen)}</td>
+        <td class="${perpsSignedCls(p.nadoFundingSinceOpen)}">${perpsFmtUsd(p.nadoFundingSinceOpen)}</td>
         <td class="neg">${perpsFmtUsd(-p.fees)}</td>
         <td class="${perpsSignedCls(p.realized)}">${perpsFmtUsd(p.realized)}</td>
         <td>${p.entrySlippage != null ? perpsFmtUsd(p.entrySlippage) : '—'}</td>
@@ -20769,7 +20774,7 @@ function perpsRenderDashboard(data) {
 
     perpsRenderAlerts(data.paired || [], data.unhedged || []);
     perpsRenderPairedTable(data.paired || []);
-    perpsRenderPairBreakdown(data.paired || []);
+    perpsRenderPairBreakdown(data.paired || [], data.days);
     perpsRenderUnhedged(data.unhedged || []);
     perpsRenderFundingChart(data);
     perpsRenderPositions('perpsHlPositions', data.hyperliquid.state.positions, 'hyperliquid');
