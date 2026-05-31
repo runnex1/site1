@@ -1,6 +1,11 @@
 {
   "version": 2,
+  "regions": ["hnd1"],
   "functions": {
+    "api/aave-proxy.js": {
+      "maxDuration": 60,
+      "regions": ["hnd1"]
+    },
     "api/*.js": {
       "maxDuration": 60
     }

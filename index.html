@@ -20952,10 +20952,15 @@ function perpsBuildChart(series, netSeries) {
     };
 }
 
-function perpsRenderAlerts(paired, unhedged) {
+function perpsRenderAlerts(paired, unhedged, summary) {
     const bar = document.getElementById('perpsAlertBar');
     if (!bar) return;
     const pills = [];
+    if (summary?.grvtError) {
+        pills.push(`GRVT: ${summary.grvtError}`);
+    } else if (summary?.grvtConfigured && !(summary.grvtPositionCount > 0) && (summary.grvtAccountValue ?? 0) <= 0) {
+        pills.push('GRVT: connected but no open positions on this sub-account');
+    }
     for (const p of paired) {
         if (p.alerts?.includes('size_mismatch')) pills.push(`${p.symbol}: size mismatch ${p.sizeMismatchPct.toFixed(1)}%`);
         if (p.alerts?.includes('basis_drift')) pills.push(`${p.symbol}: basis drift ${perpsFmtUsd(p.combinedUpnl)}`);
@@ -20969,7 +20974,7 @@ function perpsRenderAlerts(paired, unhedged) {
         return;
     }
     bar.style.display = 'flex';
-    bar.className = 'perps-alert-bar';
+    bar.className = 'perps-alert-bar' + (summary?.grvtError ? ' warn' : '');
     bar.innerHTML = pills.map(t => `<span class="perps-alert-pill">${dashEsc(t)}</span>`).join('');
 }
 
@@ -21206,7 +21211,7 @@ function perpsRenderDashboard(data) {
     if (nadoBadge) nadoBadge.textContent = (s.nadoExists ? s.nadoPositionCount : 0) + ' open';
     if (grvtBadge) grvtBadge.textContent = (s.grvtConfigured ? (s.grvtPositionCount ?? 0) : 0) + ' open';
 
-    perpsRenderAlerts(data.paired || [], data.unhedged || []);
+    perpsRenderAlerts(data.paired || [], data.unhedged || [], s);
     perpsRenderPairedTable(data.paired || []);
     perpsRenderPairBreakdown(data.paired || [], data.days);
     perpsRenderUnhedged(data.unhedged || []);
