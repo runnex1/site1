@@ -759,8 +759,8 @@ body[data-active-tab="perps"] .page-content,
 .perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 0.5rem 0.5rem; }
 .perps-pos-head, .perps-pos-row {
   display:grid;
-  grid-template-columns:minmax(150px,1.15fr) minmax(170px,1.25fr) repeat(5,minmax(72px,0.85fr)) minmax(78px,0.75fr);
-  gap:0.75rem; align-items:center;
+  grid-template-columns:minmax(138px,1.05fr) minmax(188px,1.38fr) minmax(78px,0.9fr) minmax(72px,0.86fr) minmax(72px,0.86fr) minmax(80px,0.9fr) minmax(24px,0.45fr) minmax(90px,0.95fr) minmax(76px,0.82fr);
+  gap:0.65rem 0.75rem; align-items:center;
 }
 .perps-pos-head {
   padding:0.35rem 0.85rem 0.55rem; margin:0 0 0.35rem;
@@ -769,6 +769,7 @@ body[data-active-tab="perps"] .page-content,
   text-transform:uppercase; color:#7f8f9f;
 }
 .perps-pos-head > div:last-child, .perps-pos-apr-col { text-align:right; }
+.perps-pos-spacer { min-width:0; }
 .perps-pos-card {
   border:1px solid rgba(134,159,179,0.15); border-radius:12px;
   background:linear-gradient(180deg, rgba(8,20,29,0.97), rgba(4,11,16,0.98));
@@ -6495,10 +6496,10 @@ body[data-active-tab="loops"] .loop-pos-val,
 
           <div class="perps-stat-range-row">
             <div class="perps-stat-range-group">
-              <span class="perps-stat-range-label">PnL window</span>
+              <span class="perps-stat-range-label">Time window</span>
               <button type="button" class="perps-range-btn" data-perps-stat-range="1d" onclick="perpsSetStatRange('1d',this)">1D</button>
-              <button type="button" class="perps-range-btn" data-perps-stat-range="7d" onclick="perpsSetStatRange('7d',this)">7D</button>
-              <button type="button" class="perps-range-btn active" data-perps-stat-range="30d" onclick="perpsSetStatRange('30d',this)">30D</button>
+              <button type="button" class="perps-range-btn active" data-perps-stat-range="7d" onclick="perpsSetStatRange('7d',this)">7D</button>
+              <button type="button" class="perps-range-btn" data-perps-stat-range="30d" onclick="perpsSetStatRange('30d',this)">30D</button>
               <button type="button" class="perps-range-btn" data-perps-stat-range="all" onclick="perpsSetStatRange('all',this)">ALL</button>
             </div>
           </div>
@@ -6514,7 +6515,7 @@ body[data-active-tab="loops"] .loop-pos-val,
             </div>
             <div class="perps-stat-card"><div class="perps-stat-label">Total PnL</div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">uPnL + funding</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
-            <div class="perps-stat-card"><div class="perps-stat-label">Avg APR</div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">equity growth rate</div></div>
+            <div class="perps-stat-card"><div class="perps-stat-label">Avg APR</div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">size-weighted · current spread</div></div>
           </section>
 
           <section class="perps-panel">
@@ -6547,7 +6548,7 @@ body[data-active-tab="loops"] .loop-pos-val,
               <div class="perps-panel-title">Funding</div>
               <div class="perps-fund-controls">
                 <button type="button" class="perps-fund-toggle" id="perpsFundShowFeesBtn" onclick="perpsToggleFundingFees()">Show fees</button>
-                <span class="perps-pill blue" id="perpsDailyFundBadge">30d</span>
+                <span class="perps-pill blue" id="perpsDailyFundBadge">7D</span>
               </div>
             </div>
             <div class="perps-pnl-card" style="margin:0 0.5rem 0.5rem;">
@@ -6610,12 +6611,6 @@ body[data-active-tab="loops"] .loop-pos-val,
                 <input type="text" id="perpsGrvtSubAccount" placeholder="4860249204328359" autocomplete="off">
               </div>
               <button type="button" class="perps-btn" onclick="perpsSaveConfigAndRefresh()">Save &amp; connect</button>
-            </div>
-            <div class="perps-range-row" id="perpsRangeRow">
-              <span style="font-family:var(--ff-mono);font-size:0.62rem;color:#9dacbb;">Funding chart range</span>
-              <button type="button" class="perps-range-btn" data-perps-days="7" onclick="perpsSetRange(7,this)">7D</button>
-              <button type="button" class="perps-range-btn active" data-perps-days="30" onclick="perpsSetRange(30,this)">30D</button>
-              <button type="button" class="perps-range-btn" data-perps-days="90" onclick="perpsSetRange(90,this)">90D</button>
             </div>
             <div class="perps-status" id="perpsStatus">Add wallets and click Save &amp; connect.</div>
           </section>
@@ -7651,6 +7646,10 @@ async function loadData() {
                     if (parsed._perpsConfig && typeof parsed._perpsConfig === 'object') {
                         localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify(parsed._perpsConfig));
                         delete parsed._perpsConfig;
+                        if (document.body.dataset.activeTab === 'perps') {
+                            perpsLoadConfig();
+                            if (perpsHasValidWallet()) perpsRefresh(true);
+                        }
                     }
                     if (parsed._perpsSnapshots && typeof parsed._perpsSnapshots === 'object') {
                         perpsMergeSnapshotsFromServer(parsed._perpsSnapshots);
@@ -20578,14 +20577,13 @@ function watcherApplyFilters() {
 
 // ── Perps Funding Arb (Hyperliquid + Nado) ───────────────────────────
 let _perpsCache = null;
-let _perpsDays = 30;
 let _perpsDailyFundSeries = [];
 let _perpsDailyFundShowFees = false;
 let _perpsDailyFundChartState = null;
 let _perpsRefreshTimer = null;
 let _perpsLastRefreshAt = null;
 let _perpsRefreshError = null;
-let _perpsStatRange = '30d';
+let _perpsStatRange = '7d';
 let _perpsLastData = null;
 let _perpsVenueEquity = null;
 let _perpsEquityChartState = null;
@@ -20601,7 +20599,11 @@ function perpsReadConfigField(id, key) {
     const saved = perpsGetSavedConfig();
     if (!el) return saved[key] || '';
     if (document.activeElement === el) return el.value.trim();
-    return el.dataset.perpsReal || el.value.trim() || saved[key] || '';
+    if (el.dataset.perpsReal) return el.dataset.perpsReal;
+    if (el.classList.contains('perps-masked')) return saved[key] || '';
+    const val = el.value.trim();
+    if (val && !/^\*+$/.test(val)) return val;
+    return saved[key] || '';
 }
 
 function perpsApplyWalletMasks() {
@@ -20639,13 +20641,40 @@ function perpsStatRangeMs(range) {
     return null;
 }
 
+function perpsStatRangeToApiDays(range) {
+    if (range === '1d') return 1;
+    if (range === '7d') return 7;
+    if (range === '30d') return 30;
+    return 90;
+}
+
 function perpsSetStatRange(range, btn) {
     _perpsStatRange = range;
     document.querySelectorAll('[data-perps-stat-range]').forEach(b => {
         b.classList.toggle('active', b === btn);
     });
     perpsSaveConfig();
-    if (_perpsLastData) perpsRenderStatsBar(_perpsLastData);
+    if (perpsHasValidWallet()) {
+        perpsRefresh(true);
+        return;
+    }
+    if (_perpsLastData) {
+        perpsRenderStatsBar(_perpsLastData);
+        perpsRenderPortfolioPositions(_perpsLastData.paired || []);
+        perpsRenderFundingForTimeWindow(_perpsLastData);
+    }
+}
+
+function perpsHasValidWallet() {
+    const saved = perpsGetSavedConfig();
+    const hl = saved.hyperliquid || perpsReadConfigField('perpsHlWallet', 'hyperliquid');
+    return /^0x[a-fA-F0-9]{40}$/.test(hl);
+}
+
+function perpsRenderFundingForTimeWindow(data) {
+    const series = perpsFilterDailySeries(data?.dailyFundingSeries || [], _perpsStatRange);
+    _perpsDailyFundSeries = series;
+    perpsRenderDailyFundingChart(series, perpsStatRangeLabel(_perpsStatRange));
 }
 
 function perpsFilterDailySeries(series, range) {
@@ -20716,9 +20745,7 @@ function perpsGetSavedConfig() {
 }
 
 function perpsIsConfigComplete() {
-    const saved = perpsGetSavedConfig();
-    const hl = perpsReadConfigField('perpsHlWallet', 'hyperliquid');
-    return /^0x[a-fA-F0-9]{40}$/.test(hl) && Boolean(saved.configured);
+    return perpsHasValidWallet();
 }
 
 function perpsUpdateConfigVisibility() {
@@ -20919,12 +20946,11 @@ function perpsLoadConfig() {
             grvtEl.dataset.perpsReal = grvt;
             grvtEl.value = grvt;
         }
-        if (saved.days) _perpsDays = saved.days;
         if (saved.statRange) _perpsStatRange = saved.statRange;
+        if (/^0x[a-fA-F0-9]{40}$/.test(saved.hyperliquid || '') && !saved.configured) {
+            localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({ ...saved, configured: true }));
+        }
     } catch (e) {}
-    document.querySelectorAll('.perps-range-btn[data-perps-days]').forEach(btn => {
-        btn.classList.toggle('active', Number(btn.dataset.perpsDays) === _perpsDays);
-    });
     document.querySelectorAll('[data-perps-stat-range]').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.perpsStatRange === _perpsStatRange);
     });
@@ -20966,7 +20992,6 @@ function perpsSaveConfig() {
             hyperliquid: hl,
             nado,
             grvtSubAccount,
-            days: _perpsDays,
             statRange: _perpsStatRange,
             configured,
         }));
@@ -20975,11 +21000,11 @@ function perpsSaveConfig() {
     perpsUpdateConfigVisibility();
 }
 
-function perpsSetRange(days, btn) {
-    _perpsDays = days;
-    document.querySelectorAll('.perps-range-btn[data-perps-days]').forEach(b => b.classList.toggle('active', b === btn));
-    perpsSaveConfig();
-    if (_perpsCache) perpsRefresh();
+function perpsToggleFundingFees() {
+    _perpsDailyFundShowFees = !_perpsDailyFundShowFees;
+    const btn = document.getElementById('perpsFundShowFeesBtn');
+    if (btn) btn.classList.toggle('active', _perpsDailyFundShowFees);
+    perpsRenderDailyFundingChart(_perpsDailyFundSeries, perpsStatRangeLabel(_perpsStatRange));
 }
 
 function perpsFmtUsd(n, digits = 2) {
@@ -21206,13 +21231,6 @@ function perpsRenderEquityChart(data) {
     return equitySeries;
 }
 
-function perpsToggleFundingFees() {
-    _perpsDailyFundShowFees = !_perpsDailyFundShowFees;
-    const btn = document.getElementById('perpsFundShowFeesBtn');
-    if (btn) btn.classList.toggle('active', _perpsDailyFundShowFees);
-    perpsRenderDailyFundingChart(_perpsDailyFundSeries, _perpsDays);
-}
-
 function perpsFormatFundDayLabel(day) {
     const d = new Date(day + 'T12:00:00Z');
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -21296,8 +21314,9 @@ function perpsBuildDailyFundingBars(points, showFees) {
     };
 }
 
-function perpsRenderDailyFundingChart(series, days) {
+function perpsRenderDailyFundingChart(series, rangeLabel) {
     const points = Array.isArray(series) ? series : [];
+    const label = rangeLabel || perpsStatRangeLabel(_perpsStatRange);
     if (!points.length) {
         ['perpsDailyFundBars', 'perpsDailyFundYLabels', 'perpsDailyFundXLabels', 'perpsDailyFundGrid'].forEach(id => {
             const el = document.getElementById(id);
@@ -21356,10 +21375,10 @@ function perpsRenderDailyFundingChart(series, days) {
     }
     if (noteEl) {
         noteEl.textContent = _perpsDailyFundShowFees
-            ? `${days}d net funding minus trading fees · from exchange payment history`
-            : `${days}d gross funding from historical payments · all venues · all positions`;
+            ? `${label} net funding minus trading fees · from exchange payment history`
+            : `${label} gross funding from historical payments · all venues · all positions`;
     }
-    if (badge) badge.textContent = `${days}d`;
+    if (badge) badge.textContent = label;
     if (statsEl) {
         statsEl.innerHTML = chart.stats.map(s =>
             `<div><div class="perps-pnl-stat-label">${dashEsc(s.label)}</div><div class="perps-pnl-stat-val">${dashEsc(s.value)}</div></div>`
@@ -21491,6 +21510,41 @@ function perpsPairLiveApy(p) {
     return p.currentSpread8h * 3 * 365 * 100;
 }
 
+function perpsComputeWeightedPositionApr(paired) {
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const p of paired) {
+        const apr = perpsPairLiveApy(p);
+        const weight = p.avgNotional ?? 0;
+        if (apr == null || !Number.isFinite(apr) || !weight) continue;
+        weightedSum += apr * weight;
+        totalWeight += weight;
+    }
+    if (!totalWeight) return null;
+    return weightedSum / totalWeight;
+}
+
+function perpsPairPeriodApr(p, range) {
+    const margin = p.avgNotional ?? 0;
+    if (!margin) return null;
+    let funding = 0;
+    let days = null;
+    if (!perpsStatRangeMs(range)) {
+        funding = p.fundingSinceOpen ?? 0;
+        days = p.daysOpen ?? null;
+        if (!days || days <= 0) return null;
+    } else {
+        days = { '1d': 1, '7d': 7, '30d': 30 }[range] ?? 30;
+        if (p.fundingByRange?.[range] != null) {
+            funding = p.fundingByRange[range];
+        } else {
+            const apiDays = perpsStatRangeToApiDays(range);
+            funding = (p.fundingWindow ?? 0) * Math.min(days / apiDays, 1);
+        }
+    }
+    return (funding / margin) * (365 / days) * 100;
+}
+
 function perpsStatRangeLabel(range) {
     if (range === '1d') return '1D';
     if (range === '7d') return '7D';
@@ -21529,7 +21583,7 @@ function perpsComputePortfolioStats(data) {
         totalPnl = dailySeries.reduce((sum, row) => sum + (row.dailyNet ?? row.dailyFunding ?? 0), 0);
     }
 
-    const apr = perpsComputeEquityApr(range, totalEquity);
+    const apr = perpsComputeWeightedPositionApr(paired);
     return {
         openNotional,
         totalEquity,
@@ -21574,7 +21628,7 @@ function perpsRenderStatsBar(data) {
     const fundSub = document.getElementById('perpsStatFundingSub');
     if (fundSub) fundSub.textContent = `${stats.rangeLabel} · gross funding`;
     const aprSub = document.getElementById('perpsStatAprSub');
-    if (aprSub) aprSub.textContent = stats.apr != null ? `${stats.rangeLabel} equity growth` : 'Need more snapshots';
+    if (aprSub) aprSub.textContent = stats.apr != null ? 'size-weighted · current spread' : 'Need open positions';
 }
 
 function perpsRenderPortfolioPositions(paired) {
@@ -21592,19 +21646,21 @@ function perpsRenderPortfolioPositions(paired) {
         <div>Total uPnL</div>
         <div>uPnL</div>
         <div>Funding</div>
-        <div>Fund live</div>
+        <div>Current APR</div>
+        <div class="perps-pos-spacer" aria-hidden="true"></div>
         <div>Margin</div>
         <div>APR</div>
     </div>`;
     el.innerHTML = head + paired.map(p => {
         const legs = perpsPairLegs(p);
-        const legVenueA = p.crossLegA?.venue || (legs.a.label === 'HL' ? 'hyperliquid' : legs.a.label === 'Nado' ? 'nado' : legs.a.label.toLowerCase());
-        const legVenueB = p.crossLegB?.venue || (legs.b.label === 'HL' ? 'hyperliquid' : legs.b.label === 'Nado' ? 'nado' : legs.b.label.toLowerCase());
+        const legVenueA = p.venueA || p.crossLegA?.venue || (legs.a.label === 'HL' ? 'hyperliquid' : legs.a.label === 'Nado' ? 'nado' : legs.a.label.toLowerCase());
+        const legVenueB = p.venueB || p.crossLegB?.venue || (legs.b.label === 'HL' ? 'hyperliquid' : legs.b.label === 'Nado' ? 'nado' : legs.b.label.toLowerCase());
         const upnlA = legs.a.upnl ?? 0;
         const upnlB = legs.b.upnl ?? 0;
         const totalUpnl = (p.combinedUpnl ?? 0) + (p.fundingSinceOpen ?? 0);
         const upnlOnly = p.combinedUpnl ?? 0;
-        const liveApy = perpsPairLiveApy(p);
+        const currentApr = perpsPairLiveApy(p);
+        const periodApr = perpsPairPeriodApr(p, _perpsStatRange);
         const margin = p.avgNotional ?? 0;
         const sizeLabel = legs.a.size != null ? `${perpsFmtSize(legs.a.size)} ${p.symbol}` : p.symbol;
         return `<div class="perps-pos-card"><div class="perps-pos-row">
@@ -21612,7 +21668,7 @@ function perpsRenderPortfolioPositions(paired) {
                 ${makeLogo(p.symbol, false, 36)}
                 <div>
                     <div class="perps-pos-token-name">${dashEsc(p.symbol)}</div>
-                    <div class="perps-pos-token-meta">${dashEsc(sizeLabel)} · ${dashEsc(p.pairLabel || 'Hedged')}</div>
+                    <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}</div>
                     <span class="perps-pos-pill">OPEN</span>
                 </div>
             </div>
@@ -21623,9 +21679,10 @@ function perpsRenderPortfolioPositions(paired) {
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Total uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(totalUpnl)}">${perpsFmtUsd(totalUpnl)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(upnlOnly)}">${perpsFmtUsd(upnlOnly)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(p.fundingSinceOpen)}">${perpsFmtUsd(p.fundingSinceOpen)}</div></div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Fund live</div><div class="perps-pos-metric-val ${perpsSignedCls(liveApy)}">${liveApy != null ? perpsFmtPct(liveApy) : '—'}</div></div>
+            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Current APR</div><div class="perps-pos-metric-val ${perpsSignedCls(currentApr)}">${currentApr != null ? perpsFmtPct(currentApr) : '—'}</div></div>
+            <div class="perps-pos-spacer" aria-hidden="true"></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Margin</div><div class="perps-pos-metric-val">${perpsFmtUsd(margin)}</div></div>
-            <div class="perps-pos-apr-col"><div class="perps-pos-metric-label">APR</div><div class="perps-pos-apr-val ${perpsSignedCls(liveApy)}">${liveApy != null ? perpsFmtPct(liveApy) : '—'}</div></div>
+            <div class="perps-pos-apr-col"><div class="perps-pos-metric-label">APR · ${dashEsc(perpsStatRangeLabel(_perpsStatRange))}</div><div class="perps-pos-apr-val ${perpsSignedCls(periodApr)}">${periodApr != null ? perpsFmtPct(periodApr) : '—'}</div></div>
         </div></div>`;
     }).join('');
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
@@ -21864,8 +21921,7 @@ function perpsRenderDashboard(data) {
     _perpsCache = data;
     perpsRenderStatsBar(data);
     perpsRenderEquityChart(data);
-    _perpsDailyFundSeries = data.dailyFundingSeries || [];
-    perpsRenderDailyFundingChart(_perpsDailyFundSeries, data.days);
+    perpsRenderFundingForTimeWindow(data);
     perpsRenderPortfolioPositions(data.paired || []);
     perpsRenderUnhedged(data.unhedged || []);
     perpsSaveSnapshot(data);
@@ -21876,7 +21932,9 @@ function perpsRenderDashboard(data) {
 
 async function perpsRefresh(silent = false) {
     const saved = perpsGetSavedConfig();
-    const hl = perpsReadConfigField('perpsHlWallet', 'hyperliquid');
+    const hl = /^0x[a-fA-F0-9]{40}$/.test(saved.hyperliquid || '')
+        ? saved.hyperliquid
+        : perpsReadConfigField('perpsHlWallet', 'hyperliquid');
     const nadoRaw = perpsReadConfigField('perpsNadoWallet', 'nado');
     if (!hl || !/^0x[a-fA-F0-9]{40}$/.test(hl)) {
         if (!silent) perpsSetStatus('Enter a valid Hyperliquid wallet and click Save & connect.');
@@ -21894,7 +21952,7 @@ async function perpsRefresh(silent = false) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), PERPS_FETCH_TIMEOUT_MS);
     try {
-        const params = new URLSearchParams({ wallet: hl, days: String(_perpsDays) });
+        const params = new URLSearchParams({ wallet: hl, days: String(perpsStatRangeToApiDays(_perpsStatRange)) });
         if (nadoRaw && /^0x[a-fA-F0-9]{40}$/.test(nadoRaw)) params.set('nadoWallet', nadoRaw);
         const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
         if (grvtSub) params.set('grvtSubAccount', grvtSub);
