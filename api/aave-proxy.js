@@ -3,19 +3,75 @@
  * GET  /api/perps     — Hyperliquid + Nado funding arb (rewritten here to stay within Vercel function limit)
  */
 
-const { fetchPerpsDashboard } = require('../lib/perps');
+const {
+  fetchPerpsDashboard,
+  appendEquitySnapshotStore,
+  buildEquitySnapshotFromDashboard,
+} = require('../lib/perps');
+const { kvGet, kvSet } = require('../lib/kv');
 
 function isWallet(v) {
   return typeof v === 'string' && /^0x[a-fA-F0-9]{40}$/.test(v.trim());
 }
 
+function parseJson(raw, fallback) {
+  if (!raw) return fallback;
+  try { return JSON.parse(raw); } catch (e) { return fallback; }
+}
+
+async function handlePerpsCronSnapshot(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const secret = String(req.headers['x-sync-secret'] || req.query.secret || '');
+  if (!process.env.SYNC_SECRET || secret !== process.env.SYNC_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const config = parseJson(await kvGet('vault:perps_config'), {});
+  const wallet = String(config.hyperliquid || '').trim();
+  const nadoWallet = String(config.nado || wallet).trim();
+  const grvtSubAccount = String(
+    config.grvtSubAccount || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
+  ).trim();
+  const days = Math.min(90, Math.max(1, parseInt(config.days || '30', 10) || 30));
+
+  if (!isWallet(wallet)) {
+    return res.status(400).json({ error: 'No valid perps wallet in vault:perps_config' });
+  }
+
+  try {
+    const data = await fetchPerpsDashboard({
+      hyperliquid: wallet,
+      nado: nadoWallet,
+      grvtSubAccount,
+      days,
+    });
+    const store = appendEquitySnapshotStore(parseJson(await kvGet('vault:perps_snapshots'), {}), data);
+    await kvSet('vault:perps_snapshots', JSON.stringify(store));
+    const { key, record } = buildEquitySnapshotFromDashboard(data);
+    return res.status(200).json({
+      ok: true,
+      bucket: key,
+      totalEquity: record.totalEquity,
+      fetchedAt: record.fetchedAt,
+      snapshotCount: Object.keys(store).length,
+    });
+  } catch (e) {
+    console.error('[perps-cron]', e);
+    return res.status(500).json({ error: e.message || 'Cron snapshot failed' });
+  }
+}
+
 async function handlePerps(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-sync-secret');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  if (req.query.cronSnapshot === '1') {
+    return handlePerpsCronSnapshot(req, res);
+  }
 
   const wallet = String(req.query.wallet || req.query.hyperliquid || '').trim();
   const nadoWallet = String(req.query.nadoWallet || req.query.nado || wallet).trim();

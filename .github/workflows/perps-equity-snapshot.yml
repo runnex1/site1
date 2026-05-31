@@ -1,0 +1,27 @@
+# Records total portfolio equity every 4 hours for the Perps equity chart.
+name: Perps Equity Snapshot
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Trigger 4h equity snapshot
+        env:
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+        run: |
+          STATUS=$(curl -s -o /tmp/perps-cron.json -w "%{http_code}" \
+            --max-time 120 \
+            -H "x-sync-secret: ${SYNC_SECRET}" \
+            "https://testedefi.vercel.app/api/perps?cronSnapshot=1")
+          echo "Response status: $STATUS"
+          cat /tmp/perps-cron.json || true
+          if [ "$STATUS" != "200" ]; then
+            echo "Warning: perps equity snapshot returned $STATUS"
+            exit 1
+          fi
