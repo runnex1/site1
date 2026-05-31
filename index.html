@@ -21011,31 +21011,69 @@ function perpsRenderAlerts(paired, unhedged, summary) {
     bar.innerHTML = pills.map(t => `<span class="perps-alert-pill">${dashEsc(t)}</span>`).join('');
 }
 
+function perpsVenueShort(venue) {
+    return { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext' }[venue] || venue;
+}
+
+function perpsPairLegs(p) {
+    if (p.pairType === 'hl_nado') {
+        return {
+            a: { label: 'HL', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen },
+            b: { label: 'Nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen },
+        };
+    }
+    if (p.crossLegA && p.crossLegB) {
+        return {
+            a: {
+                label: perpsVenueShort(p.crossLegA.venue),
+                size: p.crossLegA.size,
+                entry: p.crossLegA.entryPx,
+                upnl: p.crossLegA.unrealizedPnl,
+                funding: p.legAFundingSinceOpen,
+            },
+            b: {
+                label: perpsVenueShort(p.crossLegB.venue),
+                size: p.crossLegB.size,
+                entry: p.crossLegB.entryPx,
+                upnl: p.crossLegB.unrealizedPnl,
+                funding: p.legBFundingSinceOpen,
+            },
+        };
+    }
+    return {
+        a: { label: 'A', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen },
+        b: { label: 'B', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen },
+    };
+}
+
 function perpsRenderPairedTable(paired) {
     const el = document.getElementById('perpsPairedTable');
     const badge = document.getElementById('perpsPairsBadge');
     if (badge) badge.textContent = paired.length + (paired.length === 1 ? ' pair' : ' pairs');
     if (!el) return;
     if (!paired.length) {
-        el.innerHTML = '<div class="perps-empty">No hedged HL + Nado pairs found.</div>';
+        el.innerHTML = '<div class="perps-empty">No hedged pairs found.</div>';
         return;
     }
     el.innerHTML = `<table class="perps-table"><thead><tr>
-        <th>Asset</th><th>HL size</th><th>Nado size</th><th>HL entry</th><th>Nado entry</th>
-        <th>HL uPnL</th><th>Nado uPnL</th><th>Combined</th><th>HL funding</th><th>Nado funding</th>
+        <th>Asset</th><th>Pair</th><th>Leg A</th><th>Leg B</th><th>A entry</th><th>B entry</th>
+        <th>A uPnL</th><th>B uPnL</th><th>Combined</th><th>A funding</th><th>B funding</th>
     </tr></thead><tbody>${paired.map(p => {
         const mismatch = p.sizeMismatchPct > 1;
+        const pairLabel = p.pairLabel || 'HL + Nado';
+        const legs = perpsPairLegs(p);
         return `<tr>
             <td>${dashEsc(p.symbol)}${mismatch ? ' <span class="perps-warn">⚠</span>' : ''}</td>
-            <td class="perps-side-short">${perpsFmtSize(p.hlSize)}</td>
-            <td class="perps-side-long">${perpsFmtSize(p.nadoSize)}</td>
-            <td>${perpsFmtPx(p.hlEntry)}</td>
-            <td>${perpsFmtPx(p.nadoEntry)}</td>
-            <td class="${perpsSignedCls(p.hlUpnl)}">${perpsFmtUsd(p.hlUpnl)}</td>
-            <td class="${perpsSignedCls(p.nadoUpnl)}">${perpsFmtUsd(p.nadoUpnl)}</td>
+            <td>${dashEsc(pairLabel)}</td>
+            <td>${dashEsc(legs.a.label)} ${legs.a.size != null ? perpsFmtSize(legs.a.size) : '—'}</td>
+            <td>${dashEsc(legs.b.label)} ${legs.b.size != null ? perpsFmtSize(legs.b.size) : '—'}</td>
+            <td>${legs.a.entry != null ? perpsFmtPx(legs.a.entry) : '—'}</td>
+            <td>${legs.b.entry != null ? perpsFmtPx(legs.b.entry) : '—'}</td>
+            <td class="${perpsSignedCls(legs.a.upnl)}">${legs.a.upnl != null ? perpsFmtUsd(legs.a.upnl) : '—'}</td>
+            <td class="${perpsSignedCls(legs.b.upnl)}">${legs.b.upnl != null ? perpsFmtUsd(legs.b.upnl) : '—'}</td>
             <td class="${perpsSignedCls(p.combinedUpnl)}">${perpsFmtUsd(p.combinedUpnl)}</td>
-            <td class="${perpsSignedCls(p.hlFundingSinceOpen)}">${perpsFmtUsd(p.hlFundingSinceOpen)}</td>
-            <td class="${perpsSignedCls(p.nadoFundingSinceOpen)}">${perpsFmtUsd(p.nadoFundingSinceOpen)}</td>
+            <td class="${perpsSignedCls(legs.a.funding)}">${legs.a.funding != null ? perpsFmtUsd(legs.a.funding) : '—'}</td>
+            <td class="${perpsSignedCls(legs.b.funding)}">${legs.b.funding != null ? perpsFmtUsd(legs.b.funding) : '—'}</td>
         </tr>`;
     }).join('')}</tbody></table>`;
 }
@@ -21120,21 +21158,17 @@ function perpsRenderPositions(containerId, positions, venue) {
         return;
     }
     el.innerHTML = `<table class="perps-table"><thead><tr>
-        <th>Market</th><th>Side</th><th>Size</th><th>Notional / vQuote</th><th>uPnL / Funding</th>
+        <th>Market</th><th>Side</th><th>Size</th><th>Notional</th><th>uPnL</th>
     </tr></thead><tbody>${positions.map(p => {
         const sideCls = p.side === 'long' ? 'perps-side-long' : 'perps-side-short';
-        const extra = venue === 'hyperliquid'
-            ? perpsFmtUsd(p.unrealizedPnl) + ' uPnL'
-            : (p.unrealizedPnl != null ? perpsFmtUsd(p.unrealizedPnl) + ' uPnL' : 'vQuote ' + perpsFmtUsd(p.vQuoteBalance));
-        const notional = venue === 'hyperliquid'
-            ? perpsFmtUsd(p.notional)
-            : perpsFmtUsd(p.notional ?? (p.markPx != null ? Math.abs(p.size * p.markPx) : null));
+        const notional = perpsFmtUsd(p.notional ?? (p.markPx != null ? Math.abs(p.size * p.markPx) : null));
+        const upnl = p.unrealizedPnl != null ? perpsFmtUsd(p.unrealizedPnl) : '—';
         return `<tr>
             <td>${dashEsc(p.symbol)}</td>
             <td class="${sideCls}">${dashEsc(p.side.toUpperCase())}</td>
             <td>${Math.abs(p.size).toLocaleString('en-US', { maximumFractionDigits: 6 })}</td>
             <td>${notional}</td>
-            <td>${extra}</td>
+            <td class="${perpsSignedCls(p.unrealizedPnl)}">${upnl}</td>
         </tr>`;
     }).join('')}</tbody></table>`;
 }
