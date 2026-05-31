@@ -683,6 +683,33 @@ body[data-active-tab="perps"] .page-content,
 .perps-pnl-note { font-family:var(--ff-mono); font-size:0.62rem; color:#9dacbb; margin-top:0.15rem; }
 .perps-pnl-total { font-family:var(--ff-mono); font-size:1.15rem; font-weight:800; color:var(--t1); }
 .perps-pnl-chart { position:relative; height:160px; margin-top:0.35rem; }
+.perps-pnl-chart.tall { height:200px; }
+.perps-fund-chart-wrap { position:relative; }
+.perps-fund-chart-wrap svg { cursor:crosshair; }
+.perps-fund-bar.pos { fill:#59f0c8; }
+.perps-fund-bar.neg { fill:#ff6b81; }
+.perps-fund-bar.fee { fill:rgba(255,107,129,0.45); }
+.perps-fund-zero { stroke:rgba(255,255,255,0.18); stroke-width:1; vector-effect:non-scaling-stroke; }
+.perps-fund-grid { stroke:rgba(255,255,255,0.06); stroke-width:1; vector-effect:non-scaling-stroke; }
+.perps-fund-y-label { fill:#9dacbb; font-family:var(--ff-mono); font-size:9px; font-weight:700; }
+.perps-fund-x-label { fill:#9dacbb; font-family:var(--ff-mono); font-size:8px; font-weight:700; }
+.perps-fund-tooltip {
+  position:absolute; pointer-events:none; z-index:5;
+  padding:0.45rem 0.55rem; border-radius:8px;
+  background:rgba(8,16,22,0.96); border:1px solid rgba(89,240,200,0.22);
+  font-family:var(--ff-mono); font-size:0.62rem; color:var(--t1);
+  box-shadow:0 8px 24px rgba(0,0,0,0.35); display:none;
+}
+.perps-fund-tooltip-date { color:#9dacbb; margin-bottom:0.2rem; }
+.perps-fund-tooltip-val.pos { color:#59f0c8; font-weight:800; }
+.perps-fund-tooltip-val.neg { color:#ff6b81; font-weight:800; }
+.perps-fund-controls { display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap; }
+.perps-fund-toggle {
+  font-family:var(--ff-mono); font-size:0.62rem; font-weight:800; letter-spacing:0.06em;
+  text-transform:uppercase; padding:0.22rem 0.55rem; border-radius:999px;
+  border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.03); color:#9dacbb; cursor:pointer;
+}
+.perps-fund-toggle.active { border-color:rgba(89,240,200,0.35); color:#59f0c8; background:rgba(89,240,200,0.08); }
 .perps-pnl-chart svg { width:100%; height:100%; display:block; }
 .perps-pnl-line { fill:none; stroke:#59f0c8; stroke-width:2; vector-effect:non-scaling-stroke; }
 .perps-pnl-area { fill:rgba(89,240,200,0.12); stroke:none; }
@@ -6387,6 +6414,39 @@ body[data-active-tab="loops"] .loop-pos-val,
             <div class="perps-kpi"><div class="perps-kpi-label">Wallet PnL (adjusted)</div><div class="perps-kpi-value" id="perpsKpiWalletPnl">—</div><div class="perps-kpi-sub" id="perpsKpiWalletPnlSub">deposit-adjusted · all venues</div></div>
           </section>
           <div class="perps-reconcile" id="perpsReconcileNote">Wallet PnL − paired funding ≈ directional exposure + unallocated costs</div>
+
+          <section class="perps-panel">
+            <div class="perps-panel-head">
+              <div class="perps-panel-title">Funding</div>
+              <div class="perps-fund-controls">
+                <button type="button" class="perps-fund-toggle" id="perpsFundShowFeesBtn" onclick="perpsToggleFundingFees()">Show fees</button>
+                <span class="perps-pill blue" id="perpsDailyFundBadge">30d</span>
+              </div>
+            </div>
+            <div class="perps-pnl-card" style="margin:0 0.5rem 0.5rem;">
+              <div class="perps-pnl-top">
+                <div>
+                  <div class="perps-pnl-title">Daily funding collected</div>
+                  <div class="perps-pnl-note" id="perpsDailyFundNote">Sum of historical funding payments across HL · Nado · GRVT · Extended</div>
+                </div>
+                <div class="perps-pnl-total" id="perpsDailyFundTotal">—</div>
+              </div>
+              <div class="perps-fund-chart-wrap perps-pnl-chart tall" id="perpsDailyFundWrap">
+                <svg id="perpsDailyFundChart" viewBox="0 0 760 200" preserveAspectRatio="none" role="img" aria-label="Daily funding bar chart">
+                  <g id="perpsDailyFundGrid"></g>
+                  <line class="perps-fund-zero" id="perpsDailyFundZero" x1="48" y1="100" x2="748" y2="100"></line>
+                  <g id="perpsDailyFundBars"></g>
+                  <g id="perpsDailyFundYLabels"></g>
+                  <g id="perpsDailyFundXLabels"></g>
+                </svg>
+                <div class="perps-fund-tooltip" id="perpsDailyFundTooltip">
+                  <div class="perps-fund-tooltip-date" id="perpsDailyFundTipDate"></div>
+                  <div id="perpsDailyFundTipVal"></div>
+                </div>
+              </div>
+              <div class="perps-pnl-stats" id="perpsDailyFundStats"></div>
+            </div>
+          </section>
 
           <div class="perps-charts-grid">
           <section class="perps-panel">
@@ -20465,6 +20525,9 @@ function watcherApplyFilters() {
 // ── Perps Funding Arb (Hyperliquid + Nado) ───────────────────────────
 let _perpsCache = null;
 let _perpsDays = 30;
+let _perpsDailyFundSeries = [];
+let _perpsDailyFundShowFees = false;
+let _perpsDailyFundChartState = null;
 
 function perpsMergeSnapshotsFromServer(serverSnaps) {
     try {
@@ -20933,6 +20996,199 @@ function perpsRenderEquityChart(data) {
     return equitySeries;
 }
 
+function perpsToggleFundingFees() {
+    _perpsDailyFundShowFees = !_perpsDailyFundShowFees;
+    const btn = document.getElementById('perpsFundShowFeesBtn');
+    if (btn) btn.classList.toggle('active', _perpsDailyFundShowFees);
+    perpsRenderDailyFundingChart(_perpsDailyFundSeries, _perpsDays);
+}
+
+function perpsFormatFundDayLabel(day) {
+    const d = new Date(day + 'T12:00:00Z');
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+function perpsBuildDailyFundingBars(points, showFees) {
+    if (!points.length) {
+        return { bars: [], yLabels: [], xLabels: [], zeroY: 100, maxAbs: 1, total: 0, stats: [] };
+    }
+    const width = 760;
+    const height = 200;
+    const padL = 48;
+    const padR = 12;
+    const padT = 14;
+    const padB = 30;
+    const chartW = width - padL - padR;
+    const chartH = height - padT - padB;
+    const zeroY = padT + chartH / 2;
+    const halfH = chartH / 2 - 4;
+
+    const vals = points.map(p => showFees ? p.dailyNet : p.dailyFunding);
+    const feeVals = points.map(p => p.dailyFees || 0);
+    const maxAbs = Math.max(1, ...vals.map(v => Math.abs(v)), ...feeVals);
+
+    const barGap = points.length > 45 ? 1 : 2;
+    const barW = Math.max(2, (chartW - barGap * Math.max(points.length - 1, 0)) / points.length);
+
+    const bars = points.map((p, i) => {
+        const val = showFees ? p.dailyNet : p.dailyFunding;
+        const x = padL + i * (barW + barGap);
+        const h = (Math.abs(val) / maxAbs) * halfH;
+        const y = val >= 0 ? zeroY - h : zeroY;
+        return {
+            x, y, w: barW, h: val ? Math.max(h, 1.5) : 0,
+            day: p.day, val, funding: p.dailyFunding, fees: p.dailyFees, net: p.dailyNet,
+            cls: val >= 0 ? 'pos' : 'neg',
+        };
+    });
+
+    const yTicks = [-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs];
+    const yLabels = yTicks.map(v => {
+        const y = zeroY - (v / maxAbs) * halfH;
+        return { y, label: perpsFmtUsd(v) };
+    });
+
+    const xStep = points.length <= 10 ? 1 : points.length <= 20 ? 2 : Math.ceil(points.length / 8);
+    const xLabels = points
+        .map((p, i) => ({ i, day: p.day }))
+        .filter(({ i }) => i === 0 || i === points.length - 1 || i % xStep === 0)
+        .map(({ i, day }) => ({
+            x: padL + i * (barW + barGap) + barW / 2,
+            label: perpsFormatFundDayLabel(day),
+        }));
+
+    const total = vals.reduce((s, v) => s + v, 0);
+    const best = points.reduce((bestPt, p) => {
+        const v = showFees ? p.dailyNet : p.dailyFunding;
+        return !bestPt || v > (showFees ? bestPt.dailyNet : bestPt.dailyFunding) ? p : bestPt;
+    }, null);
+    const worst = points.reduce((worstPt, p) => {
+        const v = showFees ? p.dailyNet : p.dailyFunding;
+        return !worstPt || v < (showFees ? worstPt.dailyNet : worstPt.dailyFunding) ? p : worstPt;
+    }, null);
+
+    return {
+        bars,
+        yLabels,
+        xLabels,
+        zeroY,
+        maxAbs,
+        width,
+        height,
+        padL,
+        padR,
+        total,
+        stats: [
+            { label: showFees ? 'Net total' : 'Funding total', value: perpsFmtUsd(total) },
+            { label: 'Best day', value: best ? `${perpsFormatFundDayLabel(best.day)} ${perpsFmtUsd(showFees ? best.dailyNet : best.dailyFunding)}` : '—' },
+            { label: 'Worst day', value: worst ? `${perpsFormatFundDayLabel(worst.day)} ${perpsFmtUsd(showFees ? worst.dailyNet : worst.dailyFunding)}` : '—' },
+        ],
+    };
+}
+
+function perpsRenderDailyFundingChart(series, days) {
+    const points = Array.isArray(series) ? series : [];
+    if (!points.length) {
+        ['perpsDailyFundBars', 'perpsDailyFundYLabels', 'perpsDailyFundXLabels', 'perpsDailyFundGrid'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = '';
+        });
+        const totalEl = document.getElementById('perpsDailyFundTotal');
+        if (totalEl) { totalEl.textContent = '—'; totalEl.className = 'perps-pnl-total'; }
+        const noteEl = document.getElementById('perpsDailyFundNote');
+        if (noteEl) noteEl.textContent = 'No funding payments in selected range';
+        return;
+    }
+    const chart = perpsBuildDailyFundingBars(points, _perpsDailyFundShowFees);
+    const barsEl = document.getElementById('perpsDailyFundBars');
+    const yEl = document.getElementById('perpsDailyFundYLabels');
+    const xEl = document.getElementById('perpsDailyFundXLabels');
+    const gridEl = document.getElementById('perpsDailyFundGrid');
+    const zeroEl = document.getElementById('perpsDailyFundZero');
+    const totalEl = document.getElementById('perpsDailyFundTotal');
+    const noteEl = document.getElementById('perpsDailyFundNote');
+    const statsEl = document.getElementById('perpsDailyFundStats');
+    const badge = document.getElementById('perpsDailyFundBadge');
+    const wrap = document.getElementById('perpsDailyFundWrap');
+    const tip = document.getElementById('perpsDailyFundTooltip');
+    const tipDate = document.getElementById('perpsDailyFundTipDate');
+    const tipVal = document.getElementById('perpsDailyFundTipVal');
+
+    if (zeroEl) {
+        zeroEl.setAttribute('y1', String(chart.zeroY));
+        zeroEl.setAttribute('y2', String(chart.zeroY));
+    }
+    if (gridEl) {
+        gridEl.innerHTML = chart.yLabels.map(t =>
+            `<line class="perps-fund-grid" x1="${chart.padL}" y1="${t.y.toFixed(1)}" x2="${chart.width - chart.padR}" y2="${t.y.toFixed(1)}"></line>`
+        ).join('');
+    }
+    if (yEl) {
+        yEl.innerHTML = chart.yLabels.map(t =>
+            `<text class="perps-fund-y-label" x="${chart.padL - 6}" y="${(t.y + 3).toFixed(1)}" text-anchor="end">${dashEsc(t.label)}</text>`
+        ).join('');
+    }
+    if (xEl) {
+        xEl.innerHTML = chart.xLabels.map(t =>
+            `<text class="perps-fund-x-label" x="${t.x.toFixed(1)}" y="${chart.height - 8}" text-anchor="middle">${dashEsc(t.label)}</text>`
+        ).join('');
+    }
+    if (barsEl) {
+        barsEl.innerHTML = chart.bars.map(b =>
+            `<rect class="perps-fund-bar ${b.cls}" x="${b.x.toFixed(1)}" y="${b.y.toFixed(1)}" width="${b.w.toFixed(1)}" height="${b.h.toFixed(1)}" rx="1.5"
+                data-day="${dashEsc(b.day)}" data-val="${b.val}" data-funding="${b.funding}" data-fees="${b.fees}" data-net="${b.net}"></rect>`
+        ).join('');
+    }
+
+    if (totalEl) {
+        totalEl.textContent = perpsFmtUsd(chart.total);
+        totalEl.className = 'perps-pnl-total ' + perpsSignedCls(chart.total);
+    }
+    if (noteEl) {
+        noteEl.textContent = _perpsDailyFundShowFees
+            ? `${days}d net funding minus trading fees · from exchange payment history`
+            : `${days}d gross funding from historical payments · all venues · all positions`;
+    }
+    if (badge) badge.textContent = `${days}d`;
+    if (statsEl) {
+        statsEl.innerHTML = chart.stats.map(s =>
+            `<div><div class="perps-pnl-stat-label">${dashEsc(s.label)}</div><div class="perps-pnl-stat-val">${dashEsc(s.value)}</div></div>`
+        ).join('');
+    }
+
+    if (wrap && tip && !wrap.dataset.fundBound) {
+        wrap.dataset.fundBound = '1';
+        wrap.addEventListener('mousemove', (ev) => {
+            const live = _perpsDailyFundChartState;
+            if (!live?.bars?.length) {
+                tip.style.display = 'none';
+                return;
+            }
+            const svg = document.getElementById('perpsDailyFundChart');
+            const rect = svg.getBoundingClientRect();
+            const scaleX = 760 / rect.width;
+            const x = (ev.clientX - rect.left) * scaleX;
+            const hit = live.bars.find(b => x >= b.x && x <= b.x + b.w);
+            if (!hit) {
+                tip.style.display = 'none';
+                return;
+            }
+            tip.style.display = 'block';
+            tip.style.left = `${ev.clientX - wrap.getBoundingClientRect().left + 12}px`;
+            tip.style.top = `${ev.clientY - wrap.getBoundingClientRect().top - 36}px`;
+            if (tipDate) tipDate.textContent = hit.day;
+            if (tipVal) {
+                const cls = hit.val >= 0 ? 'pos' : 'neg';
+                const label = _perpsDailyFundShowFees ? 'Net' : 'Funding';
+                tipVal.innerHTML = `<span class="perps-fund-tooltip-val ${cls}">${label} ${perpsFmtUsd(hit.val)}</span>` +
+                    (_perpsDailyFundShowFees ? `<div style="margin-top:0.15rem;color:#9dacbb;">Funding ${perpsFmtUsd(hit.funding)} · Fees −${perpsFmtUsd(Math.abs(hit.fees))}</div>` : '');
+            }
+        });
+        wrap.addEventListener('mouseleave', () => { if (tip) tip.style.display = 'none'; });
+    }
+    _perpsDailyFundChartState = chart;
+}
+
 function perpsBuildChart(series, netSeries) {
     const fundingPts = Array.isArray(series) ? series : [];
     const netPts = Array.isArray(netSeries) ? netSeries : [];
@@ -21291,6 +21547,8 @@ function perpsRenderDashboard(data) {
     if (extendedBadge) extendedBadge.textContent = (s.extendedConfigured ? (s.extendedPositionCount ?? 0) : 0) + ' open';
 
     perpsRenderAlerts(data.paired || [], data.unhedged || [], s);
+    _perpsDailyFundSeries = data.dailyFundingSeries || [];
+    perpsRenderDailyFundingChart(_perpsDailyFundSeries, data.days);
     perpsRenderPairedTable(data.paired || []);
     perpsRenderPairBreakdown(data.paired || [], data.days);
     perpsRenderUnhedged(data.unhedged || []);
