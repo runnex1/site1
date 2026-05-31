@@ -636,7 +636,7 @@ body[data-active-tab="perps"] .page-content,
 .perps-kpi-value { margin-top:0.35rem; font-family:var(--ff-mono); font-size:1.05rem; font-weight:800; color:var(--t1); }
 .perps-kpi-value.pos { color:#55d66f; }
 .perps-kpi-value.neg { color:#ff5c7a; }
-.perps-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; flex:1; min-height:0; }
+.perps-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:10px; flex:1; min-height:0; }
 .perps-panel {
   border:1px solid rgba(134,159,179,0.15); border-radius:10px;
   background:linear-gradient(180deg, rgba(8,20,29,0.97), rgba(4,11,16,0.98));
@@ -6347,7 +6347,7 @@ body[data-active-tab="loops"] .loop-pos-val,
         <div class="perps-root">
           <section class="perps-head">
             <div class="perps-eyebrow">Funding Rate Arbitrage</div>
-            <h2 class="perps-title">Hyperliquid + Nado</h2>
+            <h2 class="perps-title">Hyperliquid + Nado + GRVT</h2>
             <div class="perps-config">
               <div>
                 <label for="perpsHlWallet">Hyperliquid wallet</label>
@@ -6356,6 +6356,10 @@ body[data-active-tab="loops"] .loop-pos-val,
               <div>
                 <label for="perpsNadoWallet">Nado wallet (same if blank)</label>
                 <input type="text" id="perpsNadoWallet" placeholder="0x…" autocomplete="off">
+              </div>
+              <div>
+                <label for="perpsGrvtSubAccount">GRVT sub-account ID</label>
+                <input type="text" id="perpsGrvtSubAccount" placeholder="4860249204328359" autocomplete="off">
               </div>
               <button type="button" class="perps-btn" onclick="perpsRefresh()">Refresh</button>
               <button type="button" class="perps-btn secondary" onclick="perpsUsePmWallets()">Use PM wallets</button>
@@ -6375,12 +6379,12 @@ body[data-active-tab="loops"] .loop-pos-val,
             <div class="perps-kpi"><div class="perps-kpi-label">Net arb PnL</div><div class="perps-kpi-value" id="perpsKpiNetArb">—</div><div class="perps-kpi-sub" id="perpsKpiNetArbSub">funding + basis − fees</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">Net funding</div><div class="perps-kpi-value" id="perpsKpiNetFunding">—</div><div class="perps-kpi-sub" id="perpsKpiNetFundingSub">paired · since open</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">Combined uPnL</div><div class="perps-kpi-value" id="perpsKpiCombinedUpnl">—</div><div class="perps-kpi-sub">hedged pairs only</div></div>
-            <div class="perps-kpi"><div class="perps-kpi-label">Fees paid</div><div class="perps-kpi-value" id="perpsKpiFees">—</div><div class="perps-kpi-sub" id="perpsKpiFeesSub">HL + Nado fills</div></div>
+            <div class="perps-kpi"><div class="perps-kpi-label">Fees paid</div><div class="perps-kpi-value" id="perpsKpiFees">—</div><div class="perps-kpi-sub" id="perpsKpiFeesSub">HL + Nado + GRVT fills</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">Net funding APR</div><div class="perps-kpi-value" id="perpsKpiFundingApr">—</div><div class="perps-kpi-sub">on deployed notional</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">Net arb APR</div><div class="perps-kpi-value" id="perpsKpiArbApr">—</div><div class="perps-kpi-sub">after fees</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">HL / Nado funding</div><div class="perps-kpi-value" id="perpsKpiHlNadoFunding">—</div><div class="perps-kpi-sub" id="perpsKpiHlNadoFundingSub">paired · since open</div></div>
             <div class="perps-kpi"><div class="perps-kpi-label">Account value</div><div class="perps-kpi-value" id="perpsKpiAccountValue">—</div><div class="perps-kpi-sub" id="perpsKpiPositionsSub">—</div></div>
-            <div class="perps-kpi"><div class="perps-kpi-label">Wallet PnL (adjusted)</div><div class="perps-kpi-value" id="perpsKpiWalletPnl">—</div><div class="perps-kpi-sub" id="perpsKpiWalletPnlSub">deposit-adjusted HL + Nado</div></div>
+            <div class="perps-kpi"><div class="perps-kpi-label">Wallet PnL (adjusted)</div><div class="perps-kpi-value" id="perpsKpiWalletPnl">—</div><div class="perps-kpi-sub" id="perpsKpiWalletPnlSub">deposit-adjusted HL + Nado + GRVT</div></div>
           </section>
           <div class="perps-reconcile" id="perpsReconcileNote">Wallet PnL − paired funding ≈ directional exposure + unallocated costs</div>
 
@@ -6474,12 +6478,19 @@ body[data-active-tab="loops"] .loop-pos-val,
               </div>
               <div class="perps-table-wrap" id="perpsNadoPositions"></div>
             </div>
+            <div class="perps-panel">
+              <div class="perps-panel-head">
+                <div class="perps-panel-title">GRVT Positions</div>
+                <span class="perps-pill" style="border-color:rgba(180,130,255,0.35);color:#c9a0ff;background:rgba(180,130,255,0.08);" id="perpsGrvtBadge">0 open</span>
+              </div>
+              <div class="perps-table-wrap" id="perpsGrvtPositions"></div>
+            </div>
           </section>
 
           <section class="perps-panel">
             <div class="perps-panel-head">
               <div class="perps-panel-title">Funding Rate Spread (8h equiv.)</div>
-              <span class="perps-pill">HL vs Nado</span>
+              <span class="perps-pill">HL · Nado · GRVT</span>
             </div>
             <div class="perps-table-wrap" id="perpsRateSpread"></div>
           </section>
@@ -20484,60 +20495,65 @@ function perpsHlStrategyPayments(payments) {
     return (payments || []).filter(p => p.kind === 'deposit' || p.kind === 'withdraw');
 }
 
-function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, windowMs = PERPS_CROSS_VENUE_WINDOW_MS) {
+function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, grvtPayments = null, windowMs = PERPS_CROSS_VENUE_WINDOW_MS) {
     const hlP = perpsHlStrategyPayments(hlPayments);
     const nadoP = [...(nadoPayments || [])];
+    const grvtP = [...(grvtPayments || [])];
     const hlNetDeposits = hlP.reduce((s, p) => s + p.usdc, 0);
     const nadoNetDeposits = nadoP.reduce((s, p) => s + p.usdc, 0);
-    const rawCombinedNetDeposits = hlNetDeposits + nadoNetDeposits;
-    const hlDep = hlP.filter(p => p.usdc > 0);
-    const hlWdr = hlP.filter(p => p.usdc < 0);
-    const nadoDep = nadoP.filter(p => p.usdc > 0);
-    const nadoWdr = nadoP.filter(p => p.usdc < 0);
-    let crossVenueOffset = 0;
-    const usedHlDep = new Set();
-    const usedHlWdr = new Set();
+    const grvtNetDeposits = grvtP.reduce((s, p) => s + p.usdc, 0);
+    const rawCombinedNetDeposits = hlNetDeposits + nadoNetDeposits + grvtNetDeposits;
 
-    for (const nd of nadoDep) {
-        let bestIdx = -1;
-        let bestDist = Infinity;
-        let bestKind = null;
-        hlDep.forEach((hd, i) => {
-            if (usedHlDep.has(i)) return;
-            const dist = Math.abs(nd.time - hd.time);
-            if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; bestKind = 'dep'; }
-        });
-        hlWdr.forEach((hw, i) => {
-            if (usedHlWdr.has(i)) return;
-            const dist = Math.abs(nd.time - hw.time);
-            if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; bestKind = 'wdr'; }
-        });
-        if (bestIdx >= 0 && bestKind) {
-            const hlRow = bestKind === 'dep' ? hlDep[bestIdx] : hlWdr[bestIdx];
-            const overlap = Math.min(nd.usdc, Math.abs(hlRow.usdc));
-            if (overlap > 50) {
-                crossVenueOffset += overlap;
-                if (bestKind === 'dep') usedHlDep.add(bestIdx);
-                else usedHlWdr.add(bestIdx);
+    function crossOffset(primaryP, hlPaymentsInner) {
+        const hlInner = perpsHlStrategyPayments(hlPaymentsInner);
+        const hlDep = hlInner.filter(p => p.usdc > 0);
+        const hlWdr = hlInner.filter(p => p.usdc < 0);
+        const primaryDep = primaryP.filter(p => p.usdc > 0);
+        const primaryWdr = primaryP.filter(p => p.usdc < 0);
+        let offset = 0;
+        const usedHlDep = new Set();
+        const usedHlWdr = new Set();
+        for (const pd of primaryDep) {
+            let bestIdx = -1, bestDist = Infinity, bestKind = null;
+            hlDep.forEach((hd, i) => {
+                if (usedHlDep.has(i)) return;
+                const dist = Math.abs(pd.time - hd.time);
+                if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; bestKind = 'dep'; }
+            });
+            hlWdr.forEach((hw, i) => {
+                if (usedHlWdr.has(i)) return;
+                const dist = Math.abs(pd.time - hw.time);
+                if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; bestKind = 'wdr'; }
+            });
+            if (bestIdx >= 0 && bestKind) {
+                const hlRow = bestKind === 'dep' ? hlDep[bestIdx] : hlWdr[bestIdx];
+                const overlap = Math.min(pd.usdc, Math.abs(hlRow.usdc));
+                if (overlap > 50) {
+                    offset += overlap;
+                    if (bestKind === 'dep') usedHlDep.add(bestIdx);
+                    else usedHlWdr.add(bestIdx);
+                }
             }
         }
+        for (const pw of primaryWdr) {
+            let bestIdx = -1, bestDist = Infinity;
+            hlDep.forEach((hd, i) => {
+                if (usedHlDep.has(i)) return;
+                const dist = Math.abs(pw.time - hd.time);
+                if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; }
+            });
+            if (bestIdx >= 0) {
+                const overlap = Math.min(Math.abs(pw.usdc), hlDep[bestIdx].usdc);
+                if (overlap > 50) { offset += overlap; usedHlDep.add(bestIdx); }
+            }
+        }
+        return offset;
     }
 
-    for (const nw of nadoWdr) {
-        let bestIdx = -1;
-        let bestDist = Infinity;
-        hlDep.forEach((hd, i) => {
-            if (usedHlDep.has(i)) return;
-            const dist = Math.abs(nw.time - hd.time);
-            if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; }
-        });
-        if (bestIdx >= 0) {
-            const overlap = Math.min(Math.abs(nw.usdc), hlDep[bestIdx].usdc);
-            if (overlap > 50) {
-                crossVenueOffset += overlap;
-                usedHlDep.add(bestIdx);
-            }
-        }
+    let crossVenueOffset = crossOffset(nadoP, hlP);
+    if (grvtPayments) {
+        crossVenueOffset += crossOffset(grvtP, hlP);
+        crossVenueOffset += crossOffset(grvtP, nadoP);
     }
 
     return {
@@ -20547,22 +20563,25 @@ function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, windowMs = PE
     };
 }
 
-function perpsNetDepositsAtTime(hlPayments, nadoPayments, timeMs) {
+function perpsNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = null) {
     const hlP = perpsHlStrategyPayments(hlPayments).filter(p => p.time <= timeMs);
     const nadoP = (nadoPayments || []).filter(p => p.time <= timeMs);
-    return perpsComputeCombinedNetDeposits(hlP, nadoP).combinedNetDeposits;
+    const grvtP = grvtPayments ? (grvtPayments || []).filter(p => p.time <= timeMs) : null;
+    return perpsComputeCombinedNetDeposits(hlP, nadoP, grvtP).combinedNetDeposits;
 }
 
 function perpsLoadConfig() {
     perpsMigrateSnapshots();
     const hlEl = document.getElementById('perpsHlWallet');
     const nadoEl = document.getElementById('perpsNadoWallet');
+    const grvtEl = document.getElementById('perpsGrvtSubAccount');
     if (!hlEl) return;
     try {
         const saved = JSON.parse(localStorage.getItem(PERPS_CONFIG_KEY) || '{}');
         if (saved.hyperliquid) hlEl.value = saved.hyperliquid;
         else if (Array.isArray(data.polymarketWallets) && data.polymarketWallets[0]) hlEl.value = data.polymarketWallets[0];
         if (saved.nado) nadoEl.value = saved.nado;
+        if (grvtEl) grvtEl.value = saved.grvtSubAccount || '4860249204328359';
         if (saved.days) _perpsDays = saved.days;
     } catch (e) {}
     document.querySelectorAll('.perps-range-btn').forEach(btn => {
@@ -20572,7 +20591,7 @@ function perpsLoadConfig() {
 }
 
 function perpsBindConfigInputs() {
-    ['perpsHlWallet', 'perpsNadoWallet'].forEach(id => {
+    ['perpsHlWallet', 'perpsNadoWallet', 'perpsGrvtSubAccount'].forEach(id => {
         const el = document.getElementById(id);
         if (!el || el.dataset.perpsBound) return;
         el.dataset.perpsBound = '1';
@@ -20584,7 +20603,8 @@ function perpsBindConfigInputs() {
 function perpsSaveConfig() {
     const hl = document.getElementById('perpsHlWallet')?.value.trim() || '';
     const nado = document.getElementById('perpsNadoWallet')?.value.trim() || '';
-    try { localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({ hyperliquid: hl, nado, days: _perpsDays })); } catch (e) {}
+    const grvtSubAccount = document.getElementById('perpsGrvtSubAccount')?.value.trim() || '4860249204328359';
+    try { localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({ hyperliquid: hl, nado, grvtSubAccount, days: _perpsDays })); } catch (e) {}
     if (typeof saveData === 'function') saveData();
 }
 
@@ -20651,7 +20671,8 @@ function perpsSaveSnapshot(data) {
             ?? 0;
         const hlAccountValue = s.hlAccountValue ?? data.equityNow?.hl ?? 0;
         const nadoAccountValue = s.nadoAccountValue ?? data.equityNow?.nado ?? 0;
-        const totalEquity = hlAccountValue + nadoAccountValue;
+        const grvtAccountValue = s.grvtAccountValue ?? data.equityNow?.grvt ?? 0;
+        const totalEquity = hlAccountValue + nadoAccountValue + grvtAccountValue;
         const adjustedEquity = s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalEquity - combinedNetDeposits;
         const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
         store[today] = {
@@ -20662,6 +20683,7 @@ function perpsSaveSnapshot(data) {
             netArbPnl: s.netArbPnl,
             hlAccountValue,
             nadoAccountValue,
+            grvtAccountValue,
             totalEquity,
             adjustedEquity,
             cumulativeNetDeposits: combinedNetDeposits,
@@ -20684,17 +20706,18 @@ function perpsBuildEquitySeries(data) {
     const capitalFlows = data.capitalFlows || {};
     const hlPayments = capitalFlows.hl?.payments || [];
     const nadoPayments = capitalFlows.nado?.payments || [];
+    const grvtPayments = capitalFlows.grvt?.payments || [];
     const flowTotals = capitalFlows.combinedNetDeposits != null
         ? {
             combinedNetDeposits: capitalFlows.combinedNetDeposits,
             crossVenueOffset: capitalFlows.crossVenueOffset ?? 0,
             rawCombinedNetDeposits: capitalFlows.rawCombinedNetDeposits,
         }
-        : perpsComputeCombinedNetDeposits(hlPayments, nadoPayments);
+        : perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, grvtPayments.length ? grvtPayments : null);
     const combinedNetDeposits = flowTotals.combinedNetDeposits ?? 0;
     const crossVenueOffset = flowTotals.crossVenueOffset ?? 0;
     const snapshots = Object.values(JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}'))
-        .filter(s => s.hlAccountValue != null || s.nadoAccountValue != null)
+        .filter(s => s.hlAccountValue != null || s.nadoAccountValue != null || s.grvtAccountValue != null)
         .sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const points = [];
     const sourcePriority = { live: 3, snapshot: 2, backfill: 1 };
@@ -20704,9 +20727,10 @@ function perpsBuildEquitySeries(data) {
         if (!time) continue;
         const hl = snap.hlAccountValue ?? 0;
         const nado = snap.nadoAccountValue ?? 0;
-        const totalEquity = snap.totalEquity ?? hl + nado;
-        const cumulativeNetDeposits = hlPayments.length || nadoPayments.length
-            ? perpsNetDepositsAtTime(hlPayments, nadoPayments, time)
+        const grvt = snap.grvtAccountValue ?? 0;
+        const totalEquity = snap.totalEquity ?? hl + nado + grvt;
+        const cumulativeNetDeposits = hlPayments.length || nadoPayments.length || grvtPayments.length
+            ? perpsNetDepositsAtTime(hlPayments, nadoPayments, time, grvtPayments.length ? grvtPayments : null)
             : combinedNetDeposits;
         points.push({
             time,
@@ -20721,7 +20745,8 @@ function perpsBuildEquitySeries(data) {
     const s = data.summary || {};
     const hlNow = s.hlAccountValue ?? data.equityNow?.hl ?? 0;
     const nadoNow = s.nadoAccountValue ?? data.equityNow?.nado ?? 0;
-    const totalNow = hlNow + nadoNow;
+    const grvtNow = s.grvtAccountValue ?? data.equityNow?.grvt ?? 0;
+    const totalNow = hlNow + nadoNow + grvtNow;
     const fetchedAt = data.fetchedAt || Date.now();
     const liveNetDeposits = data.equityNow?.adjustedTotal != null
         ? totalNow - data.equityNow.adjustedTotal
@@ -21084,23 +21109,27 @@ function perpsRenderSpread(rows) {
         return;
     }
     el.innerHTML = `<table class="perps-table"><thead><tr>
-        <th>Asset</th><th>HL 8h</th><th>Nado 8h</th><th>Spread</th>
+        <th>Asset</th><th>HL 8h</th><th>Nado 8h</th><th>GRVT 8h</th><th>HL−Nado</th><th>HL−GRVT</th>
     </tr></thead><tbody>${rows.map(r => `<tr>
         <td>${dashEsc(r.symbol)}</td>
         <td>${perpsFmtRate(r.hyperliquid8h)}</td>
         <td>${perpsFmtRate(r.nado8h)}</td>
+        <td>${perpsFmtRate(r.grvt8h)}</td>
         <td>${perpsFmtRate(r.spread8h)}</td>
+        <td>${perpsFmtRate(r.spreadHlGrvt8h)}</td>
     </tr>`).join('')}</tbody></table>`;
 }
 
-function perpsRenderFundingHistory(hlPayments, nadoPayments, days = 30) {
+function perpsRenderFundingHistory(hlPayments, nadoPayments, grvtPayments, days = 30) {
     const el = document.getElementById('perpsFundingHistory');
     if (!el) return;
     const hlSorted = [...(hlPayments || [])].sort((a, b) => b.time - a.time);
     const nadoSorted = [...(nadoPayments || [])].sort((a, b) => b.time - a.time);
+    const grvtSorted = [...(grvtPayments || [])].sort((a, b) => b.time - a.time);
     const merged = [
-        ...hlSorted.slice(0, 20),
-        ...nadoSorted.slice(0, 20),
+        ...hlSorted.slice(0, 15),
+        ...nadoSorted.slice(0, 15),
+        ...grvtSorted.slice(0, 15),
     ].sort((a, b) => b.time - a.time);
     if (!merged.length) {
         el.innerHTML = `<div class="perps-empty">No funding payments in the last ${days} days.</div>`;
@@ -21108,7 +21137,8 @@ function perpsRenderFundingHistory(hlPayments, nadoPayments, days = 30) {
     }
     const hlInView = merged.filter(p => p.venue === 'hyperliquid').length;
     const nadoInView = merged.filter(p => p.venue === 'nado').length;
-    el.innerHTML = `<div class="perps-status" style="margin:0 0.5rem 0.35rem;">Showing ${merged.length} recent rows (${hlInView} HL · ${nadoInView} Nado). Nado pays hourly; HL can look sparse if only the latest hour is shown.</div>
+    const grvtInView = merged.filter(p => p.venue === 'grvt').length;
+    el.innerHTML = `<div class="perps-status" style="margin:0 0.5rem 0.35rem;">Showing ${merged.length} recent rows (${hlInView} HL · ${nadoInView} Nado · ${grvtInView} GRVT).</div>
     <table class="perps-table"><thead><tr>
         <th>Time</th><th>Venue</th><th>Market</th><th>Size</th><th>Payment</th>
     </tr></thead><tbody>${merged.map(p => {
@@ -21140,7 +21170,8 @@ function perpsRenderDashboard(data) {
     setKpi('perpsKpiFundingApr', perpsFmtPct(s.netFundingApr), perpsSignedCls(s.netFundingApr));
     setKpi('perpsKpiArbApr', perpsFmtPct(s.netArbApr), perpsSignedCls(s.netArbApr));
     setKpi('perpsKpiHlNadoFunding', `${perpsFmtUsd(s.pairedHlFundingSinceOpen)} / ${perpsFmtUsd(s.pairedNadoFundingSinceOpen)}`);
-    setKpi('perpsKpiAccountValue', `${perpsFmtUsd(s.hlAccountValue)} HL · ${perpsFmtUsd(s.nadoAccountValue)} Nado`);
+    const grvtVal = s.grvtAccountValue ?? data.equityNow?.grvt ?? 0;
+    setKpi('perpsKpiAccountValue', `${perpsFmtUsd(s.hlAccountValue)} HL · ${perpsFmtUsd(s.nadoAccountValue)} Nado · ${perpsFmtUsd(grvtVal)} GRVT`);
     const equitySeries = perpsRenderEquityChart(data);
     const lifetimePnl = data.equityNow?.adjustedTotal ?? data.walletPnl ?? equitySeries.lifetimePnl;
     const walletPnlDisplay = equitySeries.dayCount >= 2 ? equitySeries.walletPnl : lifetimePnl;
@@ -21158,11 +21189,11 @@ function perpsRenderDashboard(data) {
     }
     data.summary = { ...s, walletPnl: walletPnlDisplay, combinedNetDeposits: equitySeries.combinedNetDeposits, adjustedEquity: equitySeries.adjustedEquityNow };
     const subEl = document.getElementById('perpsKpiPositionsSub');
-    if (subEl) subEl.textContent = `${s.hlPositionCount} HL · ${s.nadoPositionCount} Nado · ${s.pairedCount} paired`;
+    if (subEl) subEl.textContent = `${s.hlPositionCount} HL · ${s.nadoPositionCount} Nado · ${s.grvtPositionCount ?? 0} GRVT · ${s.pairedCount} paired`;
     const netFundSub = document.getElementById('perpsKpiNetFundingSub');
     if (netFundSub) netFundSub.textContent = `${s.pairedCount} paired · ${data.days}d window ${perpsFmtUsd(s.pairedFundingWindow)}`;
     const hlNadoSub = document.getElementById('perpsKpiHlNadoFundingSub');
-    if (hlNadoSub) hlNadoSub.textContent = `all accounts ${data.days}d: ${perpsFmtUsd(s.hlFundingTotal)} / ${perpsFmtUsd(s.nadoFundingTotal)}`;
+    if (hlNadoSub) hlNadoSub.textContent = `all accounts ${data.days}d: ${perpsFmtUsd(s.hlFundingTotal)} / ${perpsFmtUsd(s.nadoFundingTotal)} / ${perpsFmtUsd(s.grvtFundingTotal ?? 0)} GRVT`;
     const feesSub = document.getElementById('perpsKpiFeesSub');
     if (feesSub) feesSub.textContent = `paired ${perpsFmtUsd(s.pairedFees)} · all ${perpsFmtUsd(s.totalFees)}`;
     const netArbSub = document.getElementById('perpsKpiNetArbSub');
@@ -21170,8 +21201,10 @@ function perpsRenderDashboard(data) {
 
     const hlBadge = document.getElementById('perpsHlBadge');
     const nadoBadge = document.getElementById('perpsNadoBadge');
+    const grvtBadge = document.getElementById('perpsGrvtBadge');
     if (hlBadge) hlBadge.textContent = s.hlPositionCount + ' open';
     if (nadoBadge) nadoBadge.textContent = (s.nadoExists ? s.nadoPositionCount : 0) + ' open';
+    if (grvtBadge) grvtBadge.textContent = (s.grvtConfigured ? (s.grvtPositionCount ?? 0) : 0) + ' open';
 
     perpsRenderAlerts(data.paired || [], data.unhedged || []);
     perpsRenderPairedTable(data.paired || []);
@@ -21180,12 +21213,24 @@ function perpsRenderDashboard(data) {
     perpsRenderFundingChart(data);
     perpsRenderPositions('perpsHlPositions', data.hyperliquid.state.positions, 'hyperliquid');
     perpsRenderPositions('perpsNadoPositions', data.nado.state.positions, 'nado');
+    perpsRenderPositions('perpsGrvtPositions', data.grvt?.state?.positions || [], 'grvt');
     perpsRenderSpread(data.rateSpread || []);
-    perpsRenderFundingHistory(data.hyperliquid.funding.payments, data.nado.funding.payments, data.days);
+    perpsRenderFundingHistory(
+        data.hyperliquid.funding.payments,
+        data.nado.funding.payments,
+        data.grvt?.funding?.payments || [],
+        data.days,
+    );
     perpsSaveSnapshot(data);
 
     const t = new Date(data.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    perpsSetStatus(`Updated ${t} · ${data.days}d window · HL ${dashShortAddr(data.wallets.hyperliquid)} · Nado ${dashShortAddr(data.wallets.nado)}${s.nadoExists ? '' : ' (Nado account not initialized)'}`);
+    const grvtId = data.wallets.grvtSubAccount || '';
+    let status = `Updated ${t} · ${data.days}d window · HL ${dashShortAddr(data.wallets.hyperliquid)} · Nado ${dashShortAddr(data.wallets.nado)}`;
+    if (s.grvtConfigured) status += ` · GRVT ${grvtId}`;
+    else if (s.grvtError) status += ` · GRVT error: ${s.grvtError}`;
+    else status += ' · GRVT (set GRVT_API_KEY on server)';
+    if (!s.nadoExists) status += ' (Nado account not initialized)';
+    perpsSetStatus(status);
 }
 
 async function perpsRefresh() {
@@ -21196,7 +21241,7 @@ async function perpsRefresh() {
         return;
     }
     perpsSaveConfig();
-    perpsSetStatus('Fetching Hyperliquid and Nado data…');
+    perpsSetStatus('Fetching Hyperliquid, Nado, and GRVT data…');
 
     if (location.protocol === 'file:') {
         perpsSetStatus('Perps dashboard requires the local server (Launch Vault.bat) or live site — file:// cannot call /api/perps.');
@@ -21206,6 +21251,8 @@ async function perpsRefresh() {
     try {
         const params = new URLSearchParams({ wallet: hl, days: String(_perpsDays) });
         if (nadoRaw && /^0x[a-fA-F0-9]{40}$/.test(nadoRaw)) params.set('nadoWallet', nadoRaw);
+        const grvtSub = document.getElementById('perpsGrvtSubAccount')?.value.trim();
+        if (grvtSub) params.set('grvtSubAccount', grvtSub);
         const res = await fetch('/api/perps?' + params.toString());
         const payload = await res.json();
         if (!res.ok) throw new Error(payload.error || res.statusText);

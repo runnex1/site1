@@ -29,7 +29,15 @@ async function handlePerps(req, res) {
   }
 
   try {
-    const data = await fetchPerpsDashboard({ hyperliquid: wallet, nado: nadoWallet, days });
+    const grvtSubAccount = String(
+      req.query.grvtSubAccount || req.query.grvt || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
+    ).trim();
+    const data = await fetchPerpsDashboard({
+      hyperliquid: wallet,
+      nado: nadoWallet,
+      grvtSubAccount,
+      days,
+    });
     return res.status(200).json(data);
   } catch (e) {
     console.error('[perps]', e);
