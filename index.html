@@ -21181,7 +21181,8 @@ function perpsRenderSpread(rows) {
         return;
     }
     el.innerHTML = `<table class="perps-table"><thead><tr>
-        <th>Asset</th><th>HL 8h</th><th>Nado 8h</th><th>GRVT 8h</th><th>Ext 8h</th><th>HL−Nado</th><th>HL−GRVT</th><th>HL−Ext</th>
+        <th>Asset</th><th>HL 8h</th><th>Nado 8h</th><th>GRVT 8h</th><th>Ext 8h</th>
+        <th>HL−Nado</th><th>HL−GRVT</th><th>HL−Ext</th><th>Nado−Ext</th><th>Nado−GRVT</th><th>GRVT−Ext</th>
     </tr></thead><tbody>${rows.map(r => `<tr>
         <td>${dashEsc(r.symbol)}</td>
         <td>${perpsFmtRate(r.hyperliquid8h)}</td>
@@ -21191,6 +21192,9 @@ function perpsRenderSpread(rows) {
         <td>${perpsFmtRate(r.spread8h)}</td>
         <td>${perpsFmtRate(r.spreadHlGrvt8h)}</td>
         <td>${perpsFmtRate(r.spreadHlExtended8h)}</td>
+        <td>${perpsFmtRate(r.spreadNadoExtended8h)}</td>
+        <td>${perpsFmtRate(r.spreadNadoGrvt8h)}</td>
+        <td>${perpsFmtRate(r.spreadGrvtExtended8h)}</td>
     </tr>`).join('')}</tbody></table>`;
 }
 
