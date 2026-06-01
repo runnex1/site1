@@ -4,7 +4,9 @@
   "private": true,
   "engines": { "node": ">=18" },
   "scripts": {
-    "test:perps-wallet": "node tests/perps-wallet-persist.mjs"
+    "test:perps-wallet": "node tests/perps-wallet-persist.mjs",
+    "test:perps-regression": "node tests/perps-regression.test.mjs",
+    "test:perps": "node tests/perps-wallet-logic.test.mjs && node tests/perps-regression.test.mjs && node tests/perps-wallet-persist.mjs"
   },
   "devDependencies": {
     "playwright": "^1.49.0"

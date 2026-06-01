@@ -107,6 +107,16 @@ async function waitFor(fn, timeoutMs = 15000) {
   return false;
 }
 
+async function newTestContext(browser) {
+  const ctx = await browser.newContext();
+  await ctx.addInitScript(() => {
+    window.Chart = class ChartStub {
+      destroy() {}
+    };
+  });
+  return ctx;
+}
+
 async function run() {
   const server = await startServer();
   const browser = await chromium.launch({ headless: true });
@@ -115,8 +125,10 @@ async function run() {
   try {
     // Test 1: localStorage wallet survives reload
     {
-      const ctx = await browser.newContext();
+      const ctx = await newTestContext(browser);
       const page = await ctx.newPage();
+      const pageErrors = [];
+      page.on('pageerror', error => pageErrors.push(error.message));
       await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
       await page.evaluate((wallet) => {
         const cfg = { hyperliquid: wallet, nado: '', grvtSubAccount: '4860249204328359', configured: true };
@@ -134,15 +146,19 @@ async function run() {
       await page.reload({ waitUntil: 'networkidle' });
       await page.waitForTimeout(3000);
 
-      const state = await page.evaluate(() => ({
+      const state = await page.evaluate((errors) => ({
         valid: typeof perpsHasValidWallet === 'function' && perpsHasValidWallet(),
         status: document.getElementById('perpsStatus')?.textContent || '',
         collapsed: document.getElementById('perpsConfigFoot')?.classList.contains('collapsed'),
+        forceOpen: document.getElementById('perpsConfigFoot')?.dataset.forceOpen || '',
         hl: typeof perpsResolveHlWallet === 'function' ? perpsResolveHlWallet() : '',
-      }));
+        saved: typeof perpsGetSavedConfig === 'function' ? perpsGetSavedConfig() : {},
+        activeTab: document.body.dataset.activeTab || '',
+        pageErrors: errors,
+      }), pageErrors);
 
       if (!state.valid) throw new Error(`Test 1 failed: wallet not valid after reload. hl=${state.hl}`);
-      if (!state.collapsed) throw new Error('Test 1 failed: config panel not collapsed');
+      if (!state.collapsed) throw new Error(`Test 1 failed: config panel not collapsed. state=${JSON.stringify(state)}`);
       if (state.status.includes('Add wallets')) throw new Error(`Test 1 failed: status still prompts save: ${state.status}`);
       console.log('PASS test 1: localStorage wallet survives reload');
       await ctx.close();
@@ -150,7 +166,7 @@ async function run() {
 
     // Test 2: empty local, cloud restore on bootstrap
     {
-      const ctx = await browser.newContext();
+      const ctx = await newTestContext(browser);
       const page = await ctx.newPage();
       await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
       await page.evaluate(() => {
@@ -174,7 +190,7 @@ async function run() {
 
     // Test 3: cloud merge must not wipe local wallet from portfolio
     {
-      const ctx = await browser.newContext();
+      const ctx = await newTestContext(browser);
       const page = await ctx.newPage();
       await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
       await page.evaluate((wallet) => {

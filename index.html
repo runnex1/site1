@@ -7441,6 +7441,26 @@ const PERPS_CONFIG_BACKUP_KEY = 'vault-perps-config-backup';
 const PERPS_SESSION_KEY = 'vault-perps-wallets-session';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
 const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
+const PERPS_FETCH_TIMEOUT_MS = 55000;
+const PERPS_AUTO_REFRESH_MS = 60000;
+const PERPS_LIVE_APR_MS = 15000;
+const PERPS_CHART_WIDTH = 760;
+const PERPS_EQUITY_CHART_START_MS = Date.parse('2026-06-01T08:00:00.000Z');
+const PERPS_MAX_FILL_HISTORY_DAYS = 90;
+let _perpsCache = null;
+let _perpsDailyFundSeries = [];
+let _perpsDailyFundShowFees = true;
+let _perpsDailyFundChartState = null;
+let _perpsRefreshTimer = null;
+let _perpsLiveAprTimer = null;
+let _perpsLiveAprInFlight = false;
+let _perpsLastRefreshAt = null;
+let _perpsRefreshError = null;
+let _perpsStatRange = '7d';
+let _perpsLastData = null;
+let _perpsVenueEquity = null;
+let _perpsEquityChartState = null;
+let _perpsPositionChartInstance = null;
 const OPPORTUNITY_ODDS_CACHE_KEY = 'vault-opportunity-odds-cache';
 const OPPORTUNITY_ODDS_LAST_REFRESH_KEY = 'vault-opportunity-odds-last-refresh';
 const OPPORTUNITY_SEEN_KEY = 'vault-opportunity-seen';
@@ -20748,25 +20768,6 @@ function watcherApplyFilters() {
 }
 
 // ── Perps Funding Arb (Hyperliquid + Nado) ───────────────────────────
-let _perpsCache = null;
-let _perpsDailyFundSeries = [];
-let _perpsDailyFundShowFees = true;
-let _perpsDailyFundChartState = null;
-let _perpsRefreshTimer = null;
-let _perpsLiveAprTimer = null;
-let _perpsLiveAprInFlight = false;
-let _perpsLastRefreshAt = null;
-let _perpsRefreshError = null;
-let _perpsStatRange = '7d';
-let _perpsLastData = null;
-let _perpsVenueEquity = null;
-let _perpsEquityChartState = null;
-const PERPS_FETCH_TIMEOUT_MS = 55000;
-const PERPS_AUTO_REFRESH_MS = 60000;
-const PERPS_LIVE_APR_MS = 15000;
-const PERPS_CHART_WIDTH = 760;
-const PERPS_EQUITY_CHART_START_MS = Date.parse('2026-06-01T08:00:00.000Z');
-
 function perpsMaskSecret(value) {
     return value ? '*'.repeat(String(value).length) : '';
 }
@@ -20948,7 +20949,22 @@ function perpsFilterDailySeries(series, range) {
     const ms = perpsStatRangeMs(range);
     if (!ms) return rows;
     const cutoff = Date.now() - ms;
-    return rows.filter(r => new Date(r.day + 'T12:00:00Z').getTime() >= cutoff - 86400000);
+    return rows
+        .filter(r => new Date(r.day + 'T23:59:59.999Z').getTime() >= cutoff)
+        .map(r => perpsTrimDailyRowToCutoff(r, cutoff));
+}
+
+function perpsTrimDailyRowToCutoff(row, cutoff) {
+    const hasFundingEvents = Array.isArray(row.fundingEvents);
+    const hasFeeEvents = Array.isArray(row.feeEvents);
+    if (!hasFundingEvents && !hasFeeEvents) return row;
+    const fundingEvents = hasFundingEvents ? row.fundingEvents.filter(e => (e.time || 0) >= cutoff) : [];
+    const feeEvents = hasFeeEvents ? row.feeEvents.filter(e => (e.time || 0) >= cutoff) : [];
+    const dailyFunding = fundingEvents.reduce((s, e) => s + (e.usdc || 0), 0);
+    const dailyFees = feeEvents.reduce((s, e) => s + (e.fee || 0), 0);
+    const byVenue = {};
+    fundingEvents.forEach(e => { byVenue[e.venue] = (byVenue[e.venue] || 0) + (e.usdc || 0); });
+    return { ...row, dailyFunding, dailyFees, dailyNet: dailyFunding - dailyFees, byVenue, fundingEvents, feeEvents };
 }
 
 function perpsFilterEquityPoints(points, range) {
@@ -20958,7 +20974,7 @@ function perpsFilterEquityPoints(points, range) {
     const cutoff = Date.now() - ms;
     return rows.filter(p => {
         const t = perpsParseBucketTime(p.bucket) || p.time || 0;
-        return t >= cutoff - 86400000;
+        return t >= cutoff;
     });
 }
 
@@ -21402,59 +21418,39 @@ function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, grvtPayments 
     const extendedNetDeposits = extendedP.reduce((s, p) => s + p.usdc, 0);
     const rawCombinedNetDeposits = hlNetDeposits + nadoNetDeposits + grvtNetDeposits + extendedNetDeposits;
 
-    function crossOffset(primaryP, hlPaymentsInner) {
-        const hlInner = perpsHlStrategyPayments(hlPaymentsInner);
-        const hlDep = hlInner.filter(p => p.usdc > 0);
-        const hlWdr = hlInner.filter(p => p.usdc < 0);
-        const primaryDep = primaryP.filter(p => p.usdc > 0);
-        const primaryWdr = primaryP.filter(p => p.usdc < 0);
-        let offset = 0;
-        const usedHlDep = new Set();
-        const usedHlWdr = new Set();
-        for (const pd of primaryDep) {
-            let bestIdx = -1, bestDist = Infinity, bestKind = null;
-            hlDep.forEach((hd, i) => {
-                if (usedHlDep.has(i)) return;
-                const dist = Math.abs(pd.time - hd.time);
-                if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; bestKind = 'dep'; }
-            });
-            hlWdr.forEach((hw, i) => {
-                if (usedHlWdr.has(i)) return;
-                const dist = Math.abs(pd.time - hw.time);
-                if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; bestKind = 'wdr'; }
-            });
-            if (bestIdx >= 0 && bestKind) {
-                const hlRow = bestKind === 'dep' ? hlDep[bestIdx] : hlWdr[bestIdx];
-                const overlap = Math.min(pd.usdc, Math.abs(hlRow.usdc));
-                if (overlap > 50) {
-                    offset += overlap;
-                    if (bestKind === 'dep') usedHlDep.add(bestIdx);
-                    else usedHlWdr.add(bestIdx);
+    function crossOffset(paymentGroups) {
+        const events = paymentGroups.flatMap((payments, venue) =>
+            (payments || [])
+                .filter(p => Number.isFinite(p.usdc) && Number.isFinite(p.time) && p.usdc !== 0)
+                .map(p => ({ ...p, venue }))
+        );
+        const offsetForSign = sign => {
+            const rows = events.filter(p => Math.sign(p.usdc) === sign).sort((a, b) => a.time - b.time);
+            let offset = 0;
+            for (let i = 0; i < rows.length;) {
+                const clusterStart = rows[i].time;
+                const byVenue = new Map();
+                let j = i;
+                while (j < rows.length && rows[j].time - clusterStart <= windowMs) {
+                    byVenue.set(rows[j].venue, (byVenue.get(rows[j].venue) || 0) + Math.abs(rows[j].usdc));
+                    j += 1;
                 }
+                if (byVenue.size > 1) {
+                    const venueTotals = [...byVenue.values()];
+                    const duplicated = venueTotals.reduce((sum, value) => sum + value, 0) - Math.max(...venueTotals);
+                    if (duplicated > 50) offset += sign * duplicated;
+                }
+                i = j;
             }
-        }
-        for (const pw of primaryWdr) {
-            let bestIdx = -1, bestDist = Infinity;
-            hlDep.forEach((hd, i) => {
-                if (usedHlDep.has(i)) return;
-                const dist = Math.abs(pw.time - hd.time);
-                if (dist <= windowMs && dist < bestDist) { bestDist = dist; bestIdx = i; }
-            });
-            if (bestIdx >= 0) {
-                const overlap = Math.min(Math.abs(pw.usdc), hlDep[bestIdx].usdc);
-                if (overlap > 50) { offset += overlap; usedHlDep.add(bestIdx); }
-            }
-        }
-        return offset;
+            return offset;
+        };
+        return offsetForSign(1) + offsetForSign(-1);
     }
 
-    let crossVenueOffset = crossOffset(nadoP, hlP);
-    const extras = [grvtPayments ? grvtP : null, extendedPayments ? extendedP : null].filter(Boolean);
-    for (const extraP of extras) {
-        crossVenueOffset += crossOffset(extraP, hlP);
-        crossVenueOffset += crossOffset(extraP, nadoP);
-    }
-    if (grvtPayments && extendedPayments) crossVenueOffset += crossOffset(extendedP, grvtP);
+    const paymentGroups = [hlP, nadoP];
+    if (grvtPayments) paymentGroups.push(grvtP);
+    if (extendedPayments) paymentGroups.push(extendedP);
+    const crossVenueOffset = crossOffset(paymentGroups);
 
     return {
         combinedNetDeposits: rawCombinedNetDeposits - crossVenueOffset,
@@ -22106,8 +22102,6 @@ function perpsVenueLabel(venue) {
     }[venue] || venue;
 }
 
-let _perpsPositionChartInstance = null;
-
 function perpsStatRangeWindowDays(range) {
     if (range === '1d') return 1;
     if (range === '7d') return 7;
@@ -22139,8 +22133,6 @@ function perpsPairEffectiveDays(p, range) {
 function perpsPairUsesPartialWindow(p, range) {
     return perpsPairUsesSinceOpen(p, range);
 }
-
-const PERPS_MAX_FILL_HISTORY_DAYS = 90;
 
 function perpsAnnualizeReturnPct(netUsd, margin, days) {
     if (!margin || !days || days <= 0 || !Number.isFinite(netUsd)) return null;
@@ -22991,6 +22983,7 @@ function perpsRenderDashboard(data) {
     perpsRenderFundingForTimeWindow(data);
     perpsRenderPortfolioPositions(data.paired || []);
     perpsRenderUnhedged(data.unhedged || []);
+    perpsRenderAlerts(data.paired || [], data.unhedged || [], data.summary || {});
     perpsSaveSnapshot(data);
     _perpsLastRefreshAt = data.fetchedAt || Date.now();
     _perpsRefreshError = null;
