@@ -7437,6 +7437,7 @@ let charts = { portfolio: null, protocols: null, etf: null };
 const chartColors = ['#00D4AA','#6C72FF','#38BDF8','#D946EF','#F97316','#F59E0B','#F43F5E','#E879F9','#22C55E','#FB923C','#A78BFA','#34D399'];
 const OPPORTUNITY_MONITORS_KEY = 'vault-opportunity-monitors';
 const PERPS_CONFIG_KEY = 'vault-perps-config';
+const PERPS_CONFIG_BACKUP_KEY = 'vault-perps-config-backup';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
 const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
 const OPPORTUNITY_ODDS_CACHE_KEY = 'vault-opportunity-odds-cache';
@@ -7713,11 +7714,11 @@ async function loadData() {
                         delete parsed._tgChannels;
                     }
                     if (parsed._perpsConfig && typeof parsed._perpsConfig === 'object') {
-                        const hadWallet = perpsApplyCloudConfig(parsed._perpsConfig);
+                        perpsApplyCloudConfig(parsed._perpsConfig);
                         delete parsed._perpsConfig;
                         perpsLoadConfig();
-                        if (hadWallet && document.body.dataset.activeTab === 'perps') {
-                            perpsRefresh(true);
+                        if (document.body.dataset.activeTab === 'perps') {
+                            perpsEnsureConnected();
                         }
                     }
                     if (parsed._perpsSnapshots && typeof parsed._perpsSnapshots === 'object') {
@@ -7806,7 +7807,10 @@ async function saveData() {
             // Telegram / news feed channel handles
             tgChannels:     _ls(X_HANDLES_KEY, '[]'),
             // Perps arb exchange wallets + equity snapshots
-            perpsConfig:    _ls(PERPS_CONFIG_KEY, '{}'),
+            perpsConfig:    (() => {
+                const cfg = perpsNormalizeStoredConfig(_ls(PERPS_CONFIG_KEY, '{}'));
+                return perpsIsValidEthAddress(cfg.hyperliquid) ? cfg : undefined;
+            })(),
             perpsSnapshots: _ls(PERPS_SNAPSHOTS_KEY, '{}'),
             // Dismissed opportunities (market IDs)
             dismissedMarkets: _dismissedMarkets || [],
@@ -8273,12 +8277,9 @@ function switchTab(tab, opts = {}) {
     if (tab === 'perps') {
         perpsLoadConfig();
         perpsStartAutoRefresh();
-        if (perpsHasValidWallet()) {
-            perpsSetStatus('Loading saved wallets…');
-            perpsRefresh(true);
-        } else {
-            perpsSetStatus('Add wallets and click Save & connect.');
-        }
+        perpsEnsureConnected().then(ok => {
+            if (!ok) perpsSetStatus('Add wallets and click Save & connect.');
+        });
     } else {
         perpsStopAutoRefresh();
     }
@@ -20828,7 +20829,7 @@ function perpsSetStatRange(range, btn) {
     document.querySelectorAll('[data-perps-stat-range]').forEach(b => {
         b.classList.toggle('active', b === btn);
     });
-    perpsSaveConfig();
+    perpsSaveConfig({ statRangeOnly: true });
     if (_perpsLastData) {
         perpsRenderStatsBar(_perpsLastData);
         perpsRenderPortfolioPositions(_perpsLastData.paired || []);
@@ -20851,16 +20852,7 @@ function perpsRepairSavedConfig() {
     const nado = saved.nado || perpsReadConfigField('perpsNadoWallet', 'nado') || '';
     const grvtSubAccount = saved.grvtSubAccount || perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || '4860249204328359';
     if (hl === saved.hyperliquid && saved.configured) return;
-    try {
-        localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({
-            ...saved,
-            hyperliquid: hl,
-            nado,
-            grvtSubAccount,
-            statRange: saved.statRange || _perpsStatRange,
-            configured: true,
-        }));
-    } catch (e) {}
+    perpsPersistConfig({ ...saved, hyperliquid: hl, nado, grvtSubAccount });
 }
 
 function perpsRenderFundingForTimeWindow(data) {
@@ -21012,8 +21004,81 @@ function perpsParseBucketTime(key) {
     return Date.parse(key) || 0;
 }
 
+function perpsNormalizeStoredConfig(raw) {
+    const cfg = raw && typeof raw === 'object' ? { ...raw } : {};
+    const hl = String(cfg.hyperliquid || '').trim();
+    if (hl && !perpsIsValidEthAddress(hl)) delete cfg.hyperliquid;
+    const nado = String(cfg.nado || '').trim();
+    if (nado && !perpsIsValidEthAddress(nado)) delete cfg.nado;
+    return cfg;
+}
+
 function perpsGetSavedConfig() {
-    try { return JSON.parse(localStorage.getItem(PERPS_CONFIG_KEY) || '{}'); } catch (e) { return {}; }
+    try {
+        let cfg = perpsNormalizeStoredConfig(JSON.parse(localStorage.getItem(PERPS_CONFIG_KEY) || '{}'));
+        if (!perpsIsValidEthAddress(cfg.hyperliquid)) {
+            const backup = perpsNormalizeStoredConfig(JSON.parse(localStorage.getItem(PERPS_CONFIG_BACKUP_KEY) || '{}'));
+            if (perpsIsValidEthAddress(backup.hyperliquid)) {
+                cfg = {
+                    ...backup,
+                    ...cfg,
+                    hyperliquid: backup.hyperliquid,
+                    nado: cfg.nado || backup.nado || '',
+                    grvtSubAccount: cfg.grvtSubAccount || backup.grvtSubAccount || '4860249204328359',
+                    configured: true,
+                };
+                localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify(cfg));
+            }
+        }
+        return cfg;
+    } catch (e) { return {}; }
+}
+
+function perpsPersistConfig(config) {
+    const cfg = perpsNormalizeStoredConfig(config);
+    if (!perpsIsValidEthAddress(cfg.hyperliquid)) return false;
+    const payload = {
+        hyperliquid: cfg.hyperliquid.trim(),
+        nado: cfg.nado || '',
+        grvtSubAccount: cfg.grvtSubAccount || '4860249204328359',
+        statRange: cfg.statRange || _perpsStatRange,
+        configured: true,
+    };
+    try {
+        const json = JSON.stringify(payload);
+        localStorage.setItem(PERPS_CONFIG_KEY, json);
+        localStorage.setItem(PERPS_CONFIG_BACKUP_KEY, json);
+        return true;
+    } catch (e) { return false; }
+}
+
+async function perpsHydrateConfigFromCloud() {
+    if (perpsHasValidWallet() || location.protocol === 'file:') return perpsHasValidWallet();
+    try {
+        const res = await fetch('/api/sync', { signal: AbortSignal.timeout(5000) });
+        if (!res.ok) return false;
+        const cloudData = await res.json();
+        if (!cloudData?.result) return false;
+        const parsed = JSON.parse(cloudData.result);
+        if (parsed._perpsConfig && typeof parsed._perpsConfig === 'object') {
+            perpsApplyCloudConfig(parsed._perpsConfig);
+            perpsLoadConfig();
+        }
+    } catch (e) { /* offline */ }
+    return perpsHasValidWallet();
+}
+
+async function perpsEnsureConnected() {
+    perpsRepairSavedConfig();
+    if (!perpsHasValidWallet()) await perpsHydrateConfigFromCloud();
+    perpsUpdateConfigVisibility();
+    if (!perpsHasValidWallet()) return false;
+    if (document.body.dataset.activeTab !== 'perps') return true;
+    if (!_perpsLastRefreshAt && !_perpsRefreshError) {
+        perpsSetStatus('Loading saved wallets…');
+    }
+    await perpsRefresh(true);
+    return true;
 }
 
 function perpsApplyCloudConfig(serverConfig) {
@@ -21025,18 +21090,15 @@ function perpsApplyCloudConfig(serverConfig) {
     const localValid = /^0x[a-fA-F0-9]{40}$/.test(localHl);
 
     if (serverValid) {
-        localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({
+        perpsPersistConfig({
             hyperliquid: serverHl,
             nado: server.nado || local.nado || '',
             grvtSubAccount: server.grvtSubAccount || local.grvtSubAccount || '4860249204328359',
             statRange: server.statRange || local.statRange || _perpsStatRange,
-            configured: true,
-        }));
+        });
     } else if (localValid) {
         // Never wipe locally saved wallets with an empty server payload
-        if (!local.configured) {
-            localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({ ...local, configured: true }));
-        }
+        if (!local.configured) perpsPersistConfig(local);
         if (typeof saveData === 'function') saveData();
     }
     return perpsHasValidWallet();
@@ -21110,6 +21172,21 @@ function perpsUpdateRefreshBar() {
 
 function perpsSaveConfigAndRefresh() {
     perpsUnmaskWalletInputs();
+    const hlEl = document.getElementById('perpsHlWallet');
+    const nadoEl = document.getElementById('perpsNadoWallet');
+    const grvtEl = document.getElementById('perpsGrvtSubAccount');
+    if (hlEl) {
+        const raw = hlEl.value.trim();
+        if (raw && !/^\*+$/.test(raw)) hlEl.dataset.perpsReal = raw;
+    }
+    if (nadoEl) {
+        const raw = nadoEl.value.trim();
+        if (raw && !/^\*+$/.test(raw)) nadoEl.dataset.perpsReal = raw;
+    }
+    if (grvtEl) {
+        const raw = grvtEl.value.trim();
+        if (raw && !/^\*+$/.test(raw)) grvtEl.dataset.perpsReal = raw;
+    }
     perpsSaveConfig();
     const saved = perpsGetSavedConfig();
     const fieldKeys = {
@@ -21269,8 +21346,8 @@ function perpsLoadConfig() {
             grvtEl.value = grvt;
         }
         if (saved.statRange) _perpsStatRange = saved.statRange;
-        if (/^0x[a-fA-F0-9]{40}$/.test(saved.hyperliquid || '') && !saved.configured) {
-            localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({ ...saved, configured: true }));
+        if (perpsIsValidEthAddress(saved.hyperliquid) && !saved.configured) {
+            perpsPersistConfig(saved);
         }
     } catch (e) {}
     document.querySelectorAll('[data-perps-stat-range]').forEach(btn => {
@@ -21298,32 +21375,44 @@ function perpsBindConfigInputs() {
         el.addEventListener('blur', () => {
             const val = el.value.trim();
             if (val && !/^\*+$/.test(val)) el.dataset.perpsReal = val;
-            perpsSaveConfig();
+            if (id === 'perpsHlWallet') {
+                if (perpsIsValidEthAddress(val)) perpsSaveConfig();
+            } else if (perpsHasValidWallet()) {
+                perpsSaveConfig();
+            }
             if (perpsIsConfigComplete() && !document.getElementById('perpsConfigFoot')?.dataset.forceOpen) {
                 perpsApplyWalletMasks();
             }
         });
-        el.addEventListener('change', perpsSaveConfig);
+        el.addEventListener('change', () => {
+            if (id === 'perpsHlWallet') {
+                const val = el.value.trim();
+                if (perpsIsValidEthAddress(val)) perpsSaveConfig();
+            } else if (perpsHasValidWallet()) {
+                perpsSaveConfig();
+            }
+        });
     });
 }
 
-function perpsSaveConfig() {
+function perpsSaveConfig(opts = {}) {
     const prev = perpsGetSavedConfig();
     let hl = perpsReadConfigField('perpsHlWallet', 'hyperliquid');
     if (!perpsIsValidEthAddress(hl) && perpsIsValidEthAddress(prev.hyperliquid)) hl = prev.hyperliquid;
+
+    if (!perpsIsValidEthAddress(hl)) {
+        if (opts.statRangeOnly && perpsIsValidEthAddress(prev.hyperliquid)) {
+            perpsPersistConfig({ ...prev, statRange: _perpsStatRange });
+        }
+        perpsUpdateConfigVisibility();
+        return;
+    }
+
     const nado = perpsReadConfigField('perpsNadoWallet', 'nado');
-    const grvtSubAccount = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || '4860249204328359';
-    const configured = perpsIsValidEthAddress(hl);
-    try {
-        localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({
-            hyperliquid: hl,
-            nado,
-            grvtSubAccount,
-            statRange: _perpsStatRange,
-            configured,
-        }));
-    } catch (e) {}
-    if (typeof saveData === 'function') saveData();
+    const grvtSubAccount = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || prev.grvtSubAccount || '4860249204328359';
+    if (perpsPersistConfig({ hyperliquid: hl, nado, grvtSubAccount, statRange: _perpsStatRange })) {
+        if (typeof saveData === 'function') saveData();
+    }
     perpsUpdateConfigVisibility();
 }
 
