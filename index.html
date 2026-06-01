@@ -21624,42 +21624,28 @@ function perpsVenueLabel(venue) {
     }[venue] || venue;
 }
 
-function perpsPairLiveApy(p) {
-    if (p.currentSpread8h == null || !Number.isFinite(p.currentSpread8h)) return null;
-    return p.currentSpread8h * 3 * 365 * 100;
+const PERPS_FEE_LOOKBACK_DAYS = 30;
+
+function perpsAnnualizeReturnPct(netUsd, margin, days) {
+    if (!margin || !days || days <= 0 || !Number.isFinite(netUsd)) return null;
+    return (netUsd / margin) * (365 / days) * 100;
 }
 
-function perpsComputeWeightedPositionApr(paired, range) {
-    let weightedSum = 0;
-    let totalWeight = 0;
-    for (const p of paired) {
-        const apr = range ? perpsPairPeriodApr(p, range) : perpsPairLiveApy(p);
-        const weight = p.avgNotional ?? 0;
-        if (apr == null || !Number.isFinite(apr) || !weight) continue;
-        weightedSum += apr * weight;
-        totalWeight += weight;
-    }
-    if (!totalWeight) return null;
-    return weightedSum / totalWeight;
-}
-
-function perpsPairPeriodApr(p, range) {
-    const margin = p.avgNotional ?? 0;
-    if (!margin) return null;
+function perpsPairFundingForRange(p, range) {
     let funding = 0;
     let days = null;
     if (!perpsStatRangeMs(range)) {
         funding = p.fundingSinceOpen ?? 0;
         days = p.daysOpen ?? null;
         if (!days || days <= 0) {
-            if (p.fundingByRange?.['30d'] != null && p.fundingByRange['30d'] !== 0) {
+            if (p.fundingByRange?.['30d'] != null) {
                 funding = p.fundingByRange['30d'];
                 days = 30;
-            } else if (p.fundingWindow != null && p.fundingWindow !== 0) {
+            } else if (p.fundingWindow != null) {
                 funding = p.fundingWindow;
-                days = perpsStatRangeToApiDays('30d');
+                days = PERPS_FEE_LOOKBACK_DAYS;
             } else {
-                return null;
+                return { funding: null, days: null };
             }
         }
     } else {
@@ -21671,8 +21657,69 @@ function perpsPairPeriodApr(p, range) {
             funding = (p.fundingWindow ?? 0) * Math.min(days / apiDays, 1);
         }
     }
-    if (!Number.isFinite(funding) || !days) return null;
-    return (funding / margin) * (365 / days) * 100;
+    return { funding, days };
+}
+
+function perpsPairFeesForRange(p, range, daysHint) {
+    if (perpsStatRangeMs(range)) {
+        const days = daysHint ?? { '1d': 1, '7d': 7, '30d': 30 }[range] ?? 30;
+        if (p.feesByRange?.[range] != null) return p.feesByRange[range];
+        const apiDays = perpsStatRangeToApiDays(range);
+        return (p.fees ?? 0) * Math.min(days / apiDays, 1);
+    }
+    const daysOpen = p.daysOpen;
+    const windowFees = p.fees ?? 0;
+    if (daysOpen && daysOpen > 0 && daysOpen > PERPS_FEE_LOOKBACK_DAYS) {
+        return windowFees * (daysOpen / PERPS_FEE_LOOKBACK_DAYS);
+    }
+    return windowFees;
+}
+
+function perpsPairGrossFundingApr(p) {
+    if (p.currentSpread8h == null || !Number.isFinite(p.currentSpread8h)) return null;
+    return p.currentSpread8h * 3 * 365 * 100;
+}
+
+function perpsPairFeeApr(p, range) {
+    const margin = p.avgNotional ?? 0;
+    if (!margin) return null;
+    const { days } = perpsPairFundingForRange(p, range);
+    if (!days) return null;
+    const fees = perpsPairFeesForRange(p, range, days);
+    return perpsAnnualizeReturnPct(-fees, margin, days);
+}
+
+/** Net APR: annualized (funding − trading fees) for the selected window. */
+function perpsPairPeriodApr(p, range) {
+    const margin = p.avgNotional ?? 0;
+    if (!margin) return null;
+    const { funding, days } = perpsPairFundingForRange(p, range);
+    if (funding == null || !days) return null;
+    const fees = perpsPairFeesForRange(p, range, days);
+    return perpsAnnualizeReturnPct(funding - fees, margin, days);
+}
+
+/** Current APR: live funding spread APR minus fee drag for the selected window. */
+function perpsPairLiveApy(p, range) {
+    const gross = perpsPairGrossFundingApr(p);
+    if (gross == null) return null;
+    const feeApr = perpsPairFeeApr(p, range);
+    if (feeApr == null) return gross;
+    return gross + feeApr;
+}
+
+function perpsComputeWeightedPositionApr(paired, range) {
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const p of paired) {
+        const apr = perpsPairPeriodApr(p, range);
+        const weight = p.avgNotional ?? 0;
+        if (apr == null || !Number.isFinite(apr) || !weight) continue;
+        weightedSum += apr * weight;
+        totalWeight += weight;
+    }
+    if (!totalWeight) return null;
+    return weightedSum / totalWeight;
 }
 
 function perpsStatRangeLabel(range) {
@@ -21758,7 +21805,7 @@ function perpsRenderStatsBar(data) {
     const fundSub = document.getElementById('perpsStatFundingSub');
     if (fundSub) fundSub.textContent = `${stats.rangeLabel} · gross funding`;
     const aprSub = document.getElementById('perpsStatAprSub');
-    if (aprSub) aprSub.textContent = stats.apr != null ? `size-weighted · ${stats.rangeLabel} funding APR` : 'Need open positions';
+    if (aprSub) aprSub.textContent = stats.apr != null ? `size-weighted · ${stats.rangeLabel} funding − fees` : 'Need open positions';
 }
 
 function perpsRenderPortfolioPositions(paired) {
@@ -21776,7 +21823,7 @@ function perpsRenderPortfolioPositions(paired) {
         <div>Total uPnL</div>
         <div>uPnL</div>
         <div>Funding</div>
-        <div>Current APR</div>
+        <div>Current APR (net)</div>
         <div class="perps-pos-spacer" aria-hidden="true"></div>
         <div>Margin</div>
         <div>APR</div>
@@ -21789,7 +21836,7 @@ function perpsRenderPortfolioPositions(paired) {
         const upnlB = legs.b.upnl ?? 0;
         const totalUpnl = (p.combinedUpnl ?? 0) + (p.fundingSinceOpen ?? 0);
         const upnlOnly = p.combinedUpnl ?? 0;
-        const currentApr = perpsPairLiveApy(p);
+        const currentApr = perpsPairLiveApy(p, _perpsStatRange);
         const periodApr = perpsPairPeriodApr(p, _perpsStatRange);
         const margin = p.avgNotional ?? 0;
         const sizeLabel = legs.a.size != null ? `${perpsFmtSize(legs.a.size)} ${p.symbol}` : p.symbol;
