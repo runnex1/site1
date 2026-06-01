@@ -5,6 +5,7 @@
 
 const {
   fetchPerpsDashboard,
+  fetchPerpsLiveRates,
   appendEquitySnapshotStore,
   buildEquitySnapshotFromDashboard,
 } = require('../lib/perps');
@@ -77,6 +78,24 @@ async function handlePerps(req, res) {
   const nadoWallet = String(req.query.nadoWallet || req.query.nado || wallet).trim();
   const days = Math.min(90, Math.max(1, parseInt(req.query.days || '30', 10) || 30));
 
+  const grvtSubAccount = String(
+    req.query.grvtSubAccount || req.query.grvt || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
+  ).trim();
+
+  if (req.query.live === '1') {
+    try {
+      const symbols = String(req.query.symbols || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+      const data = await fetchPerpsLiveRates({ grvtSubAccount, symbols });
+      return res.status(200).json(data);
+    } catch (e) {
+      console.error('[perps-live]', e);
+      return res.status(500).json({ error: e.message || 'Live rates fetch failed' });
+    }
+  }
+
   if (!isWallet(wallet)) {
     return res.status(400).json({ error: 'Valid hyperliquid wallet required (0x + 40 hex chars)' });
   }
@@ -85,9 +104,6 @@ async function handlePerps(req, res) {
   }
 
   try {
-    const grvtSubAccount = String(
-      req.query.grvtSubAccount || req.query.grvt || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
-    ).trim();
     const data = await fetchPerpsDashboard({
       hyperliquid: wallet,
       nado: nadoWallet,

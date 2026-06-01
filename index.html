@@ -6572,7 +6572,7 @@ body[data-active-tab="loops"] .loop-pos-val,
             </div>
             <div class="perps-stat-card"><div class="perps-stat-label">Total PnL</div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">funding − fees · daily chart</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
-            <div class="perps-stat-card"><div class="perps-stat-label">Avg APR</div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">size-weighted · current spread</div></div>
+            <div class="perps-stat-card"><div class="perps-stat-label">Avg APR</div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">chart PnL ÷ avg equity</div></div>
           </section>
 
           <section class="perps-panel">
@@ -20734,6 +20734,8 @@ let _perpsDailyFundSeries = [];
 let _perpsDailyFundShowFees = true;
 let _perpsDailyFundChartState = null;
 let _perpsRefreshTimer = null;
+let _perpsLiveAprTimer = null;
+let _perpsLiveAprInFlight = false;
 let _perpsLastRefreshAt = null;
 let _perpsRefreshError = null;
 let _perpsStatRange = '7d';
@@ -20742,6 +20744,7 @@ let _perpsVenueEquity = null;
 let _perpsEquityChartState = null;
 const PERPS_FETCH_TIMEOUT_MS = 55000;
 const PERPS_AUTO_REFRESH_MS = 60000;
+const PERPS_LIVE_APR_MS = 15000;
 const PERPS_CHART_WIDTH = 760;
 const PERPS_EQUITY_CHART_START_MS = Date.parse('2026-06-01T08:00:00.000Z');
 
@@ -20895,6 +20898,49 @@ function perpsFilterDailySeries(series, range) {
     return rows.filter(r => new Date(r.day + 'T12:00:00Z').getTime() >= cutoff - 86400000);
 }
 
+function perpsFilterEquityPoints(points, range) {
+    const rows = Array.isArray(points) ? points : [];
+    const ms = perpsStatRangeMs(range);
+    if (!ms) return rows;
+    const cutoff = Date.now() - ms;
+    return rows.filter(p => {
+        const t = perpsParseBucketTime(p.bucket) || p.time || 0;
+        return t >= cutoff - 86400000;
+    });
+}
+
+function perpsChartWindowDays(dailySeries, range) {
+    const rows = Array.isArray(dailySeries) ? dailySeries : [];
+    if (!rows.length) return null;
+    const windowDays = perpsStatRangeWindowDays(range);
+    if (windowDays != null) return windowDays;
+    const first = rows[0]?.day;
+    const last = rows.at(-1)?.day;
+    if (!first || !last) return rows.length;
+    const span = (new Date(last + 'T12:00:00Z').getTime() - new Date(first + 'T12:00:00Z').getTime()) / 86400000;
+    return Math.max(1, Math.ceil(span) + 1);
+}
+
+/** Portfolio Avg APR = annualized chart net PnL ÷ average total equity in the window. */
+function perpsComputePortfolioAprFromChart(data, range) {
+    const dailySeries = perpsFilterDailySeries(data?.dailyFundingSeries || [], range);
+    if (!dailySeries.length) return null;
+    const totalPnl = perpsSumDailyFundingSeries(dailySeries, true).net;
+    if (!Number.isFinite(totalPnl)) return null;
+
+    const equitySeries = data._equitySeries || perpsBuildEquitySeries(data);
+    let equityPts = perpsFilterEquityPoints(equitySeries.points || [], range);
+    if (!equityPts.length && (equitySeries.totalEquityNow ?? 0) > 0) {
+        equityPts = [{ totalEquity: equitySeries.totalEquityNow }];
+    }
+    if (!equityPts.length) return null;
+
+    const avgEquity = equityPts.reduce((s, p) => s + (p.totalEquity || 0), 0) / equityPts.length;
+    const days = perpsChartWindowDays(dailySeries, range);
+    if (!avgEquity || !days) return null;
+    return perpsAnnualizeReturnPct(totalPnl, avgEquity, days);
+}
+
 /** Totals from Daily funding collected chart rows (gross funding, fees, net). */
 function perpsSumDailyFundingSeries(series, useNet = true) {
     const rows = Array.isArray(series) ? series : [];
@@ -21022,12 +21068,26 @@ function perpsToggleConfigFoot() {
 function perpsStartAutoRefresh() {
     perpsStopAutoRefresh();
     _perpsRefreshTimer = setInterval(() => perpsRefresh(true), PERPS_AUTO_REFRESH_MS);
+    perpsStartLiveAprRefresh();
 }
 
 function perpsStopAutoRefresh() {
     if (_perpsRefreshTimer) {
         clearInterval(_perpsRefreshTimer);
         _perpsRefreshTimer = null;
+    }
+    perpsStopLiveAprRefresh();
+}
+
+function perpsStartLiveAprRefresh() {
+    perpsStopLiveAprRefresh();
+    _perpsLiveAprTimer = setInterval(() => perpsRefreshLiveApr(), PERPS_LIVE_APR_MS);
+}
+
+function perpsStopLiveAprRefresh() {
+    if (_perpsLiveAprTimer) {
+        clearInterval(_perpsLiveAprTimer);
+        _perpsLiveAprTimer = null;
     }
 }
 
@@ -21041,7 +21101,7 @@ function perpsUpdateRefreshBar() {
         if (_perpsRefreshError) {
             lastEl.textContent = `Last refresh failed · ${_perpsRefreshError}`;
         } else if (_perpsLastRefreshAt) {
-            lastEl.textContent = `Updated ${new Date(_perpsLastRefreshAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })} · auto-refresh 1m`;
+            lastEl.textContent = `Updated ${new Date(_perpsLastRefreshAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })} · full refresh 1m · live APR 15s`;
         } else {
             lastEl.textContent = 'Waiting for data…';
         }
@@ -21907,6 +21967,73 @@ function perpsPairLiveApy(p) {
     return perpsPairGrossFundingApr(p);
 }
 
+function perpsVenueRate8hFromSpread(spread, venue) {
+    if (!spread || !venue) return null;
+    const key = { hyperliquid: 'hyperliquid8h', nado: 'nado8h', grvt: 'grvt8h', extended: 'extended8h' }[venue];
+    const val = key ? spread[key] : null;
+    return val != null && Number.isFinite(val) ? val : null;
+}
+
+function perpsNetFundingSpread8h(sizeA, rateA, sizeB, rateB) {
+    if (rateA == null || rateB == null || !Number.isFinite(rateA) || !Number.isFinite(rateB)) return null;
+    const signA = Math.sign(sizeA || 0);
+    const signB = Math.sign(sizeB || 0);
+    if (!signA || !signB) return null;
+    return (-signA * rateA) + (-signB * rateB);
+}
+
+function perpsPairLegSizes(p) {
+    if (p.pairType === 'hl_nado') {
+        return { sizeA: p.hlSize, sizeB: p.nadoSize, venueA: 'hyperliquid', venueB: 'nado' };
+    }
+    const venueA = p.venueA || p.crossLegA?.venue;
+    const venueB = p.venueB || p.crossLegB?.venue;
+    return {
+        sizeA: p.crossLegA?.size,
+        sizeB: p.crossLegB?.size,
+        venueA,
+        venueB,
+    };
+}
+
+function perpsApplyLiveRates(rateSpread) {
+    if (!_perpsLastData?.paired?.length || !Array.isArray(rateSpread)) return;
+    const spreadByBase = Object.fromEntries(rateSpread.map(r => [r.symbol, r]));
+    _perpsLastData.rateSpread = rateSpread;
+    for (const p of _perpsLastData.paired) {
+        const spread = spreadByBase[p.symbol];
+        if (!spread) continue;
+        const { sizeA, sizeB, venueA, venueB } = perpsPairLegSizes(p);
+        const rateA = perpsVenueRate8hFromSpread(spread, venueA);
+        const rateB = perpsVenueRate8hFromSpread(spread, venueB);
+        p.fundingRate8hA = rateA;
+        p.fundingRate8hB = rateB;
+        p.currentSpread8h = perpsNetFundingSpread8h(sizeA, rateA, sizeB, rateB);
+    }
+    perpsRenderPortfolioPositions(_perpsLastData.paired);
+}
+
+async function perpsRefreshLiveApr() {
+    if (_perpsLiveAprInFlight || !_perpsLastData?.paired?.length) return;
+    const hl = perpsResolveHlWallet();
+    if (!hl || location.protocol === 'file:') return;
+    _perpsLiveAprInFlight = true;
+    try {
+        const symbols = [...new Set(_perpsLastData.paired.map(p => p.symbol).filter(Boolean))];
+        const params = new URLSearchParams({ wallet: hl, live: '1', symbols: symbols.join(',') });
+        const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
+        if (grvtSub) params.set('grvtSubAccount', grvtSub);
+        const res = await fetch('/api/perps?' + params.toString(), { signal: AbortSignal.timeout(12000) });
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload.error || res.statusText);
+        if (payload.rateSpread) perpsApplyLiveRates(payload.rateSpread);
+    } catch (e) {
+        console.warn('[perps live APR]', e);
+    } finally {
+        _perpsLiveAprInFlight = false;
+    }
+}
+
 /** Net APR: annualized (funding − trading fees) for the selected window. */
 function perpsPairPeriodApr(p, range) {
     const margin = p.avgNotional ?? 0;
@@ -22281,7 +22408,9 @@ function perpsComputePortfolioStats(data) {
     }
     const totalPnl = dailySeries.length ? chartTotals.net : null;
 
-    const apr = perpsComputeWeightedPositionApr(paired, range);
+    const equitySeries = data._equitySeries || perpsBuildEquitySeries(data);
+    data._equitySeries = equitySeries;
+    const apr = perpsComputePortfolioAprFromChart(data, range);
     return {
         openNotional,
         totalEquity,
@@ -22321,15 +22450,12 @@ function perpsRenderStatsBar(data) {
     if (fundSub) fundSub.textContent = `${stats.rangeLabel} · gross funding`;
     const aprSub = document.getElementById('perpsStatAprSub');
     if (aprSub) {
-        const fillDays = perpsFillHistoryDays(data);
-        const incompleteAll = !perpsStatRangeMs(_perpsStatRange)
-            && (data.paired || []).some(p => p.feesHistoryComplete === false);
         if (stats.apr != null) {
-            aprSub.textContent = `size-weighted · ${stats.rangeLabel} funding − fees`;
-        } else if (incompleteAll) {
-            aprSub.textContent = `ALL needs ≤${fillDays}d fee history · use 30D`;
+            aprSub.textContent = `${stats.rangeLabel} · chart net PnL ÷ avg equity`;
+        } else if (!(data.dailyFundingSeries || []).length) {
+            aprSub.textContent = `${stats.rangeLabel} · no daily chart data`;
         } else {
-            aprSub.textContent = 'Need open positions';
+            aprSub.textContent = `${stats.rangeLabel} · need equity snapshots in window`;
         }
     }
 }
@@ -22624,6 +22750,7 @@ function perpsRenderFundingHistory(hlPayments, nadoPayments, grvtPayments, exten
 
 function perpsRenderDashboard(data) {
     _perpsCache = data;
+    data._equitySeries = perpsBuildEquitySeries(data);
     perpsRenderStatsBar(data);
     perpsRenderEquityChart(data);
     perpsRenderFundingForTimeWindow(data);
@@ -22633,6 +22760,7 @@ function perpsRenderDashboard(data) {
     _perpsLastRefreshAt = data.fetchedAt || Date.now();
     _perpsRefreshError = null;
     perpsUpdateRefreshBar();
+    perpsRefreshLiveApr();
 }
 
 async function perpsRefresh(silent = false) {
