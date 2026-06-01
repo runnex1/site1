@@ -825,6 +825,26 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-apr-val { font-family:var(--ff-mono); font-size:1.05rem; font-weight:900; }
 .perps-pos-apr-val.pos { color:#55d66f; }
 .perps-pos-apr-val.neg { color:#ff5c7a; }
+.perps-pos-token-row { display:flex; align-items:center; gap:0.45rem; min-width:0; }
+.perps-pos-chart-btn {
+  flex-shrink:0; margin-top:0.15rem; width:28px; height:28px; padding:0;
+  border-radius:7px; border:1px solid rgba(134,159,179,0.22);
+  background:rgba(255,255,255,0.04); color:#9dacbb; cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center;
+}
+.perps-pos-chart-btn:hover { border-color:rgba(167,139,250,0.45); color:#c4b5fd; background:rgba(167,139,250,0.1); }
+.perps-pos-chart-btn svg { width:14px; height:14px; }
+.perps-pos-chart-modal { max-width:720px; width:94%; padding:1.25rem 1.35rem 1.1rem; }
+.perps-pos-chart-modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.65rem; }
+.perps-pos-chart-modal-title { font-weight:900; letter-spacing:0.06em; text-transform:uppercase; font-size:0.9rem; color:var(--t1); }
+.perps-pos-chart-modal-meta { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; margin-top:0.25rem; }
+.perps-pos-chart-kpis { display:flex; gap:1.25rem; flex-wrap:wrap; margin:0.35rem 0 0.75rem; }
+.perps-pos-chart-kpi-label { font-family:var(--ff-mono); font-size:0.58rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#7f8f9f; }
+.perps-pos-chart-kpi-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:1.35rem; font-weight:800; }
+.perps-pos-chart-kpi-val.pos { color:#55d66f; }
+.perps-pos-chart-kpi-val.neg { color:#ff5c7a; }
+.perps-pos-chart-canvas-wrap { height:280px; position:relative; }
+.perps-pos-chart-empty { padding:2rem 1rem; text-align:center; color:#9dacbb; font-family:var(--ff-mono); font-size:0.72rem; }
 .perps-config input.perps-masked { letter-spacing:0.08em; color:#9dacbb; }
 .perps-pnl-chart.hoverable, .perps-fund-chart-wrap { cursor:crosshair; }
 .perps-chart-tooltip {
@@ -6606,6 +6626,26 @@ body[data-active-tab="loops"] .loop-pos-val,
             <div class="perps-apr-tooltip" id="perpsAprTooltip" role="tooltip" aria-hidden="true"></div>
             <div class="perps-pos-list" id="perpsPositionsList"></div>
           </section>
+
+          <div id="perpsPositionChartModal" class="modal" onclick="if(event.target===this) perpsClosePositionChart()">
+            <div class="modal-content perps-pos-chart-modal" onclick="event.stopPropagation()">
+              <div class="perps-pos-chart-modal-head">
+                <div>
+                  <div class="perps-pos-chart-modal-title">Position Performance</div>
+                  <div class="perps-pos-chart-modal-meta" id="perpsPositionChartMeta"></div>
+                </div>
+                <button type="button" class="perps-btn secondary" onclick="perpsClosePositionChart()">Close</button>
+              </div>
+              <div class="perps-pos-chart-kpis">
+                <div><div class="perps-pos-chart-kpi-label">PnL</div><div class="perps-pos-chart-kpi-val" id="perpsPositionChartPnl">—</div></div>
+                <div><div class="perps-pos-chart-kpi-label">Execution</div><div class="perps-pos-chart-kpi-val" id="perpsPositionChartExec">—</div></div>
+              </div>
+              <div class="perps-pos-chart-canvas-wrap" id="perpsPositionChartWrap">
+                <canvas id="perpsPositionChartCanvas" aria-label="Position performance chart"></canvas>
+              </div>
+              <div class="perps-pos-chart-empty" id="perpsPositionChartEmpty" style="display:none;">No funding or fee history in the selected window.</div>
+            </div>
+          </div>
 
           <section class="perps-panel" id="perpsUnhedgedSection" style="display:none">
             <div class="perps-panel-head">
@@ -21732,6 +21772,35 @@ function perpsVenueLabel(venue) {
     }[venue] || venue;
 }
 
+let _perpsPositionChartInstance = null;
+
+function perpsStatRangeWindowDays(range) {
+    if (range === '1d') return 1;
+    if (range === '7d') return 7;
+    if (range === '30d') return 30;
+    return null;
+}
+
+/** Days to annualize over: min(selected window, time since position opened). */
+function perpsPairEffectiveDays(p, range) {
+    if (!perpsStatRangeMs(range)) {
+        const daysOpen = p.daysOpen;
+        return daysOpen != null && daysOpen > 0 ? daysOpen : null;
+    }
+    const windowDays = perpsStatRangeWindowDays(range) ?? 30;
+    const daysOpen = p.daysOpen;
+    if (daysOpen != null && daysOpen > 0 && daysOpen < windowDays) {
+        return daysOpen;
+    }
+    return windowDays;
+}
+
+function perpsPairUsesPartialWindow(p, range) {
+    if (!perpsStatRangeMs(range)) return false;
+    const windowDays = perpsStatRangeWindowDays(range);
+    return p.daysOpen != null && p.daysOpen > 0 && windowDays != null && p.daysOpen < windowDays;
+}
+
 const PERPS_MAX_FILL_HISTORY_DAYS = 90;
 
 function perpsAnnualizeReturnPct(netUsd, margin, days) {
@@ -21740,43 +21809,49 @@ function perpsAnnualizeReturnPct(netUsd, margin, days) {
 }
 
 function perpsPairFundingForRange(p, range) {
-    let funding = 0;
-    let days = null;
+    const effDays = perpsPairEffectiveDays(p, range);
+    if (!effDays) return { funding: null, days: null };
     if (!perpsStatRangeMs(range)) {
-        funding = p.fundingSinceOpen ?? 0;
-        days = p.daysOpen ?? null;
-        if (!days || days <= 0) {
+        let funding = p.fundingSinceOpen ?? 0;
+        if (!p.daysOpen || p.daysOpen <= 0) {
             if (p.fundingByRange?.['30d'] != null) {
                 funding = p.fundingByRange['30d'];
-                days = 30;
             } else if (p.fundingWindow != null) {
                 funding = p.fundingWindow;
-                days = 30;
             } else {
                 return { funding: null, days: null };
             }
         }
-    } else {
-        days = { '1d': 1, '7d': 7, '30d': 30 }[range] ?? 30;
-        if (p.fundingByRange?.[range] != null) {
-            funding = p.fundingByRange[range];
-        } else if (p.fundingWindow != null) {
-            const apiDays = perpsStatRangeToApiDays(range);
-            funding = p.fundingWindow * Math.min(days / apiDays, 1);
-        } else {
-            return { funding: null, days: null };
-        }
+        return { funding, days: effDays };
     }
-    return { funding, days };
+    const windowDays = perpsStatRangeWindowDays(range) ?? 30;
+    let funding;
+    if (perpsPairUsesPartialWindow(p, range)) {
+        funding = p.fundingSinceOpen ?? p.fundingByRange?.[range] ?? 0;
+    } else if (p.fundingByRange?.[range] != null) {
+        funding = p.fundingByRange[range];
+    } else if (p.fundingWindow != null) {
+        const apiDays = perpsStatRangeToApiDays(range);
+        funding = p.fundingWindow * Math.min(windowDays / apiDays, 1);
+    } else {
+        return { funding: null, days: null };
+    }
+    return { funding, days: effDays };
 }
 
 function perpsPairFeesForRange(p, range) {
-    if (perpsStatRangeMs(range)) {
-        if (p.feesByRange?.[range] != null) return p.feesByRange[range];
+    const effDays = perpsPairEffectiveDays(p, range);
+    if (!effDays) return null;
+    if (!perpsStatRangeMs(range)) {
+        if (p.feesHistoryComplete === false) return null;
+        if (p.feesSinceOpen != null && Number.isFinite(p.feesSinceOpen)) return p.feesSinceOpen;
         return null;
     }
-    if (p.feesHistoryComplete === false) return null;
-    if (p.feesSinceOpen != null && Number.isFinite(p.feesSinceOpen)) return p.feesSinceOpen;
+    if (perpsPairUsesPartialWindow(p, range)) {
+        if (p.feesSinceOpen != null && Number.isFinite(p.feesSinceOpen)) return p.feesSinceOpen;
+        return null;
+    }
+    if (p.feesByRange?.[range] != null) return p.feesByRange[range];
     return null;
 }
 
@@ -21885,10 +21960,13 @@ function perpsBuildCurrentAprTooltipHtml(p, range) {
         ? `<div class="perps-apr-tip-meta">Net spread (8h) ${perpsFmtRate(p.currentSpread8h)} · gross ${gross != null ? perpsFmtPct(gross) : '—'}</div>`
         : '';
     const feeNote = feeApr != null ? ` · fee drag ${perpsFmtPct(feeApr)}` : '';
+    const partialNote = perpsPairUsesPartialWindow(p, range)
+        ? ` · ${perpsPairEffectiveDays(p, range)?.toFixed(1)}d since open`
+        : '';
     return `<div class="perps-apr-tip-title">Funding (live)</div>${legsHtml}<div class="perps-apr-tip-divider"></div>` +
         `<div class="perps-apr-tip-row"><span>Net APR</span><span class="perps-apr-tip-apr ${perpsSignedCls(net)}">${net != null ? perpsFmtPct(net) : '—'}</span></div>` +
         spreadLine +
-        `<div class="perps-apr-tip-meta">Live rates annualized (3×/day)${feeNote}</div>`;
+        `<div class="perps-apr-tip-meta">Live rates annualized (3×/day)${feeNote}${partialNote}</div>`;
 }
 
 function perpsShowCurrentAprTip(ev, pairIdx) {
@@ -21920,6 +21998,174 @@ function perpsHideCurrentAprTip() {
     if (!tip) return;
     tip.style.display = 'none';
     tip.setAttribute('aria-hidden', 'true');
+}
+
+function perpsFilterPairDailySeries(series, p, range) {
+    let rows = perpsFilterDailySeries(series || [], range);
+    if (p.daysOpen != null && p.daysOpen > 0) {
+        const openMs = Date.now() - Math.ceil(p.daysOpen) * 86400000;
+        rows = rows.filter(r => new Date(r.day + 'T12:00:00Z').getTime() >= openMs - 86400000);
+    }
+    let cumFunding = 0;
+    let cumFees = 0;
+    let cumNet = 0;
+    return rows.map(row => {
+        const dailyFunding = row.dailyFunding || 0;
+        const dailyFees = row.dailyFees || 0;
+        const dailyNet = row.dailyNet != null ? row.dailyNet : dailyFunding - dailyFees;
+        cumFunding += dailyFunding;
+        cumFees += dailyFees;
+        cumNet += dailyNet;
+        return { ...row, dailyFunding, dailyFees, dailyNet, cumFunding, cumFees, cumNet };
+    });
+}
+
+function perpsPositionChartIconSvg() {
+    return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 12V6l3 2 3-4 3 3 3-1v6H2z"/></svg>';
+}
+
+function perpsClosePositionChart() {
+    const modal = document.getElementById('perpsPositionChartModal');
+    if (modal) modal.classList.remove('active');
+    if (_perpsPositionChartInstance) {
+        _perpsPositionChartInstance.destroy();
+        _perpsPositionChartInstance = null;
+    }
+}
+
+function perpsOpenPositionChart(pairIdx) {
+    const p = (_perpsLastData?.paired || [])[pairIdx];
+    if (!p) return;
+    const modal = document.getElementById('perpsPositionChartModal');
+    const meta = document.getElementById('perpsPositionChartMeta');
+    const pnlEl = document.getElementById('perpsPositionChartPnl');
+    const execEl = document.getElementById('perpsPositionChartExec');
+    const wrap = document.getElementById('perpsPositionChartWrap');
+    const empty = document.getElementById('perpsPositionChartEmpty');
+    const canvas = document.getElementById('perpsPositionChartCanvas');
+    if (!modal || !canvas) return;
+
+    const rangeLabel = perpsStatRangeLabel(_perpsStatRange);
+    const legVenueA = p.venueA || p.crossLegA?.venue || 'hyperliquid';
+    const legVenueB = p.venueB || p.crossLegB?.venue || 'nado';
+    const series = perpsFilterPairDailySeries(p.dailyPerformanceSeries || [], p, _perpsStatRange);
+    const totals = perpsSumDailyFundingSeries(series, true);
+
+    if (meta) {
+        meta.innerHTML = `${makeLogo(p.symbol, false, 22)}<span class="perps-pos-pill">${dashEsc(p.symbol)}</span>` +
+            `<span class="perps-pill blue">${dashEsc(perpsVenueLabel(legVenueA))}</span>` +
+            `<span class="perps-pill">${dashEsc(perpsVenueLabel(legVenueB))}</span>` +
+            `<span class="perps-pill" style="opacity:0.85">${dashEsc(rangeLabel)}</span>`;
+    }
+    if (pnlEl) {
+        pnlEl.textContent = perpsFmtUsd(totals.net);
+        pnlEl.className = 'perps-pos-chart-kpi-val ' + perpsSignedCls(totals.net);
+    }
+    if (execEl) {
+        execEl.textContent = perpsFmtUsd(-Math.abs(totals.fees));
+        execEl.className = 'perps-pos-chart-kpi-val neg';
+    }
+
+    if (_perpsPositionChartInstance) {
+        _perpsPositionChartInstance.destroy();
+        _perpsPositionChartInstance = null;
+    }
+
+    const hasData = series.some(r => (r.dailyFunding || 0) !== 0 || (r.dailyFees || 0) !== 0);
+    if (wrap) wrap.style.display = hasData ? '' : 'none';
+    if (empty) empty.style.display = hasData ? 'none' : '';
+    if (hasData) {
+        perpsRenderPositionPerformanceChart(canvas, series);
+    }
+
+    modal.classList.add('active');
+    if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
+}
+
+function perpsRenderPositionPerformanceChart(canvas, series) {
+    if (!canvas || typeof Chart === 'undefined') return;
+    const labels = series.map(r => perpsFormatFundDayLabel(r.day));
+    const dailyNet = series.map(r => r.dailyNet || 0);
+    const cumNet = series.map(r => r.cumNet || 0);
+    const gridColor = 'rgba(255,255,255,0.06)';
+    const tickColor = '#9dacbb';
+
+    _perpsPositionChartInstance = new Chart(canvas, {
+        data: {
+            labels,
+            datasets: [
+                {
+                    type: 'bar',
+                    label: 'Daily net',
+                    data: dailyNet,
+                    backgroundColor: dailyNet.map(v => v >= 0 ? 'rgba(89,240,200,0.78)' : 'rgba(255,92,122,0.78)'),
+                    borderRadius: 2,
+                    yAxisID: 'yDaily',
+                    order: 2,
+                },
+                {
+                    type: 'line',
+                    label: 'Cumulative PnL',
+                    data: cumNet,
+                    borderColor: '#a78bfa',
+                    backgroundColor: 'rgba(167,139,250,0.08)',
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHitRadius: 8,
+                    tension: 0.28,
+                    fill: false,
+                    yAxisID: 'yCum',
+                    order: 1,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(8,16,22,0.98)',
+                    borderColor: 'rgba(167,139,250,0.28)',
+                    borderWidth: 1,
+                    titleFont: { family: 'monospace', size: 11 },
+                    bodyFont: { family: 'monospace', size: 11 },
+                    callbacks: {
+                        label(ctx) {
+                            if (ctx.dataset.yAxisID === 'yDaily') {
+                                const row = series[ctx.dataIndex];
+                                return [
+                                    `Net ${perpsFmtUsd(row.dailyNet)}`,
+                                    `Funding ${perpsFmtUsd(row.dailyFunding)}`,
+                                    `Fees −${perpsFmtUsd(Math.abs(row.dailyFees || 0))}`,
+                                ];
+                            }
+                            return `Cumulative ${perpsFmtUsd(ctx.parsed.y)}`;
+                        },
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    grid: { color: gridColor },
+                    ticks: { color: tickColor, font: { family: 'monospace', size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 },
+                },
+                yCum: {
+                    type: 'linear',
+                    position: 'left',
+                    grid: { color: gridColor },
+                    ticks: { color: tickColor, font: { family: 'monospace', size: 10 }, callback: v => perpsFmtUsd(v) },
+                },
+                yDaily: {
+                    type: 'linear',
+                    position: 'right',
+                    grid: { drawOnChartArea: false },
+                    ticks: { color: tickColor, font: { family: 'monospace', size: 10 }, callback: v => perpsFmtUsd(v) },
+                },
+            },
+        },
+    });
 }
 
 /** Current APR: live net funding spread APR minus fee drag for the selected window. */
@@ -22071,11 +22317,14 @@ function perpsRenderPortfolioPositions(paired) {
         const sizeLabel = legs.a.size != null ? `${perpsFmtSize(legs.a.size)} ${p.symbol}` : p.symbol;
         return `<div class="perps-pos-card"><div class="perps-pos-row">
             <div class="perps-pos-token">
-                ${makeLogo(p.symbol, false, 36)}
-                <div>
-                    <div class="perps-pos-token-name">${dashEsc(p.symbol)}</div>
-                    <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}</div>
-                    <span class="perps-pos-pill">OPEN</span>
+                <div class="perps-pos-token-row">
+                    <button type="button" class="perps-pos-chart-btn" aria-label="Position performance chart" onclick="perpsOpenPositionChart(${pairIdx}); event.stopPropagation();">${perpsPositionChartIconSvg()}</button>
+                    ${makeLogo(p.symbol, false, 36)}
+                    <div>
+                        <div class="perps-pos-token-name">${dashEsc(p.symbol)}</div>
+                        <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}</div>
+                        <span class="perps-pos-pill">OPEN</span>
+                    </div>
                 </div>
             </div>
             <div class="perps-pos-legs">
