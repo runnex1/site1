@@ -20744,13 +20744,8 @@ function perpsCollectEquitySnapshotPoints(data) {
             const grvt = snap.grvtAccountValue ?? 0;
             const extended = snap.extendedAccountValue ?? 0;
             const totalEquity = snap.totalEquity ?? (hl + nado + grvt + extended);
+            if (!Number.isFinite(totalEquity)) continue;
             const cumulativeNetDeposits = snap.cumulativeNetDeposits;
-            let adjustedEquity = snap.adjustedEquity;
-            if (adjustedEquity == null) {
-                if (cumulativeNetDeposits == null || !Number.isFinite(Number(cumulativeNetDeposits))) continue;
-                adjustedEquity = totalEquity - Number(cumulativeNetDeposits);
-            }
-            if (!Number.isFinite(adjustedEquity)) continue;
             points.push({
                 time,
                 day: snap.date || perpsIsoDayFromMs(time),
@@ -20760,7 +20755,6 @@ function perpsCollectEquitySnapshotPoints(data) {
                 extended,
                 totalEquity,
                 cumulativeNetDeposits: cumulativeNetDeposits != null ? Number(cumulativeNetDeposits) : null,
-                adjustedEquity,
                 source: 'snapshot',
             });
         }
@@ -20799,6 +20793,26 @@ function perpsVenueDepositDelta(payments, t0, t1, hlStrategy = false) {
         .reduce((s, p) => s + (p.usdc || 0), 0);
 }
 
+function perpsFlowPayments(data) {
+    const flows = data?.capitalFlows;
+    return {
+        flows,
+        hl: flows?.hl?.payments || [],
+        nado: flows?.nado?.payments || [],
+        grvt: flows?.grvt?.payments || [],
+        extended: flows?.extended?.payments || [],
+        hasFlows: Boolean(flows),
+    };
+}
+
+function perpsDepositsAtPoint(p, flowPack) {
+    if (flowPack.hasFlows) {
+        return perpsNetDepositsAtTime(flowPack.hl, flowPack.nado, p.time, flowPack.grvt, flowPack.extended);
+    }
+    const stored = p.cumulativeNetDeposits;
+    return stored != null && Number.isFinite(stored) ? stored : null;
+}
+
 function perpsEquityOnboardingDelta(prev, curr, flows) {
     const threshold = 500;
     let onboarding = 0;
@@ -20811,55 +20825,30 @@ function perpsEquityOnboardingDelta(prev, curr, flows) {
     for (const v of venues) {
         const prevV = prev[v.key] ?? 0;
         const currV = curr[v.key] ?? 0;
+        if (prevV === 0 && currV >= threshold) {
+            // Venue newly appears in snapshots — existing balance is capital, not PnL.
+            onboarding += currV;
+            continue;
+        }
         const delta = currV - prevV;
-        if (delta <= 0) continue;
+        if (delta <= threshold) continue;
         const payments = flows?.[v.flowKey]?.payments || [];
         const depDelta = perpsVenueDepositDelta(payments, prev.time, curr.time, v.hlStrategy);
-        if (prevV === 0 && currV >= threshold) {
-            // Newly tracked exchange: credit deposits in window, rest is existing capital.
-            onboarding += Math.max(0, currV - depDelta);
-        } else {
-            const unexplained = delta - depDelta;
-            if (unexplained > threshold) onboarding += unexplained;
-        }
+        const unexplained = delta - depDelta;
+        if (unexplained > threshold) onboarding += unexplained;
     }
     return onboarding;
 }
 
-function perpsNormalizeEquityPointsForPnl(points, data) {
-    if (!points.length) return [];
-    const flows = data?.capitalFlows;
-    const hlPay = flows?.hl?.payments || [];
-    const nadoPay = flows?.nado?.payments || [];
-    const grvtPay = flows?.grvt?.payments || [];
-    const extPay = flows?.extended?.payments || [];
-    const sorted = [...points].sort((a, b) => a.time - b.time);
-    let onboardingCumulative = 0;
-    const out = [];
-
-    for (let i = 0; i < sorted.length; i++) {
-        const p = sorted[i];
-        const prev = i > 0 ? sorted[i - 1] : null;
-        const depositsAtTime = flows
-            ? perpsNetDepositsAtTime(hlPay, nadoPay, p.time, grvtPay, extPay)
-            : Number(p.cumulativeNetDeposits ?? 0);
-
-        if (i === 0) {
-            onboardingCumulative = Math.max(0, p.totalEquity - depositsAtTime);
-        } else if (prev) {
-            onboardingCumulative += perpsEquityOnboardingDelta(prev, p, flows);
-        }
-
-        const effectiveDeposits = depositsAtTime + onboardingCumulative;
-        out.push({
-            ...p,
-            depositsAtTime,
-            onboardingCumulative,
-            effectiveDeposits,
-            adjustedEquity: p.totalEquity - effectiveDeposits,
-        });
-    }
-    return out;
+function perpsDailyPnlBetween(prev, curr, flowPack) {
+    if (!prev || !curr) return null;
+    const dPrev = perpsDepositsAtPoint(prev, flowPack);
+    const dCurr = perpsDepositsAtPoint(curr, flowPack);
+    if (dPrev == null || dCurr == null) return null;
+    const equityDelta = curr.totalEquity - prev.totalEquity;
+    const depositDelta = dCurr - dPrev;
+    const onboard = flowPack.hasFlows ? perpsEquityOnboardingDelta(prev, curr, flowPack.flows) : 0;
+    return equityDelta - depositDelta - onboard;
 }
 
 function perpsCollapseEquityPointsByDay(points) {
@@ -20872,12 +20861,12 @@ function perpsCollapseEquityPointsByDay(points) {
 }
 
 function perpsBuildWalletPnlDailySeries(data, range) {
-    const normalized = perpsNormalizeEquityPointsForPnl(perpsCollectEquitySnapshotPoints(data), data);
-    const allDays = perpsCollapseEquityPointsByDay(normalized);
+    const allDays = perpsCollapseEquityPointsByDay(perpsCollectEquitySnapshotPoints(data));
     if (!allDays.length) {
         return { points: [], periodPnl: null, baseline: null, latest: null, insufficient: true, dayCount: 0 };
     }
 
+    const flowPack = perpsFlowPayments(data);
     const ms = perpsStatRangeMs(range);
     let visible = allDays;
     let baseline = allDays[0];
@@ -20893,25 +20882,28 @@ function perpsBuildWalletPnlDailySeries(data, range) {
     }
 
     const daily = [];
+    let cumPnl = 0;
     for (let i = 0; i < visible.length; i++) {
         const p = visible[i];
         const prev = i === 0 ? baseline : visible[i - 1];
-        const dailyPnl = p.adjustedEquity - prev.adjustedEquity;
+        const dailyPnl = perpsDailyPnlBetween(prev, p, flowPack);
+        if (dailyPnl == null) continue;
+        cumPnl += dailyPnl;
         daily.push({
             day: p.day,
             ts: p.time,
             dailyPnl,
-            cumPnl: p.adjustedEquity - baseline.adjustedEquity,
-            adjustedEquity: p.adjustedEquity,
+            cumPnl,
             totalEquity: p.totalEquity,
             source: p.source,
         });
     }
 
     const latest = visible[visible.length - 1];
+    const periodPnl = daily.length ? daily[daily.length - 1].cumPnl : null;
     return {
         points: daily,
-        periodPnl: latest.adjustedEquity - baseline.adjustedEquity,
+        periodPnl,
         baseline,
         latest,
         insufficient: daily.length < 2,
@@ -21623,7 +21615,7 @@ function perpsBuildDailyWalletPnlBars(points) {
         return {
             x, y, w: barW, h: Math.max(h, val !== 0 ? 2 : 0), cls: val >= 0 ? 'pos' : 'neg',
             day: p.day, val, dailyPnl: p.dailyPnl, cumPnl: p.cumPnl,
-            adjustedEquity: p.adjustedEquity, totalEquity: p.totalEquity,
+            totalEquity: p.totalEquity,
         };
     });
 
@@ -21732,7 +21724,7 @@ function perpsRenderDailyWalletPnlChart(built, rangeLabel) {
     if (barsEl) {
         barsEl.innerHTML = chart.bars.map(b =>
             `<rect class="perps-fund-bar ${b.cls}" x="${b.x.toFixed(1)}" y="${b.y.toFixed(1)}" width="${b.w.toFixed(1)}" height="${b.h.toFixed(1)}" rx="1.5"
-                data-day="${dashEsc(b.day)}" data-val="${b.val}" data-cum="${b.cumPnl}" data-equity="${b.adjustedEquity}"></rect>`
+                data-day="${dashEsc(b.day)}" data-val="${b.val}" data-cum="${b.cumPnl}" data-equity="${b.totalEquity}"></rect>`
         ).join('');
     }
 
@@ -21741,7 +21733,7 @@ function perpsRenderDailyWalletPnlChart(built, rangeLabel) {
         totalEl.className = 'perps-pnl-total ' + perpsSignedCls(chart.total);
     }
     if (noteEl) {
-        noteEl.textContent = `${label} · daily Δ(equity − deposits) from exchange account snapshots · cross-venue transfers deduplicated · no estimates`;
+        noteEl.textContent = `${label} · Δequity − Δdeposits per day · new venues excluded · from exchange snapshots`;
     }
     if (badge) badge.textContent = label;
 
@@ -21768,7 +21760,7 @@ function perpsRenderDailyWalletPnlChart(built, rangeLabel) {
             if (tipVal) {
                 const cls = hit.val >= 0 ? 'pos' : 'neg';
                 tipVal.innerHTML = `<span class="perps-fund-tooltip-val ${cls}">Daily PnL ${perpsFmtUsd(hit.val)}</span>` +
-                    `<div style="margin-top:0.15rem;color:#9dacbb;">Period cum. ${perpsFmtUsd(hit.cumPnl)} · Wallet PnL ${perpsFmtUsd(hit.adjustedEquity)}</div>`;
+                    `<div style="margin-top:0.15rem;color:#9dacbb;">Period cum. ${perpsFmtUsd(hit.cumPnl)} · Equity ${perpsFmtUsd(hit.totalEquity)}</div>`;
             }
         };
         wrap.onmouseleave = () => { tip.style.display = 'none'; };
