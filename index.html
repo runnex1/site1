@@ -20794,9 +20794,7 @@ function perpsStatRangeMs(range) {
 }
 
 function perpsStatRangeToApiDays(range) {
-    if (range === '1d') return 1;
-    if (range === '7d') return 7;
-    if (range === '30d') return 30;
+    // Always fetch max history; client filters by selected stat window.
     return 90;
 }
 
@@ -20810,10 +20808,6 @@ function perpsSetStatRange(range, btn) {
         b.classList.toggle('active', b === btn);
     });
     perpsSaveConfig();
-    if (perpsHasValidWallet()) {
-        perpsRefresh(true);
-        return;
-    }
     if (_perpsLastData) {
         perpsRenderStatsBar(_perpsLastData);
         perpsRenderPortfolioPositions(_perpsLastData.paired || []);
@@ -21781,24 +21775,29 @@ function perpsStatRangeWindowDays(range) {
     return null;
 }
 
-/** Days to annualize over: min(selected window, time since position opened). */
-function perpsPairEffectiveDays(p, range) {
-    if (!perpsStatRangeMs(range)) {
-        const daysOpen = p.daysOpen;
-        return daysOpen != null && daysOpen > 0 ? daysOpen : null;
-    }
-    const windowDays = perpsStatRangeWindowDays(range) ?? 30;
+/** Use funding/fees since position open (not the full stat window). */
+function perpsPairUsesSinceOpen(p, range) {
     const daysOpen = p.daysOpen;
-    if (daysOpen != null && daysOpen > 0 && daysOpen < windowDays) {
+    if (daysOpen == null || daysOpen <= 0) return false;
+    if (!perpsStatRangeMs(range)) return true;
+    const windowDays = perpsStatRangeWindowDays(range);
+    return windowDays != null && daysOpen <= windowDays;
+}
+
+/** Days to annualize over: position age when younger than window, else window length. */
+function perpsPairEffectiveDays(p, range) {
+    const daysOpen = p.daysOpen;
+    if (daysOpen != null && daysOpen > 0 && perpsPairUsesSinceOpen(p, range)) {
         return daysOpen;
     }
-    return windowDays;
+    if (!perpsStatRangeMs(range)) {
+        return daysOpen != null && daysOpen > 0 ? daysOpen : null;
+    }
+    return perpsStatRangeWindowDays(range) ?? 30;
 }
 
 function perpsPairUsesPartialWindow(p, range) {
-    if (!perpsStatRangeMs(range)) return false;
-    const windowDays = perpsStatRangeWindowDays(range);
-    return p.daysOpen != null && p.daysOpen > 0 && windowDays != null && p.daysOpen < windowDays;
+    return perpsPairUsesSinceOpen(p, range);
 }
 
 const PERPS_MAX_FILL_HISTORY_DAYS = 90;
@@ -21811,48 +21810,36 @@ function perpsAnnualizeReturnPct(netUsd, margin, days) {
 function perpsPairFundingForRange(p, range) {
     const effDays = perpsPairEffectiveDays(p, range);
     if (!effDays) return { funding: null, days: null };
-    if (!perpsStatRangeMs(range)) {
-        let funding = p.fundingSinceOpen ?? 0;
-        if (!p.daysOpen || p.daysOpen <= 0) {
-            if (p.fundingByRange?.['30d'] != null) {
-                funding = p.fundingByRange['30d'];
-            } else if (p.fundingWindow != null) {
-                funding = p.fundingWindow;
-            } else {
-                return { funding: null, days: null };
-            }
-        }
-        return { funding, days: effDays };
+    if (perpsPairUsesSinceOpen(p, range)) {
+        return { funding: p.fundingSinceOpen ?? 0, days: effDays };
     }
     const windowDays = perpsStatRangeWindowDays(range) ?? 30;
-    let funding;
-    if (perpsPairUsesPartialWindow(p, range)) {
-        funding = p.fundingSinceOpen ?? p.fundingByRange?.[range] ?? 0;
-    } else if (p.fundingByRange?.[range] != null) {
-        funding = p.fundingByRange[range];
-    } else if (p.fundingWindow != null) {
-        const apiDays = perpsStatRangeToApiDays(range);
-        funding = p.fundingWindow * Math.min(windowDays / apiDays, 1);
-    } else {
-        return { funding: null, days: null };
+    if (p.fundingByRange?.[range] != null) {
+        return { funding: p.fundingByRange[range], days: effDays };
     }
-    return { funding, days: effDays };
+    if (p.fundingWindow != null) {
+        const apiDays = perpsStatRangeToApiDays(range);
+        return {
+            funding: p.fundingWindow * Math.min(windowDays / apiDays, 1),
+            days: effDays,
+        };
+    }
+    return { funding: null, days: null };
 }
 
 function perpsPairFeesForRange(p, range) {
-    const effDays = perpsPairEffectiveDays(p, range);
-    if (!effDays) return null;
+    if (!perpsPairEffectiveDays(p, range)) return null;
+    if (perpsPairUsesSinceOpen(p, range)) {
+        if (p.feesSinceOpen != null && Number.isFinite(p.feesSinceOpen)) return p.feesSinceOpen;
+        return 0;
+    }
     if (!perpsStatRangeMs(range)) {
         if (p.feesHistoryComplete === false) return null;
         if (p.feesSinceOpen != null && Number.isFinite(p.feesSinceOpen)) return p.feesSinceOpen;
         return null;
     }
-    if (perpsPairUsesPartialWindow(p, range)) {
-        if (p.feesSinceOpen != null && Number.isFinite(p.feesSinceOpen)) return p.feesSinceOpen;
-        return null;
-    }
     if (p.feesByRange?.[range] != null) return p.feesByRange[range];
-    return null;
+    return 0;
 }
 
 function perpsPairGrossFundingApr(p) {
