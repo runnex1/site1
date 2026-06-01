@@ -20737,7 +20737,11 @@ function perpsStatRangeToApiDays(range) {
     if (range === '1d') return 1;
     if (range === '7d') return 7;
     if (range === '30d') return 30;
-    return 365;
+    return 90;
+}
+
+function perpsFillHistoryDays(data) {
+    return data?.summary?.fillHistoryDays ?? 90;
 }
 
 function perpsSetStatRange(range, btn) {
@@ -21624,7 +21628,7 @@ function perpsVenueLabel(venue) {
     }[venue] || venue;
 }
 
-const PERPS_FEE_LOOKBACK_DAYS = 30;
+const PERPS_MAX_FILL_HISTORY_DAYS = 90;
 
 function perpsAnnualizeReturnPct(netUsd, margin, days) {
     if (!margin || !days || days <= 0 || !Number.isFinite(netUsd)) return null;
@@ -21643,7 +21647,7 @@ function perpsPairFundingForRange(p, range) {
                 days = 30;
             } else if (p.fundingWindow != null) {
                 funding = p.fundingWindow;
-                days = PERPS_FEE_LOOKBACK_DAYS;
+                days = 30;
             } else {
                 return { funding: null, days: null };
             }
@@ -21652,27 +21656,24 @@ function perpsPairFundingForRange(p, range) {
         days = { '1d': 1, '7d': 7, '30d': 30 }[range] ?? 30;
         if (p.fundingByRange?.[range] != null) {
             funding = p.fundingByRange[range];
-        } else {
+        } else if (p.fundingWindow != null) {
             const apiDays = perpsStatRangeToApiDays(range);
-            funding = (p.fundingWindow ?? 0) * Math.min(days / apiDays, 1);
+            funding = p.fundingWindow * Math.min(days / apiDays, 1);
+        } else {
+            return { funding: null, days: null };
         }
     }
     return { funding, days };
 }
 
-function perpsPairFeesForRange(p, range, daysHint) {
+function perpsPairFeesForRange(p, range) {
     if (perpsStatRangeMs(range)) {
-        const days = daysHint ?? { '1d': 1, '7d': 7, '30d': 30 }[range] ?? 30;
         if (p.feesByRange?.[range] != null) return p.feesByRange[range];
-        const apiDays = perpsStatRangeToApiDays(range);
-        return (p.fees ?? 0) * Math.min(days / apiDays, 1);
+        return null;
     }
-    const daysOpen = p.daysOpen;
-    const windowFees = p.fees ?? 0;
-    if (daysOpen && daysOpen > 0 && daysOpen > PERPS_FEE_LOOKBACK_DAYS) {
-        return windowFees * (daysOpen / PERPS_FEE_LOOKBACK_DAYS);
-    }
-    return windowFees;
+    if (p.feesHistoryComplete === false) return null;
+    if (p.feesSinceOpen != null && Number.isFinite(p.feesSinceOpen)) return p.feesSinceOpen;
+    return null;
 }
 
 function perpsPairGrossFundingApr(p) {
@@ -21685,7 +21686,8 @@ function perpsPairFeeApr(p, range) {
     if (!margin) return null;
     const { days } = perpsPairFundingForRange(p, range);
     if (!days) return null;
-    const fees = perpsPairFeesForRange(p, range, days);
+    const fees = perpsPairFeesForRange(p, range);
+    if (fees == null) return null;
     return perpsAnnualizeReturnPct(-fees, margin, days);
 }
 
@@ -21695,7 +21697,8 @@ function perpsPairPeriodApr(p, range) {
     if (!margin) return null;
     const { funding, days } = perpsPairFundingForRange(p, range);
     if (funding == null || !days) return null;
-    const fees = perpsPairFeesForRange(p, range, days);
+    const fees = perpsPairFeesForRange(p, range);
+    if (fees == null) return null;
     return perpsAnnualizeReturnPct(funding - fees, margin, days);
 }
 
@@ -21805,7 +21808,18 @@ function perpsRenderStatsBar(data) {
     const fundSub = document.getElementById('perpsStatFundingSub');
     if (fundSub) fundSub.textContent = `${stats.rangeLabel} · gross funding`;
     const aprSub = document.getElementById('perpsStatAprSub');
-    if (aprSub) aprSub.textContent = stats.apr != null ? `size-weighted · ${stats.rangeLabel} funding − fees` : 'Need open positions';
+    if (aprSub) {
+        const fillDays = perpsFillHistoryDays(data);
+        const incompleteAll = !perpsStatRangeMs(_perpsStatRange)
+            && (data.paired || []).some(p => p.feesHistoryComplete === false);
+        if (stats.apr != null) {
+            aprSub.textContent = `size-weighted · ${stats.rangeLabel} funding − fees`;
+        } else if (incompleteAll) {
+            aprSub.textContent = `ALL needs ≤${fillDays}d fee history · use 30D`;
+        } else {
+            aprSub.textContent = 'Need open positions';
+        }
+    }
 }
 
 function perpsRenderPortfolioPositions(paired) {
