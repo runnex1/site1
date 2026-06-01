@@ -721,6 +721,22 @@ body[data-active-tab="perps"] .topbar,
 .perps-fund-tooltip-date { color:#9dacbb; margin-bottom:0.2rem; }
 .perps-fund-tooltip-val.pos { color:#59f0c8; font-weight:800; }
 .perps-fund-tooltip-val.neg { color:#ff6b81; font-weight:800; }
+.perps-pos-apr-metric { cursor:help; }
+.perps-apr-tooltip {
+  position:fixed; pointer-events:none; z-index:50;
+  padding:0.5rem 0.6rem; border-radius:8px; max-width:300px;
+  background:rgba(8,16,22,0.98); border:1px solid rgba(89,240,200,0.22);
+  font-family:var(--ff-mono); font-size:0.62rem; color:var(--t1);
+  box-shadow:0 8px 24px rgba(0,0,0,0.35); display:none;
+}
+.perps-apr-tip-title { font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:#59f0c8; margin-bottom:0.35rem; }
+.perps-apr-tip-row { display:flex; justify-content:space-between; align-items:baseline; gap:0.65rem; padding:0.1rem 0; color:#9dacbb; }
+.perps-apr-tip-row span:first-child { flex:1; min-width:0; }
+.perps-apr-tip-apr { font-weight:800; white-space:nowrap; }
+.perps-apr-tip-apr.pos { color:#55d66f; }
+.perps-apr-tip-apr.neg { color:#ff5c7a; }
+.perps-apr-tip-divider { border-top:1px solid rgba(255,255,255,0.08); margin:0.35rem 0; }
+.perps-apr-tip-meta { margin-top:0.25rem; font-size:0.58rem; color:#7f8f9f; line-height:1.35; }
 .perps-fund-controls { display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap; }
 .perps-fund-toggle {
   font-family:var(--ff-mono); font-size:0.62rem; font-weight:800; letter-spacing:0.06em;
@@ -6531,7 +6547,7 @@ body[data-active-tab="loops"] .loop-pos-val,
               </div>
               <div class="perps-stat-sub" id="perpsStatEquitySub">HL · Nado · GRVT · Ext</div>
             </div>
-            <div class="perps-stat-card"><div class="perps-stat-label">Total PnL</div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">mark uPnL + funding accrued on positions</div></div>
+            <div class="perps-stat-card"><div class="perps-stat-label">Total PnL</div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">funding − fees · daily chart</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Avg APR</div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">size-weighted · current spread</div></div>
           </section>
@@ -6587,6 +6603,7 @@ body[data-active-tab="loops"] .loop-pos-val,
               <div class="perps-panel-title">Positions</div>
               <span class="perps-pill" id="perpsPairsBadge">0 pairs</span>
             </div>
+            <div class="perps-apr-tooltip" id="perpsAprTooltip" role="tooltip" aria-hidden="true"></div>
             <div class="perps-pos-list" id="perpsPositionsList"></div>
           </section>
 
@@ -20671,7 +20688,7 @@ function watcherApplyFilters() {
 // ── Perps Funding Arb (Hyperliquid + Nado) ───────────────────────────
 let _perpsCache = null;
 let _perpsDailyFundSeries = [];
-let _perpsDailyFundShowFees = false;
+let _perpsDailyFundShowFees = true;
 let _perpsDailyFundChartState = null;
 let _perpsRefreshTimer = null;
 let _perpsLastRefreshAt = null;
@@ -20776,12 +20793,49 @@ function perpsRenderFundingForTimeWindow(data) {
     perpsRenderDailyFundingChart(series, perpsStatRangeLabel(_perpsStatRange));
 }
 
+/** Total PnL = net sum from Daily funding collected chart (funding − fees). */
+function perpsSyncTotalPnlStat(series, rangeLabel) {
+    const totals = perpsSumDailyFundingSeries(series, true);
+    const totalPnl = series.length ? totals.net : null;
+    const label = rangeLabel || perpsStatRangeLabel(_perpsStatRange);
+    const pnlEl = document.getElementById('perpsStatPnl');
+    if (pnlEl) {
+        pnlEl.textContent = perpsFmtUsd(totalPnl);
+        pnlEl.className = 'perps-stat-value' + (totalPnl != null ? ' ' + perpsSignedCls(totalPnl) : '');
+    }
+    const pnlSub = document.getElementById('perpsStatPnlSub');
+    if (pnlSub) {
+        if (totalPnl == null) {
+            pnlSub.textContent = `${label} · no data in daily chart`;
+        } else {
+            pnlSub.textContent = `${label} · ${perpsFmtUsd(totals.funding)} funding − ${perpsFmtUsd(Math.abs(totals.fees))} fees`;
+        }
+    }
+    return { totalPnl, chartTotals: totals };
+}
+
 function perpsFilterDailySeries(series, range) {
     const rows = Array.isArray(series) ? series : [];
     const ms = perpsStatRangeMs(range);
     if (!ms) return rows;
     const cutoff = Date.now() - ms;
     return rows.filter(r => new Date(r.day + 'T12:00:00Z').getTime() >= cutoff - 86400000);
+}
+
+/** Totals from Daily funding collected chart rows (gross funding, fees, net). */
+function perpsSumDailyFundingSeries(series, useNet = true) {
+    const rows = Array.isArray(series) ? series : [];
+    let funding = 0;
+    let fees = 0;
+    let net = 0;
+    for (const row of rows) {
+        const dailyFunding = row.dailyFunding || 0;
+        const dailyFees = row.dailyFees || 0;
+        funding += dailyFunding;
+        fees += dailyFees;
+        net += row.dailyNet != null ? row.dailyNet : dailyFunding - dailyFees;
+    }
+    return { funding, fees, net, total: useNet ? net : funding };
 }
 
 function perpsEquitySnapshotPoints() {
@@ -21089,6 +21143,8 @@ function perpsLoadConfig() {
     document.querySelectorAll('[data-perps-stat-range]').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.perpsStatRange === _perpsStatRange);
     });
+    const feesBtn = document.getElementById('perpsFundShowFeesBtn');
+    if (feesBtn) feesBtn.classList.toggle('active', _perpsDailyFundShowFees);
     perpsBindConfigInputs();
     perpsApplyWalletMasks();
     perpsUpdateConfigVisibility();
@@ -21412,7 +21468,7 @@ function perpsBuildDailyFundingBars(points, showFees) {
             label: perpsFormatFundDayLabel(day),
         }));
 
-    const total = vals.reduce((s, v) => s + v, 0);
+    const total = perpsSumDailyFundingSeries(points, showFees).total;
     const best = points.reduce((bestPt, p) => {
         const v = showFees ? p.dailyNet : p.dailyFunding;
         return !bestPt || v > (showFees ? bestPt.dailyNet : bestPt.dailyFunding) ? p : bestPt;
@@ -21453,6 +21509,7 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
         if (totalEl) { totalEl.textContent = '—'; totalEl.className = 'perps-pnl-total'; }
         const noteEl = document.getElementById('perpsDailyFundNote');
         if (noteEl) noteEl.textContent = 'No funding payments in selected range';
+        perpsSyncTotalPnlStat([], label);
         return;
     }
     const chart = perpsBuildDailyFundingBars(points, _perpsDailyFundShowFees);
@@ -21550,6 +21607,7 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
         wrap.onmouseleave = () => { if (tip) tip.style.display = 'none'; };
     }
     _perpsDailyFundChartState = chart;
+    perpsSyncTotalPnlStat(points, label);
 }
 
 function perpsBuildChart(series, netSeries) {
@@ -21713,7 +21771,123 @@ function perpsPairPeriodApr(p, range) {
     return perpsAnnualizeReturnPct(funding - fees, margin, days);
 }
 
-/** Current APR: live funding spread APR minus fee drag for the selected window. */
+const PERPS_FUNDING_PERIODS_8H_PER_DAY = 3;
+
+function perpsFundingRate8hToAprPct(rate8h) {
+    if (rate8h == null || !Number.isFinite(rate8h)) return null;
+    return rate8h * PERPS_FUNDING_PERIODS_8H_PER_DAY * 365 * 100;
+}
+
+/** APR earned/paid on one leg (long pays positive rate, short receives). */
+function perpsLegFundingAprPct(rate8h, size) {
+    const base = perpsFundingRate8hToAprPct(rate8h);
+    if (base == null) return null;
+    const sign = Math.sign(size || 0);
+    if (!sign) return null;
+    return -sign * base;
+}
+
+function perpsRateSpreadRow(symbol) {
+    const rows = _perpsLastData?.rateSpread;
+    if (!rows) return null;
+    return rows.find(r => r.symbol === symbol) || null;
+}
+
+function perpsExchangeFundingRateLabel(venue, row) {
+    if (!row) return null;
+    if (venue === 'hyperliquid' && row.hyperliquidHourly != null) {
+        return `hourly ${perpsFmtRate(row.hyperliquidHourly)}`;
+    }
+    if (venue === 'nado' && row.nadoDaily != null) {
+        return `24h ${perpsFmtRate(row.nadoDaily)}`;
+    }
+    const rate8h = venue === 'hyperliquid' ? row.hyperliquid8h
+        : venue === 'nado' ? row.nado8h
+        : venue === 'grvt' ? row.grvt8h
+        : venue === 'extended' ? row.extended8h
+        : null;
+    if (rate8h != null) return `8h ${perpsFmtRate(rate8h)}`;
+    return null;
+}
+
+function perpsPairLegAprRows(p) {
+    const legs = perpsPairLegs(p);
+    const legVenueA = p.venueA || p.crossLegA?.venue
+        || (legs.a.label === 'HL' ? 'hyperliquid' : legs.a.label === 'Nado' ? 'nado' : legs.a.label.toLowerCase());
+    const legVenueB = p.venueB || p.crossLegB?.venue
+        || (legs.b.label === 'HL' ? 'hyperliquid' : legs.b.label === 'Nado' ? 'nado' : legs.b.label.toLowerCase());
+    const row = perpsRateSpreadRow(p.symbol);
+    return [
+        {
+            venue: legVenueA,
+            venueLabel: perpsVenueLabel(legVenueA),
+            side: (legs.a.size > 0) ? 'long' : (legs.a.size < 0) ? 'short' : '',
+            exchangeRate: perpsExchangeFundingRateLabel(legVenueA, row),
+            aprPct: perpsLegFundingAprPct(p.fundingRate8hA, legs.a.size),
+        },
+        {
+            venue: legVenueB,
+            venueLabel: perpsVenueLabel(legVenueB),
+            side: (legs.b.size > 0) ? 'long' : (legs.b.size < 0) ? 'short' : '',
+            exchangeRate: perpsExchangeFundingRateLabel(legVenueB, row),
+            aprPct: perpsLegFundingAprPct(p.fundingRate8hB, legs.b.size),
+        },
+    ];
+}
+
+function perpsBuildCurrentAprTooltipHtml(p, range) {
+    const legRows = perpsPairLegAprRows(p);
+    const gross = perpsPairGrossFundingApr(p);
+    const feeApr = perpsPairFeeApr(p, range);
+    const net = perpsPairLiveApy(p, range);
+    const legsHtml = legRows.map(l => {
+        const apr = l.aprPct != null ? perpsFmtPct(l.aprPct) : '—';
+        const side = l.side ? ` ${l.side}` : '';
+        const rate = l.exchangeRate ? ` · ${l.exchangeRate}` : '';
+        return `<div class="perps-apr-tip-row"><span>${dashEsc(l.venueLabel)}${side}${rate}</span><span class="perps-apr-tip-apr ${perpsSignedCls(l.aprPct)}">${apr}</span></div>`;
+    }).join('');
+    const spreadLine = p.currentSpread8h != null
+        ? `<div class="perps-apr-tip-meta">Net spread (8h) ${perpsFmtRate(p.currentSpread8h)} · gross ${gross != null ? perpsFmtPct(gross) : '—'}</div>`
+        : '';
+    const feeNote = feeApr != null ? ` · fee drag ${perpsFmtPct(feeApr)}` : '';
+    return `<div class="perps-apr-tip-title">Funding (live)</div>${legsHtml}<div class="perps-apr-tip-divider"></div>` +
+        `<div class="perps-apr-tip-row"><span>Net APR</span><span class="perps-apr-tip-apr ${perpsSignedCls(net)}">${net != null ? perpsFmtPct(net) : '—'}</span></div>` +
+        spreadLine +
+        `<div class="perps-apr-tip-meta">Live rates annualized (3×/day)${feeNote}</div>`;
+}
+
+function perpsShowCurrentAprTip(ev, pairIdx) {
+    const tip = document.getElementById('perpsAprTooltip');
+    const paired = _perpsLastData?.paired || [];
+    const p = paired[pairIdx];
+    if (!tip || !p) return;
+    tip.innerHTML = perpsBuildCurrentAprTooltipHtml(p, _perpsStatRange);
+    tip.style.display = 'block';
+    tip.setAttribute('aria-hidden', 'false');
+    perpsMoveCurrentAprTip(ev);
+}
+
+function perpsMoveCurrentAprTip(ev) {
+    const tip = document.getElementById('perpsAprTooltip');
+    if (!tip || tip.style.display === 'none') return;
+    const pad = 14;
+    let left = ev.clientX + pad;
+    let top = ev.clientY + pad;
+    const rect = tip.getBoundingClientRect();
+    if (left + rect.width > window.innerWidth - 8) left = ev.clientX - rect.width - pad;
+    if (top + rect.height > window.innerHeight - 8) top = ev.clientY - rect.height - pad;
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+}
+
+function perpsHideCurrentAprTip() {
+    const tip = document.getElementById('perpsAprTooltip');
+    if (!tip) return;
+    tip.style.display = 'none';
+    tip.setAttribute('aria-hidden', 'true');
+}
+
+/** Current APR: live net funding spread APR minus fee drag for the selected window. */
 function perpsPairLiveApy(p, range) {
     const gross = perpsPairGrossFundingApr(p);
     if (gross == null) return null;
@@ -21758,25 +21932,23 @@ function perpsComputePortfolioStats(data) {
     const totalEquity = hlEquity + nadoEquity + grvtEquity + extendedEquity;
     const venueEquity = { hl: hlEquity, nado: nadoEquity, grvt: grvtEquity, extended: extendedEquity, total: totalEquity };
 
-    let upnlTotal = 0;
     let fundingAccrualTotal = 0;
     for (const p of paired) {
-        upnlTotal += p.combinedUpnl ?? 0;
         fundingAccrualTotal += p.fundingSinceOpen ?? 0;
     }
     for (const u of unhedged) {
-        upnlTotal += u.unrealizedPnl ?? 0;
         fundingAccrualTotal += u.funding ?? 0;
     }
 
     const dailySeries = perpsFilterDailySeries(data.dailyFundingSeries || [], range);
+    const chartTotals = perpsSumDailyFundingSeries(dailySeries, true);
     let fundingTotal = 0;
     if (!perpsStatRangeMs(range)) {
         fundingTotal = fundingAccrualTotal;
     } else {
-        fundingTotal = dailySeries.reduce((sum, row) => sum + (row.dailyFunding || 0), 0);
+        fundingTotal = chartTotals.funding;
     }
-    const totalPnl = upnlTotal + fundingAccrualTotal;
+    const totalPnl = dailySeries.length ? chartTotals.net : null;
 
     const apr = perpsComputeWeightedPositionApr(paired, range);
     return {
@@ -21784,7 +21956,7 @@ function perpsComputePortfolioStats(data) {
         totalEquity,
         venueEquity,
         totalPnl,
-        upnlTotal,
+        chartTotals,
         fundingAccrualTotal,
         fundingTotal,
         feesTotal: s.totalFees ?? 0,
@@ -21806,7 +21978,6 @@ function perpsRenderStatsBar(data) {
     };
     set('perpsStatNotional', perpsFmtUsd(stats.openNotional));
     set('perpsStatEquity', perpsFmtUsd(stats.totalEquity));
-    set('perpsStatPnl', perpsFmtUsd(stats.totalPnl), perpsSignedCls(stats.totalPnl));
     set('perpsStatFunding', perpsFmtUsd(stats.fundingTotal), perpsSignedCls(stats.fundingTotal));
     set('perpsStatApr', stats.apr != null ? perpsFmtPct(stats.apr) : '—', stats.apr != null ? perpsSignedCls(stats.apr) : '');
     const tip = document.getElementById('perpsStatEquityTip');
@@ -21815,10 +21986,6 @@ function perpsRenderStatsBar(data) {
     if (notionalSub) notionalSub.textContent = `${data.paired?.length || 0} hedged · ${data.unhedged?.length || 0} unhedged`;
     const equitySub = document.getElementById('perpsStatEquitySub');
     if (equitySub) equitySub.textContent = 'Hover for exchange breakdown';
-    const pnlSub = document.getElementById('perpsStatPnlSub');
-    if (pnlSub) {
-        pnlSub.textContent = `${perpsFmtUsd(stats.upnlTotal)} mark · ${perpsFmtUsd(stats.fundingAccrualTotal ?? stats.fundingTotal)} funding on books`;
-    }
     const fundSub = document.getElementById('perpsStatFundingSub');
     if (fundSub) fundSub.textContent = `${stats.rangeLabel} · gross funding`;
     const aprSub = document.getElementById('perpsStatAprSub');
@@ -21855,7 +22022,7 @@ function perpsRenderPortfolioPositions(paired) {
         <div>Margin</div>
         <div>APR</div>
     </div>`;
-    el.innerHTML = head + paired.map(p => {
+    el.innerHTML = head + paired.map((p, pairIdx) => {
         const legs = perpsPairLegs(p);
         const legVenueA = p.venueA || p.crossLegA?.venue || (legs.a.label === 'HL' ? 'hyperliquid' : legs.a.label === 'Nado' ? 'nado' : legs.a.label.toLowerCase());
         const legVenueB = p.venueB || p.crossLegB?.venue || (legs.b.label === 'HL' ? 'hyperliquid' : legs.b.label === 'Nado' ? 'nado' : legs.b.label.toLowerCase());
@@ -21882,7 +22049,7 @@ function perpsRenderPortfolioPositions(paired) {
             </div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Total uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(totalUpnl)}">${perpsFmtUsd(totalUpnl)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(upnlOnly)}">${perpsFmtUsd(upnlOnly)}</div></div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Current APR</div><div class="perps-pos-metric-val ${perpsSignedCls(currentApr)}">${currentApr != null ? perpsFmtPct(currentApr) : '—'}</div></div>
+            <div class="perps-pos-metric perps-pos-apr-metric" onmouseenter="perpsShowCurrentAprTip(event, ${pairIdx})" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Current APR</div><div class="perps-pos-metric-val ${perpsSignedCls(currentApr)}">${currentApr != null ? perpsFmtPct(currentApr) : '—'}</div></div>
             <div class="perps-pos-spacer" aria-hidden="true"></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Margin</div><div class="perps-pos-metric-val">${perpsFmtUsd(margin)}</div></div>
             <div class="perps-pos-apr-col"><div class="perps-pos-metric-label">APR · ${dashEsc(perpsStatRangeLabel(_perpsStatRange))}</div><div class="perps-pos-apr-val ${perpsSignedCls(periodApr)}">${periodApr != null ? perpsFmtPct(periodApr) : '—'}</div></div>
