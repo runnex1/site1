@@ -685,16 +685,23 @@ body[data-active-tab="perps"] .topbar,
   border:1px solid rgba(134,159,179,0.18); border-radius:12px; background:rgba(8,18,28,0.55);
   padding:0.75rem 0.85rem;
 }
+.perps-panel-body { display:flex; flex-direction:column; min-height:0; }
+.perps-panel-body--chart { padding:0 0 0.5rem; }
+.perps-panel-body--chart .perps-pnl-chart { height:272px; margin:0; width:100%; }
+.perps-panel-body--chart .perps-pnl-chart.tall { height:312px; }
+.perps-panel-body--chart svg { width:100%; height:100%; display:block; }
+.perps-panel-fund-head {
+  display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem;
+  padding:0.65rem 1.15rem 0.45rem;
+}
 .perps-pnl-top { display:flex; justify-content:space-between; align-items:flex-start; gap:0.75rem; margin-bottom:0.5rem; }
 .perps-pnl-title { font-weight:900; font-size:0.82rem; letter-spacing:0.06em; text-transform:uppercase; color:var(--t1); }
 .perps-pnl-note { font-family:var(--ff-mono); font-size:0.62rem; color:#9dacbb; margin-top:0.15rem; }
 .perps-pnl-total { font-family:var(--ff-mono); font-size:1.15rem; font-weight:800; color:var(--t1); }
 .perps-pnl-chart { position:relative; height:248px; margin-top:0.35rem; }
 .perps-pnl-chart.tall { height:288px; }
-.perps-chart-compact {
-  max-width:640px; width:100%; margin-left:auto; margin-right:auto;
-}
-.perps-chart-compact svg { display:block; width:100%; height:100%; }
+.perps-pnl-chart:not(.tall) { margin-top:0; }
+.perps-pnl-card.chart-only { padding:0.65rem 0.85rem 0.75rem; }
 .perps-fund-chart-wrap { position:relative; }
 .perps-fund-chart-wrap svg { cursor:crosshair; }
 .perps-fund-bar.pos { fill:#59f0c8; }
@@ -6532,16 +6539,9 @@ body[data-active-tab="loops"] .loop-pos-val,
               <div class="perps-panel-title">Portfolio Equity</div>
               <span class="perps-pill" style="border-color:rgba(167,139,250,0.35);color:#c4b5fd;background:rgba(167,139,250,0.1);" id="perpsEquityChartBadge">—</span>
             </div>
-            <div class="perps-pnl-card" style="margin:0 0.85rem 0.65rem;">
-              <div class="perps-pnl-top">
-                <div>
-                  <div class="perps-pnl-title">Total equity · all venues</div>
-                  <div class="perps-pnl-note" id="perpsEquityChartNote">4h snapshots from live account values</div>
-                </div>
-                <div class="perps-pnl-total" id="perpsEquityChartTotal">—</div>
-              </div>
-              <div class="perps-pnl-chart hoverable perps-chart-compact" id="perpsEquityChartWrap">
-                <svg id="perpsEquityChart" viewBox="0 0 560 160" preserveAspectRatio="none" role="img" aria-label="Portfolio equity chart">
+            <div class="perps-panel-body perps-panel-body--chart">
+              <div class="perps-pnl-chart hoverable" id="perpsEquityChartWrap">
+                <svg id="perpsEquityChart" viewBox="0 0 760 160" preserveAspectRatio="none" role="img" aria-label="Portfolio equity chart">
                   <path class="perps-equity-area" id="perpsEquityArea" d=""></path>
                   <path class="perps-equity-line" id="perpsEquityLine" d=""></path>
                   <circle class="perps-equity-hover-dot" id="perpsEquityHoverDot" r="4" cx="0" cy="0" style="display:none"></circle>
@@ -6553,24 +6553,21 @@ body[data-active-tab="loops"] .loop-pos-val,
 
           <section class="perps-panel">
             <div class="perps-panel-head">
-              <div class="perps-panel-title">Funding</div>
+              <div class="perps-panel-title">Daily funding collected</div>
               <div class="perps-fund-controls">
                 <button type="button" class="perps-fund-toggle" id="perpsFundShowFeesBtn" onclick="perpsToggleFundingFees()">Show fees</button>
                 <span class="perps-pill blue" id="perpsDailyFundBadge">7D</span>
               </div>
             </div>
-            <div class="perps-pnl-card" style="margin:0 0.85rem 0.65rem;">
-              <div class="perps-pnl-top">
-                <div>
-                  <div class="perps-pnl-title">Daily funding collected</div>
-                  <div class="perps-pnl-note" id="perpsDailyFundNote">Sum of historical funding payments across HL · Nado · GRVT · Extended</div>
-                </div>
-                <div class="perps-pnl-total" id="perpsDailyFundTotal">—</div>
-              </div>
-              <div class="perps-fund-chart-wrap perps-pnl-chart tall perps-chart-compact" id="perpsDailyFundWrap">
-                <svg id="perpsDailyFundChart" viewBox="0 0 560 200" preserveAspectRatio="none" role="img" aria-label="Daily funding bar chart">
+            <div class="perps-panel-fund-head">
+              <div class="perps-pnl-note" id="perpsDailyFundNote" style="margin-top:0;font-size:0.68rem;">7D gross funding · HL, Nado, GRVT, Extended payment history</div>
+              <div class="perps-pnl-total" id="perpsDailyFundTotal">—</div>
+            </div>
+            <div class="perps-panel-body perps-panel-body--chart">
+              <div class="perps-fund-chart-wrap perps-pnl-chart tall" id="perpsDailyFundWrap">
+                <svg id="perpsDailyFundChart" viewBox="0 0 760 200" preserveAspectRatio="none" role="img" aria-label="Daily funding bar chart">
                   <g id="perpsDailyFundGrid"></g>
-                  <line class="perps-fund-zero" id="perpsDailyFundZero" x1="48" y1="100" x2="548" y2="100"></line>
+                  <line class="perps-fund-zero" id="perpsDailyFundZero" x1="48" y1="100" x2="748" y2="100"></line>
                   <g id="perpsDailyFundBars"></g>
                   <g id="perpsDailyFundYLabels"></g>
                   <g id="perpsDailyFundXLabels"></g>
@@ -20683,7 +20680,7 @@ let _perpsVenueEquity = null;
 let _perpsEquityChartState = null;
 const PERPS_FETCH_TIMEOUT_MS = 55000;
 const PERPS_AUTO_REFRESH_MS = 60000;
-const PERPS_CHART_WIDTH = 560;
+const PERPS_CHART_WIDTH = 760;
 
 function perpsMaskSecret(value) {
     return value ? '*'.repeat(String(value).length) : '';
@@ -21336,27 +21333,10 @@ function perpsRenderEquityChart(data) {
     const chart = perpsBuildEquityChart(equitySeries);
     const lineEl = document.getElementById('perpsEquityLine');
     const areaEl = document.getElementById('perpsEquityArea');
-    const totalEl = document.getElementById('perpsEquityChartTotal');
-    const statsEl = document.getElementById('perpsEquityChartStats');
-    const noteEl = document.getElementById('perpsEquityChartNote');
     const badge = document.getElementById('perpsEquityChartBadge');
     if (lineEl) lineEl.setAttribute('d', chart.line);
     if (areaEl) areaEl.setAttribute('d', chart.area || '');
-    if (totalEl) {
-        totalEl.textContent = perpsFmtUsd(chart.total);
-        totalEl.className = 'perps-pnl-total';
-    }
-    if (noteEl) {
-        noteEl.textContent = chart.insufficient
-            ? 'Collecting 4h equity snapshots — chart fills in over time'
-            : `Total HL + Nado + GRVT + Extended · since ${equitySeries.firstBucket || 'start'}`;
-    }
     if (badge) badge.textContent = chart.insufficient ? 'live' : `${equitySeries.pointCount} pts`;
-    if (statsEl) {
-        statsEl.innerHTML = chart.stats.map(s =>
-            `<div><div class="perps-pnl-stat-label">${dashEsc(s.label)}</div><div class="perps-pnl-stat-val">${dashEsc(s.value)}</div></div>`
-        ).join('');
-    }
     _perpsEquityChartState = chart;
     perpsBindEquityChartHover();
     return equitySeries;
@@ -21507,8 +21487,8 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
     }
     if (noteEl) {
         noteEl.textContent = _perpsDailyFundShowFees
-            ? `${label} net funding minus fees · HL, Nado, GRVT, Extended payment history · refreshes every 1m`
-            : `${label} gross funding · HL, Nado, GRVT, Extended payment history · refreshes every 1m`;
+            ? `${label} net funding minus fees · HL, Nado, GRVT, Extended payment history`
+            : `${label} gross funding · HL, Nado, GRVT, Extended payment history`;
     }
     if (badge) badge.textContent = label;
     if (statsEl) {
@@ -21649,11 +21629,11 @@ function perpsPairLiveApy(p) {
     return p.currentSpread8h * 3 * 365 * 100;
 }
 
-function perpsComputeWeightedPositionApr(paired) {
+function perpsComputeWeightedPositionApr(paired, range) {
     let weightedSum = 0;
     let totalWeight = 0;
     for (const p of paired) {
-        const apr = perpsPairLiveApy(p);
+        const apr = range ? perpsPairPeriodApr(p, range) : perpsPairLiveApy(p);
         const weight = p.avgNotional ?? 0;
         if (apr == null || !Number.isFinite(apr) || !weight) continue;
         weightedSum += apr * weight;
@@ -21671,7 +21651,17 @@ function perpsPairPeriodApr(p, range) {
     if (!perpsStatRangeMs(range)) {
         funding = p.fundingSinceOpen ?? 0;
         days = p.daysOpen ?? null;
-        if (!days || days <= 0) return null;
+        if (!days || days <= 0) {
+            if (p.fundingByRange?.['30d'] != null && p.fundingByRange['30d'] !== 0) {
+                funding = p.fundingByRange['30d'];
+                days = 30;
+            } else if (p.fundingWindow != null && p.fundingWindow !== 0) {
+                funding = p.fundingWindow;
+                days = perpsStatRangeToApiDays('30d');
+            } else {
+                return null;
+            }
+        }
     } else {
         days = { '1d': 1, '7d': 7, '30d': 30 }[range] ?? 30;
         if (p.fundingByRange?.[range] != null) {
@@ -21681,6 +21671,7 @@ function perpsPairPeriodApr(p, range) {
             funding = (p.fundingWindow ?? 0) * Math.min(days / apiDays, 1);
         }
     }
+    if (!Number.isFinite(funding) || !days) return null;
     return (funding / margin) * (365 / days) * 100;
 }
 
@@ -21722,7 +21713,7 @@ function perpsComputePortfolioStats(data) {
         totalPnl = dailySeries.reduce((sum, row) => sum + (row.dailyNet ?? row.dailyFunding ?? 0), 0);
     }
 
-    const apr = perpsComputeWeightedPositionApr(paired);
+    const apr = perpsComputeWeightedPositionApr(paired, range);
     return {
         openNotional,
         totalEquity,
@@ -21767,7 +21758,7 @@ function perpsRenderStatsBar(data) {
     const fundSub = document.getElementById('perpsStatFundingSub');
     if (fundSub) fundSub.textContent = `${stats.rangeLabel} · gross funding`;
     const aprSub = document.getElementById('perpsStatAprSub');
-    if (aprSub) aprSub.textContent = stats.apr != null ? 'size-weighted · current spread' : 'Need open positions';
+    if (aprSub) aprSub.textContent = stats.apr != null ? `size-weighted · ${stats.rangeLabel} funding APR` : 'Need open positions';
 }
 
 function perpsRenderPortfolioPositions(paired) {
