@@ -414,30 +414,22 @@ html { height: 100%; }
   box-shadow:inset 0 1px 0 rgba(255,255,255,0.035), 0 14px 38px rgba(0,0,0,0.14);
   overflow:hidden; display:flex; flex-direction:column; min-height:0;
 }
-.watcher-v2-panel-pm {
-  align-self:start;
-  height:calc(100% - var(--watcher-yield-h) / 2);
-  max-height:calc(100% - var(--watcher-yield-h) / 2);
-}
+.watcher-v2-primary-slot { min-width:0; min-height:0; display:flex; }
+.watcher-v2-primary-slot > .watcher-v2-panel { flex:1; min-width:0; min-height:0; }
 .watcher-v2-stack { display:flex; flex-direction:column; gap:0.75rem; min-height:0; height:100%; }
-.watcher-v2-panel-wallet { flex:1; min-height:0; }
-.watcher-v2-panel-yield {
-  flex:0 0 var(--watcher-yield-h);
-  min-height:var(--watcher-yield-h);
-  max-height:var(--watcher-yield-h);
-}
-.watcher-v2-panel-yield .watcher-v2-panel-head { min-height:40px; padding:0.5rem 0.85rem; }
-.watcher-v2-panel-yield .watcher-v2-panel-note { display:none; }
-.watcher-v2-panel-yield .watcher-v2-panel-title { font-size:0.88rem; }
-.watcher-v2-panel-yield .watcher-v2-pill { padding:0.15rem 0.55rem; font-size:0.65rem; }
-.watcher-v2-panel-yield .watcher-v2-tool-row { min-height:36px; padding:0.35rem 0.75rem; }
-.watcher-v2-panel-yield .watcher-v2-icon { width:28px; height:28px; font-size:0.58rem; }
-.watcher-v2-panel-yield .watcher-v2-row-title { font-size:0.82rem; }
-.watcher-v2-panel-yield .watcher-v2-row-meta { font-size:0.62rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.watcher-v2-panel-yield .watcher-v2-badge { font-size:0.58rem; padding:0.12rem 0.4rem; }
-.watcher-v2-panel-yield .watcher-v2-scroll { overflow:hidden; }
-.watcher-v2-panel-yield .watcher-v2-actions { padding:0.35rem 0.75rem 0.5rem; }
-.watcher-v2-panel-yield .watcher-v2-btn { height:28px; font-size:0.72rem; padding:0 0.65rem; }
+.watcher-v2-stack > .watcher-v2-panel { flex:1; min-height:0; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-panel-head { min-height:40px; padding:0.5rem 0.85rem; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-panel-note { display:none; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-panel-title { font-size:0.88rem; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-pill { padding:0.15rem 0.55rem; font-size:0.65rem; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-tool-row { min-height:36px; padding:0.35rem 0.75rem; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-icon { width:28px; height:28px; font-size:0.58rem; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-row-title { font-size:0.82rem; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-row-meta { font-size:0.62rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-badge { font-size:0.58rem; padding:0.12rem 0.4rem; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-actions { padding:0.35rem 0.75rem 0.5rem; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-btn { height:28px; font-size:0.72rem; padding:0 0.65rem; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-add-bar { display:none; }
 .watcher-v2-panel-head {
   flex-shrink:0; min-height:54px; padding:0.75rem 1rem;
   display:flex; align-items:flex-start; justify-content:space-between; gap:0.65rem;
@@ -536,6 +528,13 @@ html { height: 100%; }
   border-radius:7px; color:var(--t1); font-size:0.78rem; padding:0.4rem 0.55rem; outline:none;
 }
 .watcher-v2-add-bar input:focus { border-color:rgba(89,240,200,0.35); }
+.watcher-v2-tool-edit { display:grid; grid-template-columns:1fr; gap:0.4rem; padding:0.65rem 0.85rem; border-bottom:1px solid var(--wv-line); }
+.watcher-v2-tool-edit-actions { display:flex; justify-content:flex-end; gap:0.35rem; }
+.watcher-v2-edit-input {
+  width:100%; background:rgba(255,255,255,0.03); border:1px solid var(--wv-line-hi);
+  border-radius:7px; color:var(--t1); font-size:0.78rem; padding:0.4rem 0.55rem; outline:none;
+}
+.watcher-v2-edit-input:focus { border-color:rgba(89,240,200,0.35); }
 .watcher-v2-empty { padding:1.25rem 0.85rem; text-align:center; color:var(--wv-muted); font-size:0.8rem; line-height:1.5; }
 .watcher-v2-aavecap-wrap {
   margin-top:0.75rem; display:none;
@@ -566,8 +565,8 @@ html { height: 100%; }
 @media (max-width:1100px) {
   .watcher-v2 { height:auto; max-height:none; }
   .watcher-v2-layout { grid-template-columns:1fr; }
-  .watcher-v2-panel-pm { height:auto; max-height:none; align-self:stretch; }
-  .watcher-v2-panel-yield { flex:none; min-height:auto; max-height:none; }
+  .watcher-v2-primary-slot, .watcher-v2-stack { height:auto; }
+  .watcher-v2-stack > .watcher-v2-panel { min-height:220px; }
   .watcher-v2-pm-row { grid-template-columns:38px minmax(140px,1fr) 58px 62px auto; }
   .watcher-v2-pm-row .hide-sm { display:none; }
 }
@@ -6191,18 +6190,16 @@ body[data-active-tab="loops"] .loop-pos-val,
                   oninput="watcherSearchUpdate(this.value)" onkeydown="watcherSearchKeydown(event)">
               </div>
               <div class="watcher-v2-filters" id="watcherFilterRow">
-                <button type="button" class="watcher-v2-filter active" data-watcher-filter="all" onclick="watcherSetFilter('all', this)">All</button>
-                <button type="button" class="watcher-v2-filter" data-watcher-filter="markets" onclick="watcherSetFilter('markets', this)">Markets</button>
-                <button type="button" class="watcher-v2-filter" data-watcher-filter="wallets" onclick="watcherSetFilter('wallets', this)">Wallets</button>
-                <button type="button" class="watcher-v2-filter" data-watcher-filter="tools" onclick="watcherSetFilter('tools', this)">Tools</button>
-                <button type="button" class="watcher-v2-filter" data-watcher-filter="pinned" onclick="watcherSetFilter('pinned', this)">Pinned</button>
-                <button type="button" class="watcher-v2-filter aave" onclick="watcherToggleAaveCap()">Aave Cap</button>
+                <button type="button" class="watcher-v2-filter active" data-watcher-primary="markets" onclick="watcherSetPrimary('markets', this)">Prediction Markets</button>
+                <button type="button" class="watcher-v2-filter" data-watcher-primary="wallets" onclick="watcherSetPrimary('wallets', this)">Wallet Watchlist</button>
+                <button type="button" class="watcher-v2-filter" data-watcher-primary="tools" onclick="watcherSetPrimary('tools', this)">Yield Tools</button>
               </div>
             </div>
           </section>
 
           <section class="watcher-v2-layout">
-            <div class="watcher-v2-panel watcher-v2-panel-pm" data-watcher-section="markets">
+            <div class="watcher-v2-primary-slot" id="watcherV2PrimarySlot">
+            <div class="watcher-v2-panel watcher-v2-panel-pm watcher-v2-primary" data-watcher-section="markets">
               <div class="watcher-v2-panel-head">
                 <div>
                   <div class="watcher-v2-panel-title">Prediction Markets</div>
@@ -6223,9 +6220,10 @@ body[data-active-tab="loops"] .loop-pos-val,
                 </div>
               </div>
             </div>
+            </div>
 
-            <div class="watcher-v2-stack">
-              <div class="watcher-v2-panel watcher-v2-panel-wallet" data-watcher-section="wallets">
+            <div class="watcher-v2-stack" id="watcherV2SideStack">
+              <div class="watcher-v2-panel watcher-v2-panel-wallet watcher-v2-compact" data-watcher-section="wallets">
                 <div class="watcher-v2-panel-head">
                   <div>
                     <div class="watcher-v2-panel-title">Wallet Watchlist</div>
@@ -6252,7 +6250,7 @@ body[data-active-tab="loops"] .loop-pos-val,
                 </div>
               </div>
 
-              <div class="watcher-v2-panel watcher-v2-panel-yield" data-watcher-section="tools">
+              <div class="watcher-v2-panel watcher-v2-panel-yield watcher-v2-compact" data-watcher-section="tools">
                 <div class="watcher-v2-panel-head">
                   <div>
                     <div class="watcher-v2-panel-title">Yield Tools</div>
@@ -6265,12 +6263,14 @@ body[data-active-tab="loops"] .loop-pos-val,
                     <input type="text" id="wlLinkUrlInput" placeholder="https://pendle.finance…"
                       onkeydown="if(event.key==='Enter') document.getElementById('wlLinkNameInput').focus()">
                     <input type="text" id="wlLinkNameInput" placeholder="Label"
+                      onkeydown="if(event.key==='Enter') document.getElementById('wlLinkDescInput').focus()">
+                    <input type="text" id="wlLinkDescInput" placeholder="Description"
                       onkeydown="if(event.key==='Enter') { addWatcherLink(); updateWyCount(); }">
                     <button type="button" class="watcher-v2-btn indigo" onclick="addWatcherLink(); updateWyCount();" id="wlLinkAddBtn">Save</button>
                   </div>
                   <div class="watcher-v2-actions">
                     <button type="button" class="watcher-v2-btn secondary" onclick="watcherOpenAllTools()">Open All</button>
-                    <button type="button" class="watcher-v2-btn" onclick="document.getElementById('wlLinkUrlInput').focus()">Add Tool</button>
+                    <button type="button" class="watcher-v2-btn" onclick="watcherSetPrimary('tools'); document.getElementById('wlLinkUrlInput').focus()">Add Tool</button>
                   </div>
                 </div>
               </div>
@@ -16026,7 +16026,8 @@ function renderWatcherWalletSection(category, gridId, countId) {
 let watcherLinks = [];
 
 function saveWatcherLinks() {
-    try { localStorage.setItem('watcher-links', JSON.stringify(watcherLinks)); } catch(e) {}
+    const savedLinks = watcherLinks.map(({ _editing, ...link }) => link);
+    try { localStorage.setItem('watcher-links', JSON.stringify(savedLinks)); } catch(e) {}
     saveData();
 }
 function loadWatcherLinks() {
@@ -16041,22 +16042,58 @@ function loadWatcherLinks() {
 function addWatcherLink() {
     const urlEl  = document.getElementById('wlLinkUrlInput');
     const nameEl = document.getElementById('wlLinkNameInput');
+    const descEl = document.getElementById('wlLinkDescInput');
     let url  = urlEl.value.trim();
     let name = nameEl.value.trim();
+    const description = descEl.value.trim();
     if (!url) return;
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
     if (!name) {
         try { name = new URL(url).hostname.replace(/^www\./, ''); } catch(e) { name = url; }
     }
-    watcherLinks.push({ id: Date.now().toString(), url, name, addedAt: Date.now() });
+    watcherLinks.push({ id: Date.now().toString(), url, name, description, addedAt: Date.now() });
     saveWatcherLinks();
     urlEl.value  = '';
     nameEl.value = '';
+    descEl.value = '';
     renderWatcherLinks();
 }
 
 function removeWatcherLink(id) {
     watcherLinks = watcherLinks.filter(l => l.id !== id);
+    saveWatcherLinks();
+    renderWatcherLinks();
+}
+
+function watcherLinkEsc(value) {
+    return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function beginWatcherLinkEdit(id) {
+    watcherLinks = watcherLinks.map(l => ({ ...l, _editing: l.id === id }));
+    renderWatcherLinks();
+    document.getElementById(`watcherLinkName-${id}`)?.focus();
+}
+
+function cancelWatcherLinkEdit(id) {
+    const link = watcherLinks.find(l => l.id === id);
+    if (link) link._editing = false;
+    renderWatcherLinks();
+}
+
+function saveWatcherLinkEdit(id) {
+    const link = watcherLinks.find(l => l.id === id);
+    if (!link) return;
+    let url = document.getElementById(`watcherLinkUrl-${id}`)?.value.trim() || '';
+    const name = document.getElementById(`watcherLinkName-${id}`)?.value.trim() || '';
+    const description = document.getElementById(`watcherLinkDesc-${id}`)?.value.trim() || '';
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    link.url = url;
+    link.name = name || (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch(e) { return url; } })();
+    link.description = description;
+    link._editing = false;
     saveWatcherLinks();
     renderWatcherLinks();
 }
@@ -16076,16 +16113,30 @@ function renderWatcherLinks() {
     }
     grid.innerHTML = watcherLinks.map(l => {
         const host = (() => { try { return new URL(l.url).hostname.replace(/^www\./, ''); } catch(e) { return l.url; } })();
-        const searchHay = `${l.name} ${l.url} ${host} tool yield`.toLowerCase();
+        const description = l.description || '';
+        const searchHay = `${l.name} ${l.url} ${host} ${description} tool yield`.toLowerCase();
+        if (l._editing) {
+            return `<div class="watcher-v2-tool-edit watcher-v2-tool-row" data-watcher-kind="tool" data-watcher-search="${watcherLinkEsc(searchHay)}" data-watcher-pinned="0">
+                <input type="text" class="watcher-v2-edit-input" id="watcherLinkName-${watcherLinkEsc(l.id)}" value="${watcherLinkEsc(l.name)}" placeholder="Tool name">
+                <input type="text" class="watcher-v2-edit-input" id="watcherLinkDesc-${watcherLinkEsc(l.id)}" value="${watcherLinkEsc(description)}" placeholder="Description">
+                <input type="text" class="watcher-v2-edit-input" id="watcherLinkUrl-${watcherLinkEsc(l.id)}" value="${watcherLinkEsc(l.url)}" placeholder="https://example.com"
+                    onkeydown="if(event.key==='Enter') saveWatcherLinkEdit('${watcherLinkEsc(l.id)}')">
+                <div class="watcher-v2-tool-edit-actions">
+                    <button type="button" class="watcher-v2-row-btn" onclick="cancelWatcherLinkEdit('${watcherLinkEsc(l.id)}')">Cancel</button>
+                    <button type="button" class="watcher-v2-row-btn" onclick="saveWatcherLinkEdit('${watcherLinkEsc(l.id)}')">Save</button>
+                </div>
+            </div>`;
+        }
         return `<div class="watcher-v2-tool-row" data-watcher-kind="tool" data-watcher-search="${dashEsc(searchHay)}" data-watcher-pinned="0">
             <div class="watcher-v2-icon tool">↗</div>
             <div>
-                <a href="${l.url}" target="_blank" rel="noopener" class="watcher-v2-row-title" style="color:inherit;text-decoration:none;"
+                <a href="${watcherLinkEsc(l.url)}" target="_blank" rel="noopener" class="watcher-v2-row-title" style="color:inherit;text-decoration:none;"
                     onmouseover="this.style.color='var(--indigo)'" onmouseout="this.style.color='var(--t1)'">${dashEsc(l.name)}</a>
-                <div class="watcher-v2-row-meta">${dashEsc(host)}</div>
+                <div class="watcher-v2-row-meta">${dashEsc(description || host)}</div>
             </div>
             <div style="display:flex;align-items:center;gap:0.35rem;">
                 <span class="watcher-v2-badge green">Tool</span>
+                <button type="button" class="watcher-v2-row-btn" onclick="beginWatcherLinkEdit('${watcherLinkEsc(l.id)}')" title="Edit">Edit</button>
                 <button type="button" class="watcher-v2-row-btn danger" onclick="removeWatcherLink('${l.id}')" title="Remove">×</button>
             </div>
         </div>`;
@@ -20536,6 +20587,31 @@ function watcherSetFilter(name, btn) {
     }
     const aaveWrap = document.getElementById('watcherAaveCapWrap');
     if (aaveWrap) aaveWrap.classList.remove('open');
+    watcherApplyFilters();
+}
+
+function watcherSetPrimary(name, btn) {
+    const primarySlot = document.getElementById('watcherV2PrimarySlot');
+    const sideStack = document.getElementById('watcherV2SideStack');
+    const nextPanel = document.querySelector(`[data-watcher-section="${name}"]`);
+    const currentPanel = primarySlot?.querySelector(':scope > [data-watcher-section]');
+    if (!primarySlot || !sideStack || !nextPanel || !currentPanel) return;
+
+    if (nextPanel !== currentPanel) {
+        const nextSibling = nextPanel.nextSibling;
+        currentPanel.classList.remove('watcher-v2-primary');
+        currentPanel.classList.add('watcher-v2-compact');
+        nextPanel.classList.remove('watcher-v2-compact');
+        nextPanel.classList.add('watcher-v2-primary');
+        sideStack.insertBefore(currentPanel, nextSibling);
+        primarySlot.appendChild(nextPanel);
+    }
+
+    watcherFilter = 'all';
+    document.querySelectorAll('.watcher-v2-filter[data-watcher-primary]').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    else document.querySelector(`.watcher-v2-filter[data-watcher-primary="${name}"]`)?.classList.add('active');
+    document.getElementById('watcherAaveCapWrap')?.classList.remove('open');
     watcherApplyFilters();
 }
 
