@@ -397,6 +397,10 @@ module.exports = async function handler(req, res) {
         const result = await getPolymarketMarketMoves(req.query || {});
         return res.status(result.status).json(result.body);
       }
+      if (req.query?.perpsConfig === '1') {
+        const perpsConfig = parse(await kvGet('vault:perps_config'), {});
+        return res.status(200).json({ ok: true, perpsConfig });
+      }
       const [
         portfolioRaw, watchlistRaw, watcherWalletsRaw, watcherLinksRaw,
         snapshotsRaw, aaveMarketsRaw, customTokensRaw,

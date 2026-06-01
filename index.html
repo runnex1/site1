@@ -7438,6 +7438,7 @@ const chartColors = ['#00D4AA','#6C72FF','#38BDF8','#D946EF','#F97316','#F59E0B'
 const OPPORTUNITY_MONITORS_KEY = 'vault-opportunity-monitors';
 const PERPS_CONFIG_KEY = 'vault-perps-config';
 const PERPS_CONFIG_BACKUP_KEY = 'vault-perps-config-backup';
+const PERPS_SESSION_KEY = 'vault-perps-wallets-session';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
 const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
 const OPPORTUNITY_ODDS_CACHE_KEY = 'vault-opportunity-odds-cache';
@@ -7635,10 +7636,14 @@ async function loadData() {
 
     loadOpportunityMonitors();
 
-    // Hydrate perps wallets from portfolio blob + dedicated keys (never wait for Save & connect)
+    // Hydrate perps wallets from all local stores, then cloud (before first paint / tab switch)
     try {
         perpsImportConfigFromPortfolio();
         perpsLoadConfig();
+        if (location.protocol !== 'file:') {
+            await perpsBootstrapWallet();
+            perpsLoadConfig();
+        }
     } catch (e) {}
 
     // 2. Restore tab state FIRST (so tab-specific layout CSS is active), then render
@@ -7724,8 +7729,10 @@ async function loadData() {
                     parsed.polymarketWallets = mergeWalletAddresses(parsed.polymarketWallets);
 
                     parsed.etfs = mergeEtfPositions(data.etfs, parsed.etfs);
+                    const walletSnap = perpsSnapshotLocalWallet();
                     data = parsed;
                     normalizePortfolioData();
+                    perpsRestoreWalletSnapshot(walletSnap);
 
                     if (parsed._perpsConfig && typeof parsed._perpsConfig === 'object') {
                         perpsApplyCloudConfig(parsed._perpsConfig);
@@ -7782,8 +7789,7 @@ async function saveData() {
                 statRange: perpsCfg.statRange || _perpsStatRange,
             };
         }
-        // Always save to localStorage
-        localStorage.setItem('portfolio-data-pro', JSON.stringify(data));
+        perpsWritePortfolioLocal();
 
         // Cloud sync only works when served via http/https (not file://)
         if (location.protocol === 'file:') return;
@@ -9929,7 +9935,7 @@ async function syncEtfsServerSide() {
         const d = await r.json();
         if (d.portfolio?.etfs) {
             data.etfs = mergeEtfPositions(data.etfs, d.portfolio.etfs);
-            localStorage.setItem('portfolio-data-pro', JSON.stringify(data));
+            perpsWritePortfolioLocal();
             updateUI();
         }
     } catch(e) {}
@@ -20772,8 +20778,51 @@ function perpsIsValidEthAddress(addr) {
 function perpsResolveHlWallet() {
     const saved = perpsGetSavedConfig();
     if (perpsIsValidEthAddress(saved.hyperliquid)) return saved.hyperliquid.trim();
+    try {
+        const sess = JSON.parse(sessionStorage.getItem(PERPS_SESSION_KEY) || '{}');
+        if (perpsIsValidEthAddress(sess.hyperliquid)) return sess.hyperliquid.trim();
+    } catch (e) {}
     const fromField = perpsReadConfigField('perpsHlWallet', 'hyperliquid');
     return perpsIsValidEthAddress(fromField) ? fromField.trim() : '';
+}
+
+function perpsApplyArbToDataObject() {
+    const cfg = perpsGetSavedConfig();
+    if (!perpsIsValidEthAddress(cfg.hyperliquid)) return;
+    data.perpsArb = {
+        hyperliquid: cfg.hyperliquid.trim(),
+        nado: cfg.nado || '',
+        grvtSubAccount: cfg.grvtSubAccount || '4860249204328359',
+        statRange: cfg.statRange || _perpsStatRange,
+    };
+}
+
+function perpsWritePortfolioLocal() {
+    if (typeof data !== 'object' || !data) return;
+    perpsApplyArbToDataObject();
+    try {
+        localStorage.setItem('portfolio-data-pro', JSON.stringify(data));
+    } catch (e) {}
+}
+
+function perpsSnapshotLocalWallet() {
+    const cfg = perpsGetSavedConfig();
+    if (perpsIsValidEthAddress(cfg.hyperliquid)) return perpsConfigPayload(cfg);
+    const arb = perpsReadPortfolioArbConfig();
+    return arb ? perpsConfigPayload(arb) : null;
+}
+
+function perpsRestoreWalletSnapshot(snapshot) {
+    if (!snapshot) return;
+    perpsPersistConfig(snapshot, { skipCloudSync: true });
+    if (typeof data === 'object' && data) {
+        data.perpsArb = {
+            hyperliquid: snapshot.hyperliquid,
+            nado: snapshot.nado || '',
+            grvtSubAccount: snapshot.grvtSubAccount || '4860249204328359',
+            statRange: snapshot.statRange || _perpsStatRange,
+        };
+    }
 }
 
 function perpsReadConfigField(id, key) {
@@ -21056,7 +21105,11 @@ function perpsSyncConfigToPortfolio(payload) {
         if (typeof data === 'object' && data) data.perpsArb = payload;
         const portfolio = JSON.parse(localStorage.getItem('portfolio-data-pro') || '{}');
         portfolio.perpsArb = payload;
-        localStorage.setItem('portfolio-data-pro', JSON.stringify(portfolio));
+        if (Array.isArray(portfolio.tokens)) {
+            localStorage.setItem('portfolio-data-pro', JSON.stringify(portfolio));
+        } else {
+            perpsWritePortfolioLocal();
+        }
     } catch (e) {}
 }
 
@@ -21084,6 +21137,12 @@ function perpsGetSavedConfig() {
             }
         }
         if (!perpsIsValidEthAddress(cfg.hyperliquid)) {
+            try {
+                const sess = perpsNormalizeStoredConfig(JSON.parse(sessionStorage.getItem(PERPS_SESSION_KEY) || '{}'));
+                if (perpsIsValidEthAddress(sess.hyperliquid)) cfg = { ...sess, configured: true };
+            } catch (e) {}
+        }
+        if (!perpsIsValidEthAddress(cfg.hyperliquid)) {
             const fromPortfolio = perpsReadPortfolioArbConfig();
             if (fromPortfolio) {
                 cfg = { ...fromPortfolio, configured: true };
@@ -21103,25 +21162,51 @@ function perpsPersistConfig(config, opts = {}) {
         const json = JSON.stringify(payload);
         localStorage.setItem(PERPS_CONFIG_KEY, json);
         localStorage.setItem(PERPS_CONFIG_BACKUP_KEY, json);
+        sessionStorage.setItem(PERPS_SESSION_KEY, json);
         perpsSyncConfigToPortfolio(payload);
         if (!opts.skipCloudSync && typeof saveData === 'function') saveData();
         return true;
     } catch (e) { return false; }
 }
 
-async function perpsHydrateConfigFromCloud() {
-    if (perpsHasValidWallet() || location.protocol === 'file:') return perpsHasValidWallet();
+async function perpsFetchCloudPerpsConfig() {
+    try {
+        const fast = await fetch('/api/sync?perpsConfig=1', { signal: AbortSignal.timeout(5000) });
+        if (fast.ok) {
+            const body = await fast.json();
+            if (body?.perpsConfig && typeof body.perpsConfig === 'object') return body.perpsConfig;
+        }
+    } catch (e) {}
     try {
         const res = await fetch('/api/sync', { signal: AbortSignal.timeout(5000) });
-        if (!res.ok) return false;
+        if (!res.ok) return null;
         const cloudData = await res.json();
-        if (!cloudData?.result) return false;
+        if (!cloudData?.result) return null;
         const parsed = JSON.parse(cloudData.result);
-        if (parsed._perpsConfig && typeof parsed._perpsConfig === 'object') {
-            perpsApplyCloudConfig(parsed._perpsConfig);
-            perpsLoadConfig();
-        }
-    } catch (e) { /* offline */ }
+        return parsed._perpsConfig && typeof parsed._perpsConfig === 'object' ? parsed._perpsConfig : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+async function perpsHydrateConfigFromCloud() {
+    if (perpsHasValidWallet() || location.protocol === 'file:') return perpsHasValidWallet();
+    const cloudCfg = await perpsFetchCloudPerpsConfig();
+    if (cloudCfg) {
+        perpsApplyCloudConfig(cloudCfg);
+        perpsLoadConfig();
+    }
+    return perpsHasValidWallet();
+}
+
+async function perpsBootstrapWallet() {
+    perpsImportConfigFromPortfolio();
+    perpsRepairSavedConfig();
+    if (perpsHasValidWallet()) return true;
+    if (location.protocol === 'file:') return false;
+    await perpsHydrateConfigFromCloud();
+    perpsImportConfigFromPortfolio();
+    perpsRepairSavedConfig();
     return perpsHasValidWallet();
 }
 
@@ -21231,7 +21316,7 @@ function perpsUpdateRefreshBar() {
     }
 }
 
-function perpsSaveConfigAndRefresh() {
+async function perpsSaveConfigAndRefresh() {
     perpsUnmaskWalletInputs();
     const hlEl = document.getElementById('perpsHlWallet');
     const nadoEl = document.getElementById('perpsNadoWallet');
@@ -21249,6 +21334,7 @@ function perpsSaveConfigAndRefresh() {
         if (raw && !/^\*+$/.test(raw)) grvtEl.dataset.perpsReal = raw;
     }
     perpsSaveConfig();
+    if (typeof saveData === 'function') await saveData();
     const saved = perpsGetSavedConfig();
     const fieldKeys = {
         perpsHlWallet: 'hyperliquid',
@@ -21266,7 +21352,7 @@ function perpsSaveConfigAndRefresh() {
     if (foot) delete foot.dataset.forceOpen;
     perpsApplyWalletMasks();
     perpsUpdateConfigVisibility();
-    perpsRefresh(false);
+    await perpsRefresh(false);
 }
 
 function perpsMergeSnapshotsFromServer(serverSnaps) {

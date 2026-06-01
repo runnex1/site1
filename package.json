@@ -2,5 +2,11 @@
   "name": "site1",
   "version": "2.0.0",
   "private": true,
-  "engines": { "node": ">=18" }
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test:perps-wallet": "node tests/perps-wallet-persist.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
 }
