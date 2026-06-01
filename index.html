@@ -21889,89 +21889,109 @@ function perpsPairPeriodApr(p, range) {
     return perpsAnnualizeReturnPct(funding - fees, margin, days);
 }
 
-const PERPS_FUNDING_PERIODS_8H_PER_DAY = 3;
-
-function perpsFundingRate8hToAprPct(rate8h) {
-    if (rate8h == null || !Number.isFinite(rate8h)) return null;
-    return rate8h * PERPS_FUNDING_PERIODS_8H_PER_DAY * 365 * 100;
-}
-
-/** APR earned/paid on one leg (long pays positive rate, short receives). */
-function perpsLegFundingAprPct(rate8h, size) {
-    const base = perpsFundingRate8hToAprPct(rate8h);
-    if (base == null) return null;
-    const sign = Math.sign(size || 0);
-    if (!sign) return null;
-    return -sign * base;
-}
-
 function perpsRateSpreadRow(symbol) {
     const rows = _perpsLastData?.rateSpread;
     if (!rows) return null;
     return rows.find(r => r.symbol === symbol) || null;
 }
 
-function perpsExchangeFundingRateLabel(venue, row) {
-    if (!row) return null;
-    if (venue === 'hyperliquid' && row.hyperliquidHourly != null) {
-        return `hourly ${perpsFmtRate(row.hyperliquidHourly)}`;
+function perpsVenueNativeFundingRate(venue, row) {
+    if (!row) return { rateDecimal: null, intervalHours: 8 };
+    if (venue === 'hyperliquid') {
+        return { rateDecimal: row.hyperliquidHourly ?? null, intervalHours: 1 };
     }
-    if (venue === 'nado' && row.nadoDaily != null) {
-        return `24h ${perpsFmtRate(row.nadoDaily)}`;
+    if (venue === 'nado') {
+        return { rateDecimal: row.nadoDaily ?? null, intervalHours: 24 };
     }
-    const rate8h = venue === 'hyperliquid' ? row.hyperliquid8h
-        : venue === 'nado' ? row.nado8h
-        : venue === 'grvt' ? row.grvt8h
-        : venue === 'extended' ? row.extended8h
-        : null;
-    if (rate8h != null) return `8h ${perpsFmtRate(rate8h)}`;
-    return null;
+    if (venue === 'grvt') {
+        return {
+            rateDecimal: row.grvtIntervalRate ?? row.grvt8h ?? null,
+            intervalHours: row.grvtIntervalHours ?? 8,
+        };
+    }
+    if (venue === 'extended') {
+        const hourly = row.extendedHourly ?? (row.extended8h != null ? row.extended8h / 8 : null);
+        return { rateDecimal: hourly, intervalHours: 1 };
+    }
+    return { rateDecimal: null, intervalHours: 8 };
 }
 
-function perpsPairLegAprRows(p) {
+/** Annualized funding % from native venue rate (same basis for all exchanges). */
+function perpsAnnualizeNativeFundingPct(rateDecimal, intervalHours) {
+    if (rateDecimal == null || !Number.isFinite(rateDecimal) || !intervalHours) return null;
+    return rateDecimal * (365 * 24 / intervalHours) * 100;
+}
+
+/** Display APR for tooltip: positive when exchange funding rate is positive. */
+function perpsDisplayFundingAprPct(rateDecimal, intervalHours) {
+    const annual = perpsAnnualizeNativeFundingPct(rateDecimal, intervalHours);
+    if (annual == null) return null;
+    if (rateDecimal > 0) return Math.abs(annual);
+    if (rateDecimal < 0) return -Math.abs(annual);
+    return 0;
+}
+
+function perpsPairLegNotional(p, legKey) {
+    if (legKey === 'a') {
+        if (p.hl?.notional != null) return Math.abs(p.hl.notional);
+        if (p.crossLegA?.notional != null) return Math.abs(p.crossLegA.notional);
+    }
+    if (legKey === 'b') {
+        if (p.nado?.notional != null) return Math.abs(p.nado.notional);
+        if (p.crossLegB?.notional != null) return Math.abs(p.crossLegB.notional);
+    }
+    return p.avgNotional ?? 0;
+}
+
+function perpsLegDailyFundingEstUsd(rateDecimal, intervalHours, size, notional) {
+    if (rateDecimal == null || !notional || !intervalHours) return null;
+    const sign = Math.sign(size || 0);
+    if (!sign) return null;
+    const periodsPerDay = 24 / intervalHours;
+    return -sign * rateDecimal * notional * periodsPerDay;
+}
+
+function perpsPairLegFundingTooltipRows(p) {
     const legs = perpsPairLegs(p);
-    const legVenueA = p.venueA || p.crossLegA?.venue
-        || (legs.a.label === 'HL' ? 'hyperliquid' : legs.a.label === 'Nado' ? 'nado' : legs.a.label.toLowerCase());
-    const legVenueB = p.venueB || p.crossLegB?.venue
-        || (legs.b.label === 'HL' ? 'hyperliquid' : legs.b.label === 'Nado' ? 'nado' : legs.b.label.toLowerCase());
     const row = perpsRateSpreadRow(p.symbol);
-    return [
-        {
-            venue: legVenueA,
-            venueLabel: perpsVenueLabel(legVenueA),
-            side: (legs.a.size > 0) ? 'long' : (legs.a.size < 0) ? 'short' : '',
-            exchangeRate: perpsExchangeFundingRateLabel(legVenueA, row),
-            aprPct: perpsLegFundingAprPct(p.fundingRate8hA, legs.a.size),
-        },
-        {
-            venue: legVenueB,
-            venueLabel: perpsVenueLabel(legVenueB),
-            side: (legs.b.size > 0) ? 'long' : (legs.b.size < 0) ? 'short' : '',
-            exchangeRate: perpsExchangeFundingRateLabel(legVenueB, row),
-            aprPct: perpsLegFundingAprPct(p.fundingRate8hB, legs.b.size),
-        },
+    const venues = [
+        p.venueA || p.crossLegA?.venue || (legs.a.label === 'HL' ? 'hyperliquid' : legs.a.label === 'Nado' ? 'nado' : legs.a.label.toLowerCase()),
+        p.venueB || p.crossLegB?.venue || (legs.b.label === 'HL' ? 'hyperliquid' : legs.b.label === 'Nado' ? 'nado' : legs.b.label.toLowerCase()),
     ];
+    return ['a', 'b'].map((key, i) => {
+        const leg = key === 'a' ? legs.a : legs.b;
+        const venue = venues[i];
+        const native = perpsVenueNativeFundingRate(venue, row);
+        const sideLabel = (leg.size > 0) ? 'Long Funding Rate' : (leg.size < 0) ? 'Short Funding Rate' : 'Funding Rate';
+        return {
+            sideLabel,
+            venueLabel: perpsVenueLabel(venue),
+            annualPct: perpsDisplayFundingAprPct(native.rateDecimal, native.intervalHours),
+            dailyEst: perpsLegDailyFundingEstUsd(native.rateDecimal, native.intervalHours, leg.size, perpsPairLegNotional(p, key)),
+        };
+    });
 }
 
 function perpsBuildCurrentAprTooltipHtml(p, range) {
-    const legRows = perpsPairLegAprRows(p);
+    const legRows = perpsPairLegFundingTooltipRows(p);
     const gross = perpsPairGrossFundingApr(p);
     const legsHtml = legRows.map(l => {
-        const apr = l.aprPct != null ? perpsFmtPct(l.aprPct) : '—';
-        const side = l.side ? ` ${l.side}` : '';
-        const rate = l.exchangeRate ? ` · ${l.exchangeRate}` : '';
-        return `<div class="perps-apr-tip-row"><span>${dashEsc(l.venueLabel)}${side}${rate}</span><span class="perps-apr-tip-apr ${perpsSignedCls(l.aprPct)}">${apr}</span></div>`;
+        const apr = l.annualPct != null ? perpsFmtPct(l.annualPct) : '—';
+        return `<div class="perps-apr-tip-row"><span>${dashEsc(l.sideLabel)}</span><span class="perps-apr-tip-apr ${perpsSignedCls(l.annualPct)}">${apr}</span></div>` +
+            `<div class="perps-apr-tip-meta" style="margin-top:-0.05rem;padding-left:0.1rem;">${dashEsc(l.venueLabel)}</div>`;
     }).join('');
+    const dailyTotal = legRows.reduce((sum, l) => sum + (l.dailyEst ?? 0), 0);
     const spreadLine = p.currentSpread8h != null
         ? `<div class="perps-apr-tip-meta">Net spread (8h) ${perpsFmtRate(p.currentSpread8h)}</div>`
         : '';
     const partialNote = perpsPairUsesPartialWindow(p, range)
-        ? ` · APR column uses ${perpsPairEffectiveDays(p, range)?.toFixed(1)}d since open`
+        ? ` · Net APR uses ${perpsPairEffectiveDays(p, range)?.toFixed(1)}d since open`
         : '';
     return `<div class="perps-apr-tip-title">Funding (live)</div>${legsHtml}<div class="perps-apr-tip-divider"></div>` +
         `<div class="perps-apr-tip-row"><span>Current APR</span><span class="perps-apr-tip-apr ${perpsSignedCls(gross)}">${gross != null ? perpsFmtPct(gross) : '—'}</span></div>` +
+        `<div class="perps-apr-tip-row"><span>Daily Income (est.)</span><span class="perps-apr-tip-apr ${perpsSignedCls(dailyTotal)}">${perpsFmtUsd(dailyTotal)}</span></div>` +
         spreadLine +
-        `<div class="perps-apr-tip-meta">Live rates annualized (3×/day) · excludes trading fees${partialNote}</div>`;
+        `<div class="perps-apr-tip-meta">Annualized live rates · excludes trading fees${partialNote}</div>`;
 }
 
 function perpsShowCurrentAprTip(ev, pairIdx) {
