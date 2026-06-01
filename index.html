@@ -601,15 +601,20 @@ body[data-active-tab="perps"] .market-ticker-strip,
 body[data-active-tab="perps"] .page-content,
 .page-content.tab-perps,
 .page-content:has(#perpsTab.active) {
-  padding:10px 12px;
+  padding:8px 0.65rem;
   overflow:auto;
   background:
     radial-gradient(circle at 74% -8%, rgba(89,240,200,0.08), transparent 32%),
     linear-gradient(180deg, rgba(8,16,25,0.99), rgba(3,7,11,0.99));
 }
+body[data-active-tab="perps"] .topbar,
+.page-content.tab-perps .topbar,
+.page-content:has(#perpsTab.active) .topbar {
+  display:none !important;
+}
 .perps-root {
-  display:flex; flex-direction:column; gap:10px; min-height:calc(100vh - 80px);
-  max-width:1120px; margin:0 auto; padding:0 2.5rem 1rem;
+  display:flex; flex-direction:column; gap:10px; min-height:calc(100vh - 24px);
+  width:100%; max-width:min(1480px, 100%); margin:0 auto; padding:0 0.35rem 1rem;
 }
 .perps-head {
   border:1px solid rgba(134,159,179,0.15); border-radius:10px;
@@ -685,8 +690,8 @@ body[data-active-tab="perps"] .page-content,
 .perps-pnl-title { font-weight:900; font-size:0.82rem; letter-spacing:0.06em; text-transform:uppercase; color:var(--t1); }
 .perps-pnl-note { font-family:var(--ff-mono); font-size:0.62rem; color:#9dacbb; margin-top:0.15rem; }
 .perps-pnl-total { font-family:var(--ff-mono); font-size:1.15rem; font-weight:800; color:var(--t1); }
-.perps-pnl-chart { position:relative; height:160px; margin-top:0.35rem; }
-.perps-pnl-chart.tall { height:200px; }
+.perps-pnl-chart { position:relative; height:248px; margin-top:0.35rem; }
+.perps-pnl-chart.tall { height:288px; }
 .perps-fund-chart-wrap { position:relative; }
 .perps-fund-chart-wrap svg { cursor:crosshair; }
 .perps-fund-bar.pos { fill:#59f0c8; }
@@ -6539,7 +6544,6 @@ body[data-active-tab="loops"] .loop-pos-val,
                 </svg>
                 <div class="perps-chart-tooltip equity" id="perpsEquityChartTooltip"></div>
               </div>
-              <div class="perps-pnl-stats" id="perpsEquityChartStats"></div>
             </div>
           </section>
 
@@ -6572,7 +6576,6 @@ body[data-active-tab="loops"] .loop-pos-val,
                   <div id="perpsDailyFundTipVal"></div>
                 </div>
               </div>
-              <div class="perps-pnl-stats" id="perpsDailyFundStats"></div>
             </div>
           </section>
 
@@ -8158,6 +8161,8 @@ function switchTab(tab, opts = {}) {
     const dividerEl = document.getElementById('topbarDivider');
     if (metricsEl) metricsEl.style.display = isOverview ? '' : 'none';
     if (dividerEl) dividerEl.style.display = isOverview ? '' : 'none';
+    const topbarEl = document.querySelector('.topbar');
+    if (topbarEl) topbarEl.style.display = tab === 'perps' ? 'none' : '';
     if (tab === 'history') renderHistory();
     const _pc = document.querySelector('.page-content');
     if (_pc) _pc.classList.toggle('tab-terminal', tab === 'terminal');
@@ -19592,11 +19597,12 @@ function renderDailyBrief() {
         _currentTab = tab;
         _lastScrollY = 0;
         pageContent.scrollTop = 0;
-        topbar.classList.remove('hidden-bar');
+        if (tab !== 'perps') topbar.classList.remove('hidden-bar');
         if (sidebarBrand) sidebarBrand.classList.remove('collapsed');
     };
 
     pageContent.addEventListener('scroll', function() {
+        if (_currentTab === 'perps') return;
         const st = pageContent.scrollTop;
         const scrolled = st > THRESHOLD;
 
