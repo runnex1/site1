@@ -774,9 +774,11 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 1rem 0.65rem; }
 .perps-pos-head, .perps-pos-row {
   display:grid;
-  grid-template-columns:minmax(138px,1.05fr) minmax(188px,1.38fr) minmax(78px,0.9fr) minmax(72px,0.86fr) minmax(72px,0.86fr) minmax(80px,0.9fr) minmax(24px,0.45fr) minmax(90px,0.95fr) minmax(76px,0.82fr);
-  gap:0.65rem 0.75rem; align-items:center;
+  grid-template-columns:minmax(140px,1.15fr) minmax(210px,1.6fr) minmax(88px,0.95fr) minmax(80px,0.9fr) minmax(92px,0.95fr) minmax(16px,0.35fr) minmax(88px,0.92fr) minmax(80px,0.88fr);
+  gap:0.65rem 1.15rem; align-items:center;
 }
+.perps-pos-legs { padding-right:0.5rem; }
+.perps-pos-leg { gap:0.85rem; }
 .perps-pos-head {
   padding:0.35rem 0.85rem 0.55rem; margin:0 0 0.35rem;
   border-bottom:1px solid rgba(134,159,179,0.12);
@@ -796,7 +798,7 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-token-meta { font-family:var(--ff-mono); font-size:0.58rem; color:#9dacbb; margin-top:0.12rem; }
 .perps-pos-pill { display:inline-flex; font-family:var(--ff-mono); font-size:0.55rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; padding:0.12rem 0.4rem; border-radius:999px; border:1px solid rgba(89,240,200,0.28); color:#59f0c8; background:rgba(89,240,200,0.08); margin-top:0.2rem; }
 .perps-pos-legs { display:flex; flex-direction:column; gap:0.35rem; }
-.perps-pos-leg { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; font-family:var(--ff-mono); font-size:0.68rem; }
+.perps-pos-leg { display:flex; align-items:center; justify-content:space-between; font-family:var(--ff-mono); font-size:0.68rem; }
 .perps-pos-leg-venue { color:#9dacbb; text-transform:capitalize; }
 .perps-pos-metric { min-width:0; }
 .perps-pos-metric-label { font-family:var(--ff-mono); font-size:0.55rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#7f8f9f; }
@@ -20681,6 +20683,7 @@ let _perpsEquityChartState = null;
 const PERPS_FETCH_TIMEOUT_MS = 55000;
 const PERPS_AUTO_REFRESH_MS = 60000;
 const PERPS_CHART_WIDTH = 760;
+const PERPS_EQUITY_CHART_START_MS = Date.parse('2026-06-01T08:00:00.000Z');
 
 function perpsMaskSecret(value) {
     return value ? '*'.repeat(String(value).length) : '';
@@ -21231,7 +21234,12 @@ function perpsBuildEquitySeries(data) {
     const liveBucket = perpsEquityBucketKey(fetchedAt);
     byBucket[liveBucket] = { time: fetchedAt, bucket: liveBucket, totalEquity: totalNow, source: 'live' };
 
-    const points = Object.values(byBucket).sort((a, b) => a.time - b.time);
+    let points = Object.values(byBucket)
+        .filter(p => p.time > PERPS_EQUITY_CHART_START_MS)
+        .sort((a, b) => a.time - b.time);
+    if (!points.length && totalNow > 0) {
+        points = [{ time: fetchedAt, bucket: liveBucket, totalEquity: totalNow, source: 'live' }];
+    }
     return {
         points,
         totalEquityNow: totalNow,
@@ -21836,7 +21844,6 @@ function perpsRenderPortfolioPositions(paired) {
         <div>Leg uPnL</div>
         <div>Total uPnL</div>
         <div>uPnL</div>
-        <div>Funding</div>
         <div>Current APR (net)</div>
         <div class="perps-pos-spacer" aria-hidden="true"></div>
         <div>Margin</div>
@@ -21869,7 +21876,6 @@ function perpsRenderPortfolioPositions(paired) {
             </div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Total uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(totalUpnl)}">${perpsFmtUsd(totalUpnl)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(upnlOnly)}">${perpsFmtUsd(upnlOnly)}</div></div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(p.fundingSinceOpen)}">${perpsFmtUsd(p.fundingSinceOpen)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Current APR</div><div class="perps-pos-metric-val ${perpsSignedCls(currentApr)}">${currentApr != null ? perpsFmtPct(currentApr) : '—'}</div></div>
             <div class="perps-pos-spacer" aria-hidden="true"></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Margin</div><div class="perps-pos-metric-val">${perpsFmtUsd(margin)}</div></div>
