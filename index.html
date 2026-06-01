@@ -20645,7 +20645,7 @@ function perpsStatRangeToApiDays(range) {
     if (range === '1d') return 1;
     if (range === '7d') return 7;
     if (range === '30d') return 30;
-    return 90;
+    return 365;
 }
 
 function perpsSetStatRange(range, btn) {
@@ -21266,6 +21266,7 @@ function perpsBuildDailyFundingBars(points, showFees) {
         return {
             x, y, w: barW, h: val ? Math.max(h, 1.5) : 0,
             day: p.day, val, funding: p.dailyFunding, fees: p.dailyFees, net: p.dailyNet,
+            byVenue: p.byVenue || {},
             cls: val >= 0 ? 'pos' : 'neg',
         };
     });
@@ -21375,8 +21376,8 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
     }
     if (noteEl) {
         noteEl.textContent = _perpsDailyFundShowFees
-            ? `${label} net funding minus trading fees · from exchange payment history`
-            : `${label} gross funding from historical payments · all venues · all positions`;
+            ? `${label} net funding minus fees · HL, Nado, GRVT, Extended payment history · refreshes every 1m`
+            : `${label} gross funding · HL, Nado, GRVT, Extended payment history · refreshes every 1m`;
     }
     if (badge) badge.textContent = label;
     if (statsEl) {
@@ -21409,8 +21410,16 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
             if (tipVal) {
                 const cls = hit.val >= 0 ? 'pos' : 'neg';
                 const label = _perpsDailyFundShowFees ? 'Net' : 'Funding';
+                const venueLabels = { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext' };
+                const venueRows = Object.entries(hit.byVenue || {})
+                    .filter(([, v]) => v)
+                    .map(([venue, v]) => `${venueLabels[venue] || venue} ${perpsFmtUsd(v)}`)
+                    .join(' · ');
                 tipVal.innerHTML = `<span class="perps-fund-tooltip-val ${cls}">${label} ${perpsFmtUsd(hit.val)}</span>` +
-                    (_perpsDailyFundShowFees ? `<div style="margin-top:0.15rem;color:#9dacbb;">Funding ${perpsFmtUsd(hit.funding)} · Fees −${perpsFmtUsd(Math.abs(hit.fees))}</div>` : '');
+                    (_perpsDailyFundShowFees
+                        ? `<div style="margin-top:0.15rem;color:#9dacbb;">Funding ${perpsFmtUsd(hit.funding)} · Fees −${perpsFmtUsd(Math.abs(hit.fees))}</div>`
+                        : '') +
+                    (venueRows ? `<div style="margin-top:0.15rem;color:#9dacbb;">${venueRows}</div>` : '');
             }
         });
         wrap.addEventListener('mouseleave', () => { if (tip) tip.style.display = 'none'; });
