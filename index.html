@@ -719,6 +719,8 @@ body[data-active-tab="perps"] .topbar,
   box-shadow:0 8px 24px rgba(0,0,0,0.35); display:none;
 }
 .perps-fund-tooltip-date { color:#9dacbb; margin-bottom:0.2rem; }
+.perps-fund-tooltip-rows { display:flex; flex-direction:column; gap:0.1rem; margin-top:0.2rem; }
+.perps-fund-tooltip-row { color:#9dacbb; line-height:1.35; white-space:nowrap; }
 .perps-fund-tooltip-val.pos { color:#59f0c8; font-weight:800; }
 .perps-fund-tooltip-val.neg { color:#ff6b81; font-weight:800; }
 .perps-pos-apr-metric { cursor:help; }
@@ -790,9 +792,10 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 1rem 0.65rem; }
 .perps-pos-head, .perps-pos-row {
   display:grid;
-  grid-template-columns:minmax(140px,1.15fr) minmax(210px,1.6fr) minmax(88px,0.95fr) minmax(80px,0.9fr) minmax(92px,0.95fr) minmax(16px,0.35fr) minmax(88px,0.92fr) minmax(80px,0.88fr);
+  grid-template-columns:minmax(140px,1.15fr) minmax(210px,1.6fr) minmax(88px,0.95fr) minmax(80px,0.9fr) minmax(92px,0.95fr) minmax(16px,0.35fr) minmax(88px,0.92fr) minmax(80px,0.88fr) minmax(36px,0.42fr);
   gap:0.65rem 1.15rem; align-items:center;
 }
+.perps-pos-chart-col { display:flex; justify-content:flex-end; align-items:center; }
 .perps-pos-legs { padding-right:0.5rem; }
 .perps-pos-leg { gap:0.85rem; }
 .perps-pos-head {
@@ -801,7 +804,7 @@ body[data-active-tab="perps"] .topbar,
   font-family:var(--ff-mono); font-size:0.55rem; font-weight:800; letter-spacing:0.08em;
   text-transform:uppercase; color:#7f8f9f;
 }
-.perps-pos-head > div:last-child, .perps-pos-apr-col { text-align:right; }
+.perps-pos-head > div:nth-last-child(2), .perps-pos-apr-col { text-align:right; }
 .perps-pos-spacer { min-width:0; }
 .perps-pos-card {
   border:1px solid rgba(134,159,179,0.15); border-radius:12px;
@@ -6643,7 +6646,7 @@ body[data-active-tab="loops"] .loop-pos-val,
               <div class="perps-pos-chart-canvas-wrap" id="perpsPositionChartWrap">
                 <canvas id="perpsPositionChartCanvas" aria-label="Position performance chart"></canvas>
               </div>
-              <div class="perps-pos-chart-empty" id="perpsPositionChartEmpty" style="display:none;">No funding or fee history in the selected window.</div>
+              <div class="perps-pos-chart-empty" id="perpsPositionChartEmpty" style="display:none;">No funding or fee history for this position.</div>
             </div>
           </div>
 
@@ -20746,16 +20749,31 @@ function perpsMaskSecret(value) {
     return value ? '*'.repeat(String(value).length) : '';
 }
 
+function perpsIsValidEthAddress(addr) {
+    return /^0x[a-fA-F0-9]{40}$/.test(String(addr || '').trim());
+}
+
+function perpsResolveHlWallet() {
+    const saved = perpsGetSavedConfig();
+    if (perpsIsValidEthAddress(saved.hyperliquid)) return saved.hyperliquid.trim();
+    const fromField = perpsReadConfigField('perpsHlWallet', 'hyperliquid');
+    return perpsIsValidEthAddress(fromField) ? fromField.trim() : '';
+}
+
 function perpsReadConfigField(id, key) {
     const el = document.getElementById(id);
     const saved = perpsGetSavedConfig();
-    if (!el) return saved[key] || '';
-    if (document.activeElement === el) return el.value.trim();
+    const savedVal = saved[key] || '';
+    if (!el) return savedVal;
+    if (document.activeElement === el) {
+        const live = el.value.trim();
+        return live && !/^\*+$/.test(live) ? live : savedVal;
+    }
     if (el.dataset.perpsReal && !/^\*+$/.test(el.dataset.perpsReal)) return el.dataset.perpsReal;
-    if (el.classList.contains('perps-masked')) return saved[key] || '';
+    if (el.classList.contains('perps-masked')) return savedVal;
     const val = el.value.trim();
     if (val && !/^\*+$/.test(val)) return val;
-    return saved[key] || '';
+    return savedVal;
 }
 
 function perpsApplyWalletMasks() {
@@ -20816,9 +20834,30 @@ function perpsSetStatRange(range, btn) {
 }
 
 function perpsHasValidWallet() {
+    return perpsIsValidEthAddress(perpsResolveHlWallet());
+}
+
+function perpsRepairSavedConfig() {
     const saved = perpsGetSavedConfig();
-    const hl = saved.hyperliquid || perpsReadConfigField('perpsHlWallet', 'hyperliquid');
-    return /^0x[a-fA-F0-9]{40}$/.test(hl);
+    const hlEl = document.getElementById('perpsHlWallet');
+    let hl = String(saved.hyperliquid || '').trim();
+    if (!perpsIsValidEthAddress(hl) && hlEl?.dataset.perpsReal && perpsIsValidEthAddress(hlEl.dataset.perpsReal)) {
+        hl = hlEl.dataset.perpsReal.trim();
+    }
+    if (!perpsIsValidEthAddress(hl)) return;
+    const nado = saved.nado || perpsReadConfigField('perpsNadoWallet', 'nado') || '';
+    const grvtSubAccount = saved.grvtSubAccount || perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || '4860249204328359';
+    if (hl === saved.hyperliquid && saved.configured) return;
+    try {
+        localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({
+            ...saved,
+            hyperliquid: hl,
+            nado,
+            grvtSubAccount,
+            statRange: saved.statRange || _perpsStatRange,
+            configured: true,
+        }));
+    } catch (e) {}
 }
 
 function perpsRenderFundingForTimeWindow(data) {
@@ -21180,6 +21219,7 @@ function perpsLoadConfig() {
     const feesBtn = document.getElementById('perpsFundShowFeesBtn');
     if (feesBtn) feesBtn.classList.toggle('active', _perpsDailyFundShowFees);
     perpsBindConfigInputs();
+    perpsRepairSavedConfig();
     perpsApplyWalletMasks();
     perpsUpdateConfigVisibility();
 }
@@ -21197,7 +21237,7 @@ function perpsBindConfigInputs() {
         });
         el.addEventListener('blur', () => {
             const val = el.value.trim();
-            if (val) el.dataset.perpsReal = val;
+            if (val && !/^\*+$/.test(val)) el.dataset.perpsReal = val;
             perpsSaveConfig();
             if (perpsIsConfigComplete() && !document.getElementById('perpsConfigFoot')?.dataset.forceOpen) {
                 perpsApplyWalletMasks();
@@ -21208,10 +21248,12 @@ function perpsBindConfigInputs() {
 }
 
 function perpsSaveConfig() {
-    const hl = perpsReadConfigField('perpsHlWallet', 'hyperliquid');
+    const prev = perpsGetSavedConfig();
+    let hl = perpsReadConfigField('perpsHlWallet', 'hyperliquid');
+    if (!perpsIsValidEthAddress(hl) && perpsIsValidEthAddress(prev.hyperliquid)) hl = prev.hyperliquid;
     const nado = perpsReadConfigField('perpsNadoWallet', 'nado');
     const grvtSubAccount = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || '4860249204328359';
-    const configured = /^0x[a-fA-F0-9]{40}$/.test(hl);
+    const configured = perpsIsValidEthAddress(hl);
     try {
         localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({
             hyperliquid: hl,
@@ -21662,15 +21704,18 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
                 const cls = hit.val >= 0 ? 'pos' : 'neg';
                 const label = _perpsDailyFundShowFees ? 'Net' : 'Funding';
                 const venueLabels = { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext' };
-                const venueRows = Object.entries(hit.byVenue || {})
+                const detailRows = [];
+                if (_perpsDailyFundShowFees) {
+                    detailRows.push(`Funding ${perpsFmtUsd(hit.funding)}`);
+                    detailRows.push(`Fees −${perpsFmtUsd(Math.abs(hit.fees))}`);
+                }
+                Object.entries(hit.byVenue || {})
                     .filter(([, v]) => v)
-                    .map(([venue, v]) => `${venueLabels[venue] || venue} ${perpsFmtUsd(v)}`)
-                    .join(' · ');
-                tipVal.innerHTML = `<span class="perps-fund-tooltip-val ${cls}">${label} ${perpsFmtUsd(hit.val)}</span>` +
-                    (_perpsDailyFundShowFees
-                        ? `<div style="margin-top:0.15rem;color:#9dacbb;">Funding ${perpsFmtUsd(hit.funding)} · Fees −${perpsFmtUsd(Math.abs(hit.fees))}</div>`
-                        : '') +
-                    (venueRows ? `<div style="margin-top:0.15rem;color:#9dacbb;">${venueRows}</div>` : '');
+                    .forEach(([venue, v]) => detailRows.push(`${venueLabels[venue] || venue} ${perpsFmtUsd(v)}`));
+                const detailHtml = detailRows.length
+                    ? `<div class="perps-fund-tooltip-rows">${detailRows.map(r => `<div class="perps-fund-tooltip-row">${r}</div>`).join('')}</div>`
+                    : '';
+                tipVal.innerHTML = `<span class="perps-fund-tooltip-val ${cls}">${label} ${perpsFmtUsd(hit.val)}</span>${detailHtml}`;
             }
         };
         wrap.onmouseleave = () => { if (tip) tip.style.display = 'none'; };
@@ -22057,10 +22102,12 @@ function perpsOpenPositionChart(pairIdx) {
     const canvas = document.getElementById('perpsPositionChartCanvas');
     if (!modal || !canvas) return;
 
-    const rangeLabel = perpsStatRangeLabel(_perpsStatRange);
     const legVenueA = p.venueA || p.crossLegA?.venue || 'hyperliquid';
     const legVenueB = p.venueB || p.crossLegB?.venue || 'nado';
-    const series = perpsFilterPairDailySeries(p.dailyPerformanceSeries || [], p, _perpsStatRange);
+    const series = perpsFilterPairDailySeries(p.dailyPerformanceSeries || [], p, 'all');
+    const rangeLabel = p.daysOpen != null && p.daysOpen > 0
+        ? `${Math.ceil(p.daysOpen)}d since open`
+        : 'All time';
     const totals = perpsSumDailyFundingSeries(series, true);
 
     if (meta) {
@@ -22305,6 +22352,7 @@ function perpsRenderPortfolioPositions(paired) {
         <div class="perps-pos-spacer" aria-hidden="true"></div>
         <div>Margin</div>
         <div>Net APR</div>
+        <div aria-hidden="true"></div>
     </div>`;
     el.innerHTML = head + paired.map((p, pairIdx) => {
         const legs = perpsPairLegs(p);
@@ -22321,7 +22369,6 @@ function perpsRenderPortfolioPositions(paired) {
         return `<div class="perps-pos-card"><div class="perps-pos-row">
             <div class="perps-pos-token">
                 <div class="perps-pos-token-row">
-                    <button type="button" class="perps-pos-chart-btn" aria-label="Position performance chart" onclick="perpsOpenPositionChart(${pairIdx}); event.stopPropagation();">${perpsPositionChartIconSvg()}</button>
                     ${makeLogo(p.symbol, false, 36)}
                     <div>
                         <div class="perps-pos-token-name">${dashEsc(p.symbol)}</div>
@@ -22340,6 +22387,7 @@ function perpsRenderPortfolioPositions(paired) {
             <div class="perps-pos-spacer" aria-hidden="true"></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Margin</div><div class="perps-pos-metric-val">${perpsFmtUsd(margin)}</div></div>
             <div class="perps-pos-apr-col"><div class="perps-pos-metric-label">Net APR · ${dashEsc(perpsStatRangeLabel(_perpsStatRange))}</div><div class="perps-pos-apr-val ${perpsSignedCls(periodApr)}">${periodApr != null ? perpsFmtPct(periodApr) : '—'}</div></div>
+            <div class="perps-pos-chart-col"><button type="button" class="perps-pos-chart-btn" aria-label="Position performance chart" onclick="perpsOpenPositionChart(${pairIdx}); event.stopPropagation();">${perpsPositionChartIconSvg()}</button></div>
         </div></div>`;
     }).join('');
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
@@ -22588,12 +22636,10 @@ function perpsRenderDashboard(data) {
 }
 
 async function perpsRefresh(silent = false) {
-    const saved = perpsGetSavedConfig();
-    const hl = /^0x[a-fA-F0-9]{40}$/.test(saved.hyperliquid || '')
-        ? saved.hyperliquid
-        : perpsReadConfigField('perpsHlWallet', 'hyperliquid');
+    perpsRepairSavedConfig();
+    const hl = perpsResolveHlWallet();
     const nadoRaw = perpsReadConfigField('perpsNadoWallet', 'nado');
-    if (!hl || !/^0x[a-fA-F0-9]{40}$/.test(hl)) {
+    if (!hl) {
         if (!silent) perpsSetStatus('Enter a valid Hyperliquid wallet and click Save & connect.');
         return;
     }
