@@ -6531,7 +6531,7 @@ body[data-active-tab="loops"] .loop-pos-val,
               </div>
               <div class="perps-stat-sub" id="perpsStatEquitySub">HL · Nado · GRVT · Ext</div>
             </div>
-            <div class="perps-stat-card"><div class="perps-stat-label">Total PnL</div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">live uPnL + funding in window</div></div>
+            <div class="perps-stat-card"><div class="perps-stat-label">Total PnL</div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">mark uPnL + funding accrued on positions</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Avg APR</div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">size-weighted · current spread</div></div>
           </section>
@@ -21759,22 +21759,24 @@ function perpsComputePortfolioStats(data) {
     const venueEquity = { hl: hlEquity, nado: nadoEquity, grvt: grvtEquity, extended: extendedEquity, total: totalEquity };
 
     let upnlTotal = 0;
-    for (const p of paired) upnlTotal += p.combinedUpnl ?? 0;
-    for (const u of unhedged) upnlTotal += u.unrealizedPnl ?? 0;
+    let fundingAccrualTotal = 0;
+    for (const p of paired) {
+        upnlTotal += p.combinedUpnl ?? 0;
+        fundingAccrualTotal += p.fundingSinceOpen ?? 0;
+    }
+    for (const u of unhedged) {
+        upnlTotal += u.unrealizedPnl ?? 0;
+        fundingAccrualTotal += u.funding ?? 0;
+    }
 
     const dailySeries = perpsFilterDailySeries(data.dailyFundingSeries || [], range);
     let fundingTotal = 0;
-    let totalPnl = 0;
     if (!perpsStatRangeMs(range)) {
-        for (const p of paired) fundingTotal += p.fundingSinceOpen ?? 0;
-        for (const u of unhedged) fundingTotal += u.funding ?? 0;
+        fundingTotal = fundingAccrualTotal;
     } else {
         fundingTotal = dailySeries.reduce((sum, row) => sum + (row.dailyFunding || 0), 0);
     }
-    const periodFundingNet = perpsStatRangeMs(range)
-        ? dailySeries.reduce((sum, row) => sum + (row.dailyNet ?? row.dailyFunding ?? 0), 0)
-        : fundingTotal;
-    totalPnl = upnlTotal + periodFundingNet;
+    const totalPnl = upnlTotal + fundingAccrualTotal;
 
     const apr = perpsComputeWeightedPositionApr(paired, range);
     return {
@@ -21783,6 +21785,7 @@ function perpsComputePortfolioStats(data) {
         venueEquity,
         totalPnl,
         upnlTotal,
+        fundingAccrualTotal,
         fundingTotal,
         feesTotal: s.totalFees ?? 0,
         positionCount: paired.length + unhedged.length,
@@ -21814,7 +21817,7 @@ function perpsRenderStatsBar(data) {
     if (equitySub) equitySub.textContent = 'Hover for exchange breakdown';
     const pnlSub = document.getElementById('perpsStatPnlSub');
     if (pnlSub) {
-        pnlSub.textContent = `${stats.rangeLabel} · ${perpsFmtUsd(stats.upnlTotal)} uPnL + ${perpsFmtUsd(stats.fundingTotal)} funding`;
+        pnlSub.textContent = `${perpsFmtUsd(stats.upnlTotal)} mark · ${perpsFmtUsd(stats.fundingAccrualTotal ?? stats.fundingTotal)} funding on books`;
     }
     const fundSub = document.getElementById('perpsStatFundingSub');
     if (fundSub) fundSub.textContent = `${stats.rangeLabel} · gross funding`;
