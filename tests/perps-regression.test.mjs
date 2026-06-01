@@ -9,7 +9,11 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { buildDailyFundingSeries, computeCombinedNetDeposits } = require('../lib/perps.js');
+const {
+  appendEquitySnapshotStore,
+  buildDailyFundingSeries,
+  computeCombinedNetDeposits,
+} = require('../lib/perps.js');
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const perpsJs = readFileSync(join(ROOT, 'lib', 'perps.js'), 'utf8');
@@ -70,5 +74,35 @@ assert.match(indexHtml, /perpsRenderAlerts\(data\.paired \|\| \[\], data\.unhedg
 assert.doesNotMatch(perpsJs, /positions\.reduce\(\(s, p\) => s \+ \(p\.notional \|\| 0\), 0\)/, 'Extended notional must not be used as equity');
 assert.match(perpsJs, /funding: extendedFundingWindow,/, 'Extended response must expose selected-window funding');
 assert.match(perpsJs, /fundingSinceOpen: extendedFundingSinceOpen,/, 'Extended response must preserve since-open funding separately');
+
+{
+  const dashboard = (fetchedAt, total, overrides = {}) => ({
+    fetchedAt,
+    equityNow: { hl: total - 100, nado: 100, grvt: 0, extended: 0 },
+    summary: {
+      hlAccountValue: total - 100,
+      nadoAccountValue: 100,
+      grvtConfigured: false,
+      extendedConfigured: false,
+      combinedNetDeposits: 0,
+      adjustedEquity: total,
+      equitySnapshotEligible: true,
+      ...overrides,
+    },
+  });
+  const first = appendEquitySnapshotStore({}, dashboard(Date.UTC(2026, 5, 2, 8, 5), 1000));
+  const second = appendEquitySnapshotStore(first, dashboard(Date.UTC(2026, 5, 2, 11, 55), 1200));
+  assert.equal(Object.keys(second).length, 1, 'same 4h bucket must contain only one snapshot');
+  assert.equal(second['2026-06-02T08'].totalEquity, 1000, 'minute refreshes must not rewrite a 4h snapshot');
+
+  const incomplete = appendEquitySnapshotStore(second, dashboard(Date.UTC(2026, 5, 2, 12, 5), 200, {
+    equitySnapshotEligible: false,
+    equitySnapshotIssue: 'GRVT equity unavailable',
+  }));
+  assert.equal(Object.keys(incomplete).length, 1, 'incomplete venue reads must not create equity snapshots');
+}
+
+assert.match(indexHtml, /if \(store\[bucket\]\) return;/, 'browser snapshots must be append-only within each 4h bucket');
+assert.match(indexHtml, /if \(!perpsIsEquitySnapshotEligible\(data\)\) return;/, 'browser snapshots must reject incomplete reads');
 
 console.log('PASS: perps accounting and dashboard regression checks');

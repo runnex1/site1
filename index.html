@@ -21374,12 +21374,9 @@ async function perpsSaveConfigAndRefresh() {
 function perpsMergeSnapshotsFromServer(serverSnaps) {
     try {
         const local = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
-        const merged = { ...serverSnaps };
-        for (const [date, snap] of Object.entries(local)) {
-            const serverSnap = merged[date];
-            const localAt = Number(snap?.fetchedAt) || Date.parse(snap?.date) || 0;
-            const serverAt = Number(serverSnap?.fetchedAt) || Date.parse(serverSnap?.date) || 0;
-            if (!serverSnap || localAt >= serverAt) merged[date] = snap;
+        const merged = { ...local };
+        for (const [bucket, snap] of Object.entries(serverSnaps || {})) {
+            if (!merged[bucket]) merged[bucket] = snap;
         }
         localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(merged));
     } catch (e) {}
@@ -21603,6 +21600,7 @@ function perpsSetStatus(msg) {
 
 function perpsSaveSnapshot(data) {
     try {
+        if (!perpsIsEquitySnapshotEligible(data)) return;
         const bucket = perpsEquityBucketKey(data.fetchedAt || Date.now());
         const s = data.summary;
         const hlAccountValue = s.hlAccountValue ?? data.equityNow?.hl ?? 0;
@@ -21612,9 +21610,8 @@ function perpsSaveSnapshot(data) {
         const totalEquity = hlAccountValue + nadoAccountValue + grvtAccountValue + extendedAccountValue;
         const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
         const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
-        const existing = store[bucket];
+        if (store[bucket]) return;
         const fetchedAt = data.fetchedAt || Date.now();
-        if (existing && Number(existing.fetchedAt) > fetchedAt) return;
         store[bucket] = {
             date: new Date(fetchedAt).toISOString().slice(0, 10),
             bucket,
@@ -21633,6 +21630,18 @@ function perpsSaveSnapshot(data) {
         localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(pruned));
         if (typeof saveData === 'function') saveData();
     } catch (e) {}
+}
+
+function perpsIsEquitySnapshotEligible(data) {
+    const s = data?.summary || {};
+    if (s.equitySnapshotEligible === false) return false;
+    const values = [
+        s.hlAccountValue ?? data?.equityNow?.hl,
+        s.nadoAccountValue ?? data?.equityNow?.nado,
+    ];
+    if (s.grvtConfigured) values.push(s.grvtAccountValue ?? data?.equityNow?.grvt);
+    if (s.extendedConfigured) values.push(s.extendedAccountValue ?? data?.equityNow?.extended);
+    return values.every(Number.isFinite);
 }
 
 
@@ -21655,7 +21664,9 @@ function perpsBuildEquitySeries(data) {
     const totalNow = hlNow + nadoNow + grvtNow + extendedNow;
     const fetchedAt = data.fetchedAt || Date.now();
     const liveBucket = perpsEquityBucketKey(fetchedAt);
-    byBucket[liveBucket] = { time: fetchedAt, bucket: liveBucket, totalEquity: totalNow, source: 'live' };
+    if (!byBucket[liveBucket] && perpsIsEquitySnapshotEligible(data)) {
+        byBucket[liveBucket] = { time: fetchedAt, bucket: liveBucket, totalEquity: totalNow, source: 'live' };
+    }
 
     let points = Object.values(byBucket)
         .filter(p => {
