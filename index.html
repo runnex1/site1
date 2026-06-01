@@ -20754,6 +20754,10 @@ function perpsCollectEquitySnapshotPoints(data) {
             points.push({
                 time,
                 day: snap.date || perpsIsoDayFromMs(time),
+                hl,
+                nado,
+                grvt,
+                extended,
                 totalEquity,
                 cumulativeNetDeposits: cumulativeNetDeposits != null ? Number(cumulativeNetDeposits) : null,
                 adjustedEquity,
@@ -20774,6 +20778,10 @@ function perpsCollectEquitySnapshotPoints(data) {
             points.push({
                 time: fetchedAt,
                 day: perpsIsoDayFromMs(fetchedAt),
+                hl,
+                nado,
+                grvt,
+                extended,
                 totalEquity,
                 cumulativeNetDeposits: Number(combinedNetDeposits),
                 adjustedEquity: s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? (totalEquity - Number(combinedNetDeposits)),
@@ -20782,6 +20790,76 @@ function perpsCollectEquitySnapshotPoints(data) {
         }
     }
     return points.sort((a, b) => a.time - b.time);
+}
+
+function perpsVenueDepositDelta(payments, t0, t1, hlStrategy = false) {
+    const rows = hlStrategy ? perpsHlStrategyPayments(payments) : (payments || []);
+    return rows
+        .filter(p => p.time > t0 && p.time <= t1)
+        .reduce((s, p) => s + (p.usdc || 0), 0);
+}
+
+function perpsEquityOnboardingDelta(prev, curr, flows) {
+    const threshold = 500;
+    let onboarding = 0;
+    const venues = [
+        { key: 'hl', flowKey: 'hl', hlStrategy: true },
+        { key: 'nado', flowKey: 'nado', hlStrategy: false },
+        { key: 'grvt', flowKey: 'grvt', hlStrategy: false },
+        { key: 'extended', flowKey: 'extended', hlStrategy: false },
+    ];
+    for (const v of venues) {
+        const prevV = prev[v.key] ?? 0;
+        const currV = curr[v.key] ?? 0;
+        const delta = currV - prevV;
+        if (delta <= 0) continue;
+        const payments = flows?.[v.flowKey]?.payments || [];
+        const depDelta = perpsVenueDepositDelta(payments, prev.time, curr.time, v.hlStrategy);
+        if (prevV === 0 && currV >= threshold) {
+            // Newly tracked exchange: credit deposits in window, rest is existing capital.
+            onboarding += Math.max(0, currV - depDelta);
+        } else {
+            const unexplained = delta - depDelta;
+            if (unexplained > threshold) onboarding += unexplained;
+        }
+    }
+    return onboarding;
+}
+
+function perpsNormalizeEquityPointsForPnl(points, data) {
+    if (!points.length) return [];
+    const flows = data?.capitalFlows;
+    const hlPay = flows?.hl?.payments || [];
+    const nadoPay = flows?.nado?.payments || [];
+    const grvtPay = flows?.grvt?.payments || [];
+    const extPay = flows?.extended?.payments || [];
+    const sorted = [...points].sort((a, b) => a.time - b.time);
+    let onboardingCumulative = 0;
+    const out = [];
+
+    for (let i = 0; i < sorted.length; i++) {
+        const p = sorted[i];
+        const prev = i > 0 ? sorted[i - 1] : null;
+        const depositsAtTime = flows
+            ? perpsNetDepositsAtTime(hlPay, nadoPay, p.time, grvtPay, extPay)
+            : Number(p.cumulativeNetDeposits ?? 0);
+
+        if (i === 0) {
+            onboardingCumulative = Math.max(0, p.totalEquity - depositsAtTime);
+        } else if (prev) {
+            onboardingCumulative += perpsEquityOnboardingDelta(prev, p, flows);
+        }
+
+        const effectiveDeposits = depositsAtTime + onboardingCumulative;
+        out.push({
+            ...p,
+            depositsAtTime,
+            onboardingCumulative,
+            effectiveDeposits,
+            adjustedEquity: p.totalEquity - effectiveDeposits,
+        });
+    }
+    return out;
 }
 
 function perpsCollapseEquityPointsByDay(points) {
@@ -20794,7 +20872,8 @@ function perpsCollapseEquityPointsByDay(points) {
 }
 
 function perpsBuildWalletPnlDailySeries(data, range) {
-    const allDays = perpsCollapseEquityPointsByDay(perpsCollectEquitySnapshotPoints(data));
+    const normalized = perpsNormalizeEquityPointsForPnl(perpsCollectEquitySnapshotPoints(data), data);
+    const allDays = perpsCollapseEquityPointsByDay(normalized);
     if (!allDays.length) {
         return { points: [], periodPnl: null, baseline: null, latest: null, insufficient: true, dayCount: 0 };
     }
