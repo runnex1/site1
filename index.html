@@ -601,7 +601,7 @@ body[data-active-tab="perps"] .market-ticker-strip,
 body[data-active-tab="perps"] .page-content,
 .page-content.tab-perps,
 .page-content:has(#perpsTab.active) {
-  padding:8px 0.65rem;
+  padding:10px 2.75rem;
   overflow:auto;
   background:
     radial-gradient(circle at 74% -8%, rgba(89,240,200,0.08), transparent 32%),
@@ -613,8 +613,8 @@ body[data-active-tab="perps"] .topbar,
   display:none !important;
 }
 .perps-root {
-  display:flex; flex-direction:column; gap:10px; min-height:calc(100vh - 24px);
-  width:100%; max-width:min(1480px, 100%); margin:0 auto; padding:0 0.35rem 1rem;
+  display:flex; flex-direction:column; gap:12px; min-height:calc(100vh - 24px);
+  width:100%; max-width:min(1180px, calc(100% - 2rem)); margin:0 auto; padding:0 1.35rem 1.25rem;
 }
 .perps-head {
   border:1px solid rgba(134,159,179,0.15); border-radius:10px;
@@ -652,7 +652,7 @@ body[data-active-tab="perps"] .topbar,
   box-shadow:inset 0 1px 0 rgba(255,255,255,0.035), 0 14px 38px rgba(0,0,0,0.14);
 }
 .perps-panel-head {
-  padding:0.7rem 0.9rem; border-bottom:1px solid rgba(134,159,179,0.15);
+  padding:0.7rem 1.15rem; border-bottom:1px solid rgba(134,159,179,0.15);
   display:flex; align-items:center; justify-content:space-between; gap:0.5rem;
 }
 .perps-panel-title { font-weight:900; letter-spacing:0.08em; text-transform:uppercase; font-size:0.82rem; color:var(--t1); }
@@ -692,6 +692,10 @@ body[data-active-tab="perps"] .topbar,
 .perps-pnl-total { font-family:var(--ff-mono); font-size:1.15rem; font-weight:800; color:var(--t1); }
 .perps-pnl-chart { position:relative; height:248px; margin-top:0.35rem; }
 .perps-pnl-chart.tall { height:288px; }
+.perps-chart-compact {
+  max-width:640px; width:100%; margin-left:auto; margin-right:auto;
+}
+.perps-chart-compact svg { display:block; width:100%; height:100%; }
 .perps-fund-chart-wrap { position:relative; }
 .perps-fund-chart-wrap svg { cursor:crosshair; }
 .perps-fund-bar.pos { fill:#59f0c8; }
@@ -718,13 +722,6 @@ body[data-active-tab="perps"] .topbar,
   border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.03); color:#9dacbb; cursor:pointer;
 }
 .perps-fund-toggle.active { border-color:rgba(89,240,200,0.35); color:#59f0c8; background:rgba(89,240,200,0.08); }
-.perps-chart-tabs { display:flex; align-items:center; gap:0.65rem; }
-.perps-chart-tab {
-  font-family:var(--ff-display); font-size:1rem; font-weight:900; letter-spacing:0.01em;
-  color:#7f8f9f; background:none; border:none; padding:0; cursor:pointer;
-}
-.perps-chart-tab.active { color:var(--t1); }
-.perps-chart-tab:not(.active):hover { color:#c4d0dc; }
 .perps-refresh-bar {
   display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap;
   padding:0.45rem 0.85rem; border-radius:10px;
@@ -741,7 +738,7 @@ body[data-active-tab="perps"] .topbar,
 }
 .perps-stat-range-row {
   display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap;
-  margin-bottom:-2px;
+  margin-bottom:-2px; padding:0 0.35rem;
 }
 .perps-stat-range-group { display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center; }
 .perps-stat-range-label { font-family:var(--ff-mono); font-size:0.6rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#9dacbb; margin-right:0.15rem; }
@@ -768,7 +765,7 @@ body[data-active-tab="perps"] .topbar,
 .perps-stat-sub { margin-top:0.15rem; font-family:var(--ff-mono); font-size:0.58rem; color:#7f8f9f; }
 .perps-equity-line { fill:none; stroke:#a78bfa; stroke-width:2.2; vector-effect:non-scaling-stroke; }
 .perps-equity-area { fill:rgba(167,139,250,0.14); stroke:none; }
-.perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 0.5rem 0.5rem; }
+.perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 1rem 0.65rem; }
 .perps-pos-head, .perps-pos-row {
   display:grid;
   grid-template-columns:minmax(138px,1.05fr) minmax(188px,1.38fr) minmax(78px,0.9fr) minmax(72px,0.86fr) minmax(72px,0.86fr) minmax(80px,0.9fr) minmax(24px,0.45fr) minmax(90px,0.95fr) minmax(76px,0.82fr);
@@ -6535,7 +6532,7 @@ body[data-active-tab="loops"] .loop-pos-val,
               <div class="perps-panel-title">Portfolio Equity</div>
               <span class="perps-pill" style="border-color:rgba(167,139,250,0.35);color:#c4b5fd;background:rgba(167,139,250,0.1);" id="perpsEquityChartBadge">—</span>
             </div>
-            <div class="perps-pnl-card" style="margin:0 0.5rem 0.5rem;">
+            <div class="perps-pnl-card" style="margin:0 0.85rem 0.65rem;">
               <div class="perps-pnl-top">
                 <div>
                   <div class="perps-pnl-title">Total equity · all venues</div>
@@ -6543,8 +6540,8 @@ body[data-active-tab="loops"] .loop-pos-val,
                 </div>
                 <div class="perps-pnl-total" id="perpsEquityChartTotal">—</div>
               </div>
-              <div class="perps-pnl-chart hoverable" id="perpsEquityChartWrap">
-                <svg id="perpsEquityChart" viewBox="0 0 760 160" preserveAspectRatio="none" role="img" aria-label="Portfolio equity chart">
+              <div class="perps-pnl-chart hoverable perps-chart-compact" id="perpsEquityChartWrap">
+                <svg id="perpsEquityChart" viewBox="0 0 560 160" preserveAspectRatio="none" role="img" aria-label="Portfolio equity chart">
                   <path class="perps-equity-area" id="perpsEquityArea" d=""></path>
                   <path class="perps-equity-line" id="perpsEquityLine" d=""></path>
                   <circle class="perps-equity-hover-dot" id="perpsEquityHoverDot" r="4" cx="0" cy="0" style="display:none"></circle>
@@ -6556,27 +6553,24 @@ body[data-active-tab="loops"] .loop-pos-val,
 
           <section class="perps-panel">
             <div class="perps-panel-head">
-              <div class="perps-chart-tabs">
-                <button type="button" class="perps-chart-tab active" id="perpsChartTabFunding" onclick="perpsSetSecondaryChart('funding',this)">Funding</button>
-                <button type="button" class="perps-chart-tab" id="perpsChartTabPnl" onclick="perpsSetSecondaryChart('pnl',this)">PnL</button>
-              </div>
+              <div class="perps-panel-title">Funding</div>
               <div class="perps-fund-controls">
                 <button type="button" class="perps-fund-toggle" id="perpsFundShowFeesBtn" onclick="perpsToggleFundingFees()">Show fees</button>
                 <span class="perps-pill blue" id="perpsDailyFundBadge">7D</span>
               </div>
             </div>
-            <div class="perps-pnl-card" style="margin:0 0.5rem 0.5rem;">
+            <div class="perps-pnl-card" style="margin:0 0.85rem 0.65rem;">
               <div class="perps-pnl-top">
                 <div>
-                  <div class="perps-pnl-title" id="perpsDailyChartTitle">Daily funding collected</div>
+                  <div class="perps-pnl-title">Daily funding collected</div>
                   <div class="perps-pnl-note" id="perpsDailyFundNote">Sum of historical funding payments across HL · Nado · GRVT · Extended</div>
                 </div>
                 <div class="perps-pnl-total" id="perpsDailyFundTotal">—</div>
               </div>
-              <div class="perps-fund-chart-wrap perps-pnl-chart tall" id="perpsDailyFundWrap">
-                <svg id="perpsDailyFundChart" viewBox="0 0 760 200" preserveAspectRatio="none" role="img" aria-label="Daily funding or portfolio PnL chart">
+              <div class="perps-fund-chart-wrap perps-pnl-chart tall perps-chart-compact" id="perpsDailyFundWrap">
+                <svg id="perpsDailyFundChart" viewBox="0 0 560 200" preserveAspectRatio="none" role="img" aria-label="Daily funding bar chart">
                   <g id="perpsDailyFundGrid"></g>
-                  <line class="perps-fund-zero" id="perpsDailyFundZero" x1="48" y1="100" x2="748" y2="100"></line>
+                  <line class="perps-fund-zero" id="perpsDailyFundZero" x1="48" y1="100" x2="548" y2="100"></line>
                   <g id="perpsDailyFundBars"></g>
                   <g id="perpsDailyFundYLabels"></g>
                   <g id="perpsDailyFundXLabels"></g>
@@ -20602,8 +20596,6 @@ function watcherApplyFilters() {
 // ── Perps Funding Arb (Hyperliquid + Nado) ───────────────────────────
 let _perpsCache = null;
 let _perpsDailyFundSeries = [];
-let _perpsWalletPnlSeries = [];
-let _perpsSecondaryChart = 'funding';
 let _perpsDailyFundShowFees = false;
 let _perpsDailyFundChartState = null;
 let _perpsRefreshTimer = null;
@@ -20615,6 +20607,7 @@ let _perpsVenueEquity = null;
 let _perpsEquityChartState = null;
 const PERPS_FETCH_TIMEOUT_MS = 55000;
 const PERPS_AUTO_REFRESH_MS = 60000;
+const PERPS_CHART_WIDTH = 560;
 
 function perpsMaskSecret(value) {
     return value ? '*'.repeat(String(value).length) : '';
@@ -20687,7 +20680,7 @@ function perpsSetStatRange(range, btn) {
     if (_perpsLastData) {
         perpsRenderStatsBar(_perpsLastData);
         perpsRenderPortfolioPositions(_perpsLastData.paired || []);
-        perpsRenderSecondaryChart(_perpsLastData);
+        perpsRenderFundingForTimeWindow(_perpsLastData);
     }
 }
 
@@ -20698,217 +20691,9 @@ function perpsHasValidWallet() {
 }
 
 function perpsRenderFundingForTimeWindow(data) {
-    perpsRenderSecondaryChart(data);
-}
-
-function perpsSetSecondaryChart(mode, btn) {
-    _perpsSecondaryChart = mode === 'pnl' ? 'pnl' : 'funding';
-    document.querySelectorAll('.perps-chart-tab').forEach(b => {
-        b.classList.toggle('active', b === btn);
-    });
-    perpsUpdateSecondaryChartChrome();
-    if (_perpsLastData) perpsRenderSecondaryChart(_perpsLastData);
-}
-
-function perpsUpdateSecondaryChartChrome() {
-    const feesBtn = document.getElementById('perpsFundShowFeesBtn');
-    if (feesBtn) feesBtn.style.display = _perpsSecondaryChart === 'pnl' ? 'none' : '';
-}
-
-function perpsRenderSecondaryChart(data) {
-    const rangeLabel = perpsStatRangeLabel(_perpsStatRange);
-    if (_perpsSecondaryChart === 'pnl') {
-        const built = perpsBuildWalletPnlDailySeries(data, _perpsStatRange);
-        _perpsWalletPnlSeries = built.points || [];
-        perpsRenderDailyWalletPnlChart(built, rangeLabel);
-        return;
-    }
     const series = perpsFilterDailySeries(data?.dailyFundingSeries || [], _perpsStatRange);
     _perpsDailyFundSeries = series;
-    perpsRenderDailyFundingChart(series, rangeLabel);
-}
-
-function perpsIsoDayFromMs(ms) {
-    return new Date(ms).toISOString().slice(0, 10);
-}
-
-function perpsCollectEquitySnapshotPoints(data) {
-    const points = [];
-    try {
-        const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
-        for (const [key, snap] of Object.entries(store)) {
-            const time = Number(snap.fetchedAt) || perpsParseBucketTime(snap.bucket || key);
-            if (!time) continue;
-            const hl = snap.hlAccountValue ?? 0;
-            const nado = snap.nadoAccountValue ?? 0;
-            const grvt = snap.grvtAccountValue ?? 0;
-            const extended = snap.extendedAccountValue ?? 0;
-            const totalEquity = snap.totalEquity ?? (hl + nado + grvt + extended);
-            if (!Number.isFinite(totalEquity)) continue;
-            const cumulativeNetDeposits = snap.cumulativeNetDeposits;
-            points.push({
-                time,
-                day: snap.date || perpsIsoDayFromMs(time),
-                hl,
-                nado,
-                grvt,
-                extended,
-                totalEquity,
-                cumulativeNetDeposits: cumulativeNetDeposits != null ? Number(cumulativeNetDeposits) : null,
-                source: 'snapshot',
-            });
-        }
-    } catch (e) {}
-    if (data) {
-        const s = data.summary || {};
-        const hl = s.hlAccountValue ?? data.equityNow?.hl ?? 0;
-        const nado = s.nadoAccountValue ?? data.equityNow?.nado ?? 0;
-        const grvt = s.grvtAccountValue ?? data.equityNow?.grvt ?? 0;
-        const extended = s.extendedAccountValue ?? data.equityNow?.extended ?? 0;
-        const totalEquity = hl + nado + grvt + extended;
-        const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits;
-        if (combinedNetDeposits != null && Number.isFinite(totalEquity)) {
-            const fetchedAt = data.fetchedAt || Date.now();
-            points.push({
-                time: fetchedAt,
-                day: perpsIsoDayFromMs(fetchedAt),
-                hl,
-                nado,
-                grvt,
-                extended,
-                totalEquity,
-                cumulativeNetDeposits: Number(combinedNetDeposits),
-                adjustedEquity: s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? (totalEquity - Number(combinedNetDeposits)),
-                source: 'live',
-            });
-        }
-    }
-    return points.sort((a, b) => a.time - b.time);
-}
-
-function perpsVenueDepositDelta(payments, t0, t1, hlStrategy = false) {
-    const rows = hlStrategy ? perpsHlStrategyPayments(payments) : (payments || []);
-    return rows
-        .filter(p => p.time > t0 && p.time <= t1)
-        .reduce((s, p) => s + (p.usdc || 0), 0);
-}
-
-function perpsFlowPayments(data) {
-    const flows = data?.capitalFlows;
-    return {
-        flows,
-        hl: flows?.hl?.payments || [],
-        nado: flows?.nado?.payments || [],
-        grvt: flows?.grvt?.payments || [],
-        extended: flows?.extended?.payments || [],
-        hasFlows: Boolean(flows),
-    };
-}
-
-function perpsDepositsAtPoint(p, flowPack) {
-    if (flowPack.hasFlows) {
-        return perpsNetDepositsAtTime(flowPack.hl, flowPack.nado, p.time, flowPack.grvt, flowPack.extended);
-    }
-    const stored = p.cumulativeNetDeposits;
-    return stored != null && Number.isFinite(stored) ? stored : null;
-}
-
-function perpsEquityOnboardingDelta(prev, curr, flows) {
-    const threshold = 500;
-    let onboarding = 0;
-    const venues = [
-        { key: 'hl', flowKey: 'hl', hlStrategy: true },
-        { key: 'nado', flowKey: 'nado', hlStrategy: false },
-        { key: 'grvt', flowKey: 'grvt', hlStrategy: false },
-        { key: 'extended', flowKey: 'extended', hlStrategy: false },
-    ];
-    for (const v of venues) {
-        const prevV = prev[v.key] ?? 0;
-        const currV = curr[v.key] ?? 0;
-        if (prevV === 0 && currV >= threshold) {
-            // Venue newly appears in snapshots — existing balance is capital, not PnL.
-            onboarding += currV;
-            continue;
-        }
-        const delta = currV - prevV;
-        if (delta <= threshold) continue;
-        const payments = flows?.[v.flowKey]?.payments || [];
-        const depDelta = perpsVenueDepositDelta(payments, prev.time, curr.time, v.hlStrategy);
-        const unexplained = delta - depDelta;
-        if (unexplained > threshold) onboarding += unexplained;
-    }
-    return onboarding;
-}
-
-function perpsDailyPnlBetween(prev, curr, flowPack) {
-    if (!prev || !curr) return null;
-    const dPrev = perpsDepositsAtPoint(prev, flowPack);
-    const dCurr = perpsDepositsAtPoint(curr, flowPack);
-    if (dPrev == null || dCurr == null) return null;
-    const equityDelta = curr.totalEquity - prev.totalEquity;
-    const depositDelta = dCurr - dPrev;
-    const onboard = flowPack.hasFlows ? perpsEquityOnboardingDelta(prev, curr, flowPack.flows) : 0;
-    return equityDelta - depositDelta - onboard;
-}
-
-function perpsCollapseEquityPointsByDay(points) {
-    const byDay = new Map();
-    for (const p of points) {
-        const prev = byDay.get(p.day);
-        if (!prev || p.time >= prev.time) byDay.set(p.day, p);
-    }
-    return [...byDay.values()].sort((a, b) => a.time - b.time);
-}
-
-function perpsBuildWalletPnlDailySeries(data, range) {
-    const allDays = perpsCollapseEquityPointsByDay(perpsCollectEquitySnapshotPoints(data));
-    if (!allDays.length) {
-        return { points: [], periodPnl: null, baseline: null, latest: null, insufficient: true, dayCount: 0 };
-    }
-
-    const flowPack = perpsFlowPayments(data);
-    const ms = perpsStatRangeMs(range);
-    let visible = allDays;
-    let baseline = allDays[0];
-    if (ms) {
-        const cutoff = Date.now() - ms;
-        const before = [...allDays].filter(p => p.time < cutoff).sort((a, b) => b.time - a.time)[0];
-        visible = allDays.filter(p => p.time >= cutoff);
-        baseline = before || visible[0] || allDays[0];
-    }
-
-    if (!visible.length) {
-        return { points: [], periodPnl: null, baseline, latest: allDays.at(-1), insufficient: true, dayCount: 0 };
-    }
-
-    const daily = [];
-    let cumPnl = 0;
-    for (let i = 0; i < visible.length; i++) {
-        const p = visible[i];
-        const prev = i === 0 ? baseline : visible[i - 1];
-        const dailyPnl = perpsDailyPnlBetween(prev, p, flowPack);
-        if (dailyPnl == null) continue;
-        cumPnl += dailyPnl;
-        daily.push({
-            day: p.day,
-            ts: p.time,
-            dailyPnl,
-            cumPnl,
-            totalEquity: p.totalEquity,
-            source: p.source,
-        });
-    }
-
-    const latest = visible[visible.length - 1];
-    const periodPnl = daily.length ? daily[daily.length - 1].cumPnl : null;
-    return {
-        points: daily,
-        periodPnl,
-        baseline,
-        latest,
-        insufficient: daily.length < 2,
-        dayCount: daily.length,
-    };
+    perpsRenderDailyFundingChart(series, perpsStatRangeLabel(_perpsStatRange));
 }
 
 function perpsFilterDailySeries(series, range) {
@@ -21271,7 +21056,6 @@ function perpsSaveConfig() {
 }
 
 function perpsToggleFundingFees() {
-    if (_perpsSecondaryChart === 'pnl') return;
     _perpsDailyFundShowFees = !_perpsDailyFundShowFees;
     const btn = document.getElementById('perpsFundShowFeesBtn');
     if (btn) btn.classList.toggle('active', _perpsDailyFundShowFees);
@@ -21381,7 +21165,7 @@ function perpsBuildEquitySeries(data) {
 
 function perpsBuildEquityChart(equitySeries) {
     const pts = Array.isArray(equitySeries?.points) ? equitySeries.points : [];
-    const width = 760;
+    const width = PERPS_CHART_WIDTH;
     const height = 160;
     const padX = 48;
     const padY = 16;
@@ -21392,7 +21176,7 @@ function perpsBuildEquityChart(equitySeries) {
     if (pts.length < 2) {
         const y = padY + chartH / 2;
         return {
-            line: `M ${padX} ${y.toFixed(1)} L ${width - 12} ${y.toFixed(1)}`,
+            line: `M ${padX} ${y.toFixed(1)} L ${PERPS_CHART_WIDTH - 12} ${y.toFixed(1)}`,
             area: '',
             total: totalNow,
             insufficient: true,
@@ -21415,7 +21199,7 @@ function perpsBuildEquityChart(equitySeries) {
         return { x, y, val: p.totalEquity, bucket: p.bucket };
     });
     const linePath = plot.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-    const areaPath = `M ${padX} ${height - padY} L ${linePath.slice(2)} L ${width - 12} ${height - padY} Z`;
+    const areaPath = `M ${padX} ${height - padY} L ${linePath.slice(2)} L ${PERPS_CHART_WIDTH - 12} ${height - padY} Z`;
     return {
         line: linePath,
         area: areaPath,
@@ -21445,7 +21229,7 @@ function perpsBindEquityChartHover() {
         }
         const svg = document.getElementById('perpsEquityChart');
         const rect = svg.getBoundingClientRect();
-        const scaleX = 760 / rect.width;
+        const scaleX = PERPS_CHART_WIDTH / rect.width;
         const x = (ev.clientX - rect.left) * scaleX;
         let hit = live.plot[0];
         let bestDist = Infinity;
@@ -21511,7 +21295,7 @@ function perpsBuildDailyFundingBars(points, showFees) {
     if (!points.length) {
         return { bars: [], yLabels: [], xLabels: [], zeroY: 100, maxAbs: 1, total: 0, stats: [] };
     }
-    const width = 760;
+    const width = PERPS_CHART_WIDTH;
     const height = 200;
     const padL = 48;
     const padR = 12;
@@ -21586,191 +21370,7 @@ function perpsBuildDailyFundingBars(points, showFees) {
     };
 }
 
-function perpsBuildDailyWalletPnlBars(points) {
-    if (!points.length) {
-        return { bars: [], yLabels: [], xLabels: [], zeroY: 100, maxAbs: 1, total: 0, stats: [], padL: 48, padR: 12, width: 760, height: 200 };
-    }
-    const width = 760;
-    const height = 200;
-    const padL = 48;
-    const padR = 12;
-    const padT = 14;
-    const padB = 30;
-    const chartW = width - padL - padR;
-    const chartH = height - padT - padB;
-    const zeroY = padT + chartH / 2;
-    const halfH = chartH / 2 - 4;
-
-    const vals = points.map(p => p.dailyPnl);
-    const maxAbs = Math.max(1, ...vals.map(v => Math.abs(v)));
-
-    const barGap = points.length > 45 ? 1 : 2;
-    const barW = Math.max(2, (chartW - barGap * Math.max(points.length - 1, 0)) / points.length);
-
-    const bars = points.map((p, i) => {
-        const val = p.dailyPnl;
-        const x = padL + i * (barW + barGap);
-        const h = (Math.abs(val) / maxAbs) * halfH;
-        const y = val >= 0 ? zeroY - h : zeroY;
-        return {
-            x, y, w: barW, h: Math.max(h, val !== 0 ? 2 : 0), cls: val >= 0 ? 'pos' : 'neg',
-            day: p.day, val, dailyPnl: p.dailyPnl, cumPnl: p.cumPnl,
-            totalEquity: p.totalEquity,
-        };
-    });
-
-    const yTicks = [-1, -0.5, 0, 0.5, 1].map(t => ({
-        y: zeroY - t * halfH,
-        label: perpsFmtUsd(t * maxAbs, 0),
-    }));
-
-    const xStep = Math.max(1, Math.ceil(points.length / 8));
-    const xLabels = points.filter((_, i) => i % xStep === 0 || i === points.length - 1).map(p => {
-        const idx = points.indexOf(p);
-        const x = padL + idx * (barW + barGap) + barW / 2;
-        return { x, label: perpsFormatFundDayLabel(p.day) };
-    });
-
-    const total = points.length ? points[points.length - 1].cumPnl : 0;
-    const best = points.reduce((bestPt, p) => (!bestPt || p.dailyPnl > bestPt.dailyPnl ? p : bestPt), null);
-    const worst = points.reduce((worstPt, p) => (!worstPt || p.dailyPnl < worstPt.dailyPnl ? p : worstPt), null);
-
-    return {
-        bars, yLabels: yTicks, xLabels, zeroY, maxAbs, total, padL, padR, width, height,
-        stats: [
-            { label: 'Period PnL', value: perpsFmtUsd(total) },
-            { label: 'Best day', value: best ? `${perpsFormatFundDayLabel(best.day)} ${perpsFmtUsd(best.dailyPnl)}` : '—' },
-            { label: 'Worst day', value: worst ? `${perpsFormatFundDayLabel(worst.day)} ${perpsFmtUsd(worst.dailyPnl)}` : '—' },
-        ],
-    };
-}
-
-function perpsRenderDailyWalletPnlChart(built, rangeLabel) {
-    const label = rangeLabel || perpsStatRangeLabel(_perpsStatRange);
-    const titleEl = document.getElementById('perpsDailyChartTitle');
-    const points = built?.points || [];
-    const clearChart = () => {
-        ['perpsDailyFundBars', 'perpsDailyFundYLabels', 'perpsDailyFundXLabels', 'perpsDailyFundGrid'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.innerHTML = '';
-        });
-    };
-
-    if (titleEl) titleEl.textContent = 'Daily portfolio PnL';
-    if (!points.length) {
-        clearChart();
-        const totalEl = document.getElementById('perpsDailyFundTotal');
-        if (totalEl) { totalEl.textContent = '—'; totalEl.className = 'perps-pnl-total'; }
-        const noteEl = document.getElementById('perpsDailyFundNote');
-        if (noteEl) {
-            noteEl.textContent = 'No equity snapshots yet — PnL is recorded from live exchange account values every 4h and on each refresh';
-        }
-        const badge = document.getElementById('perpsDailyFundBadge');
-        if (badge) badge.textContent = label;
-        _perpsDailyFundChartState = null;
-        return;
-    }
-
-    if (built.insufficient) {
-        clearChart();
-        const totalEl = document.getElementById('perpsDailyFundTotal');
-        if (totalEl) {
-            totalEl.textContent = perpsFmtUsd(built.periodPnl);
-            totalEl.className = 'perps-pnl-total ' + perpsSignedCls(built.periodPnl);
-        }
-        const noteEl = document.getElementById('perpsDailyFundNote');
-        if (noteEl) {
-            noteEl.textContent = `${label} · cash-flow PnL from exchange equity minus deposits · need 2+ snapshot days for daily bars (${built.dayCount} day${built.dayCount === 1 ? '' : 's'} so far)`;
-        }
-        const badge = document.getElementById('perpsDailyFundBadge');
-        if (badge) badge.textContent = label;
-        _perpsDailyFundChartState = null;
-        return;
-    }
-
-    const chart = perpsBuildDailyWalletPnlBars(points);
-    const barsEl = document.getElementById('perpsDailyFundBars');
-    const yEl = document.getElementById('perpsDailyFundYLabels');
-    const xEl = document.getElementById('perpsDailyFundXLabels');
-    const gridEl = document.getElementById('perpsDailyFundGrid');
-    const zeroEl = document.getElementById('perpsDailyFundZero');
-    const totalEl = document.getElementById('perpsDailyFundTotal');
-    const noteEl = document.getElementById('perpsDailyFundNote');
-    const badge = document.getElementById('perpsDailyFundBadge');
-    const wrap = document.getElementById('perpsDailyFundWrap');
-    const tip = document.getElementById('perpsDailyFundTooltip');
-    const tipDate = document.getElementById('perpsDailyFundTipDate');
-    const tipVal = document.getElementById('perpsDailyFundTipVal');
-
-    if (zeroEl) {
-        zeroEl.setAttribute('y1', String(chart.zeroY));
-        zeroEl.setAttribute('y2', String(chart.zeroY));
-    }
-    if (gridEl) {
-        gridEl.innerHTML = chart.yLabels.map(t =>
-            `<line class="perps-fund-grid" x1="${chart.padL}" y1="${t.y.toFixed(1)}" x2="${chart.width - chart.padR}" y2="${t.y.toFixed(1)}"></line>`
-        ).join('');
-    }
-    if (yEl) {
-        yEl.innerHTML = chart.yLabels.map(t =>
-            `<text class="perps-fund-y-label" x="${chart.padL - 6}" y="${(t.y + 3).toFixed(1)}" text-anchor="end">${dashEsc(t.label)}</text>`
-        ).join('');
-    }
-    if (xEl) {
-        xEl.innerHTML = chart.xLabels.map(t =>
-            `<text class="perps-fund-x-label" x="${t.x.toFixed(1)}" y="${chart.height - 8}" text-anchor="middle">${dashEsc(t.label)}</text>`
-        ).join('');
-    }
-    if (barsEl) {
-        barsEl.innerHTML = chart.bars.map(b =>
-            `<rect class="perps-fund-bar ${b.cls}" x="${b.x.toFixed(1)}" y="${b.y.toFixed(1)}" width="${b.w.toFixed(1)}" height="${b.h.toFixed(1)}" rx="1.5"
-                data-day="${dashEsc(b.day)}" data-val="${b.val}" data-cum="${b.cumPnl}" data-equity="${b.totalEquity}"></rect>`
-        ).join('');
-    }
-
-    if (totalEl) {
-        totalEl.textContent = perpsFmtUsd(chart.total);
-        totalEl.className = 'perps-pnl-total ' + perpsSignedCls(chart.total);
-    }
-    if (noteEl) {
-        noteEl.textContent = `${label} · Δequity − Δdeposits per day · new venues excluded · from exchange snapshots`;
-    }
-    if (badge) badge.textContent = label;
-
-    if (wrap && tip) {
-        wrap.onmousemove = (ev) => {
-            const live = _perpsDailyFundChartState;
-            if (!live?.bars?.length) {
-                tip.style.display = 'none';
-                return;
-            }
-            const svg = document.getElementById('perpsDailyFundChart');
-            const rect = svg.getBoundingClientRect();
-            const scaleX = 760 / rect.width;
-            const x = (ev.clientX - rect.left) * scaleX;
-            const hit = live.bars.find(b => x >= b.x && x <= b.x + b.w);
-            if (!hit) {
-                tip.style.display = 'none';
-                return;
-            }
-            tip.style.display = 'block';
-            tip.style.left = `${ev.clientX - wrap.getBoundingClientRect().left + 12}px`;
-            tip.style.top = `${ev.clientY - wrap.getBoundingClientRect().top - 36}px`;
-            if (tipDate) tipDate.textContent = hit.day;
-            if (tipVal) {
-                const cls = hit.val >= 0 ? 'pos' : 'neg';
-                tipVal.innerHTML = `<span class="perps-fund-tooltip-val ${cls}">Daily PnL ${perpsFmtUsd(hit.val)}</span>` +
-                    `<div style="margin-top:0.15rem;color:#9dacbb;">Period cum. ${perpsFmtUsd(hit.cumPnl)} · Equity ${perpsFmtUsd(hit.totalEquity)}</div>`;
-            }
-        };
-        wrap.onmouseleave = () => { tip.style.display = 'none'; };
-    }
-    _perpsDailyFundChartState = chart;
-}
-
 function perpsRenderDailyFundingChart(series, rangeLabel) {
-    const titleEl = document.getElementById('perpsDailyChartTitle');
-    if (titleEl) titleEl.textContent = 'Daily funding collected';
     const points = Array.isArray(series) ? series : [];
     const label = rangeLabel || perpsStatRangeLabel(_perpsStatRange);
     if (!points.length) {
@@ -21850,7 +21450,7 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
             }
             const svg = document.getElementById('perpsDailyFundChart');
             const rect = svg.getBoundingClientRect();
-            const scaleX = 760 / rect.width;
+            const scaleX = PERPS_CHART_WIDTH / rect.width;
             const x = (ev.clientX - rect.left) * scaleX;
             const hit = live.bars.find(b => x >= b.x && x <= b.x + b.w);
             if (!hit) {
@@ -22037,21 +21637,13 @@ function perpsComputePortfolioStats(data) {
     const dailySeries = perpsFilterDailySeries(data.dailyFundingSeries || [], range);
     let fundingTotal = 0;
     let totalPnl = 0;
-    const walletPnlBuilt = perpsBuildWalletPnlDailySeries(data, range);
-    if (walletPnlBuilt.periodPnl != null && walletPnlBuilt.points.length) {
-        totalPnl = walletPnlBuilt.periodPnl;
-    }
     if (!perpsStatRangeMs(range)) {
         for (const p of paired) fundingTotal += p.fundingSinceOpen ?? 0;
         for (const u of unhedged) fundingTotal += u.funding ?? 0;
-        if (!walletPnlBuilt.points.length) {
-            totalPnl = upnlTotal + fundingTotal;
-        }
+        totalPnl = upnlTotal + fundingTotal;
     } else {
         fundingTotal = dailySeries.reduce((sum, row) => sum + (row.dailyFunding || 0), 0);
-        if (!walletPnlBuilt.points.length) {
-            totalPnl = dailySeries.reduce((sum, row) => sum + (row.dailyNet ?? row.dailyFunding ?? 0), 0);
-        }
+        totalPnl = dailySeries.reduce((sum, row) => sum + (row.dailyNet ?? row.dailyFunding ?? 0), 0);
     }
 
     const apr = perpsComputeWeightedPositionApr(paired);
@@ -22066,7 +21658,6 @@ function perpsComputePortfolioStats(data) {
         positionCount: paired.length + unhedged.length,
         apr,
         rangeLabel: perpsStatRangeLabel(range),
-        walletPnlFromEquity: walletPnlBuilt.points.length > 0,
     };
 }
 
@@ -22093,11 +21684,9 @@ function perpsRenderStatsBar(data) {
     if (equitySub) equitySub.textContent = 'Hover for exchange breakdown';
     const pnlSub = document.getElementById('perpsStatPnlSub');
     if (pnlSub) {
-        pnlSub.textContent = stats.walletPnlFromEquity
-            ? `${stats.rangeLabel} · equity − deposits`
-            : (perpsStatRangeMs(_perpsStatRange)
-                ? `${stats.rangeLabel} net · uPnL live ${perpsFmtUsd(stats.upnlTotal)}`
-                : `${perpsFmtUsd(stats.upnlTotal)} uPnL · ${perpsFmtUsd(stats.fundingTotal)} funding`);
+        pnlSub.textContent = perpsStatRangeMs(_perpsStatRange)
+            ? `${stats.rangeLabel} net · uPnL live ${perpsFmtUsd(stats.upnlTotal)}`
+            : `${perpsFmtUsd(stats.upnlTotal)} uPnL · ${perpsFmtUsd(stats.fundingTotal)} funding`;
     }
     const fundSub = document.getElementById('perpsStatFundingSub');
     if (fundSub) fundSub.textContent = `${stats.rangeLabel} · gross funding`;
