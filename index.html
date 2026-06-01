@@ -7571,6 +7571,9 @@ async function loadData() {
 
     loadOpportunityMonitors();
 
+    // Hydrate saved perps wallets before tab render / cloud sync (never wait for Save & connect)
+    try { perpsLoadConfig(); } catch (e) {}
+
     // 2. Restore tab state FIRST (so tab-specific layout CSS is active), then render
     document.body.dataset.activeTab = initialTab;
     updateUI();
@@ -7647,11 +7650,11 @@ async function loadData() {
                         delete parsed._tgChannels;
                     }
                     if (parsed._perpsConfig && typeof parsed._perpsConfig === 'object') {
-                        localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify(parsed._perpsConfig));
+                        const hadWallet = perpsApplyCloudConfig(parsed._perpsConfig);
                         delete parsed._perpsConfig;
-                        if (document.body.dataset.activeTab === 'perps') {
-                            perpsLoadConfig();
-                            if (perpsHasValidWallet()) perpsRefresh(true);
+                        perpsLoadConfig();
+                        if (hadWallet && document.body.dataset.activeTab === 'perps') {
+                            perpsRefresh(true);
                         }
                     }
                     if (parsed._perpsSnapshots && typeof parsed._perpsSnapshots === 'object') {
@@ -8207,7 +8210,12 @@ function switchTab(tab, opts = {}) {
     if (tab === 'perps') {
         perpsLoadConfig();
         perpsStartAutoRefresh();
-        perpsRefresh(true);
+        if (perpsHasValidWallet()) {
+            perpsSetStatus('Loading saved wallets…');
+            perpsRefresh(true);
+        } else {
+            perpsSetStatus('Add wallets and click Save & connect.');
+        }
     } else {
         perpsStopAutoRefresh();
     }
@@ -20605,7 +20613,7 @@ function perpsReadConfigField(id, key) {
     const saved = perpsGetSavedConfig();
     if (!el) return saved[key] || '';
     if (document.activeElement === el) return el.value.trim();
-    if (el.dataset.perpsReal) return el.dataset.perpsReal;
+    if (el.dataset.perpsReal && !/^\*+$/.test(el.dataset.perpsReal)) return el.dataset.perpsReal;
     if (el.classList.contains('perps-masked')) return saved[key] || '';
     const val = el.value.trim();
     if (val && !/^\*+$/.test(val)) return val;
@@ -20750,6 +20758,32 @@ function perpsGetSavedConfig() {
     try { return JSON.parse(localStorage.getItem(PERPS_CONFIG_KEY) || '{}'); } catch (e) { return {}; }
 }
 
+function perpsApplyCloudConfig(serverConfig) {
+    const server = serverConfig && typeof serverConfig === 'object' ? serverConfig : {};
+    const local = perpsGetSavedConfig();
+    const serverHl = String(server.hyperliquid || '').trim();
+    const localHl = String(local.hyperliquid || '').trim();
+    const serverValid = /^0x[a-fA-F0-9]{40}$/.test(serverHl);
+    const localValid = /^0x[a-fA-F0-9]{40}$/.test(localHl);
+
+    if (serverValid) {
+        localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({
+            hyperliquid: serverHl,
+            nado: server.nado || local.nado || '',
+            grvtSubAccount: server.grvtSubAccount || local.grvtSubAccount || '4860249204328359',
+            statRange: server.statRange || local.statRange || _perpsStatRange,
+            configured: true,
+        }));
+    } else if (localValid) {
+        // Never wipe locally saved wallets with an empty server payload
+        if (!local.configured) {
+            localStorage.setItem(PERPS_CONFIG_KEY, JSON.stringify({ ...local, configured: true }));
+        }
+        if (typeof saveData === 'function') saveData();
+    }
+    return perpsHasValidWallet();
+}
+
 function perpsIsConfigComplete() {
     return perpsHasValidWallet();
 }
@@ -20803,11 +20837,21 @@ function perpsUpdateRefreshBar() {
 }
 
 function perpsSaveConfigAndRefresh() {
+    perpsUnmaskWalletInputs();
     perpsSaveConfig();
-    ['perpsHlWallet', 'perpsNadoWallet', 'perpsGrvtSubAccount'].forEach(id => {
+    const saved = perpsGetSavedConfig();
+    const fieldKeys = {
+        perpsHlWallet: 'hyperliquid',
+        perpsNadoWallet: 'nado',
+        perpsGrvtSubAccount: 'grvtSubAccount',
+    };
+    for (const [id, key] of Object.entries(fieldKeys)) {
         const el = document.getElementById(id);
-        if (el?.value.trim()) el.dataset.perpsReal = el.value.trim();
-    });
+        if (!el) continue;
+        const raw = el.value.trim();
+        const val = raw && !/^\*+$/.test(raw) ? raw : (saved[key] || '');
+        if (val) el.dataset.perpsReal = val;
+    }
     const foot = document.getElementById('perpsConfigFoot');
     if (foot) delete foot.dataset.forceOpen;
     perpsApplyWalletMasks();

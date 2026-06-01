@@ -594,8 +594,8 @@ module.exports = async function handler(req, res) {
       saved.tgChannels = true;
     }
 
-    // Perps arb wallets + equity snapshots
-    if (body.perpsConfig) {
+    // Perps arb wallets + equity snapshots (ignore empty payloads that would erase saved wallets)
+    if (body.perpsConfig && /^0x[a-fA-F0-9]{40}$/.test(String(body.perpsConfig.hyperliquid || ''))) {
       await kvSet('vault:perps_config', JSON.stringify(body.perpsConfig));
       saved.perpsConfig = true;
     }
