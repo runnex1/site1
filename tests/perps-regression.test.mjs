@@ -114,6 +114,12 @@ assert.doesNotMatch(syncJs, /const perpsConfig = parse\(await kvGet\('vault:perp
 assert.match(syncJs, /req\.query\?\.perpsSnapshots === '1'/, 'sync endpoint must expose lightweight Perps snapshot hydration');
 assert.match(indexHtml, /await perpsHydrateSnapshotsFromCloud\(\);/, 'Perps refresh must hydrate cron snapshots before rendering the chart');
 assert.match(indexHtml, /const merged = \{ \.\.\.local, \.\.\.\(serverSnaps \|\| \{\}\) \};/, 'scheduled server snapshots must replace same-bucket browser snapshots');
+assert.match(indexHtml, /<g id="perpsEquityPoints"><\/g>/, 'equity chart must render visible sampled-point markers');
+assert.match(indexHtml, /latest \$\{perpsFmtUsd\(chart\.plot\.at\(-1\)\?\.val\)\}/, 'equity chart badge must expose the latest plotted snapshot amount');
+{
+  const renderDashboard = indexHtml.slice(indexHtml.indexOf('function perpsRenderDashboard(data)'), indexHtml.indexOf('function perpsFormatConnectedStatus'));
+  assert.ok(renderDashboard.indexOf('perpsSaveSnapshot(data);') < renderDashboard.indexOf('data._equitySeries = perpsBuildEquitySeries(data);'), 'dashboard must save the current 4h snapshot before building the plotted series');
+}
 
 {
   let statusCode = null;

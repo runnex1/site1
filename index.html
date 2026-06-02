@@ -789,6 +789,7 @@ body[data-active-tab="perps"] .topbar,
 .perps-stat-sub { margin-top:0.15rem; font-family:var(--ff-mono); font-size:0.58rem; color:#7f8f9f; }
 .perps-equity-line { fill:none; stroke:#a78bfa; stroke-width:2.2; vector-effect:non-scaling-stroke; }
 .perps-equity-area { fill:rgba(167,139,250,0.14); stroke:none; }
+.perps-equity-point { fill:#c4b5fd; stroke:#1a1025; stroke-width:1.2; vector-effect:non-scaling-stroke; }
 .perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 1rem 0.65rem; }
 .perps-pos-head, .perps-pos-row {
   display:grid;
@@ -6585,6 +6586,7 @@ body[data-active-tab="loops"] .loop-pos-val,
                 <svg id="perpsEquityChart" viewBox="0 0 760 160" preserveAspectRatio="none" role="img" aria-label="Portfolio equity chart">
                   <path class="perps-equity-area" id="perpsEquityArea" d=""></path>
                   <path class="perps-equity-line" id="perpsEquityLine" d=""></path>
+                  <g id="perpsEquityPoints"></g>
                   <circle class="perps-equity-hover-dot" id="perpsEquityHoverDot" r="4" cx="0" cy="0" style="display:none"></circle>
                 </svg>
                 <div class="perps-chart-tooltip equity" id="perpsEquityChartTooltip"></div>
@@ -21793,10 +21795,12 @@ function perpsRenderEquityChart(data) {
     const chart = perpsBuildEquityChart(equitySeries);
     const lineEl = document.getElementById('perpsEquityLine');
     const areaEl = document.getElementById('perpsEquityArea');
+    const pointsEl = document.getElementById('perpsEquityPoints');
     const badge = document.getElementById('perpsEquityChartBadge');
     if (lineEl) lineEl.setAttribute('d', chart.line);
     if (areaEl) areaEl.setAttribute('d', chart.area || '');
-    if (badge) badge.textContent = chart.insufficient ? 'live' : `${equitySeries.pointCount} pts`;
+    if (pointsEl) pointsEl.innerHTML = chart.plot.map(p => `<circle class="perps-equity-point" r="2.8" cx="${p.x}" cy="${p.y}"><title>${dashEsc(String(p.bucket || '').replace('T', ' · ') + ':00 UTC · ' + perpsFmtUsd(p.val))}</title></circle>`).join('');
+    if (badge) badge.textContent = chart.insufficient ? `live · ${perpsFmtUsd(chart.total)}` : `${equitySeries.pointCount} pts · latest ${perpsFmtUsd(chart.plot.at(-1)?.val)}`;
     _perpsEquityChartState = chart;
     perpsBindEquityChartHover();
     return equitySeries;
@@ -22999,6 +23003,7 @@ function perpsRenderFundingHistory(hlPayments, nadoPayments, grvtPayments, exten
 
 function perpsRenderDashboard(data) {
     _perpsCache = data;
+    perpsSaveSnapshot(data);
     data._equitySeries = perpsBuildEquitySeries(data);
     perpsRenderStatsBar(data);
     perpsRenderEquityChart(data);
@@ -23006,7 +23011,6 @@ function perpsRenderDashboard(data) {
     perpsRenderPortfolioPositions(data.paired || []);
     perpsRenderUnhedged(data.unhedged || []);
     perpsRenderAlerts(data.paired || [], data.unhedged || [], data.summary || {});
-    perpsSaveSnapshot(data);
     _perpsLastRefreshAt = data.fetchedAt || Date.now();
     _perpsRefreshError = null;
     perpsUpdateRefreshBar();
