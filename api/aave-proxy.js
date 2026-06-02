@@ -5,6 +5,7 @@
 
 const {
   fetchPerpsDashboard,
+  fetchPerpsEquitySnapshot,
   fetchPerpsLiveRates,
   appendEquitySnapshotStore,
   buildEquitySnapshotFromDashboard,
@@ -54,13 +55,17 @@ async function handlePerpsCronSnapshot(req, res) {
   }
 
   try {
-    const data = await fetchPerpsDashboard({
+    const savedSnapshots = parseJson(await kvGet('vault:perps_snapshots'), {});
+    const previousSnapshot = Object.values(savedSnapshots)
+      .sort((a, b) => (Number(a?.fetchedAt) || 0) - (Number(b?.fetchedAt) || 0))
+      .at(-1);
+    const data = await fetchPerpsEquitySnapshot({
       hyperliquid: wallet,
       nado: nadoWallet,
       grvtSubAccount,
-      days,
+      cumulativeNetDeposits: Number(previousSnapshot?.cumulativeNetDeposits) || 0,
     });
-    const store = appendEquitySnapshotStore(parseJson(await kvGet('vault:perps_snapshots'), {}), data);
+    const store = appendEquitySnapshotStore(savedSnapshots, data);
     await kvSet('vault:perps_snapshots', JSON.stringify(store));
     const { key, record } = buildEquitySnapshotFromDashboard(data);
     return res.status(200).json({
@@ -68,6 +73,9 @@ async function handlePerpsCronSnapshot(req, res) {
       bucket: key,
       totalEquity: record.totalEquity,
       fetchedAt: record.fetchedAt,
+      equityCollectionSpanMs: record.equityCollectionSpanMs,
+      equityFetchedAts: record.equityFetchedAts,
+      equitySampleMode: record.equitySampleMode,
       snapshotCount: Object.keys(store).length,
     });
   } catch (e) {

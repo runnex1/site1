@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 const require = createRequire(import.meta.url);
 const {
   appendEquitySnapshotStore,
+  buildEquitySnapshotFromDashboard,
   buildDailyFundingSeries,
   computeCombinedNetDeposits,
 } = require('../lib/perps.js');
@@ -103,12 +104,24 @@ assert.match(perpsJs, /fundingSinceOpen: extendedFundingSinceOpen,/, 'Extended r
     equitySnapshotIssue: 'GRVT equity unavailable',
   }));
   assert.equal(Object.keys(incomplete).length, 1, 'incomplete venue reads must not create equity snapshots');
+
+  const sampled = buildEquitySnapshotFromDashboard(dashboard(Date.UTC(2026, 5, 2, 12, 5), 1200, {
+    equityCollectionSpanMs: 42,
+    equityFetchedAts: { hyperliquid: 1, nado: 43 },
+    equitySampleMode: 'concurrent_balance_only',
+  }));
+  assert.equal(sampled.record.equityCollectionSpanMs, 42, 'snapshot must preserve measured venue collection span');
+  assert.equal(sampled.record.equitySampleMode, 'concurrent_balance_only', 'snapshot must identify balance-only sampling');
 }
 
 assert.match(indexHtml, /if \(store\[bucket\]\) return;/, 'browser snapshots must be append-only within each 4h bucket');
 assert.match(indexHtml, /if \(!perpsIsEquitySnapshotEligible\(data\)\) return;/, 'browser snapshots must reject incomplete reads');
 assert.match(aaveProxyJs, /portfolio\?\.perpsArb/, 'cron snapshots must recover wallet config from the saved portfolio');
 assert.match(aaveProxyJs, /kvSet\('vault:perps_config'/, 'cron snapshots must persist recovered wallet config');
+assert.match(aaveProxyJs, /fetchPerpsEquitySnapshot\(\{/, 'cron snapshots must use the lightweight concurrent balance sampler');
+assert.doesNotMatch(aaveProxyJs.slice(aaveProxyJs.indexOf('async function handlePerpsCronSnapshot'), aaveProxyJs.indexOf('async function handlePerps(req')), /fetchPerpsDashboard\(\{/, 'cron snapshots must not run the heavy dashboard pipeline');
+assert.match(perpsJs, /equitySampleMode: 'concurrent_balance_only'/, 'balance-only snapshots must identify their sampling mode');
+assert.match(perpsJs, /await Promise\.all\(\[\s*fetchHyperliquidEquity/, 'venue equity endpoints must be sampled concurrently');
 assert.match(syncJs, /const savedConfig = parseJson\(await kvGet\('vault:perps_config'\), \{\}\);/, 'fast config endpoint must use the initialized parser');
 assert.doesNotMatch(syncJs, /const perpsConfig = parse\(await kvGet\('vault:perps_config'\), \{\}\);/, 'fast config endpoint must not call a parser before initialization');
 assert.match(syncJs, /req\.query\?\.perpsSnapshots === '1'/, 'sync endpoint must expose lightweight Perps snapshot hydration');
