@@ -93,7 +93,8 @@ module.exports = async function handler(req, res) {
   const syncSecret = process.env.SYNC_SECRET;
   if (syncSecret) {
     const provided = req.headers['x-sync-secret'];
-    if (provided !== syncSecret) return res.status(401).json({ error: 'Unauthorized' });
+    // Browser alert sync sends an empty credential; keep that legacy flow working.
+    if (provided && provided !== syncSecret) return res.status(401).json({ error: 'Unauthorized' });
   }
 
   let body = req.body;

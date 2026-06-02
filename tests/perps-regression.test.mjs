@@ -18,6 +18,8 @@ const aaveProxyHandler = require('../api/aave-proxy.js');
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const perpsJs = readFileSync(join(ROOT, 'lib', 'perps.js'), 'utf8');
+const aaveProxyJs = readFileSync(join(ROOT, 'api', 'aave-proxy.js'), 'utf8');
+const syncJs = readFileSync(join(ROOT, 'api', 'sync.js'), 'utf8');
 const now = Date.now();
 
 function payment(usdc, time = now) {
@@ -105,6 +107,10 @@ assert.match(perpsJs, /fundingSinceOpen: extendedFundingSinceOpen,/, 'Extended r
 
 assert.match(indexHtml, /if \(store\[bucket\]\) return;/, 'browser snapshots must be append-only within each 4h bucket');
 assert.match(indexHtml, /if \(!perpsIsEquitySnapshotEligible\(data\)\) return;/, 'browser snapshots must reject incomplete reads');
+assert.match(aaveProxyJs, /portfolio\?\.perpsArb/, 'cron snapshots must recover wallet config from the saved portfolio');
+assert.match(aaveProxyJs, /kvSet\('vault:perps_config'/, 'cron snapshots must persist recovered wallet config');
+assert.match(syncJs, /const savedConfig = parseJson\(await kvGet\('vault:perps_config'\), \{\}\);/, 'fast config endpoint must use the initialized parser');
+assert.doesNotMatch(syncJs, /const perpsConfig = parse\(await kvGet\('vault:perps_config'\), \{\}\);/, 'fast config endpoint must not call a parser before initialization');
 
 {
   let statusCode = null;

@@ -27,7 +27,12 @@ async function handlePerpsCronSnapshot(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const config = parseJson(await kvGet('vault:perps_config'), {});
+  const savedConfig = parseJson(await kvGet('vault:perps_config'), {});
+  const portfolio = parseJson(await kvGet('vault:portfolio'), {});
+  const portfolioConfig = portfolio?.perpsArb && typeof portfolio.perpsArb === 'object'
+    ? portfolio.perpsArb
+    : {};
+  const config = isWallet(savedConfig.hyperliquid) ? savedConfig : portfolioConfig;
   const wallet = String(config.hyperliquid || '').trim();
   const nadoWallet = String(config.nado || wallet).trim();
   const grvtSubAccount = String(
@@ -37,6 +42,15 @@ async function handlePerpsCronSnapshot(req, res) {
 
   if (!isWallet(wallet)) {
     return res.status(400).json({ error: 'No valid perps wallet in vault:perps_config' });
+  }
+  if (!isWallet(savedConfig.hyperliquid)) {
+    await kvSet('vault:perps_config', JSON.stringify({
+      ...config,
+      hyperliquid: wallet,
+      nado: nadoWallet,
+      grvtSubAccount,
+      configured: true,
+    }));
   }
 
   try {

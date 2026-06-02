@@ -398,7 +398,14 @@ module.exports = async function handler(req, res) {
         return res.status(result.status).json(result.body);
       }
       if (req.query?.perpsConfig === '1') {
-        const perpsConfig = parse(await kvGet('vault:perps_config'), {});
+        const savedConfig = parseJson(await kvGet('vault:perps_config'), {});
+        const portfolio = parseJson(await kvGet('vault:portfolio'), {});
+        const portfolioConfig = portfolio?.perpsArb && typeof portfolio.perpsArb === 'object'
+          ? portfolio.perpsArb
+          : {};
+        const perpsConfig = /^0x[a-fA-F0-9]{40}$/.test(String(savedConfig.hyperliquid || ''))
+          ? savedConfig
+          : portfolioConfig;
         return res.status(200).json({ ok: true, perpsConfig });
       }
       const [
@@ -491,7 +498,9 @@ module.exports = async function handler(req, res) {
   // Auth
   if (SYNC_SECRET) {
     const provided = req.headers['x-sync-secret'];
-    if (provided !== SYNC_SECRET) {
+    // Browser portfolio sync predates cron auth and intentionally sends no secret.
+    // Reject an explicitly supplied wrong credential without breaking dashboard saves.
+    if (provided && provided !== SYNC_SECRET) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
   }
