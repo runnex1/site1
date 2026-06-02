@@ -111,6 +111,8 @@ assert.match(aaveProxyJs, /portfolio\?\.perpsArb/, 'cron snapshots must recover 
 assert.match(aaveProxyJs, /kvSet\('vault:perps_config'/, 'cron snapshots must persist recovered wallet config');
 assert.match(syncJs, /const savedConfig = parseJson\(await kvGet\('vault:perps_config'\), \{\}\);/, 'fast config endpoint must use the initialized parser');
 assert.doesNotMatch(syncJs, /const perpsConfig = parse\(await kvGet\('vault:perps_config'\), \{\}\);/, 'fast config endpoint must not call a parser before initialization');
+assert.match(syncJs, /req\.query\?\.perpsSnapshots === '1'/, 'sync endpoint must expose lightweight Perps snapshot hydration');
+assert.match(indexHtml, /await perpsHydrateSnapshotsFromCloud\(\);/, 'Perps refresh must hydrate cron snapshots before rendering the chart');
 
 {
   let statusCode = null;

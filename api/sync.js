@@ -408,6 +408,10 @@ module.exports = async function handler(req, res) {
           : portfolioConfig;
         return res.status(200).json({ ok: true, perpsConfig });
       }
+      if (req.query?.perpsSnapshots === '1') {
+        const perpsSnapshots = parseJson(await kvGet('vault:perps_snapshots'), {});
+        return res.status(200).json({ ok: true, perpsSnapshots });
+      }
       const [
         portfolioRaw, watchlistRaw, watcherWalletsRaw, watcherLinksRaw,
         snapshotsRaw, aaveMarketsRaw, customTokensRaw,

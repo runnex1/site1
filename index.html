@@ -21205,6 +21205,20 @@ async function perpsFetchCloudPerpsConfig() {
     }
 }
 
+async function perpsHydrateSnapshotsFromCloud() {
+    if (location.protocol === 'file:') return false;
+    try {
+        const res = await fetch('/api/sync?perpsSnapshots=1', { signal: AbortSignal.timeout(5000) });
+        if (!res.ok) return false;
+        const body = await res.json();
+        if (!body?.perpsSnapshots || typeof body.perpsSnapshots !== 'object') return false;
+        perpsMergeSnapshotsFromServer(body.perpsSnapshots);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 async function perpsHydrateConfigFromCloud() {
     if (perpsHasValidWallet() || location.protocol === 'file:') return perpsHasValidWallet();
     const cloudCfg = await perpsFetchCloudPerpsConfig();
@@ -23031,6 +23045,7 @@ async function perpsRefresh(silent = false) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), PERPS_FETCH_TIMEOUT_MS);
     try {
+        await perpsHydrateSnapshotsFromCloud();
         const params = new URLSearchParams({ wallet: hl, days: String(perpsStatRangeToApiDays(_perpsStatRange)) });
         if (nadoRaw && /^0x[a-fA-F0-9]{40}$/.test(nadoRaw)) params.set('nadoWallet', nadoRaw);
         const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
