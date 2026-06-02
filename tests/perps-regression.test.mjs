@@ -14,6 +14,7 @@ const {
   buildDailyFundingSeries,
   computeCombinedNetDeposits,
 } = require('../lib/perps.js');
+const aaveProxyHandler = require('../api/aave-proxy.js');
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const perpsJs = readFileSync(join(ROOT, 'lib', 'perps.js'), 'utf8');
@@ -104,5 +105,24 @@ assert.match(perpsJs, /fundingSinceOpen: extendedFundingSinceOpen,/, 'Extended r
 
 assert.match(indexHtml, /if \(store\[bucket\]\) return;/, 'browser snapshots must be append-only within each 4h bucket');
 assert.match(indexHtml, /if \(!perpsIsEquitySnapshotEligible\(data\)\) return;/, 'browser snapshots must reject incomplete reads');
+
+{
+  let statusCode = null;
+  let responseBody = null;
+  const res = {
+    setHeader() {},
+    status(code) {
+      statusCode = code;
+      return this;
+    },
+    json(body) {
+      responseBody = body;
+      return body;
+    },
+  };
+  await aaveProxyHandler({ method: 'GET', headers: {}, query: { cronSnapshot: '1' } }, res);
+  assert.equal(statusCode, 401, 'cron snapshot GET must reach the protected Perps handler without a wallet query');
+  assert.equal(responseBody?.error, 'Unauthorized');
+}
 
 console.log('PASS: perps accounting and dashboard regression checks');

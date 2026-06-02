@@ -118,7 +118,12 @@ async function handlePerps(req, res) {
 }
 
 module.exports = async function handler(req, res) {
-  if (req.method === 'GET' && (req.query.wallet || req.query.hyperliquid)) {
+  if (req.method === 'GET' && (
+    req.query.wallet
+    || req.query.hyperliquid
+    || req.query.cronSnapshot === '1'
+    || req.query.live === '1'
+  )) {
     return handlePerps(req, res);
   }
 
