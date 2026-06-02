@@ -21388,10 +21388,7 @@ async function perpsSaveConfigAndRefresh() {
 function perpsMergeSnapshotsFromServer(serverSnaps) {
     try {
         const local = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
-        const merged = { ...local };
-        for (const [bucket, snap] of Object.entries(serverSnaps || {})) {
-            if (!merged[bucket]) merged[bucket] = snap;
-        }
+        const merged = { ...local, ...(serverSnaps || {}) };
         localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(merged));
     } catch (e) {}
 }
