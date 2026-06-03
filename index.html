@@ -663,6 +663,9 @@ body[data-active-tab="perps"] .topbar,
 .perps-table td { padding:0.5rem 0.55rem; border-bottom:1px solid rgba(134,159,179,0.1); color:var(--t1); font-family:var(--ff-mono); font-size:0.72rem; vertical-align:middle; }
 .perps-side-long { color:#55d66f; }
 .perps-side-short { color:#ff5c7a; }
+.perps-side-badge { display:inline-flex; align-items:center; justify-content:center; min-width:1.25rem; padding:0.08rem 0.32rem; border-radius:0.28rem; font-family:var(--ff-mono); font-size:0.58rem; font-weight:900; line-height:1; letter-spacing:0.02em; color:#06110a; margin-right:0.38rem; }
+.perps-side-badge.long { background:#55d66f; }
+.perps-side-badge.short { background:#ff5c7a; color:#19040a; }
 .perps-empty { padding:1.25rem; text-align:center; color:#9dacbb; font-size:0.8rem; }
 .perps-status { font-family:var(--ff-mono); font-size:0.68rem; color:#9dacbb; margin-top:0.35rem; }
 .perps-range-row { display:flex; gap:0.35rem; flex-wrap:wrap; align-items:center; margin-top:0.5rem; }
@@ -22201,8 +22204,19 @@ function perpsPairFeesForRange(p, range) {
 }
 
 function perpsPairGrossFundingApr(p) {
-    if (p.currentSpread8h == null || !Number.isFinite(p.currentSpread8h)) return null;
-    return p.currentSpread8h * 3 * 365 * 100;
+    let spread8h = p.currentSpread8h;
+    if (spread8h == null || !Number.isFinite(spread8h)) {
+        const row = perpsRateSpreadRow(p.symbol);
+        const { sizeA, sizeB, venueA, venueB } = perpsPairLegSizes(p);
+        spread8h = perpsNetFundingSpread8h(
+            sizeA,
+            perpsVenueRate8hFromSpread(row, venueA),
+            sizeB,
+            perpsVenueRate8hFromSpread(row, venueB),
+        );
+    }
+    if (spread8h == null || !Number.isFinite(spread8h)) return null;
+    return spread8h * 3 * 365 * 100;
 }
 
 function perpsPairFeeApr(p, range) {
@@ -22757,8 +22771,8 @@ function perpsRenderPortfolioPositions(paired) {
                 </div>
             </div>
             <div class="perps-pos-legs">
-                <div class="perps-pos-leg"><span class="perps-pos-leg-venue">${dashEsc(perpsVenueLabel(legVenueA))}</span><span class="perps-pos-metric-val ${perpsSignedCls(upnlA)}">${perpsFmtUsd(upnlA)}</span></div>
-                <div class="perps-pos-leg"><span class="perps-pos-leg-venue">${dashEsc(perpsVenueLabel(legVenueB))}</span><span class="perps-pos-metric-val ${perpsSignedCls(upnlB)}">${perpsFmtUsd(upnlB)}</span></div>
+                <div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(legVenueA, legs.a.size)}</span><span class="perps-pos-metric-val ${perpsSignedCls(upnlA)}">${perpsFmtUsd(upnlA)}</span></div>
+                <div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(legVenueB, legs.b.size)}</span><span class="perps-pos-metric-val ${perpsSignedCls(upnlB)}">${perpsFmtUsd(upnlB)}</span></div>
             </div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Total uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(totalUpnl)}">${perpsFmtUsd(totalUpnl)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(upnlOnly)}">${perpsFmtUsd(upnlOnly)}</div></div>
@@ -22807,6 +22821,15 @@ function perpsPairLegs(p) {
     };
 }
 
+function perpsSideBadgeHtml(size) {
+    const side = Number(size) >= 0 ? 'long' : 'short';
+    return `<span class="perps-side-badge ${side}">${side === 'long' ? 'L' : 'S'}</span>`;
+}
+
+function perpsVenueWithSideHtml(venue, size) {
+    return `${perpsSideBadgeHtml(size)}<span>${dashEsc(perpsVenueLabel(venue))}</span>`;
+}
+
 function perpsRenderPairedTable(paired) {
     const el = document.getElementById('perpsPairedTable');
     const badge = document.getElementById('perpsPairsBadge');
@@ -22826,8 +22849,8 @@ function perpsRenderPairedTable(paired) {
         return `<tr>
             <td>${dashEsc(p.symbol)}${mismatch ? ' <span class="perps-warn">⚠</span>' : ''}</td>
             <td>${dashEsc(pairLabel)}</td>
-            <td>${dashEsc(legs.a.label)} ${legs.a.size != null ? perpsFmtSize(legs.a.size) : '—'}</td>
-            <td>${dashEsc(legs.b.label)} ${legs.b.size != null ? perpsFmtSize(legs.b.size) : '—'}</td>
+            <td>${perpsSideBadgeHtml(legs.a.size)}${dashEsc(legs.a.label)} ${legs.a.size != null ? perpsFmtSize(legs.a.size) : '—'}</td>
+            <td>${perpsSideBadgeHtml(legs.b.size)}${dashEsc(legs.b.label)} ${legs.b.size != null ? perpsFmtSize(legs.b.size) : '—'}</td>
             <td>${legs.a.entry != null ? perpsFmtPx(legs.a.entry) : '—'}</td>
             <td>${legs.b.entry != null ? perpsFmtPx(legs.b.entry) : '—'}</td>
             <td class="${perpsSignedCls(legs.a.upnl)}">${legs.a.upnl != null ? perpsFmtUsd(legs.a.upnl) : '—'}</td>
@@ -22877,7 +22900,7 @@ function perpsRenderUnhedged(unhedged) {
         const pnlWithFund = (u.unrealizedPnl ?? 0) + (u.funding ?? 0);
         return `<tr>
         <td>${makeLogo(u.symbol, false, 22)} ${dashEsc(u.symbol)}</td>
-        <td>${dashEsc(perpsVenueLabel(u.venue))}</td>
+        <td>${perpsVenueWithSideHtml(u.venue, u.size)}</td>
         <td class="${u.side === 'long' ? 'perps-side-long' : 'perps-side-short'}">${dashEsc(u.side.toUpperCase())}</td>
         <td>${perpsFmtSize(u.size)}</td>
         <td>${perpsFmtUsd(u.notional)}</td>
