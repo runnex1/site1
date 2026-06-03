@@ -22205,6 +22205,10 @@ function perpsPairFeesForRange(p, range) {
 
 function perpsPairGrossFundingApr(p) {
     let spread8h = p.currentSpread8h;
+    if ((spread8h == null || !Number.isFinite(spread8h)) && p.fundingRate8hA != null && p.fundingRate8hB != null) {
+        const { sizeA, sizeB } = perpsPairLegSizes(p);
+        spread8h = perpsNetFundingSpread8h(sizeA, p.fundingRate8hA, sizeB, p.fundingRate8hB);
+    }
     if (spread8h == null || !Number.isFinite(spread8h)) {
         const row = perpsRateSpreadRow(p.symbol);
         const { sizeA, sizeB, venueA, venueB } = perpsPairLegSizes(p);
@@ -22273,9 +22277,15 @@ function perpsApplyLiveRates(rateSpread) {
         const { sizeA, sizeB, venueA, venueB } = perpsPairLegSizes(p);
         const rateA = perpsVenueRate8hFromSpread(spread, venueA);
         const rateB = perpsVenueRate8hFromSpread(spread, venueB);
-        p.fundingRate8hA = rateA;
-        p.fundingRate8hB = rateB;
-        p.currentSpread8h = perpsNetFundingSpread8h(sizeA, rateA, sizeB, rateB);
+        if (rateA != null) p.fundingRate8hA = rateA;
+        if (rateB != null) p.fundingRate8hB = rateB;
+        const nextSpread = perpsNetFundingSpread8h(
+            sizeA,
+            rateA ?? p.fundingRate8hA,
+            sizeB,
+            rateB ?? p.fundingRate8hB,
+        );
+        if (nextSpread != null) p.currentSpread8h = nextSpread;
     }
     perpsRenderPortfolioPositions(_perpsLastData.paired);
 }
@@ -22387,7 +22397,11 @@ function perpsPairLegFundingTooltipRows(p) {
     return ['a', 'b'].map((key, i) => {
         const leg = key === 'a' ? legs.a : legs.b;
         const venue = venues[i];
-        const native = perpsVenueNativeFundingRate(venue, row);
+        let native = perpsVenueNativeFundingRate(venue, row);
+        if (native.rateDecimal == null) {
+            const rate8h = key === 'a' ? p.fundingRate8hA : p.fundingRate8hB;
+            if (rate8h != null && Number.isFinite(rate8h)) native = { rateDecimal: rate8h, intervalHours: 8 };
+        }
         const sideLabel = (leg.size > 0) ? 'Long Funding Rate' : (leg.size < 0) ? 'Short Funding Rate' : 'Funding Rate';
         return {
             sideLabel,
