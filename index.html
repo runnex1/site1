@@ -591,7 +591,7 @@ body[data-active-tab="watcher"] #watcherTab,
   height:100%; min-height:0;
 }
 
-/* Perps Funding Arb tab */
+/* Perps DEXs tab */
 body[data-active-tab="perps"] .market-ticker-strip,
 .page-content.tab-perps .market-ticker-strip,
 .page-content:has(#perpsTab.active) .market-ticker-strip {
@@ -851,7 +851,7 @@ body[data-active-tab="perps"] .topbar,
 }
 .perps-pos-chart-btn:hover { border-color:rgba(167,139,250,0.45); color:#c4b5fd; background:rgba(167,139,250,0.1); }
 .perps-pos-chart-btn svg { width:14px; height:14px; }
-.perps-pos-chart-modal { max-width:1420px; width:min(98vw,1420px); padding:1.35rem 1.55rem 1.2rem; }
+.perps-pos-chart-modal { max-width:none; width:min(99vw,1680px); padding:1.45rem 1.8rem 1.25rem; }
 .perps-pos-chart-modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.65rem; }
 .perps-pos-chart-modal-title { font-weight:900; letter-spacing:0.06em; text-transform:uppercase; font-size:0.9rem; color:var(--t1); }
 .perps-pos-chart-modal-meta { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; margin-top:0.25rem; }
@@ -860,7 +860,7 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-chart-kpi-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:1.35rem; font-weight:800; }
 .perps-pos-chart-kpi-val.pos { color:#55d66f; }
 .perps-pos-chart-kpi-val.neg { color:#ff5c7a; }
-.perps-pos-chart-canvas-wrap { height:300px; max-height:34vh; min-height:240px; position:relative; }
+.perps-pos-chart-canvas-wrap { height:360px; max-height:42vh; min-height:260px; position:relative; }
 .perps-pos-chart-empty { padding:2rem 1rem; text-align:center; color:#9dacbb; font-family:var(--ff-mono); font-size:0.72rem; }
 .perps-pos-funding-recent { margin-top:1rem; border:1px solid rgba(255,255,255,0.08); border-radius:16px; background:rgba(255,255,255,0.025); overflow:hidden; }
 .perps-pos-funding-recent-head { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; padding:0.75rem 0.9rem; border-bottom:1px solid rgba(255,255,255,0.07); }
@@ -5679,6 +5679,10 @@ body[data-active-tab="loops"] .loop-pos-val,
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l3-9 5 18 3-9h5"/></svg>
         Prediction Markets
       </div>
+      <div class="nav-item" data-tab="perps" onclick="switchTab('perps')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 5 5-9"/></svg>
+        Perps DEXs
+      </div>
       <div class="nav-item" data-tab="loops" onclick="switchTab('loops')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="M15 5l4 4"/></svg>
         Loops
@@ -5698,10 +5702,6 @@ body[data-active-tab="loops"] .loop-pos-val,
       <div class="nav-item" data-tab="watcher" onclick="switchTab('watcher')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         Watcher
-      </div>
-      <div class="nav-item" data-tab="perps" onclick="switchTab('perps')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 5 5-9"/></svg>
-        Perps Arb
       </div>
     </div>
 
@@ -8227,7 +8227,7 @@ const featureSearchItems = [
     { label: 'Prediction Market Watchlist', tab: 'watcher', subtab: 'markets', buttonId: 'wtab-btn-markets', keywords: 'prediction market watchlist polymarket opinion alerts' },
     { label: 'Wallet Watchlist', tab: 'watcher', subtab: 'wallets', buttonId: 'wtab-btn-wallets', keywords: 'wallet watchlist debank polymarket wallets watcher' },
     { label: 'Yield Tools', tab: 'watcher', subtab: 'yield', buttonId: 'wtab-btn-yield', keywords: 'yield tools watcher links saved tools' },
-    { label: 'Perps Funding Arb', tab: 'perps', keywords: 'perps hyperliquid nado funding rate arbitrage dex' },
+    { label: 'Perps DEXs', tab: 'perps', keywords: 'perps hyperliquid nado funding rate arbitrage dex' },
     { label: 'Prediction Markets', tab: 'prediction', keywords: 'prediction markets polymarket opinion positions bets' },
     { label: 'ETF & Stocks', tab: 'etf', keywords: 'etf stocks equity holdings watchlist' },
     { label: 'Weekly Snapshots', tab: 'history', keywords: 'weekly snapshots history first snapshot performance apr' }
@@ -20804,7 +20804,7 @@ function watcherApplyFilters() {
     });
 }
 
-// ── Perps Funding Arb (Hyperliquid + Nado) ───────────────────────────
+// -- Perps DEXs (funding and delta-neutral perps) ---------------------
 function perpsMaskSecret(value) {
     return value ? '*'.repeat(String(value).length) : '';
 }
@@ -22348,6 +22348,15 @@ async function perpsRefreshLiveApr() {
 function perpsPairPeriodApr(p, range) {
     const margin = p.avgNotional ?? 0;
     if (!margin) return null;
+    const rawRows = Array.isArray(p.dailyPerformanceSeries) ? p.dailyPerformanceSeries : [];
+    const rows = perpsFilterPairDailySeries(rawRows, p, range);
+    if (rows.length) {
+        const totals = perpsSumDailyFundingSeries(rows, true);
+        const days = perpsDailySeriesSpanDays(rows);
+        return perpsAnnualizeReturnPct(totals.net, margin, days);
+    }
+    if (rawRows.length) return null;
+
     const { funding, days } = perpsPairFundingForRange(p, range);
     if (funding == null || !days) return null;
     let fees = perpsPairFeesForRange(p, range);
@@ -22513,12 +22522,44 @@ function perpsHideCurrentAprTip() {
     tip.setAttribute('aria-hidden', 'true');
 }
 
+function perpsDailyRowHasPerformanceActivity(row) {
+    const eps = 0.0000001;
+    return Math.abs(row?.dailyFunding || 0) > eps ||
+        Math.abs(row?.dailyFees || 0) > eps ||
+        Math.abs(row?.dailyNet || 0) > eps ||
+        (Array.isArray(row?.fundingEvents) && row.fundingEvents.length > 0) ||
+        (Array.isArray(row?.feeEvents) && row.feeEvents.length > 0);
+}
+
+function perpsTrimPairDailySeriesToActivity(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    let first = -1;
+    let last = -1;
+    for (let i = 0; i < list.length; i++) {
+        if (perpsDailyRowHasPerformanceActivity(list[i])) {
+            if (first === -1) first = i;
+            last = i;
+        }
+    }
+    return first === -1 ? [] : list.slice(first, last + 1);
+}
+
+function perpsDailySeriesSpanDays(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) return null;
+    const first = Date.parse((list[0]?.day || '') + 'T12:00:00Z');
+    const last = Date.parse((list.at(-1)?.day || '') + 'T12:00:00Z');
+    if (!Number.isFinite(first) || !Number.isFinite(last)) return Math.max(list.length, 1);
+    return Math.max(1, Math.round((last - first) / 86400000) + 1);
+}
+
 function perpsFilterPairDailySeries(series, p, range) {
     let rows = perpsFilterDailySeries(series || [], range);
     if (p.daysOpen != null && p.daysOpen > 0) {
         const openMs = Date.now() - Math.ceil(p.daysOpen) * 86400000;
         rows = rows.filter(r => new Date(r.day + 'T12:00:00Z').getTime() >= openMs - 86400000);
     }
+    rows = perpsTrimPairDailySeriesToActivity(rows);
     let cumFunding = 0;
     let cumFees = 0;
     let cumNet = 0;
@@ -22684,9 +22725,9 @@ function perpsOpenPositionChart(pairIdx) {
 
     const displayLegs = perpsPairDisplayLegEntries(p);
     const series = perpsFilterPairDailySeries(p.dailyPerformanceSeries || [], p, 'all');
-    const rangeLabel = p.daysOpen != null && p.daysOpen > 0
-        ? `${Math.ceil(p.daysOpen)}d since open`
-        : 'All time';
+    const rangeLabel = series.length
+        ? `${perpsDailySeriesSpanDays(series)}d active session`
+        : 'No performance events';
     const totals = perpsSumDailyFundingSeries(series, true);
 
     if (meta) {
@@ -22708,7 +22749,7 @@ function perpsOpenPositionChart(pairIdx) {
         _perpsPositionChartInstance = null;
     }
 
-    const hasData = series.some(r => (r.dailyFunding || 0) !== 0 || (r.dailyFees || 0) !== 0);
+    const hasData = series.length > 0;
     if (wrap) wrap.style.display = hasData ? '' : 'none';
     if (empty) empty.style.display = hasData ? 'none' : '';
     if (hasData) {
