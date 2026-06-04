@@ -735,6 +735,7 @@ body[data-active-tab="perps"] .topbar,
   box-shadow:0 8px 24px rgba(0,0,0,0.35); display:none;
 }
 .perps-apr-tip-title { font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:#59f0c8; margin-bottom:0.35rem; }
+.perps-apr-tip-time { margin-left:0.35rem; color:#9dacbb; font-size:0.58rem; letter-spacing:0.02em; text-transform:none; }
 .perps-apr-tip-row { display:flex; justify-content:space-between; align-items:baseline; gap:0.65rem; padding:0.1rem 0; color:#9dacbb; }
 .perps-apr-tip-row span:first-child { flex:1; min-width:0; }
 .perps-apr-tip-apr { font-weight:800; white-space:nowrap; }
@@ -841,7 +842,7 @@ body[data-active-tab="perps"] .topbar,
 }
 .perps-pos-chart-btn:hover { border-color:rgba(167,139,250,0.45); color:#c4b5fd; background:rgba(167,139,250,0.1); }
 .perps-pos-chart-btn svg { width:14px; height:14px; }
-.perps-pos-chart-modal { max-width:1180px; width:min(96vw,1180px); padding:1.45rem 1.65rem 1.35rem; }
+.perps-pos-chart-modal { max-width:1420px; width:min(98vw,1420px); padding:1.35rem 1.55rem 1.2rem; }
 .perps-pos-chart-modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.65rem; }
 .perps-pos-chart-modal-title { font-weight:900; letter-spacing:0.06em; text-transform:uppercase; font-size:0.9rem; color:var(--t1); }
 .perps-pos-chart-modal-meta { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; margin-top:0.25rem; }
@@ -850,17 +851,22 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-chart-kpi-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:1.35rem; font-weight:800; }
 .perps-pos-chart-kpi-val.pos { color:#55d66f; }
 .perps-pos-chart-kpi-val.neg { color:#ff5c7a; }
-.perps-pos-chart-canvas-wrap { height:min(56vh,520px); min-height:390px; position:relative; }
+.perps-pos-chart-canvas-wrap { height:300px; max-height:34vh; min-height:240px; position:relative; }
 .perps-pos-chart-empty { padding:2rem 1rem; text-align:center; color:#9dacbb; font-family:var(--ff-mono); font-size:0.72rem; }
 .perps-pos-funding-recent { margin-top:1rem; border:1px solid rgba(255,255,255,0.08); border-radius:16px; background:rgba(255,255,255,0.025); overflow:hidden; }
 .perps-pos-funding-recent-head { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; padding:0.75rem 0.9rem; border-bottom:1px solid rgba(255,255,255,0.07); }
 .perps-pos-funding-recent-title { font-family:var(--ff-mono); font-size:0.68rem; font-weight:900; letter-spacing:0.08em; text-transform:uppercase; color:#64f4c5; }
 .perps-pos-funding-recent-note { font-family:var(--ff-mono); font-size:0.62rem; color:#7f8f9f; text-align:right; }
-.perps-pos-funding-table { width:100%; border-collapse:collapse; font-family:var(--ff-mono); font-size:0.68rem; }
-.perps-pos-funding-table th, .perps-pos-funding-table td { padding:0.62rem 0.9rem; border-bottom:1px solid rgba(255,255,255,0.055); text-align:left; }
-.perps-pos-funding-table th { color:#7f8f9f; font-size:0.58rem; letter-spacing:0.08em; text-transform:uppercase; }
-.perps-pos-funding-table tr:last-child td { border-bottom:0; }
-.perps-pos-funding-table td:last-child, .perps-pos-funding-table th:last-child { text-align:right; }
+.perps-pos-funding-strip { display:flex; gap:0.65rem; overflow-x:auto; padding:0.78rem 0.9rem 0.9rem; scroll-snap-type:x proximity; }
+.perps-pos-funding-card { flex:0 0 190px; scroll-snap-align:start; padding:0.72rem 0.76rem; border:1px solid rgba(255,255,255,0.075); border-radius:13px; background:rgba(8,14,20,0.48); font-family:var(--ff-mono); }
+.perps-pos-funding-card.net { flex-basis:215px; border-color:rgba(100,244,197,0.14); }
+.perps-pos-funding-time { color:#9dacbb; font-size:0.62rem; line-height:1.35; }
+.perps-pos-funding-main { margin-top:0.5rem; display:flex; align-items:center; justify-content:space-between; gap:0.6rem; }
+.perps-pos-funding-label { color:#dfe7ef; font-size:0.67rem; font-weight:800; line-height:1.3; }
+.perps-pos-funding-pay { font-size:0.9rem; font-weight:900; white-space:nowrap; }
+.perps-pos-funding-sub { margin-top:0.48rem; color:#7f8f9f; font-size:0.58rem; line-height:1.35; }
+.perps-pos-funding-breakdown { margin-top:0.45rem; display:flex; flex-direction:column; gap:0.2rem; color:#9dacbb; font-size:0.58rem; line-height:1.25; }
+.perps-pos-funding-breakdown-row { display:flex; justify-content:space-between; gap:0.5rem; }
 .perps-pos-funding-empty { padding:0.9rem; color:#9dacbb; font-family:var(--ff-mono); font-size:0.68rem; }
 .perps-config input.perps-masked { letter-spacing:0.08em; color:#9dacbb; }
 .perps-pnl-chart.hoverable, .perps-fund-chart-wrap { cursor:crosshair; }
@@ -7470,6 +7476,7 @@ let _perpsDailyFundChartState = null;
 let _perpsRefreshTimer = null;
 let _perpsLiveAprTimer = null;
 let _perpsLiveAprInFlight = false;
+let _perpsLiveAprUpdatedAt = null;
 let _perpsLastRefreshAt = null;
 let _perpsRefreshError = null;
 let _perpsStatRange = '7d';
@@ -22278,10 +22285,11 @@ function perpsPairLegSizes(p) {
     };
 }
 
-function perpsApplyLiveRates(rateSpread) {
+function perpsApplyLiveRates(rateSpread, fetchedAt = null) {
     if (!_perpsLastData?.paired?.length || !Array.isArray(rateSpread)) return;
     const spreadByBase = Object.fromEntries(rateSpread.map(r => [r.symbol, r]));
     _perpsLastData.rateSpread = rateSpread;
+    _perpsLiveAprUpdatedAt = Number(fetchedAt || Date.now());
     for (const p of _perpsLastData.paired) {
         const spread = spreadByBase[p.symbol];
         if (!spread) continue;
@@ -22314,7 +22322,7 @@ async function perpsRefreshLiveApr() {
         const res = await fetch('/api/perps?' + params.toString(), { signal: AbortSignal.timeout(12000) });
         const payload = await res.json();
         if (!res.ok) throw new Error(payload.error || res.statusText);
-        if (payload.rateSpread) perpsApplyLiveRates(payload.rateSpread);
+        if (payload.rateSpread) perpsApplyLiveRates(payload.rateSpread, payload.fetchedAt);
     } catch (e) {
         console.warn('[perps live APR]', e);
     } finally {
@@ -22423,6 +22431,19 @@ function perpsPairLegFundingTooltipRows(p) {
     });
 }
 
+function perpsFormatLiveRateUpdatedAt(ts) {
+    const t = Number(ts || 0);
+    if (!t) return 'not refreshed yet';
+    return new Date(t).toLocaleString([], {
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    });
+}
+
 function perpsBuildCurrentAprTooltipHtml(p, range) {
     const legRows = perpsPairLegFundingTooltipRows(p);
     const gross = perpsPairGrossFundingApr(p);
@@ -22438,7 +22459,9 @@ function perpsBuildCurrentAprTooltipHtml(p, range) {
     const partialNote = perpsPairUsesPartialWindow(p, range)
         ? ` · Net APR uses ${perpsPairEffectiveDays(p, range)?.toFixed(1)}d since open`
         : '';
-    return `<div class="perps-apr-tip-title">Funding (live)</div>${legsHtml}<div class="perps-apr-tip-divider"></div>` +
+    const liveUpdatedAt = _perpsLiveAprUpdatedAt || _perpsLastRefreshAt || _perpsLastData?.fetchedAt;
+    const liveTime = perpsFormatLiveRateUpdatedAt(liveUpdatedAt);
+    return `<div class="perps-apr-tip-title">Funding (live)<span class="perps-apr-tip-time">${dashEsc(liveTime)}</span></div>${legsHtml}<div class="perps-apr-tip-divider"></div>` +
         `<div class="perps-apr-tip-row"><span>Current APR</span><span class="perps-apr-tip-apr ${perpsSignedCls(gross)}">${gross != null ? perpsFmtPct(gross) : '—'}</span></div>` +
         `<div class="perps-apr-tip-row"><span>Daily Income (est.)</span><span class="perps-apr-tip-apr ${perpsSignedCls(dailyTotal)}">${perpsFmtUsd(dailyTotal)}</span></div>` +
         spreadLine +
@@ -22528,6 +22551,14 @@ function perpsFormatEventTime(ts) {
     });
 }
 
+function perpsFundingIntervalHoursForVenue(venue, symbol) {
+    const key = String(venue || '').toLowerCase();
+    if (key === 'hyperliquid' || key === 'extended') return 1;
+    if (key === 'nado') return 24;
+    const native = perpsVenueNativeFundingRate(key, perpsRateSpreadRow(symbol));
+    return native.intervalHours || 8;
+}
+
 function perpsRecentFundingRows(p) {
     const series = p.dailyPerformanceSeries || [];
     const entries = perpsPairLegEntries(p);
@@ -22549,8 +22580,7 @@ function perpsRecentFundingRows(p) {
     const selected = [];
     for (const entry of entries) {
         const key = venueKey(entry.venue);
-        const native = perpsVenueNativeFundingRate(entry.venue, perpsRateSpreadRow(p.symbol));
-        const intervalHours = native.intervalHours || 8;
+        const intervalHours = perpsFundingIntervalHoursForVenue(entry.venue, p.symbol);
         const rows = (rowsByVenue[key] || []).sort((a, b) => (b.time || 0) - (a.time || 0));
         const picked = intervalHours <= 1
             ? rows.filter(ev => (ev.time || 0) >= anchorTime - 8 * 3600000)
@@ -22560,27 +22590,60 @@ function perpsRecentFundingRows(p) {
     return selected.sort((a, b) => (b.time || 0) - (a.time || 0));
 }
 
-function perpsRenderRecentFundingPayments(p) {
+function perpsRecentFundingGroups(p) {
     const rows = perpsRecentFundingRows(p);
-    if (!rows.length) {
+    const entries = perpsPairLegEntries(p);
+    const allHourly = entries.length > 1 && entries.every(entry => perpsFundingIntervalHoursForVenue(entry.venue, p.symbol) <= 1);
+    if (!allHourly) {
+        return rows.map(row => ({
+            type: 'single',
+            time: row.time || 0,
+            rows: [row],
+            total: row.usdc || 0,
+            intervalHours: row.intervalHours,
+        }));
+    }
+    const byHour = new Map();
+    rows.forEach(row => {
+        const hour = Math.floor((row.time || 0) / 3600000) * 3600000;
+        if (!byHour.has(hour)) byHour.set(hour, { type: 'net-hour', time: hour, rows: [], total: 0, intervalHours: 1 });
+        const group = byHour.get(hour);
+        group.rows.push(row);
+        group.total += row.usdc || 0;
+    });
+    return [...byHour.values()].sort((a, b) => b.time - a.time);
+}
+
+function perpsRenderRecentFundingPayments(p) {
+    const groups = perpsRecentFundingGroups(p);
+    if (!groups.length) {
         return `<div class="perps-pos-funding-recent-head"><div class="perps-pos-funding-recent-title">Recent funding payments</div></div>` +
             `<div class="perps-pos-funding-empty">No funding payments found in the recent window for this position.</div>`;
     }
-    const body = rows.map(row => {
-        const entry = row.entry;
-        const side = Number(entry.leg.size || 0) > 0 ? 'Long' : 'Short';
-        return `<tr>` +
-            `<td>${perpsFormatEventTime(row.time)}</td>` +
-            `<td>${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</td>` +
-            `<td>${dashEsc(side)}</td>` +
-            `<td>${row.intervalHours <= 1 ? 'last 8h' : `last 2 (${row.intervalHours}h)`}</td>` +
-            `<td class="${perpsSignedCls(row.usdc || 0)}">${perpsFmtUsd(row.usdc || 0)}</td>` +
-            `</tr>`;
+    const cards = groups.map(group => {
+        const primary = group.rows[0];
+        const entry = primary.entry;
+        const singleSide = Number(entry.leg.size || 0) > 0 ? 'Long' : 'Short';
+        const title = group.type === 'net-hour'
+            ? 'Net funding'
+            : perpsVenueWithSideHtml(entry.venue, entry.leg.size);
+        const detail = group.type === 'net-hour'
+            ? '1h net across both legs'
+            : `${singleSide} - ${group.intervalHours <= 1 ? 'last 8h' : `last 2 (${group.intervalHours}h)`}`;
+        const breakdown = group.type === 'net-hour'
+            ? `<div class="perps-pos-funding-breakdown">${group.rows.map(row => `<div class="perps-pos-funding-breakdown-row"><span>${perpsVenueWithSideHtml(row.entry.venue, row.entry.leg.size)}</span><span class="${perpsSignedCls(row.usdc || 0)}">${perpsFmtUsd(row.usdc || 0)}</span></div>`).join('')}</div>`
+            : '';
+        return `<div class="perps-pos-funding-card ${group.type === 'net-hour' ? 'net' : ''}">` +
+            `<div class="perps-pos-funding-time">${perpsFormatEventTime(group.time)}</div>` +
+            `<div class="perps-pos-funding-main"><div class="perps-pos-funding-label">${title}</div><div class="perps-pos-funding-pay ${perpsSignedCls(group.total)}">${perpsFmtUsd(group.total)}</div></div>` +
+            `<div class="perps-pos-funding-sub">${detail}</div>` +
+            breakdown +
+            `</div>`;
     }).join('');
     return `<div class="perps-pos-funding-recent-head">` +
         `<div class="perps-pos-funding-recent-title">Recent funding payments</div>` +
-        `<div class="perps-pos-funding-recent-note">Hourly venues show last 8h; slower venues show last 2 payments</div>` +
-        `</div><table class="perps-pos-funding-table"><thead><tr><th>Time</th><th>Exchange</th><th>Side</th><th>Window</th><th>Payment</th></tr></thead><tbody>${body}</tbody></table>`;
+        `<div class="perps-pos-funding-recent-note">Hourly pairs are netted by hour; slower venues show last 2 payments</div>` +
+        `</div><div class="perps-pos-funding-strip">${cards}</div>`;
 }
 
 function perpsClosePositionChart() {
@@ -23139,6 +23202,7 @@ function perpsRenderDashboard(data) {
     perpsRenderUnhedged(data.unhedged || []);
     perpsRenderAlerts(data.paired || [], data.unhedged || [], data.summary || {});
     _perpsLastRefreshAt = data.fetchedAt || Date.now();
+    _perpsLiveAprUpdatedAt = _perpsLastRefreshAt;
     _perpsRefreshError = null;
     perpsUpdateRefreshBar();
     perpsRefreshLiveApr();
