@@ -12,6 +12,7 @@ const require = createRequire(import.meta.url);
 const {
   appendEquitySnapshotStore,
   buildEquitySnapshotFromDashboard,
+  buildClosedPairs,
   buildDailyFundingSeries,
   computeCombinedNetDeposits,
 } = require('../lib/perps.js');
@@ -70,6 +71,29 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   const fees = series.flatMap(row => row.feeEvents);
   assert.equal(events.length, 2, 'daily series must retain funding event timestamps');
   assert.equal(fees.length, 2, 'daily series must retain fee event timestamps');
+}
+
+{
+  const open = now - 6 * 3600000;
+  const close = now - 1 * 3600000;
+  const closed = buildClosedPairs({
+    hyperliquid: [
+      { venue: 'hyperliquid', symbol: 'ENA', time: open, side: 'B', px: 0.1, sz: 50000, fee: 1, closedPnl: 0 },
+      { venue: 'hyperliquid', symbol: 'ENA', time: close, side: 'A', px: 0.119, sz: 50000, fee: 1, closedPnl: 950 },
+    ],
+    extended: [
+      { venue: 'extended', symbol: 'ENA', time: open + 1000, side: 'sell', px: 0.1, sz: 50000, fee: 1.5 },
+      { venue: 'extended', symbol: 'ENA', time: close + 1000, side: 'buy', px: 0.1192, sz: 50000, fee: 1.5 },
+    ],
+  }, {
+    hyperliquid: [{ venue: 'hyperliquid', symbol: 'ENA', time: open + 3600000, usdc: 12 }],
+    extended: [{ venue: 'extended', symbol: 'ENA', time: open + 3600000, usdc: 8 }],
+  });
+  assert.equal(closed.length, 1, 'closed round-trip legs must be paired');
+  assert.equal(Math.round(closed[0].closeSlippage), -10, 'closed slippage must be the net realized PnL of both legs');
+  assert.equal(closed[0].funding, 20, 'closed PnL must include funding payments inside the round');
+  assert.equal(closed[0].fees, 5, 'closed PnL must include trading fees from both legs');
+  assert.equal(Math.round(closed[0].netPnl), 5, 'closed net PnL must equal slippage plus funding minus fees');
 }
 
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
@@ -132,6 +156,10 @@ assert.match(indexHtml, /<g id="perpsEquityPoints"><\/g>/, 'equity chart must re
 assert.match(indexHtml, /latest \$\{perpsFmtUsd\(chart\.plot\.at\(-1\)\?\.val\)\}/, 'equity chart badge must expose the latest plotted snapshot amount');
 assert.match(indexHtml, /perpsPairDisplayLegEntries\(p\)/, 'position cards must order exchange labels with the long leg first');
 assert.match(indexHtml, /perpsVenueWithSideHtml\(entry\.venue, entry\.leg\.size\)/, 'exchange labels must show long/short badges in position cards');
+assert.match(indexHtml, /perpsSetPositionsTab\('closed'/, 'Positions panel must expose a Closed tab');
+assert.match(indexHtml, /function perpsRenderClosedPositions\(closedPairs\)/, 'Closed tab must render fully closed position rounds');
+assert.match(indexHtml, /p\.closeSlippage/, 'Closed tab must show closing slippage separately');
+assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response must include closed pairs');
 assert.match(indexHtml, /perpsPositionFundingRecent/, 'position performance modal must include recent funding payments');
 assert.match(indexHtml, /function perpsRecentFundingGroups\(p\)/, 'recent funding payments must support hourly net grouping');
 assert.match(indexHtml, /perps-pos-funding-strip/, 'recent funding payments must render as a horizontal card strip');

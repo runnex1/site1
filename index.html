@@ -794,6 +794,9 @@ body[data-active-tab="perps"] .topbar,
 .perps-equity-line { fill:none; stroke:#a78bfa; stroke-width:2.2; vector-effect:non-scaling-stroke; }
 .perps-equity-area { fill:rgba(167,139,250,0.14); stroke:none; }
 .perps-equity-point { fill:#c4b5fd; stroke:#1a1025; stroke-width:1.2; vector-effect:non-scaling-stroke; }
+.perps-position-tabs { display:flex; align-items:center; gap:0.4rem; margin-left:auto; }
+.perps-position-tab { font-family:var(--ff-mono); font-size:0.62rem; font-weight:900; letter-spacing:0.07em; text-transform:uppercase; padding:0.32rem 0.7rem; border-radius:999px; border:1px solid rgba(134,159,179,0.18); background:rgba(255,255,255,0.03); color:#9dacbb; cursor:pointer; }
+.perps-position-tab.active { border-color:rgba(89,240,200,0.38); background:rgba(89,240,200,0.1); color:#59f0c8; }
 .perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 1rem 0.65rem; }
 .perps-pos-head, .perps-pos-row {
   display:grid;
@@ -817,6 +820,12 @@ body[data-active-tab="perps"] .topbar,
   padding:0.75rem 0.85rem; margin-bottom:8px;
 }
 .perps-pos-row { min-width:0; }
+.perps-pos-row.closed {
+  grid-template-columns:minmax(140px,1.1fr) minmax(220px,1.45fr) minmax(90px,0.9fr) minmax(96px,0.95fr) minmax(88px,0.85fr) minmax(78px,0.78fr) minmax(104px,0.9fr);
+}
+.perps-pos-head.closed {
+  grid-template-columns:minmax(140px,1.1fr) minmax(220px,1.45fr) minmax(90px,0.9fr) minmax(96px,0.95fr) minmax(88px,0.85fr) minmax(78px,0.78fr) minmax(104px,0.9fr);
+}
 .perps-pos-token { display:flex; align-items:center; gap:0.55rem; min-width:0; }
 .perps-pos-token-name { font-weight:900; font-size:0.92rem; color:var(--t1); }
 .perps-pos-token-meta { font-family:var(--ff-mono); font-size:0.58rem; color:#9dacbb; margin-top:0.12rem; }
@@ -6645,6 +6654,10 @@ body[data-active-tab="loops"] .loop-pos-val,
           <section class="perps-panel">
             <div class="perps-panel-head">
               <div class="perps-panel-title">Positions</div>
+              <div class="perps-position-tabs" role="tablist" aria-label="Position status">
+                <button type="button" class="perps-position-tab active" data-perps-positions-tab="live" onclick="perpsSetPositionsTab('live', this)">Live</button>
+                <button type="button" class="perps-position-tab" data-perps-positions-tab="closed" onclick="perpsSetPositionsTab('closed', this)">Closed</button>
+              </div>
               <span class="perps-pill" id="perpsPairsBadge">0 pairs</span>
             </div>
             <div class="perps-apr-tooltip" id="perpsAprTooltip" role="tooltip" aria-hidden="true"></div>
@@ -7480,6 +7493,7 @@ let _perpsLiveAprUpdatedAt = null;
 let _perpsLastRefreshAt = null;
 let _perpsRefreshError = null;
 let _perpsStatRange = '7d';
+let _perpsPositionsTab = 'live';
 let _perpsLastData = null;
 let _perpsVenueEquity = null;
 let _perpsEquityChartState = null;
@@ -20917,7 +20931,7 @@ function perpsSetStatRange(range, btn) {
     perpsSaveConfig({ statRangeOnly: true });
     if (_perpsLastData) {
         perpsRenderStatsBar(_perpsLastData);
-        perpsRenderPortfolioPositions(_perpsLastData.paired || []);
+        perpsRenderPositionsPanel(_perpsLastData);
         perpsRenderFundingForTimeWindow(_perpsLastData);
     }
 }
@@ -22306,7 +22320,7 @@ function perpsApplyLiveRates(rateSpread, fetchedAt = null) {
         );
         if (nextSpread != null) p.currentSpread8h = nextSpread;
     }
-    perpsRenderPortfolioPositions(_perpsLastData.paired);
+    perpsRenderPositionsPanel(_perpsLastData);
 }
 
 async function perpsRefreshLiveApr() {
@@ -22898,6 +22912,23 @@ function perpsRenderStatsBar(data) {
     }
 }
 
+function perpsSetPositionsTab(tab, btn) {
+    _perpsPositionsTab = tab === 'closed' ? 'closed' : 'live';
+    document.querySelectorAll('[data-perps-positions-tab]').forEach(el => {
+        el.classList.toggle('active', el.getAttribute('data-perps-positions-tab') === _perpsPositionsTab);
+    });
+    if (btn) btn.classList.add('active');
+    perpsRenderPositionsPanel(_perpsLastData);
+}
+
+function perpsRenderPositionsPanel(data) {
+    if (_perpsPositionsTab === 'closed') {
+        perpsRenderClosedPositions(data?.closedPairs || []);
+    } else {
+        perpsRenderPortfolioPositions(data?.paired || []);
+    }
+}
+
 function perpsRenderPortfolioPositions(paired) {
     const el = document.getElementById('perpsPositionsList');
     const badge = document.getElementById('perpsPairsBadge');
@@ -22948,6 +22979,57 @@ function perpsRenderPortfolioPositions(paired) {
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Margin</div><div class="perps-pos-metric-val">${perpsFmtUsd(margin)}</div></div>
             <div class="perps-pos-apr-col"><div class="perps-pos-metric-label">Net APR · ${dashEsc(perpsStatRangeLabel(_perpsStatRange))}</div><div class="perps-pos-apr-val ${perpsSignedCls(periodApr)}">${periodApr != null ? perpsFmtPct(periodApr) : '—'}</div></div>
             <div class="perps-pos-chart-col"><button type="button" class="perps-pos-chart-btn" aria-label="Position performance chart" onclick="perpsOpenPositionChart(${pairIdx}); event.stopPropagation();">${perpsPositionChartIconSvg()}</button></div>
+        </div></div>`;
+    }).join('');
+    if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
+}
+
+function perpsClosedLegHtml(leg) {
+    const signedSize = leg.side === 'short' ? -Math.abs(leg.size || 0) : Math.abs(leg.size || 0);
+    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(leg.venue, signedSize)}</span><span class="perps-pos-metric-val ${perpsSignedCls(leg.realizedPnl ?? 0)}">${perpsFmtUsd(leg.realizedPnl ?? 0)}</span></div>`;
+}
+
+function perpsRenderClosedPositions(closedPairs) {
+    const el = document.getElementById('perpsPositionsList');
+    const badge = document.getElementById('perpsPairsBadge');
+    if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
+    if (!el) return;
+    if (!closedPairs.length) {
+        el.innerHTML = '<div class="perps-empty">No fully closed hedged rounds found in the available fill history.</div>';
+        return;
+    }
+    const head = `<div class="perps-pos-head closed">
+        <div>Position</div>
+        <div>Exchange PnL</div>
+        <div>Net PnL</div>
+        <div>Close Slippage</div>
+        <div>Funding</div>
+        <div>Fees</div>
+        <div>Closed</div>
+    </div>`;
+    el.innerHTML = head + closedPairs.map(p => {
+        const sizeLabel = p.size != null ? `${perpsFmtSize(p.size)} ${p.symbol}` : p.symbol;
+        const closedAt = perpsFormatEventTime(p.closeTime);
+        return `<div class="perps-pos-card"><div class="perps-pos-row closed">
+            <div class="perps-pos-token">
+                <div class="perps-pos-token-row">
+                    ${makeLogo(p.symbol, false, 36)}
+                    <div>
+                        <div class="perps-pos-token-name">${dashEsc(p.symbol)}</div>
+                        <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}</div>
+                        <span class="perps-pos-pill">CLOSED</span>
+                    </div>
+                </div>
+            </div>
+            <div class="perps-pos-legs">
+                ${perpsClosedLegHtml(p.longLeg)}
+                ${perpsClosedLegHtml(p.shortLeg)}
+            </div>
+            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</div></div>
+            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Close Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</div></div>
+            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(p.funding)}">${perpsFmtUsd(p.funding)}</div></div>
+            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Fees</div><div class="perps-pos-metric-val neg">-${perpsFmtUsd(Math.abs(p.fees || 0)).replace(/^-/, '')}</div></div>
+            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Closed</div><div class="perps-pos-metric-val">${dashEsc(closedAt)}</div></div>
         </div></div>`;
     }).join('');
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
@@ -23198,7 +23280,7 @@ function perpsRenderDashboard(data) {
     perpsRenderStatsBar(data);
     perpsRenderEquityChart(data);
     perpsRenderFundingForTimeWindow(data);
-    perpsRenderPortfolioPositions(data.paired || []);
+    perpsRenderPositionsPanel(data);
     perpsRenderUnhedged(data.unhedged || []);
     perpsRenderAlerts(data.paired || [], data.unhedged || [], data.summary || {});
     _perpsLastRefreshAt = data.fetchedAt || Date.now();
