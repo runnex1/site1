@@ -841,7 +841,7 @@ body[data-active-tab="perps"] .topbar,
 }
 .perps-pos-chart-btn:hover { border-color:rgba(167,139,250,0.45); color:#c4b5fd; background:rgba(167,139,250,0.1); }
 .perps-pos-chart-btn svg { width:14px; height:14px; }
-.perps-pos-chart-modal { max-width:720px; width:94%; padding:1.25rem 1.35rem 1.1rem; }
+.perps-pos-chart-modal { max-width:1180px; width:min(96vw,1180px); padding:1.45rem 1.65rem 1.35rem; }
 .perps-pos-chart-modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.65rem; }
 .perps-pos-chart-modal-title { font-weight:900; letter-spacing:0.06em; text-transform:uppercase; font-size:0.9rem; color:var(--t1); }
 .perps-pos-chart-modal-meta { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; margin-top:0.25rem; }
@@ -850,8 +850,18 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-chart-kpi-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:1.35rem; font-weight:800; }
 .perps-pos-chart-kpi-val.pos { color:#55d66f; }
 .perps-pos-chart-kpi-val.neg { color:#ff5c7a; }
-.perps-pos-chart-canvas-wrap { height:280px; position:relative; }
+.perps-pos-chart-canvas-wrap { height:min(56vh,520px); min-height:390px; position:relative; }
 .perps-pos-chart-empty { padding:2rem 1rem; text-align:center; color:#9dacbb; font-family:var(--ff-mono); font-size:0.72rem; }
+.perps-pos-funding-recent { margin-top:1rem; border:1px solid rgba(255,255,255,0.08); border-radius:16px; background:rgba(255,255,255,0.025); overflow:hidden; }
+.perps-pos-funding-recent-head { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; padding:0.75rem 0.9rem; border-bottom:1px solid rgba(255,255,255,0.07); }
+.perps-pos-funding-recent-title { font-family:var(--ff-mono); font-size:0.68rem; font-weight:900; letter-spacing:0.08em; text-transform:uppercase; color:#64f4c5; }
+.perps-pos-funding-recent-note { font-family:var(--ff-mono); font-size:0.62rem; color:#7f8f9f; text-align:right; }
+.perps-pos-funding-table { width:100%; border-collapse:collapse; font-family:var(--ff-mono); font-size:0.68rem; }
+.perps-pos-funding-table th, .perps-pos-funding-table td { padding:0.62rem 0.9rem; border-bottom:1px solid rgba(255,255,255,0.055); text-align:left; }
+.perps-pos-funding-table th { color:#7f8f9f; font-size:0.58rem; letter-spacing:0.08em; text-transform:uppercase; }
+.perps-pos-funding-table tr:last-child td { border-bottom:0; }
+.perps-pos-funding-table td:last-child, .perps-pos-funding-table th:last-child { text-align:right; }
+.perps-pos-funding-empty { padding:0.9rem; color:#9dacbb; font-family:var(--ff-mono); font-size:0.68rem; }
 .perps-config input.perps-masked { letter-spacing:0.08em; color:#9dacbb; }
 .perps-pnl-chart.hoverable, .perps-fund-chart-wrap { cursor:crosshair; }
 .perps-chart-tooltip {
@@ -6652,6 +6662,7 @@ body[data-active-tab="loops"] .loop-pos-val,
                 <canvas id="perpsPositionChartCanvas" aria-label="Position performance chart"></canvas>
               </div>
               <div class="perps-pos-chart-empty" id="perpsPositionChartEmpty" style="display:none;">No funding or fee history for this position.</div>
+              <div class="perps-pos-funding-recent" id="perpsPositionFundingRecent"></div>
             </div>
           </div>
 
@@ -22489,6 +22500,89 @@ function perpsPositionChartIconSvg() {
     return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 12V6l3 2 3-4 3 3 3-1v6H2z"/></svg>';
 }
 
+function perpsPairLegEntries(p) {
+    const legs = perpsPairLegs(p);
+    const venueA = p.venueA || p.crossLegA?.venue || (legs.a.label === 'HL' ? 'hyperliquid' : legs.a.label === 'Nado' ? 'nado' : legs.a.label.toLowerCase());
+    const venueB = p.venueB || p.crossLegB?.venue || (legs.b.label === 'HL' ? 'hyperliquid' : legs.b.label === 'Nado' ? 'nado' : legs.b.label.toLowerCase());
+    return [
+        { key: 'a', venue: venueA, leg: legs.a },
+        { key: 'b', venue: venueB, leg: legs.b },
+    ];
+}
+
+function perpsPairDisplayLegEntries(p) {
+    return perpsPairLegEntries(p).sort((x, y) => {
+        const lx = Number(x.leg.size || 0) > 0 ? 0 : 1;
+        const ly = Number(y.leg.size || 0) > 0 ? 0 : 1;
+        return lx - ly;
+    });
+}
+
+function perpsFormatEventTime(ts) {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleString(undefined, {
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+function perpsRecentFundingRows(p) {
+    const series = p.dailyPerformanceSeries || [];
+    const entries = perpsPairLegEntries(p);
+    const venueKey = venue => String(venue || '').toLowerCase();
+    const venueByName = new Map(entries.map(entry => [venueKey(entry.venue), entry]));
+    const rowsByVenue = {};
+    let latestEventTime = 0;
+    for (const row of series) {
+        for (const ev of (row.fundingEvents || [])) {
+            const key = venueKey(ev.venue);
+            if (!venueByName.has(key)) continue;
+            if (!rowsByVenue[key]) rowsByVenue[key] = [];
+            rowsByVenue[key].push({ ...ev, entry: venueByName.get(key) });
+            latestEventTime = Math.max(latestEventTime, ev.time || 0);
+        }
+    }
+
+    const anchorTime = latestEventTime || Date.now();
+    const selected = [];
+    for (const entry of entries) {
+        const key = venueKey(entry.venue);
+        const native = perpsVenueNativeFundingRate(entry.venue, perpsRateSpreadRow(p.symbol));
+        const intervalHours = native.intervalHours || 8;
+        const rows = (rowsByVenue[key] || []).sort((a, b) => (b.time || 0) - (a.time || 0));
+        const picked = intervalHours <= 1
+            ? rows.filter(ev => (ev.time || 0) >= anchorTime - 8 * 3600000)
+            : rows.slice(0, 2);
+        picked.forEach(ev => selected.push({ ...ev, intervalHours }));
+    }
+    return selected.sort((a, b) => (b.time || 0) - (a.time || 0));
+}
+
+function perpsRenderRecentFundingPayments(p) {
+    const rows = perpsRecentFundingRows(p);
+    if (!rows.length) {
+        return `<div class="perps-pos-funding-recent-head"><div class="perps-pos-funding-recent-title">Recent funding payments</div></div>` +
+            `<div class="perps-pos-funding-empty">No funding payments found in the recent window for this position.</div>`;
+    }
+    const body = rows.map(row => {
+        const entry = row.entry;
+        const side = Number(entry.leg.size || 0) > 0 ? 'Long' : 'Short';
+        return `<tr>` +
+            `<td>${perpsFormatEventTime(row.time)}</td>` +
+            `<td>${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</td>` +
+            `<td>${dashEsc(side)}</td>` +
+            `<td>${row.intervalHours <= 1 ? 'last 8h' : `last 2 (${row.intervalHours}h)`}</td>` +
+            `<td class="${perpsSignedCls(row.usdc || 0)}">${perpsFmtUsd(row.usdc || 0)}</td>` +
+            `</tr>`;
+    }).join('');
+    return `<div class="perps-pos-funding-recent-head">` +
+        `<div class="perps-pos-funding-recent-title">Recent funding payments</div>` +
+        `<div class="perps-pos-funding-recent-note">Hourly venues show last 8h; slower venues show last 2 payments</div>` +
+        `</div><table class="perps-pos-funding-table"><thead><tr><th>Time</th><th>Exchange</th><th>Side</th><th>Window</th><th>Payment</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
 function perpsClosePositionChart() {
     const modal = document.getElementById('perpsPositionChartModal');
     if (modal) modal.classList.remove('active');
@@ -22507,11 +22601,11 @@ function perpsOpenPositionChart(pairIdx) {
     const execEl = document.getElementById('perpsPositionChartExec');
     const wrap = document.getElementById('perpsPositionChartWrap');
     const empty = document.getElementById('perpsPositionChartEmpty');
+    const recentEl = document.getElementById('perpsPositionFundingRecent');
     const canvas = document.getElementById('perpsPositionChartCanvas');
     if (!modal || !canvas) return;
 
-    const legVenueA = p.venueA || p.crossLegA?.venue || 'hyperliquid';
-    const legVenueB = p.venueB || p.crossLegB?.venue || 'nado';
+    const displayLegs = perpsPairDisplayLegEntries(p);
     const series = perpsFilterPairDailySeries(p.dailyPerformanceSeries || [], p, 'all');
     const rangeLabel = p.daysOpen != null && p.daysOpen > 0
         ? `${Math.ceil(p.daysOpen)}d since open`
@@ -22520,8 +22614,7 @@ function perpsOpenPositionChart(pairIdx) {
 
     if (meta) {
         meta.innerHTML = `${makeLogo(p.symbol, false, 22)}<span class="perps-pos-pill">${dashEsc(p.symbol)}</span>` +
-            `<span class="perps-pill blue">${dashEsc(perpsVenueLabel(legVenueA))}</span>` +
-            `<span class="perps-pill">${dashEsc(perpsVenueLabel(legVenueB))}</span>` +
+            displayLegs.map((entry, idx) => `<span class="perps-pill ${idx === 0 ? 'blue' : ''}">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span>`).join('') +
             `<span class="perps-pill" style="opacity:0.85">${dashEsc(rangeLabel)}</span>`;
     }
     if (pnlEl) {
@@ -22544,6 +22637,7 @@ function perpsOpenPositionChart(pairIdx) {
     if (hasData) {
         perpsRenderPositionPerformanceChart(canvas, series);
     }
+    if (recentEl) recentEl.innerHTML = perpsRenderRecentFundingPayments(p);
 
     modal.classList.add('active');
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
@@ -22763,10 +22857,7 @@ function perpsRenderPortfolioPositions(paired) {
     </div>`;
     el.innerHTML = head + paired.map((p, pairIdx) => {
         const legs = perpsPairLegs(p);
-        const legVenueA = p.venueA || p.crossLegA?.venue || (legs.a.label === 'HL' ? 'hyperliquid' : legs.a.label === 'Nado' ? 'nado' : legs.a.label.toLowerCase());
-        const legVenueB = p.venueB || p.crossLegB?.venue || (legs.b.label === 'HL' ? 'hyperliquid' : legs.b.label === 'Nado' ? 'nado' : legs.b.label.toLowerCase());
-        const upnlA = legs.a.upnl ?? 0;
-        const upnlB = legs.b.upnl ?? 0;
+        const displayLegs = perpsPairDisplayLegEntries(p);
         const totalUpnl = (p.combinedUpnl ?? 0) + (p.fundingSinceOpen ?? 0);
         const upnlOnly = p.combinedUpnl ?? 0;
         const currentApr = perpsPairLiveApy(p);
@@ -22785,8 +22876,7 @@ function perpsRenderPortfolioPositions(paired) {
                 </div>
             </div>
             <div class="perps-pos-legs">
-                <div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(legVenueA, legs.a.size)}</span><span class="perps-pos-metric-val ${perpsSignedCls(upnlA)}">${perpsFmtUsd(upnlA)}</span></div>
-                <div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(legVenueB, legs.b.size)}</span><span class="perps-pos-metric-val ${perpsSignedCls(upnlB)}">${perpsFmtUsd(upnlB)}</span></div>
+                ${displayLegs.map(entry => `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="perps-pos-metric-val ${perpsSignedCls(entry.leg.upnl ?? 0)}">${perpsFmtUsd(entry.leg.upnl ?? 0)}</span></div>`).join('')}
             </div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Total uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(totalUpnl)}">${perpsFmtUsd(totalUpnl)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(upnlOnly)}">${perpsFmtUsd(upnlOnly)}</div></div>

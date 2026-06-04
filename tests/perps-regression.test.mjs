@@ -130,7 +130,9 @@ assert.match(indexHtml, /await perpsHydrateSnapshotsFromCloud\(\);/, 'Perps refr
 assert.match(indexHtml, /const merged = \{ \.\.\.local, \.\.\.\(serverSnaps \|\| \{\}\) \};/, 'scheduled server snapshots must replace same-bucket browser snapshots');
 assert.match(indexHtml, /<g id="perpsEquityPoints"><\/g>/, 'equity chart must render visible sampled-point markers');
 assert.match(indexHtml, /latest \$\{perpsFmtUsd\(chart\.plot\.at\(-1\)\?\.val\)\}/, 'equity chart badge must expose the latest plotted snapshot amount');
-assert.match(indexHtml, /perpsVenueWithSideHtml\(legVenueA, legs\.a\.size\)/, 'exchange labels must show long/short badges in position cards');
+assert.match(indexHtml, /perpsPairDisplayLegEntries\(p\)/, 'position cards must order exchange labels with the long leg first');
+assert.match(indexHtml, /perpsVenueWithSideHtml\(entry\.venue, entry\.leg\.size\)/, 'exchange labels must show long/short badges in position cards');
+assert.match(indexHtml, /perpsPositionFundingRecent/, 'position performance modal must include recent funding payments');
 assert.match(indexHtml, /perpsSideBadgeHtml\(legs\.a\.size\)/, 'paired table legs must include long/short badges');
 assert.match(indexHtml, /perpsVenueWithSideHtml\(u\.venue, u\.size\)/, 'unhedged exchange rows must include long/short badges');
 assert.match(indexHtml, /perpsRateSpreadRow\(p\.symbol\)/, 'Current APR must fall back to the latest rate-spread row');
