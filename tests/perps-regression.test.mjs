@@ -111,6 +111,50 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 {
+  const t1 = now - 5 * 86400000;
+  const t2 = now - 35 * 86400000;
+  const t3 = now - 65 * 86400000;
+  const mkRound = (symbol, open, close, hlPnl, grvtPnl, size) => ({
+    hyperliquid: [
+      { venue: 'hyperliquid', symbol, time: open, side: 'B', px: 1, sz: size, fee: 1, closedPnl: 0 },
+      { venue: 'hyperliquid', symbol, time: close, side: 'A', px: 1.1, sz: size, fee: 1, closedPnl: hlPnl },
+    ],
+    grvt: [
+      { venue: 'grvt', symbol, time: open + 1800000, side: 'sell', px: 1, sz: size, fee: 1, closedPnl: 0 },
+      { venue: 'grvt', symbol, time: close + 1800000, side: 'buy', px: 1.11, sz: size, fee: 1, closedPnl: grvtPnl },
+    ],
+  });
+  const sources = { hyperliquid: [], grvt: [] };
+  for (const round of [
+    mkRound('ZK', t3, t3 + 3600000, 50, -48, 1000),
+    mkRound('POL', t2, t2 + 3600000, 30, -28, 500),
+    mkRound('MEGA', t1, t1 + 3600000, 10, -9, 200),
+  ]) {
+    sources.hyperliquid.push(...round.hyperliquid);
+    sources.grvt.push(...round.grvt);
+  }
+  const closed = buildClosedPairs(sources, {});
+  assert.equal(closed.length, 3, 'each closed hedged round must appear as its own row');
+  assert.deepEqual(closed.map(p => p.symbol).sort(), ['MEGA', 'POL', 'ZK']);
+}
+
+{
+  const closeHl = now - 2 * 86400000;
+  const closeGrvt = now - 86400000;
+  const closed = buildClosedPairs({
+    hyperliquid: [
+      { venue: 'hyperliquid', symbol: 'VIRTUAL', time: closeHl - 86400000, side: 'B', px: 1, sz: 1000, fee: 1, closedPnl: 0 },
+      { venue: 'hyperliquid', symbol: 'VIRTUAL', time: closeHl, side: 'A', px: 1.1, sz: 1000, fee: 1, closedPnl: 40 },
+    ],
+    grvt: [
+      { venue: 'grvt', symbol: 'VIRTUAL', time: closeGrvt - 86400000, side: 'sell', px: 1, sz: 1000, fee: 1, closedPnl: 0 },
+      { venue: 'grvt', symbol: 'VIRTUAL', time: closeGrvt, side: 'buy', px: 1.11, sz: 1000, fee: 1, closedPnl: -38 },
+    ],
+  }, {});
+  assert.equal(closed.length, 1, 'legs closed up to 7 days apart must still pair');
+}
+
+{
   const close = now - 2 * 3600000;
   const closed = buildClosedPairs({
     hyperliquid: [
@@ -191,6 +235,8 @@ assert.match(indexHtml, /perpsSetPositionsTab\('closed'/, 'Positions panel must 
 assert.match(indexHtml, /function perpsRenderClosedPositions\(closedPairs\)/, 'Closed tab must render fully closed position rounds');
 assert.match(indexHtml, /p\.closeSlippage/, 'Closed tab must show closing slippage separately');
 assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response must include closed pairs');
+assert.match(perpsJs, /const CLOSED_PAIR_MATCH_WINDOW_MS = 7 \* 86400000;/, 'closed legs may close on different days across venues');
+assert.match(perpsJs, /function collectPerpsHistorySymbols\(/, 'NADO history must include symbols from funding payments');
 assert.match(perpsJs, /const PERPS_MAX_FILL_HISTORY_DAYS = 365;/, 'Closed tab must fetch a long enough fill history to show older closed rounds');
 assert.match(perpsJs, /reconstructedFromClosingFills: true/, 'Closed tab must recover rounds whose opening fill is outside the fetched history');
 assert.match(indexHtml, /perpsPositionFundingRecent/, 'position performance modal must include recent funding payments');
