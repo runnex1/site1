@@ -4898,6 +4898,7 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
   border-bottom:1px solid rgba(148,163,184,0.10);
 }
 #predictionTab .table-row:hover { background:rgba(0,212,170,0.055); }
+#predictionTab .pm-row[role="link"] { cursor:pointer; }
 #predictionTab .table-row > div {
   font-size:0.84rem;
   line-height:1.25;
@@ -7499,6 +7500,7 @@ const PERPS_CONFIG_KEY = 'vault-perps-config';
 const PERPS_CONFIG_BACKUP_KEY = 'vault-perps-config-backup';
 const PERPS_SESSION_KEY = 'vault-perps-wallets-session';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
+const PM_WALLETS_BACKUP_KEY = 'vault-polymarket-wallets-backup';
 const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
 const PERPS_FETCH_TIMEOUT_MS = 55000;
 const PERPS_AUTO_REFRESH_MS = 60000;
@@ -7576,6 +7578,23 @@ function mergeWalletAddresses(...lists) {
         }
     }
     return out;
+}
+
+function loadStoredPolymarketWallets() {
+    const readJson = (key, fallback) => {
+        try { return JSON.parse(localStorage.getItem(key) || fallback); } catch(e) { return JSON.parse(fallback); }
+    };
+    const portfolio = readJson('portfolio-data-pro', '{}');
+    return mergeWalletAddresses(
+        data?.polymarketWallets || [],
+        portfolio?.polymarketWallets || [],
+        readJson(PM_WALLETS_BACKUP_KEY, '[]'),
+    );
+}
+
+function persistPolymarketWalletsLocal() {
+    data.polymarketWallets = mergeWalletAddresses(data.polymarketWallets || []);
+    try { localStorage.setItem(PM_WALLETS_BACKUP_KEY, JSON.stringify(data.polymarketWallets)); } catch(e) {}
 }
 
 function opportunityPegKey(token) {
@@ -7716,6 +7735,8 @@ async function loadData() {
             normalizePortfolioData();
         }
     } catch(e) { console.warn('localStorage load failed:', e); }
+    data.polymarketWallets = loadStoredPolymarketWallets();
+    persistPolymarketWalletsLocal();
 
     loadOpportunityMonitors();
 
@@ -7809,7 +7830,7 @@ async function loadData() {
                         delete parsed._perpsSnapshots;
                     }
 
-                    parsed.polymarketWallets = mergeWalletAddresses(parsed.polymarketWallets);
+                    parsed.polymarketWallets = mergeWalletAddresses(data.polymarketWallets, parsed.polymarketWallets);
 
                     parsed.etfs = mergeEtfPositions(data.etfs, parsed.etfs);
                     const walletSnap = perpsSnapshotLocalWallet();
@@ -7863,6 +7884,9 @@ async function loadData() {
 
 async function saveData() {
     try {
+        normalizePortfolioData();
+        persistPolymarketWalletsLocal();
+
         const perpsCfg = perpsGetSavedConfig();
         if (perpsIsValidEthAddress(perpsCfg.hyperliquid)) {
             data.perpsArb = {
@@ -7873,6 +7897,7 @@ async function saveData() {
             };
         }
         perpsWritePortfolioLocal();
+        try { localStorage.setItem('portfolio-data-pro', JSON.stringify(data)); } catch(e) {}
 
         // Cloud sync only works when served via http/https (not file://)
         if (location.protocol === 'file:') return;
@@ -9357,6 +9382,7 @@ async function fetchOpinionPositions() {
             realizedPnl: 0,
             marketId: pos.marketId || pos.market_id || null,
             tokenId:  pos.tokenId  || pos.token_id  || null,
+            marketUrl: (pos.marketId || pos.market_id) ? `https://app.opinion.trade/market/${pos.marketId || pos.market_id}` : '',
         };
     });
 
@@ -14584,12 +14610,13 @@ function renderPredictionMarkets() {
         const curPrice = p.currentPrice || (p.size > 0 ? p.currentValue / p.size : 0);
         const currentApr = predictionPositionNoApy(p, curPrice);
         const groupedTitle = indices.length > 1 ? `${p.title} (${indices.length} wallets/rows)` : p.title;
+        const marketUrl = dashPolymarketMarketUrl(p);
 
         return `
-        <div class="table-row pm-row row-pm" ondblclick="deletePredictionMarketGroup('${indices.join(',')}')">
+        <div class="table-row pm-row row-pm" ${marketUrl ? `role="link" tabindex="0" data-market-url="${dashEsc(marketUrl)}" onclick="openDashboardUrl(this.dataset.marketUrl)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openDashboardUrl(this.dataset.marketUrl)}"` : ''}>
             <div class="pred-position-market-cell" title="${dashEsc(groupedTitle)}">
                 <div class="pred-position-logo">${predictionMarketLogoHtml(p)}</div>
-                <div class="pred-position-title">${dashEsc(p.title)}</div>
+                <div class="pred-position-title">${marketUrl ? `<a href="${dashEsc(marketUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;">${dashEsc(p.title)}</a>` : dashEsc(p.title)}</div>
             </div>
             <div class="token-amount">${dashEsc(p.outcome)}</div>
             <div class="token-amount">${p.size.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
@@ -14702,12 +14729,13 @@ function renderOpinionMarkets() {
         const rpnl = p.realizedPnl || 0;
         const curPrice = p.currentPrice || 0;
         const currentApr = predictionPositionNoApy(p, curPrice);
+        const marketUrl = String(p.marketUrl || p.url || (p.marketId ? `https://app.opinion.trade/market/${p.marketId}` : '')).trim();
 
         return `
-        <div class="table-row pm-row row-opinion" ondblclick="deleteItem('opinionMarkets',${i})">
+        <div class="table-row pm-row row-opinion" ${marketUrl ? `role="link" tabindex="0" data-market-url="${dashEsc(marketUrl)}" onclick="openDashboardUrl(this.dataset.marketUrl)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openDashboardUrl(this.dataset.marketUrl)}"` : ''}>
             <div class="pred-position-market-cell" title="${dashEsc(p.title)}">
                 <div class="pred-position-logo">${predictionMarketLogoHtml(p)}</div>
-                <div class="pred-position-title">${dashEsc(p.title)}</div>
+                <div class="pred-position-title">${marketUrl ? `<a href="${dashEsc(marketUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:inherit;text-decoration:none;">${dashEsc(p.title)}</a>` : dashEsc(p.title)}</div>
             </div>
             <div class="token-amount" style="${outcomeColor};font-weight:700">${p.outcome}</div>
             <div class="token-amount">${p.size.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
@@ -22435,7 +22463,7 @@ function perpsPairPeriodApr(p, range) {
     const rows = perpsFilterPairDailySeries(rawRows, p, range);
     if (rows.length) {
         const totals = perpsSumDailyFundingSeries(rows, true);
-        const days = perpsDailySeriesSpanDays(rows);
+        const days = perpsPairAprDaysForRows(p, range, rows);
         return perpsAnnualizeReturnPct(totals.net, margin, days);
     }
     if (rawRows.length) return null;
@@ -22657,6 +22685,11 @@ function perpsDailySeriesSpanDays(rows) {
     const last = Date.parse((list.at(-1)?.day || '') + 'T12:00:00Z');
     if (!Number.isFinite(first) || !Number.isFinite(last)) return Math.max(list.length, 1);
     return Math.max(1, Math.round((last - first) / 86400000) + 1);
+}
+
+function perpsPairAprDaysForRows(p, range, rows) {
+    if (perpsStatRangeMs(range)) return perpsPairEffectiveDays(p, range);
+    return perpsDailySeriesSpanDays(rows);
 }
 
 function perpsPairOpenedAtMs(p) {
