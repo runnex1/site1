@@ -550,6 +550,7 @@ assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response
 assert.match(perpsJs, /const CLOSED_PAIR_MATCH_WINDOW_MS = 30 \* 60 \* 1000;/, 'opposite hedge legs must close within 30 minutes');
 assert.match(perpsJs, /function mergeVenueClosedLegs\(historyLegs, fillLegs\)/, 'GRVT fill replay must supplement sparse position history');
 assert.match(perpsJs, /function collectPerpsHistorySymbols\(/, 'NADO history must include symbols from funding payments');
+assert.match(perpsJs, /product_ids: \[productId\]/, 'NADO matches must paginate per product so closed symbols are not dropped');
 assert.match(perpsJs, /fetchGrvtPositionHistory/, 'closed positions must load GRVT native position history');
 assert.match(perpsJs, /function msToGrvtNs\(ms\)/, 'GRVT timestamps must use BigInt nanosecond conversion');
 assert.match(perpsJs, /grvtFillsCount/, 'perps summary must expose GRVT fill counts for production debugging');
