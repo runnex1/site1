@@ -129,7 +129,7 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     };
   });
   const hlFills = assets.flatMap((symbol, idx) => {
-    const closeTime = now - (idx + 2) * 86400000 + 3600000;
+    const closeTime = now - (idx + 2) * 86400000 + 10 * 60 * 1000;
     return [{
       venue: 'hyperliquid',
       symbol,
@@ -158,7 +158,7 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
       hyperliquid: [{
         venue: 'hyperliquid',
         symbol: 'ZK',
-        time: closeTime + 1800000,
+        time: closeTime + 10 * 60 * 1000,
         side: 'B',
         px: 0.12,
         sz: 1200,
@@ -188,6 +188,39 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 {
+  const close = now - 4 * 86400000;
+  const open = close - 6 * 3600000;
+  const closed = buildClosedPairs(
+    {
+      hyperliquid: [
+        { venue: 'hyperliquid', symbol: 'POL', time: close, side: 'B', px: 1, sz: 500, fee: 1, closedPnl: -20 },
+        { venue: 'hyperliquid', symbol: 'ZK', time: close + 5 * 60 * 1000, side: 'B', px: 1.1, sz: 800, fee: 1, closedPnl: 30 },
+      ],
+      grvt: [
+        { venue: 'grvt', symbol: 'ZK', time: open, side: 'buy', px: 1, sz: 800, fee: 1, closedPnl: 0 },
+        { venue: 'grvt', symbol: 'ZK', time: close + 10 * 60 * 1000, side: 'sell', px: 1.1, sz: 800, fee: 1, closedPnl: -28 },
+      ],
+    },
+    {},
+    {
+      grvt: [{
+        instrument: 'POL_USDT_Perp',
+        open_time: String(open * 1e6),
+        close_time: String(close * 1e6),
+        is_long: true,
+        status: 'CLOSED',
+        closed_volume_base: '500',
+        realized_pnl: '18',
+        cumulative_fee: '1',
+      }],
+      extended: [],
+    },
+  );
+  assert.equal(closed.length, 2, 'GRVT fill replay must add assets missing from sparse position history');
+  assert.deepEqual(closed.map(p => p.symbol).sort(), ['POL', 'ZK']);
+}
+
+{
   const t1 = now - 5 * 86400000;
   const t2 = now - 35 * 86400000;
   const t3 = now - 65 * 86400000;
@@ -197,8 +230,8 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
       { venue: 'hyperliquid', symbol, time: close, side: 'A', px: 1.1, sz: size, fee: 1, closedPnl: hlPnl },
     ],
     grvt: [
-      { venue: 'grvt', symbol, time: open + 1800000, side: 'sell', px: 1, sz: size, fee: 1, closedPnl: 0 },
-      { venue: 'grvt', symbol, time: close + 1800000, side: 'buy', px: 1.11, sz: size, fee: 1, closedPnl: grvtPnl },
+      { venue: 'grvt', symbol, time: open + 10 * 60 * 1000, side: 'sell', px: 1, sz: size, fee: 1, closedPnl: 0 },
+      { venue: 'grvt', symbol, time: close + 10 * 60 * 1000, side: 'buy', px: 1.11, sz: size, fee: 1, closedPnl: grvtPnl },
     ],
   });
   const sources = { hyperliquid: [], grvt: [] };
@@ -218,7 +251,7 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 {
   const closeHl = now - 2 * 86400000;
   const closeGrvt = now - 86400000;
-  const closed = buildClosedPairs({
+  const farApart = buildClosedPairs({
     hyperliquid: [
       { venue: 'hyperliquid', symbol: 'VIRTUAL', time: closeHl - 86400000, side: 'B', px: 1, sz: 1000, fee: 1, closedPnl: 0 },
       { venue: 'hyperliquid', symbol: 'VIRTUAL', time: closeHl, side: 'A', px: 1.1, sz: 1000, fee: 1, closedPnl: 40 },
@@ -228,7 +261,20 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
       { venue: 'grvt', symbol: 'VIRTUAL', time: closeGrvt, side: 'buy', px: 1.11, sz: 1000, fee: 1, closedPnl: -38 },
     ],
   }, {});
-  assert.equal(closed.length, 1, 'legs closed up to 7 days apart must still pair');
+  assert.equal(farApart.length, 0, 'legs closed more than 30 minutes apart must not pair');
+
+  const close = now - 86400000;
+  const withinWindow = buildClosedPairs({
+    hyperliquid: [
+      { venue: 'hyperliquid', symbol: 'VIRTUAL', time: close - 3600000, side: 'B', px: 1, sz: 1000, fee: 1, closedPnl: 0 },
+      { venue: 'hyperliquid', symbol: 'VIRTUAL', time: close, side: 'A', px: 1.1, sz: 1000, fee: 1, closedPnl: 40 },
+    ],
+    grvt: [
+      { venue: 'grvt', symbol: 'VIRTUAL', time: close - 3600000, side: 'sell', px: 1, sz: 1000, fee: 1, closedPnl: 0 },
+      { venue: 'grvt', symbol: 'VIRTUAL', time: close + 10 * 60 * 1000, side: 'buy', px: 1.11, sz: 1000, fee: 1, closedPnl: -38 },
+    ],
+  }, {});
+  assert.equal(withinWindow.length, 1, 'opposite legs closed within 30 minutes must pair');
 }
 
 {
@@ -312,7 +358,8 @@ assert.match(indexHtml, /perpsSetPositionsTab\('closed'/, 'Positions panel must 
 assert.match(indexHtml, /function perpsRenderClosedPositions\(closedPairs\)/, 'Closed tab must render fully closed position rounds');
 assert.match(indexHtml, /p\.closeSlippage/, 'Closed tab must show closing slippage separately');
 assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response must include closed pairs');
-assert.match(perpsJs, /const CLOSED_PAIR_MATCH_WINDOW_MS = 7 \* 86400000;/, 'closed legs may close on different days across venues');
+assert.match(perpsJs, /const CLOSED_PAIR_MATCH_WINDOW_MS = 30 \* 60 \* 1000;/, 'opposite hedge legs must close within 30 minutes');
+assert.match(perpsJs, /function mergeVenueClosedLegs\(historyLegs, fillLegs\)/, 'GRVT fill replay must supplement sparse position history');
 assert.match(perpsJs, /function collectPerpsHistorySymbols\(/, 'NADO history must include symbols from funding payments');
 assert.match(perpsJs, /fetchGrvtPositionHistory/, 'closed positions must load GRVT native position history');
 assert.match(perpsJs, /function msToGrvtNs\(ms\)/, 'GRVT timestamps must use BigInt nanosecond conversion');
