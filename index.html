@@ -23109,7 +23109,7 @@ function perpsSetPositionsTab(tab, btn) {
 
 function perpsRenderPositionsPanel(data) {
     if (_perpsPositionsTab === 'closed') {
-        perpsRenderClosedPositions(data?.closedPairs || []);
+        perpsRenderClosedPositions(data?.closedPairs || [], data?.closedDebug || null);
     } else {
         perpsRenderPortfolioPositions(data?.paired || []);
     }
@@ -23175,13 +23175,32 @@ function perpsClosedLegHtml(leg) {
     return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(leg.venue, signedSize)}</span><span class="perps-pos-metric-val ${perpsSignedCls(leg.realizedPnl ?? 0)}">${perpsFmtUsd(leg.realizedPnl ?? 0)}</span></div>`;
 }
 
+function perpsClosedDebugNoticeHtml(debug) {
+    if (!debug) return '';
+    const byVenue = Object.entries(debug.byVenue || {})
+        .map(([venue, count]) => `${perpsVenueShort(venue)} ${count}`)
+        .join(' · ');
+    const unmatched = Number(debug.unmatchedCount || 0);
+    if (!unmatched && !byVenue) return '';
+    const samples = (debug.unmatchedSample || [])
+        .filter(l => l && l.symbol && l.venue)
+        .slice(0, 8)
+        .map(l => `${dashEsc(l.symbol)} ${dashEsc(perpsVenueShort(l.venue))} ${dashEsc(l.side || '')}`)
+        .join(', ');
+    const sampleText = samples ? ` · unmatched examples: ${samples}` : '';
+    return `<div class="perps-empty" style="margin-bottom:0.8rem;text-align:left;">
+        Closed reconstruction: ${dashEsc(byVenue || '0 fetched legs')} · ${unmatched} unmatched${sampleText}
+    </div>`;
+}
+
 function perpsRenderClosedPositions(closedPairs) {
+    const closedDebug = arguments.length > 1 ? arguments[1] : null;
     const el = document.getElementById('perpsPositionsList');
     const badge = document.getElementById('perpsPairsBadge');
     if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
     if (!el) return;
     if (!closedPairs.length) {
-        el.innerHTML = '<div class="perps-empty">No fully closed hedged rounds found in the available fill history.</div>';
+        el.innerHTML = perpsClosedDebugNoticeHtml(closedDebug) + '<div class="perps-empty">No fully closed hedged rounds found in the available fill history.</div>';
         return;
     }
     const head = `<div class="perps-pos-head closed">
@@ -23193,7 +23212,7 @@ function perpsRenderClosedPositions(closedPairs) {
         <div>Fees</div>
         <div>Closed</div>
     </div>`;
-    el.innerHTML = head + closedPairs.map(p => {
+    el.innerHTML = perpsClosedDebugNoticeHtml(closedDebug) + head + closedPairs.map(p => {
         const sizeLabel = p.size != null ? `${perpsFmtSize(p.size)} ${p.symbol}` : p.symbol;
         const closedAt = perpsFormatEventTime(p.closeTime);
         return `<div class="perps-pos-card"><div class="perps-pos-row closed">
