@@ -22766,24 +22766,56 @@ function perpsRecentFundingGroups(p) {
     const rows = perpsRecentFundingRows(p);
     const entries = perpsPairLegEntries(p);
     const allHourly = entries.length > 1 && entries.every(entry => perpsFundingIntervalHoursForVenue(entry.venue, p.symbol) <= 1);
-    if (!allHourly) {
-        return rows.map(row => ({
-            type: 'single',
-            time: row.time || 0,
-            rows: [row],
-            total: row.usdc || 0,
-            intervalHours: row.intervalHours,
-        }));
-    }
     const byHour = new Map();
-    rows.forEach(row => {
+    if (allHourly) {
+        rows.forEach(row => {
+            const hour = Math.floor((row.time || 0) / 3600000) * 3600000;
+            if (!byHour.has(hour)) byHour.set(hour, { type: 'net-hour', time: hour, rows: [], total: 0, intervalHours: 1 });
+            const group = byHour.get(hour);
+            group.rows.push(row);
+            group.total += row.usdc || 0;
+        });
+        return [...byHour.values()].sort((a, b) => b.time - a.time);
+    }
+
+    const slowRows = rows
+        .filter(row => (row.intervalHours || 1) > 1)
+        .sort((a, b) => (b.time || 0) - (a.time || 0));
+    const groups = [];
+    const used = new Set();
+    const rowKey = row => `${row.entry?.venue || row.venue}:${row.time || 0}:${row.usdc || 0}`;
+
+    for (const anchor of slowRows) {
+        const intervalMs = Math.max(anchor.intervalHours || 1, 1) * 3600000;
+        const anchorTime = anchor.time || 0;
+        const start = anchorTime - intervalMs;
+        const groupRows = rows.filter(row => {
+            const t = row.time || 0;
+            if (row === anchor) return true;
+            if ((row.intervalHours || 1) > 1) return Math.abs(t - anchorTime) <= Math.max(intervalMs, 3600000);
+            return t > start && t <= anchorTime;
+        });
+        groupRows.forEach(row => used.add(rowKey(row)));
+        groups.push({
+            type: 'net-window',
+            time: anchorTime,
+            rows: groupRows,
+            total: groupRows.reduce((sum, row) => sum + (row.usdc || 0), 0),
+            intervalHours: anchor.intervalHours,
+        });
+    }
+
+    for (const row of rows) {
+        if (used.has(rowKey(row))) continue;
         const hour = Math.floor((row.time || 0) / 3600000) * 3600000;
         if (!byHour.has(hour)) byHour.set(hour, { type: 'net-hour', time: hour, rows: [], total: 0, intervalHours: 1 });
         const group = byHour.get(hour);
         group.rows.push(row);
         group.total += row.usdc || 0;
-    });
-    return [...byHour.values()].sort((a, b) => b.time - a.time);
+    }
+
+    groups.push(...byHour.values());
+    return groups.sort((a, b) => b.time - a.time);
 }
 
 function perpsRenderRecentFundingPayments(p) {
@@ -22794,18 +22826,28 @@ function perpsRenderRecentFundingPayments(p) {
     }
     const cards = groups.map(group => {
         const primary = group.rows[0];
-        const entry = primary.entry;
-        const singleSide = Number(entry.leg.size || 0) > 0 ? 'Long' : 'Short';
-        const title = group.type === 'net-hour'
+        const title = group.type === 'net-hour' || group.type === 'net-window'
             ? 'Net funding'
-            : perpsVenueWithSideHtml(entry.venue, entry.leg.size);
+            : perpsVenueWithSideHtml(primary.entry.venue, primary.entry.leg.size);
         const detail = group.type === 'net-hour'
             ? '1h net across both legs'
-            : `${singleSide} - ${group.intervalHours <= 1 ? 'last 8h' : `last 2 (${group.intervalHours}h)`}`;
-        const breakdown = group.type === 'net-hour'
-            ? `<div class="perps-pos-funding-breakdown">${group.rows.map(row => `<div class="perps-pos-funding-breakdown-row"><span>${perpsVenueWithSideHtml(row.entry.venue, row.entry.leg.size)}</span><span class="${perpsSignedCls(row.usdc || 0)}">${perpsFmtUsd(row.usdc || 0)}</span></div>`).join('')}</div>`
-            : '';
-        return `<div class="perps-pos-funding-card ${group.type === 'net-hour' ? 'net' : ''}">` +
+            : group.type === 'net-window'
+                ? `${group.intervalHours}h window across both legs`
+                : `${Number(primary.entry.leg.size || 0) > 0 ? 'Long' : 'Short'} - ${group.intervalHours <= 1 ? 'last 8h' : `last 2 (${group.intervalHours}h)`}`;
+        const byVenue = new Map();
+        group.rows.forEach(row => {
+            const key = String(row.entry?.venue || row.venue || '').toLowerCase();
+            if (!byVenue.has(key)) byVenue.set(key, { ...row, usdc: 0 });
+            byVenue.get(key).usdc += row.usdc || 0;
+        });
+        const entries = perpsPairLegEntries(p);
+        const breakdown = `<div class="perps-pos-funding-breakdown">${entries.map(entry => {
+            const row = byVenue.get(String(entry.venue || '').toLowerCase());
+            const value = row ? row.usdc || 0 : 0;
+            const missing = !row;
+            return `<div class="perps-pos-funding-breakdown-row"><span>${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="${missing ? '' : perpsSignedCls(value)}">${missing ? '—' : perpsFmtUsd(value)}</span></div>`;
+        }).join('')}</div>`;
+        return `<div class="perps-pos-funding-card ${group.type === 'net-hour' || group.type === 'net-window' ? 'net' : ''}">` +
             `<div class="perps-pos-funding-time">${perpsFormatEventTime(group.time)}</div>` +
             `<div class="perps-pos-funding-main"><div class="perps-pos-funding-label">${title}</div><div class="perps-pos-funding-pay ${perpsSignedCls(group.total)}">${perpsFmtUsd(group.total)}</div></div>` +
             `<div class="perps-pos-funding-sub">${detail}</div>` +
