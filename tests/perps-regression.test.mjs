@@ -13,6 +13,7 @@ const {
   appendEquitySnapshotStore,
   buildEquitySnapshotFromDashboard,
   buildClosedPairs,
+  buildClosedLegsFromExchangeHistory,
   buildDailyFundingSeries,
   computeCombinedNetDeposits,
   pairOpenedAtMs,
@@ -108,6 +109,45 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.equal(closed[0].funding, 20, 'closed PnL must include funding payments inside the round');
   assert.equal(closed[0].fees, 5, 'closed PnL must include trading fees from both legs');
   assert.equal(Math.round(closed[0].netPnl), 5, 'closed net PnL must equal slippage plus funding minus fees');
+}
+
+{
+  const assets = ['ZK', 'POL', 'MON', 'VIRTUAL', 'IP', 'KAITO'];
+  const grvtHistory = assets.map((symbol, idx) => {
+    const closeTime = now - (idx + 2) * 86400000;
+    const openTime = closeTime - (10 + idx) * 86400000;
+    return {
+      instrument: `${symbol}_USDT_Perp`,
+      open_time: String(openTime * 1e6),
+      close_time: String(closeTime * 1e6),
+      is_long: true,
+      status: 'CLOSED',
+      closed_volume_base: String(1000 + idx * 100),
+      realized_pnl: String(50 + idx),
+      cumulative_fee: '2',
+      cumulative_realized_funding_payment: String(90 + idx),
+    };
+  });
+  const hlFills = assets.flatMap((symbol, idx) => {
+    const closeTime = now - (idx + 2) * 86400000 + 3600000;
+    return [{
+      venue: 'hyperliquid',
+      symbol,
+      time: closeTime,
+      side: 'B',
+      px: 1.1,
+      sz: 1000 + idx * 100,
+      fee: 1.5,
+      closedPnl: -(48 + idx),
+    }];
+  });
+  const closed = buildClosedPairs(
+    { hyperliquid: hlFills, grvt: [] },
+    { grvt: [], hyperliquid: [] },
+    { grvt: grvtHistory, extended: [] },
+  );
+  assert.equal(closed.length, assets.length, 'GRVT position history must pair with HL closing fills for each asset');
+  assert.deepEqual(closed.map(p => p.symbol).sort(), assets.sort());
 }
 
 {
@@ -237,6 +277,9 @@ assert.match(indexHtml, /p\.closeSlippage/, 'Closed tab must show closing slippa
 assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response must include closed pairs');
 assert.match(perpsJs, /const CLOSED_PAIR_MATCH_WINDOW_MS = 7 \* 86400000;/, 'closed legs may close on different days across venues');
 assert.match(perpsJs, /function collectPerpsHistorySymbols\(/, 'NADO history must include symbols from funding payments');
+assert.match(perpsJs, /fetchGrvtPositionHistory/, 'closed positions must load GRVT native position history');
+assert.match(perpsJs, /fetchExtendedPositionHistory/, 'closed positions must load Extended native position history');
+assert.match(perpsJs, /buildClosedLegsFromExchangeHistory/, 'closed positions must map exchange-native closed rounds');
 assert.match(perpsJs, /const PERPS_MAX_FILL_HISTORY_DAYS = 365;/, 'Closed tab must fetch a long enough fill history to show older closed rounds');
 assert.match(perpsJs, /reconstructedFromClosingFills: true/, 'Closed tab must recover rounds whose opening fill is outside the fetched history');
 assert.match(indexHtml, /perpsPositionFundingRecent/, 'position performance modal must include recent funding payments');
