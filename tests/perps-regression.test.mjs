@@ -252,6 +252,40 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 {
+  const close = now - 4 * 86400000;
+  const open = close - 6 * 3600000;
+  const closed = buildClosedPairs(
+    {
+      hyperliquid: [{
+        venue: 'hyperliquid',
+        symbol: 'SNX',
+        time: close + 3 * 3600000,
+        side: 'B',
+        px: 1.1,
+        sz: 58000,
+        fee: 1,
+        closedPnl: -8,
+      }],
+      extended: [],
+    },
+    {},
+    {
+      grvt: [],
+      extended: [{
+        market: 'SNX-USD',
+        side: 'LONG',
+        createdTime: Math.floor(open / 1000),
+        closedTime: Math.floor(close / 1000),
+        maxPositionSize: '58000',
+        realisedPnl: '6',
+      }],
+    },
+  );
+  assert.equal(closed.length, 1, 'Extended second timestamps must still build closed legs');
+  assert.equal(closed[0].symbol, 'SNX');
+}
+
+{
   const close = now - 3 * 86400000;
   const open = close - 6 * 3600000;
   const closed = buildClosedPairs(
@@ -288,6 +322,42 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 {
+  const close = now - 3 * 86400000;
+  const open = close - 6 * 3600000;
+  const closed = buildClosedPairs(
+    {
+      hyperliquid: [{
+        venue: 'hyperliquid',
+        symbol: 'LINEA',
+        time: close + 4 * 3600000,
+        side: 'B',
+        px: 1.1,
+        sz: 2500000,
+        fee: 1,
+        closedPnl: -12,
+      }],
+      grvt: [],
+    },
+    {},
+    {
+      grvt: [{
+        instrument: 'LINEA_USDT_Perp',
+        open_time: String(open),
+        close_time: String(close),
+        is_long: 'true',
+        status: '1',
+        closed_volume_base: '2500000',
+        realized_pnl: '10',
+        cumulative_fee: '2',
+      }],
+      extended: [],
+    },
+  );
+  assert.equal(closed.length, 1, 'GRVT ms timestamps and numeric-string closed status must build closed legs');
+  assert.equal(closed[0].symbol, 'LINEA');
+}
+
+{
   const specs = [
     ['hyperliquid', 'nado', 'CMBHLNADO'],
     ['hyperliquid', 'grvt', 'CMBHLGRVT'],
@@ -319,6 +389,22 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     assert.equal(pair.longLeg.venue, longVenue, `${symbol} long venue must match`);
     assert.equal(pair.shortLeg.venue, shortVenue, `${symbol} short venue must match`);
   }
+}
+
+{
+  const close = Date.UTC(2026, 2, 23, 8);
+  const open = close - 2 * 86400000;
+  const sameDay = buildClosedPairs({
+    hyperliquid: [
+      { venue: 'hyperliquid', symbol: 'RESOLV', time: open, side: 'B', px: 1, sz: 1000, fee: 1, closedPnl: 0 },
+      { venue: 'hyperliquid', symbol: 'RESOLV', time: close + 2 * 3600000, side: 'A', px: 1.1, sz: 1000, fee: 1, closedPnl: 40 },
+    ],
+    grvt: [
+      { venue: 'grvt', symbol: 'RESOLV', time: open + 10 * 60 * 1000, side: 'sell', px: 1, sz: 1000, fee: 1, closedPnl: 0 },
+      { venue: 'grvt', symbol: 'RESOLV', time: close + 8 * 3600000, side: 'buy', px: 1.11, sz: 1000, fee: 1, closedPnl: -38 },
+    ],
+  }, {});
+  assert.equal(sameDay.length, 1, 'closed legs on the same close day with overlapping open windows must pair even when hours apart');
 }
 
 {
