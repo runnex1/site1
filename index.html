@@ -20997,13 +20997,37 @@ function perpsSyncTotalPnlRolling24h(data) {
 function perpsFilterDailySeries(series, range) {
     const rows = Array.isArray(series) ? series : [];
     const ms = perpsStatRangeMs(range);
-    if (!ms) return rows;
+    if (!ms) return perpsRecomputeDailySeriesCumulative(perpsTrimDailySeriesToLatestSession(rows));
     const cutoff = Date.now() - ms;
     const trimmed = rows
         .filter(r => new Date(r.day + 'T23:59:59.999Z').getTime() >= cutoff)
         .map(r => perpsTrimDailyRowToCutoff(r, cutoff))
         .filter(Boolean);
     return perpsRecomputeDailySeriesCumulative(trimmed);
+}
+
+function perpsDailyRowHasActivity(row) {
+    const eps = 0.0000001;
+    return Math.abs(row?.dailyFunding || 0) > eps ||
+        Math.abs(row?.dailyFees || 0) > eps ||
+        Math.abs(row?.dailyNet || 0) > eps ||
+        (Array.isArray(row?.fundingEvents) && row.fundingEvents.length > 0) ||
+        (Array.isArray(row?.feeEvents) && row.feeEvents.length > 0);
+}
+
+function perpsTrimDailySeriesToLatestSession(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    let lastActive = -1;
+    for (let i = list.length - 1; i >= 0; i--) {
+        if (perpsDailyRowHasActivity(list[i])) {
+            lastActive = i;
+            break;
+        }
+    }
+    if (lastActive < 0) return [];
+    let first = lastActive;
+    while (first > 0 && perpsDailyRowHasActivity(list[first - 1])) first--;
+    return list.slice(first, lastActive + 1);
 }
 
 function perpsTrimDailyRowToCutoff(row, cutoff) {
