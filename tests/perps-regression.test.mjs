@@ -187,7 +187,9 @@ assert.doesNotMatch(indexHtml, /Perps Arb/, 'old Perps Arb label must not remain
 assert.match(indexHtml, /function perpsFilterPairDailySeriesForPosition\(series, p\)/, 'position performance must use all-time series since opening trade');
 assert.match(indexHtml, /perpsTrimPairDailySeriesToActivity\(rows\)/, 'position performance must trim empty days outside the active session');
 assert.match(perpsJs, /pairOpenedAtMs/, 'server must track when each pair was opened from fills');
-assert.match(perpsJs, /days: fillHistoryDays,\s*\n\s*pairedBases: \[p\.symbol\]/, 'per-pair performance series must use full fill history window');
+assert.match(perpsJs, /const perfDays = Math\.min\(PERPS_MAX_FILL_HISTORY_DAYS, Math\.max\(fillHistoryDays, openDays\)\)/, 'per-pair performance series must span from pair open through fill history');
+assert.match(perpsJs, /days: perfDays,\s*\n\s*pairedBases: \[p\.symbol\]/, 'per-pair performance series must use computed performance window');
+assert.match(indexHtml, /function perpsSyncTotalPnlRolling24h\(data\)/, 'Total PnL must use rolling 24h independent of stat window');
 assert.match(indexHtml, /perpsSumDailyFundingSeries\(rows, true\)/, 'Net APR must use the same active-session rows as position performance');
 assert.match(indexHtml, /perpsSideBadgeHtml\(legs\.a\.size\)/, 'paired table legs must include long/short badges');
 assert.match(indexHtml, /perpsVenueWithSideHtml\(u\.venue, u\.size\)/, 'unhedged exchange rows must include long/short badges');

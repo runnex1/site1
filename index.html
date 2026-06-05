@@ -859,7 +859,7 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-chart-kpi-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:1.35rem; font-weight:800; }
 .perps-pos-chart-kpi-val.pos { color:#55d66f; }
 .perps-pos-chart-kpi-val.neg { color:#ff5c7a; }
-.perps-pos-chart-canvas-wrap { height:360px; max-height:42vh; min-height:260px; position:relative; }
+.perps-pos-chart-canvas-wrap { height:280px; max-height:38vh; min-height:220px; position:relative; }
 .perps-pos-chart-empty { padding:2rem 1rem; text-align:center; color:#9dacbb; font-family:var(--ff-mono); font-size:0.72rem; }
 .perps-pos-funding-recent { margin-top:1rem; border:1px solid rgba(255,255,255,0.08); border-radius:16px; background:rgba(255,255,255,0.025); overflow:hidden; }
 .perps-pos-funding-recent-head { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; padding:0.75rem 0.9rem; border-bottom:1px solid rgba(255,255,255,0.07); }
@@ -2923,8 +2923,8 @@ body::after {
 }
 .modal-content.perps-pos-chart-modal {
   max-width: none;
-  width: min(99vw, 1680px);
-  padding: 1.45rem 1.8rem 1.25rem;
+  width: min(96vw, 780px);
+  padding: 1.1rem 1.25rem 1rem;
 }
 @keyframes slideUp {
   from { opacity:0; transform:translateY(20px) scale(0.97); }
@@ -6603,7 +6603,7 @@ body[data-active-tab="loops"] .loop-pos-val,
               </div>
               <div class="perps-stat-sub" id="perpsStatEquitySub">HL · Nado · GRVT · Ext</div>
             </div>
-            <div class="perps-stat-card"><div class="perps-stat-label">Total PnL</div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">funding − fees · daily chart</div></div>
+            <div class="perps-stat-card"><div class="perps-stat-label">Total PnL</div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">last 24h · funding − fees</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Avg APR</div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">chart PnL ÷ avg equity</div></div>
           </section>
@@ -20964,11 +20964,15 @@ function perpsRenderFundingForTimeWindow(data) {
     perpsRenderDailyFundingChart(series, perpsStatRangeLabel(_perpsStatRange));
 }
 
-/** Total PnL = net sum from Daily funding collected chart (funding − fees). */
+/** Total PnL = rolling last-24h net (funding − fees), independent of the stat time window. */
+function perpsRolling24hPnlSeries(data) {
+    return perpsFilterDailySeries(data?.dailyFundingSeries || [], '1d');
+}
+
 function perpsSyncTotalPnlStat(series, rangeLabel) {
     const totals = perpsSumDailyFundingSeries(series, true);
     const totalPnl = series.length ? totals.net : null;
-    const label = rangeLabel || perpsStatRangeLabel(_perpsStatRange);
+    const label = rangeLabel || '24h';
     const pnlEl = document.getElementById('perpsStatPnl');
     if (pnlEl) {
         pnlEl.textContent = perpsFmtUsd(totalPnl);
@@ -20983,6 +20987,11 @@ function perpsSyncTotalPnlStat(series, rangeLabel) {
         }
     }
     return { totalPnl, chartTotals: totals };
+}
+
+function perpsSyncTotalPnlRolling24h(data) {
+    const series = perpsRolling24hPnlSeries(data || _perpsLastData);
+    return perpsSyncTotalPnlStat(series, '24h');
 }
 
 function perpsFilterDailySeries(series, range) {
@@ -22002,7 +22011,7 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
         if (totalEl) { totalEl.textContent = '—'; totalEl.className = 'perps-pnl-total'; }
         const noteEl = document.getElementById('perpsDailyFundNote');
         if (noteEl) noteEl.textContent = 'No funding payments in selected range';
-        perpsSyncTotalPnlStat([], label);
+        perpsSyncTotalPnlRolling24h(_perpsLastData);
         return;
     }
     const chart = perpsBuildDailyFundingBars(points, _perpsDailyFundShowFees);
@@ -22101,7 +22110,7 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
         wrap.onmouseleave = () => { if (tip) tip.style.display = 'none'; };
     }
     _perpsDailyFundChartState = chart;
-    perpsSyncTotalPnlStat(points, label);
+    perpsSyncTotalPnlRolling24h(_perpsLastData);
 }
 
 function perpsBuildChart(series, netSeries) {
@@ -23012,6 +23021,7 @@ function perpsRenderStatsBar(data) {
             aprSub.textContent = `${stats.rangeLabel} · need equity snapshots in window`;
         }
     }
+    perpsSyncTotalPnlRolling24h(data);
 }
 
 function perpsSetPositionsTab(tab, btn) {
