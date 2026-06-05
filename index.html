@@ -851,9 +851,11 @@ body[data-active-tab="perps"] .topbar,
 }
 .perps-pos-chart-btn:hover { border-color:rgba(167,139,250,0.45); color:#c4b5fd; background:rgba(167,139,250,0.1); }
 .perps-pos-chart-btn svg { width:14px; height:14px; }
+.perps-pos-chart-actions .perps-btn.active { border-color:rgba(100,244,197,0.42); color:#64f4c5; background:rgba(100,244,197,0.1); }
 .perps-pos-chart-modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.65rem; }
 .perps-pos-chart-modal-title { font-weight:900; letter-spacing:0.06em; text-transform:uppercase; font-size:0.9rem; color:var(--t1); }
 .perps-pos-chart-modal-meta { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; margin-top:0.25rem; }
+.perps-pos-chart-actions { display:flex; align-items:center; gap:0.45rem; flex-wrap:wrap; justify-content:flex-end; }
 .perps-pos-chart-kpis { display:flex; gap:1.25rem; flex-wrap:wrap; margin:0.35rem 0 0.75rem; }
 .perps-pos-chart-kpi-label { font-family:var(--ff-mono); font-size:0.58rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#7f8f9f; }
 .perps-pos-chart-kpi-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:1.35rem; font-weight:800; }
@@ -6675,7 +6677,10 @@ body[data-active-tab="loops"] .loop-pos-val,
                   <div class="perps-pos-chart-modal-title">Position Performance</div>
                   <div class="perps-pos-chart-modal-meta" id="perpsPositionChartMeta"></div>
                 </div>
-                <button type="button" class="perps-btn secondary" onclick="perpsClosePositionChart()">Close</button>
+                <div class="perps-pos-chart-actions">
+                  <button type="button" class="perps-btn secondary" id="perpsPositionChartFeesToggle" onclick="perpsTogglePositionChartFees()">Include fees</button>
+                  <button type="button" class="perps-btn secondary" onclick="perpsClosePositionChart()">Close</button>
+                </div>
               </div>
               <div class="perps-pos-chart-kpis">
                 <div><div class="perps-pos-chart-kpi-label">PnL</div><div class="perps-pos-chart-kpi-val" id="perpsPositionChartPnl">—</div></div>
@@ -7502,6 +7507,8 @@ let _perpsLastData = null;
 let _perpsVenueEquity = null;
 let _perpsEquityChartState = null;
 let _perpsPositionChartInstance = null;
+let _perpsPositionChartPairIdx = null;
+let _perpsPositionChartShowFees = false;
 const OPPORTUNITY_ODDS_CACHE_KEY = 'vault-opportunity-odds-cache';
 const OPPORTUNITY_ODDS_LAST_REFRESH_KEY = 'vault-opportunity-odds-last-refresh';
 const OPPORTUNITY_SEEN_KEY = 'vault-opportunity-seen';
@@ -22813,24 +22820,36 @@ function perpsRenderRecentFundingPayments(p) {
 function perpsClosePositionChart() {
     const modal = document.getElementById('perpsPositionChartModal');
     if (modal) modal.classList.remove('active');
+    _perpsPositionChartPairIdx = null;
     if (_perpsPositionChartInstance) {
         _perpsPositionChartInstance.destroy();
         _perpsPositionChartInstance = null;
     }
 }
 
-function perpsOpenPositionChart(pairIdx) {
+function perpsTogglePositionChartFees() {
+    _perpsPositionChartShowFees = !_perpsPositionChartShowFees;
+    if (_perpsPositionChartPairIdx != null) {
+        perpsOpenPositionChart(_perpsPositionChartPairIdx, { preserveFeeMode: true });
+    }
+}
+
+function perpsOpenPositionChart(pairIdx, opts = {}) {
     const p = (_perpsLastData?.paired || [])[pairIdx];
     if (!p) return;
     const modal = document.getElementById('perpsPositionChartModal');
     const meta = document.getElementById('perpsPositionChartMeta');
     const pnlEl = document.getElementById('perpsPositionChartPnl');
     const execEl = document.getElementById('perpsPositionChartExec');
+    const feesToggle = document.getElementById('perpsPositionChartFeesToggle');
     const wrap = document.getElementById('perpsPositionChartWrap');
     const empty = document.getElementById('perpsPositionChartEmpty');
     const recentEl = document.getElementById('perpsPositionFundingRecent');
     const canvas = document.getElementById('perpsPositionChartCanvas');
     if (!modal || !canvas) return;
+
+    _perpsPositionChartPairIdx = pairIdx;
+    if (!opts.preserveFeeMode) _perpsPositionChartShowFees = false;
 
     const displayLegs = perpsPairDisplayLegEntries(p);
     const series = perpsFilterPairDailySeriesForPosition(p.dailyPerformanceSeries || [], p);
@@ -22842,7 +22861,7 @@ function perpsOpenPositionChart(pairIdx) {
             ? `Since ${new Date(sessionStartMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} · ${perpsDailySeriesSpanDays(series)}d`
             : `All time · ${perpsDailySeriesSpanDays(series)}d`)
         : 'No performance events';
-    const totals = perpsSumDailyFundingSeries(series, true);
+    const totals = perpsSumDailyFundingSeries(series, _perpsPositionChartShowFees);
 
     if (meta) {
         meta.innerHTML = `${makeLogo(p.symbol, false, 22)}<span class="perps-pos-pill">${dashEsc(p.symbol)}</span>` +
@@ -22850,12 +22869,17 @@ function perpsOpenPositionChart(pairIdx) {
             `<span class="perps-pill" style="opacity:0.85">${dashEsc(rangeLabel)}</span>`;
     }
     if (pnlEl) {
-        pnlEl.textContent = perpsFmtUsd(totals.net);
-        pnlEl.className = 'perps-pos-chart-kpi-val ' + perpsSignedCls(totals.net);
+        pnlEl.textContent = perpsFmtUsd(totals.total);
+        pnlEl.className = 'perps-pos-chart-kpi-val ' + perpsSignedCls(totals.total);
     }
     if (execEl) {
-        execEl.textContent = perpsFmtUsd(-Math.abs(totals.fees));
-        execEl.className = 'perps-pos-chart-kpi-val neg';
+        execEl.textContent = _perpsPositionChartShowFees ? perpsFmtUsd(-Math.abs(totals.fees)) : 'Excluded';
+        execEl.className = 'perps-pos-chart-kpi-val ' + (_perpsPositionChartShowFees && Math.abs(totals.fees) > 0 ? 'neg' : '');
+    }
+    if (feesToggle) {
+        feesToggle.textContent = _perpsPositionChartShowFees ? 'Hide fees' : 'Include fees';
+        feesToggle.classList.toggle('active', _perpsPositionChartShowFees);
+        feesToggle.setAttribute('aria-pressed', _perpsPositionChartShowFees ? 'true' : 'false');
     }
 
     if (_perpsPositionChartInstance) {
@@ -22867,7 +22891,7 @@ function perpsOpenPositionChart(pairIdx) {
     if (wrap) wrap.style.display = hasData ? '' : 'none';
     if (empty) empty.style.display = hasData ? 'none' : '';
     if (hasData) {
-        perpsRenderPositionPerformanceChart(canvas, series);
+        perpsRenderPositionPerformanceChart(canvas, series, _perpsPositionChartShowFees);
     }
     if (recentEl) recentEl.innerHTML = perpsRenderRecentFundingPayments(p);
 
@@ -22875,13 +22899,15 @@ function perpsOpenPositionChart(pairIdx) {
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
 }
 
-function perpsRenderPositionPerformanceChart(canvas, series) {
+function perpsRenderPositionPerformanceChart(canvas, series, showFees = false) {
     if (!canvas || typeof Chart === 'undefined') return;
     const labels = series.map(r => perpsFormatFundDayLabel(r.day));
-    const dailyNet = series.map(r => r.dailyNet || 0);
-    const cumNet = series.map(r => r.cumNet || 0);
+    const dailyValues = series.map(r => showFees ? (r.dailyNet || 0) : (r.dailyFunding || 0));
+    const cumValues = series.map(r => showFees ? (r.cumNet || 0) : (r.cumFunding || 0));
     const gridColor = 'rgba(255,255,255,0.06)';
     const tickColor = '#9dacbb';
+    const dailyLabel = showFees ? 'Daily net' : 'Daily funding';
+    const cumulativeLabel = showFees ? 'Cumulative PnL' : 'Cumulative funding';
 
     _perpsPositionChartInstance = new Chart(canvas, {
         data: {
@@ -22889,17 +22915,17 @@ function perpsRenderPositionPerformanceChart(canvas, series) {
             datasets: [
                 {
                     type: 'bar',
-                    label: 'Daily net',
-                    data: dailyNet,
-                    backgroundColor: dailyNet.map(v => v >= 0 ? 'rgba(89,240,200,0.78)' : 'rgba(255,92,122,0.78)'),
+                    label: dailyLabel,
+                    data: dailyValues,
+                    backgroundColor: dailyValues.map(v => v >= 0 ? 'rgba(89,240,200,0.78)' : 'rgba(255,92,122,0.78)'),
                     borderRadius: 2,
                     yAxisID: 'yDaily',
                     order: 2,
                 },
                 {
                     type: 'line',
-                    label: 'Cumulative PnL',
-                    data: cumNet,
+                    label: cumulativeLabel,
+                    data: cumValues,
                     borderColor: '#a78bfa',
                     backgroundColor: 'rgba(167,139,250,0.08)',
                     borderWidth: 2,
@@ -22928,13 +22954,16 @@ function perpsRenderPositionPerformanceChart(canvas, series) {
                         label(ctx) {
                             if (ctx.dataset.yAxisID === 'yDaily') {
                                 const row = series[ctx.dataIndex];
-                                return [
+                                return showFees ? [
                                     `Net ${perpsFmtUsd(row.dailyNet)}`,
                                     `Funding ${perpsFmtUsd(row.dailyFunding)}`,
                                     `Fees −${perpsFmtUsd(Math.abs(row.dailyFees || 0))}`,
+                                ] : [
+                                    `Funding ${perpsFmtUsd(row.dailyFunding)}`,
+                                    `Fees excluded ${perpsFmtUsd(Math.abs(row.dailyFees || 0))}`,
                                 ];
                             }
-                            return `Cumulative ${perpsFmtUsd(ctx.parsed.y)}`;
+                            return `${cumulativeLabel} ${perpsFmtUsd(ctx.parsed.y)}`;
                         },
                     },
                 },

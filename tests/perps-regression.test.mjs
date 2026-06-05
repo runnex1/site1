@@ -384,6 +384,11 @@ assert.doesNotMatch(indexHtml, /Perps Arb/, 'old Perps Arb label must not remain
 assert.match(indexHtml, /function perpsFilterPairDailySeriesForPosition\(series, p\)/, 'position performance must use a dedicated position series filter');
 assert.match(indexHtml, /function perpsTrimPairDailySeriesToLatestSession\(rows\)/, 'position performance must keep only the latest open session');
 assert.match(indexHtml, /perpsTrimPairDailySeriesToLatestSession\(series\)/, 'position performance must drop closed gaps before charting');
+assert.match(indexHtml, /let _perpsPositionChartShowFees = false;/, 'position performance must default to funding-only without trading fees');
+assert.match(indexHtml, /if \(!opts\.preserveFeeMode\) _perpsPositionChartShowFees = false;/, 'opening a position chart must reset to funding-only mode');
+assert.match(indexHtml, /perpsRenderPositionPerformanceChart\(canvas, series, _perpsPositionChartShowFees\)/, 'position performance chart must use the fee toggle state');
+assert.match(indexHtml, /showFees \? \(r\.dailyNet \|\| 0\) : \(r\.dailyFunding \|\| 0\)/, 'position performance bars must exclude fees unless toggled on');
+assert.match(indexHtml, /perpsTogglePositionChartFees/, 'position performance must expose a trading-fee toggle');
 assert.match(perpsJs, /Math\.min\(\.\.\.candidates\)/, 'position open time must use earliest fill or funding on either leg');
 assert.match(perpsJs, /const perfDays = Math\.min\(PERPS_MAX_FILL_HISTORY_DAYS, Math\.max\(fillHistoryDays, openDays\)\)/, 'per-pair performance series must span from pair open through fill history');
 assert.match(perpsJs, /days: perfDays,\s*\n\s*pairedBases: \[p\.symbol\]/, 'per-pair performance series must use computed performance window');
