@@ -363,14 +363,11 @@ assert.match(perpsJs, /function mergeVenueClosedLegs\(historyLegs, fillLegs\)/, 
 assert.match(perpsJs, /function collectPerpsHistorySymbols\(/, 'NADO history must include symbols from funding payments');
 assert.match(perpsJs, /fetchGrvtPositionHistory/, 'closed positions must load GRVT native position history');
 assert.match(perpsJs, /function msToGrvtNs\(ms\)/, 'GRVT timestamps must use BigInt nanosecond conversion');
-assert.match(perpsJs, /body\.end_time = msToGrvtNs\(Date\.now\(\)\)/, 'GRVT history requests must bound the window with end_time');
-assert.match(perpsJs, /fetchExtendedFunding\(historyDays\)/, 'Extended funding must use the shared 30-day history window');
 assert.match(perpsJs, /grvtFillsCount/, 'perps summary must expose GRVT fill counts for production debugging');
 assert.match(perpsJs, /grvtPositionHistoryCount/, 'perps summary must expose GRVT position-history counts for production debugging');
 assert.match(perpsJs, /fetchExtendedPositionHistory/, 'closed positions must load Extended native position history');
 assert.match(perpsJs, /buildClosedLegsFromExchangeHistory/, 'closed positions must map exchange-native closed rounds');
-assert.match(perpsJs, /const PERPS_HISTORY_DAYS = 30;/, 'exchange history APIs must request the past 30 days');
-assert.match(perpsJs, /const historyDays = PERPS_HISTORY_DAYS;/, 'dashboard must use a fixed 30-day history window for all venues');
+assert.match(perpsJs, /const PERPS_MAX_FILL_HISTORY_DAYS = 365;/, 'Closed tab must fetch a long enough fill history to show older closed rounds');
 assert.match(perpsJs, /reconstructedFromClosingFills: true/, 'Closed tab must recover rounds whose opening fill is outside the fetched history');
 assert.match(indexHtml, /perpsPositionFundingRecent/, 'position performance modal must include recent funding payments');
 assert.match(indexHtml, /function perpsRecentFundingGroups\(p\)/, 'recent funding payments must support hourly net grouping');
@@ -381,7 +378,7 @@ assert.match(indexHtml, /function perpsFilterPairDailySeriesForPosition\(series,
 assert.match(indexHtml, /function perpsTrimPairDailySeriesToLatestSession\(rows\)/, 'position performance must keep only the latest open session');
 assert.match(indexHtml, /perpsTrimPairDailySeriesToLatestSession\(series\)/, 'position performance must drop closed gaps before charting');
 assert.match(perpsJs, /Math\.min\(\.\.\.candidates\)/, 'position open time must use earliest fill or funding on either leg');
-assert.match(perpsJs, /const perfDays = Math\.min\(PERPS_HISTORY_DAYS, Math\.max\(historyDays, openDays\)\)/, 'per-pair performance series must stay within the 30-day history cap');
+assert.match(perpsJs, /const perfDays = Math\.min\(PERPS_MAX_FILL_HISTORY_DAYS, Math\.max\(fillHistoryDays, openDays\)\)/, 'per-pair performance series must span from pair open through fill history');
 assert.match(perpsJs, /days: perfDays,\s*\n\s*pairedBases: \[p\.symbol\]/, 'per-pair performance series must use computed performance window');
 assert.match(indexHtml, /function perpsSyncTotalPnlRolling24h\(data\)/, 'Total PnL must use rolling 24h independent of stat window');
 assert.match(indexHtml, /perpsSumDailyFundingSeries\(rows, true\)/, 'Net APR must use the same active-session rows as position performance');
