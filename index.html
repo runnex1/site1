@@ -22922,14 +22922,20 @@ function perpsRenderRecentFundingPayments(p) {
         const byVenue = new Map();
         group.rows.forEach(row => {
             const key = String(row.entry?.venue || row.venue || '').toLowerCase();
-            if (!byVenue.has(key)) byVenue.set(key, { ...row, usdc: 0 });
-            byVenue.get(key).usdc += row.usdc || 0;
+            const existing = byVenue.get(key);
+            const sum = (existing?.sum || 0) + (row.usdc || 0);
+            const latest = !existing?.latest || (row.time || 0) > (existing.latest.time || 0)
+                ? row
+                : existing.latest;
+            byVenue.set(key, { latest, sum });
         });
         const entries = perpsPairLegEntries(p);
         const breakdown = `<div class="perps-pos-funding-breakdown">${entries.map(entry => {
-            const row = byVenue.get(String(entry.venue || '').toLowerCase());
-            const value = row ? row.usdc || 0 : 0;
-            const missing = !row;
+            const bucket = byVenue.get(String(entry.venue || '').toLowerCase());
+            const latest = bucket?.latest;
+            const missing = !latest;
+            const showLatestPayment = group.type === 'net-window' && latest && (latest.intervalHours || 1) <= 1;
+            const value = missing ? 0 : (showLatestPayment ? latest.usdc || 0 : bucket.sum || 0);
             return `<div class="perps-pos-funding-breakdown-row"><span>${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="${missing ? '' : perpsSignedCls(value)}">${missing ? '—' : perpsFmtUsd(value)}</span></div>`;
         }).join('')}</div>`;
         return `<div class="perps-pos-funding-card ${isNet ? 'net' : ''}">` +
