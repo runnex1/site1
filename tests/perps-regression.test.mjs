@@ -151,6 +151,43 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 {
+  const closeTime = now - 3 * 86400000;
+  const openTime = closeTime - 8 * 86400000;
+  const closed = buildClosedPairs(
+    {
+      hyperliquid: [{
+        venue: 'hyperliquid',
+        symbol: 'ZK',
+        time: closeTime + 1800000,
+        side: 'B',
+        px: 0.12,
+        sz: 1200,
+        fee: 1.2,
+        closedPnl: -42,
+      }],
+      grvt: [],
+    },
+    {},
+    {
+      grvt: [{
+        i: 'ZK_USDT_Perp',
+        ot: String(openTime * 1e6),
+        ct: String(closeTime * 1e6),
+        il: true,
+        s: 1,
+        cv: '1200',
+        rp: '44',
+        cf: '2',
+        cr: '18',
+      }],
+      extended: [],
+    },
+  );
+  assert.equal(closed.length, 1, 'lite GRVT position history rows must pair with HL closing fills');
+  assert.equal(closed[0].pairLabel, 'grvt + hyperliquid');
+}
+
+{
   const t1 = now - 5 * 86400000;
   const t2 = now - 35 * 86400000;
   const t3 = now - 65 * 86400000;
@@ -278,6 +315,9 @@ assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response
 assert.match(perpsJs, /const CLOSED_PAIR_MATCH_WINDOW_MS = 7 \* 86400000;/, 'closed legs may close on different days across venues');
 assert.match(perpsJs, /function collectPerpsHistorySymbols\(/, 'NADO history must include symbols from funding payments');
 assert.match(perpsJs, /fetchGrvtPositionHistory/, 'closed positions must load GRVT native position history');
+assert.match(perpsJs, /function msToGrvtNs\(ms\)/, 'GRVT timestamps must use BigInt nanosecond conversion');
+assert.match(perpsJs, /grvtFillsCount/, 'perps summary must expose GRVT fill counts for production debugging');
+assert.match(perpsJs, /grvtPositionHistoryCount/, 'perps summary must expose GRVT position-history counts for production debugging');
 assert.match(perpsJs, /fetchExtendedPositionHistory/, 'closed positions must load Extended native position history');
 assert.match(perpsJs, /buildClosedLegsFromExchangeHistory/, 'closed positions must map exchange-native closed rounds');
 assert.match(perpsJs, /const PERPS_MAX_FILL_HISTORY_DAYS = 365;/, 'Closed tab must fetch a long enough fill history to show older closed rounds');

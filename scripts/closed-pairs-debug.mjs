@@ -28,6 +28,9 @@ async function main() {
   });
 
   console.log(`GRVT configured: ${dash.summary?.grvtConfigured ?? dash.grvt?.configured}`);
+  console.log(`GRVT fills: ${dash.summary?.grvtFillsCount ?? dash.grvt?.fills?.fills?.length ?? 0} (raw ${dash.summary?.grvtFillsRawCount ?? '—'})`);
+  console.log(`GRVT position history: ${dash.summary?.grvtPositionHistoryCount ?? '—'} (raw ${dash.summary?.grvtPositionHistoryRawCount ?? '—'})`);
+  console.log(`GRVT error: ${dash.summary?.grvtError ?? dash.grvt?.fills?.error ?? '—'}`);
   console.log(`Extended configured: ${dash.summary?.extendedConfigured ?? dash.extended?.configured}`);
   console.log(`Dashboard closedPairs: ${dash.closedPairs?.length || 0}`);
   console.log(`Summary closedCount: ${dash.summary?.closedCount ?? '—'}`);
