@@ -15,6 +15,7 @@ const {
   buildClosedPairs,
   buildDailyFundingSeries,
   computeCombinedNetDeposits,
+  pairOpenedAtMs,
 } = require('../lib/perps.js');
 const aaveProxyHandler = require('../api/aave-proxy.js');
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -57,6 +58,19 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 {
   const result = combined([payment(100)], [payment(100)], [payment(100)]);
   assert.equal(result.combinedNetDeposits, 100, 'a deposit duplicated across three venues must be counted once');
+}
+
+{
+  const monthAgo = now - 35 * 86400000;
+  const oneDayAgo = now - 86400000;
+  const openMs = pairOpenedAtMs('ONDO', 'hyperliquid', 'nado', {
+    hyperliquid: [{ symbol: 'ONDO', time: oneDayAgo, fee: 1 }],
+    nado: [{ symbol: 'ONDO', time: monthAgo, fee: 1 }],
+  }, {
+    hyperliquid: [],
+    nado: [{ symbol: 'ONDO', time: monthAgo, usdc: 0.5 }],
+  });
+  assert.equal(openMs, monthAgo, 'position performance must start when the first leg opened, not when the hedge completed');
 }
 
 {
@@ -186,7 +200,7 @@ assert.match(indexHtml, /Perps DEXs/, 'sidebar and search must use the Perps DEX
 assert.doesNotMatch(indexHtml, /Perps Arb/, 'old Perps Arb label must not remain in the UI');
 assert.match(indexHtml, /function perpsFilterPairDailySeriesForPosition\(series, p\)/, 'position performance must use all-time series since opening trade');
 assert.match(indexHtml, /perpsTrimPairDailySeriesToActivity\(rows\)/, 'position performance must trim empty days outside the active session');
-assert.match(perpsJs, /pairOpenedAtMs/, 'server must track when each pair was opened from fills');
+assert.match(perpsJs, /Math\.min\(\.\.\.candidates\)/, 'position open time must use earliest fill or funding on either leg');
 assert.match(perpsJs, /const perfDays = Math\.min\(PERPS_MAX_FILL_HISTORY_DAYS, Math\.max\(fillHistoryDays, openDays\)\)/, 'per-pair performance series must span from pair open through fill history');
 assert.match(perpsJs, /days: perfDays,\s*\n\s*pairedBases: \[p\.symbol\]/, 'per-pair performance series must use computed performance window');
 assert.match(indexHtml, /function perpsSyncTotalPnlRolling24h\(data\)/, 'Total PnL must use rolling 24h independent of stat window');
