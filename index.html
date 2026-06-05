@@ -877,6 +877,8 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-funding-sub { margin-top:0.48rem; color:#7f8f9f; font-size:0.58rem; line-height:1.35; }
 .perps-pos-funding-breakdown { margin-top:0.45rem; display:flex; flex-direction:column; gap:0.2rem; color:#9dacbb; font-size:0.58rem; line-height:1.25; }
 .perps-pos-funding-breakdown-row { display:flex; justify-content:space-between; gap:0.5rem; }
+.perps-pos-funding-breakdown-label { display:flex; flex-direction:column; gap:0.05rem; min-width:0; }
+.perps-pos-funding-breakdown-note { color:#617083; font-size:0.52rem; white-space:nowrap; }
 .perps-pos-funding-empty { padding:0.9rem; color:#9dacbb; font-family:var(--ff-mono); font-size:0.68rem; }
 .perps-leverage-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0.65rem; padding:0.85rem 1rem 1rem; }
 .perps-leverage-card { border:1px solid rgba(134,159,179,0.14); border-radius:11px; background:rgba(255,255,255,0.025); padding:0.72rem 0.78rem; }
@@ -22934,9 +22936,15 @@ function perpsRenderRecentFundingPayments(p) {
             const bucket = byVenue.get(String(entry.venue || '').toLowerCase());
             const latest = bucket?.latest;
             const missing = !latest;
-            const showLatestPayment = group.type === 'net-window' && latest && (latest.intervalHours || 1) <= 1;
-            const value = missing ? 0 : (showLatestPayment ? latest.usdc || 0 : bucket.sum || 0);
-            return `<div class="perps-pos-funding-breakdown-row"><span>${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="${missing ? '' : perpsSignedCls(value)}">${missing ? '—' : perpsFmtUsd(value)}</span></div>`;
+            const value = missing ? 0 : bucket.sum || 0;
+            const showLatestHint = group.type === 'net-window'
+                && latest
+                && (latest.intervalHours || 1) <= 1
+                && Math.abs((latest.usdc || 0) - value) > 0.000001;
+            const latestHint = showLatestHint
+                ? `<span class="perps-pos-funding-breakdown-note">latest ${perpsFmtUsd(latest.usdc || 0)}</span>`
+                : '';
+            return `<div class="perps-pos-funding-breakdown-row"><span class="perps-pos-funding-breakdown-label">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}${latestHint}</span><span class="${missing ? '' : perpsSignedCls(value)}">${missing ? '—' : perpsFmtUsd(value)}</span></div>`;
         }).join('')}</div>`;
         return `<div class="perps-pos-funding-card ${isNet ? 'net' : ''}">` +
             `<div class="perps-pos-funding-time">${perpsFormatEventTime(group.time)}</div>` +

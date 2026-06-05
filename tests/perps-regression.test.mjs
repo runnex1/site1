@@ -575,7 +575,8 @@ assert.match(indexHtml, /const PERPS_RECENT_FUNDING_CARD_LIMIT = 8;/, 'recent fu
 assert.match(indexHtml, /hourlyLookbackHours = Math\.max\(8, maxSlowIntervalHours \* PERPS_RECENT_FUNDING_CARD_LIMIT\)/, 'mixed funding cards must load enough hourly payments to net the visible slow windows');
 assert.match(indexHtml, /rows\.slice\(0, PERPS_RECENT_FUNDING_CARD_LIMIT\)/, 'slow venue recent funding cards must use the shared card limit');
 assert.match(indexHtml, /const latest = !existing\?\.latest \|\| \(row\.time \|\| 0\) > \(existing\.latest\.time \|\| 0\)/, 'recent funding breakdown must keep each venue latest payment separate from the window sum');
-assert.match(indexHtml, /showLatestPayment \? latest\.usdc \|\| 0 : bucket\.sum \|\| 0/, 'mixed recent funding windows must show the latest hourly venue payment, not its multi-hour sum');
+assert.match(indexHtml, /const value = missing \? 0 : bucket\.sum \|\| 0/, 'mixed recent funding windows must show per-venue window sums that add up to the displayed net');
+assert.match(indexHtml, /perps-pos-funding-breakdown-note">latest \$\{perpsFmtUsd\(latest\.usdc \|\| 0\)\}/, 'mixed recent funding windows must expose latest hourly exchange payments separately from window sums');
 assert.match(indexHtml, /touch-action:pan-x/, 'recent funding strip must allow horizontal touch scrolling');
 assert.match(perpsJs, /pair\.recentFundingEvents = fundingEventsForPair\(base, venueA, venueB, paymentSources, sinceMs\);/, 'position modal must receive raw per-pair funding events for slow venues like NADO');
 assert.match(indexHtml, /p\.recentFundingEvents/, 'position modal must prefer raw per-pair funding events over daily chart rows');
