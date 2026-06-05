@@ -20986,22 +20986,46 @@ function perpsFilterDailySeries(series, range) {
     const ms = perpsStatRangeMs(range);
     if (!ms) return rows;
     const cutoff = Date.now() - ms;
-    return rows
+    const trimmed = rows
         .filter(r => new Date(r.day + 'T23:59:59.999Z').getTime() >= cutoff)
-        .map(r => perpsTrimDailyRowToCutoff(r, cutoff));
+        .map(r => perpsTrimDailyRowToCutoff(r, cutoff))
+        .filter(Boolean);
+    return perpsRecomputeDailySeriesCumulative(trimmed);
 }
 
 function perpsTrimDailyRowToCutoff(row, cutoff) {
     const hasFundingEvents = Array.isArray(row.fundingEvents);
     const hasFeeEvents = Array.isArray(row.feeEvents);
-    if (!hasFundingEvents && !hasFeeEvents) return row;
+    const dayStart = Date.parse((row.day || '') + 'T00:00:00.000Z');
+    if (!hasFundingEvents && !hasFeeEvents) {
+        // Summary-only boundary rows cannot be split accurately, so do not count a full
+        // calendar day as "last 24h" PnL.
+        if (Number.isFinite(dayStart) && dayStart < cutoff) return null;
+        return row;
+    }
     const fundingEvents = hasFundingEvents ? row.fundingEvents.filter(e => (e.time || 0) >= cutoff) : [];
     const feeEvents = hasFeeEvents ? row.feeEvents.filter(e => (e.time || 0) >= cutoff) : [];
+    if (!fundingEvents.length && !feeEvents.length && Number.isFinite(dayStart) && dayStart < cutoff) return null;
     const dailyFunding = fundingEvents.reduce((s, e) => s + (e.usdc || 0), 0);
     const dailyFees = feeEvents.reduce((s, e) => s + (e.fee || 0), 0);
     const byVenue = {};
     fundingEvents.forEach(e => { byVenue[e.venue] = (byVenue[e.venue] || 0) + (e.usdc || 0); });
     return { ...row, dailyFunding, dailyFees, dailyNet: dailyFunding - dailyFees, byVenue, fundingEvents, feeEvents };
+}
+
+function perpsRecomputeDailySeriesCumulative(rows) {
+    let cumFunding = 0;
+    let cumFees = 0;
+    let cumNet = 0;
+    return (Array.isArray(rows) ? rows : []).map(row => {
+        const dailyFunding = row.dailyFunding || 0;
+        const dailyFees = row.dailyFees || 0;
+        const dailyNet = row.dailyNet != null ? row.dailyNet : dailyFunding - dailyFees;
+        cumFunding += dailyFunding;
+        cumFees += dailyFees;
+        cumNet += dailyNet;
+        return { ...row, dailyFunding, dailyFees, dailyNet, cumFunding, cumFees, cumNet };
+    });
 }
 
 function perpsFilterEquityPoints(points, range) {
