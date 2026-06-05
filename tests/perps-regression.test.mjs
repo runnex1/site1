@@ -16,6 +16,8 @@ const {
   buildClosedLegsFromExchangeHistory,
   buildDailyFundingSeries,
   computeCombinedNetDeposits,
+  filterFullyClosedPairs,
+  mergeNadoMatches,
   pairOpenedAtMs,
 } = require('../lib/perps.js');
 const aaveProxyHandler = require('../api/aave-proxy.js');
@@ -613,6 +615,36 @@ assert.match(perpsJs, /function grvtFundingSinceOpen\(pos\) \{[\s\S]*?return raw
   await aaveProxyHandler({ method: 'GET', headers: {}, query: { cronSnapshot: '1' } }, res);
   assert.equal(statusCode, 401, 'cron snapshot GET must reach the protected Perps handler without a wallet query');
   assert.equal(responseBody?.error, 'Unauthorized');
+}
+
+{
+  const close = now - 2 * 86400000;
+  const open = close - 5 * 86400000;
+  const closed = buildClosedPairs({
+    hyperliquid: [
+      { venue: 'hyperliquid', symbol: 'ONDO', time: open, side: 'A', px: 1, sz: 16000, fee: 1, closedPnl: 0 },
+      { venue: 'hyperliquid', symbol: 'ONDO', time: close, side: 'B', px: 1.1, sz: 16000, fee: 1, closedPnl: 100 },
+    ],
+    nado: [
+      { venue: 'nado', symbol: 'ONDO', time: open + 1000, side: 'buy', px: 1, size: 16000, fee: 1, realizedPnl: 0 },
+      { venue: 'nado', symbol: 'ONDO', time: close + 1000, side: 'sell', px: 1.1, size: 16000, fee: 1, realizedPnl: -120 },
+    ],
+  }, {});
+  assert.equal(closed.length, 1, 'partial hedge close legs should still pair before filtering');
+  const filtered = filterFullyClosedPairs(closed, {
+    hyperliquid: {},
+    nado: { ONDO: { symbol: 'ONDO-PERP', size: 28000 } },
+  });
+  assert.equal(filtered.length, 0, 'closed tab must hide rounds while either venue still holds size');
+}
+
+{
+  const merged = mergeNadoMatches(
+    { wallet: '0x1', subaccount: 's', days: 30, matches: [{ submissionIdx: '1', symbol: 'ONDO', time: 1, fee: 1, realizedPnl: 2 }] },
+    { wallet: '0x1', subaccount: 's', days: 30, matches: [{ submissionIdx: '2', symbol: 'MEGA', time: 2, fee: 3, realizedPnl: 4 }] },
+  );
+  assert.equal(merged.matches.length, 2, 'inactive-symbol Nado history must merge with active-symbol matches');
+  assert.equal(merged.totalFees, 4);
 }
 
 console.log('PASS: perps accounting and dashboard regression checks');
