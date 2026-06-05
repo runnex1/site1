@@ -22737,14 +22737,15 @@ function perpsRecentFundingRows(p) {
     const venueByName = new Map(entries.map(entry => [venueKey(entry.venue), entry]));
     const rowsByVenue = {};
     let latestEventTime = 0;
-    for (const row of series) {
-        for (const ev of (row.fundingEvents || [])) {
-            const key = venueKey(ev.venue);
-            if (!venueByName.has(key)) continue;
-            if (!rowsByVenue[key]) rowsByVenue[key] = [];
-            rowsByVenue[key].push({ ...ev, entry: venueByName.get(key) });
-            latestEventTime = Math.max(latestEventTime, ev.time || 0);
-        }
+    const rawEvents = Array.isArray(p.recentFundingEvents) && p.recentFundingEvents.length
+        ? p.recentFundingEvents
+        : series.flatMap(row => row.fundingEvents || []);
+    for (const ev of rawEvents) {
+        const key = venueKey(ev.venue);
+        if (!venueByName.has(key)) continue;
+        if (!rowsByVenue[key]) rowsByVenue[key] = [];
+        rowsByVenue[key].push({ ...ev, entry: venueByName.get(key) });
+        latestEventTime = Math.max(latestEventTime, ev.time || 0);
     }
 
     const anchorTime = latestEventTime || Date.now();
