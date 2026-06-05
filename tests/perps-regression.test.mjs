@@ -369,6 +369,11 @@ assert.match(perpsJs, /fetchExtendedPositionHistory/, 'closed positions must loa
 assert.match(perpsJs, /buildClosedLegsFromExchangeHistory/, 'closed positions must map exchange-native closed rounds');
 assert.match(perpsJs, /const PERPS_MAX_FILL_HISTORY_DAYS = 365;/, 'Closed tab must fetch a long enough fill history to show older closed rounds');
 assert.match(perpsJs, /reconstructedFromClosingFills: true/, 'Closed tab must recover rounds whose opening fill is outside the fetched history');
+assert.match(perpsJs, /function parseGrvtIsBuyer\(value\)/, 'GRVT fill side parsing must normalize string booleans');
+assert.match(perpsJs, /side: parseGrvtIsBuyer\(row\.is_buyer \?\? row\.ib\) \? 'buy' : 'sell'/, 'GRVT fills must not treat string "false" as a buy');
+assert.match(indexHtml, /const PERPS_MAX_FILL_HISTORY_DAYS = 365;/, 'browser must request a 365d perps history window');
+assert.match(indexHtml, /return PERPS_MAX_FILL_HISTORY_DAYS;/, 'perps API days must use the max history constant');
+assert.match(aaveProxyJs, /Math\.min\(365, Math\.max\(1, parseInt\(req\.query\.days/, 'Perps API route must not clamp dashboard history to 90d');
 assert.match(indexHtml, /perpsPositionFundingRecent/, 'position performance modal must include recent funding payments');
 assert.match(indexHtml, /function perpsRecentFundingGroups\(p\)/, 'recent funding payments must support hourly net grouping');
 assert.match(indexHtml, /perps-pos-funding-strip/, 'recent funding payments must render as a horizontal card strip');

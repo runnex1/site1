@@ -7485,7 +7485,7 @@ const PERPS_AUTO_REFRESH_MS = 60000;
 const PERPS_LIVE_APR_MS = 15000;
 const PERPS_CHART_WIDTH = 760;
 const PERPS_EQUITY_CHART_START_MS = Date.parse('2026-06-01T08:00:00.000Z');
-const PERPS_MAX_FILL_HISTORY_DAYS = 90;
+const PERPS_MAX_FILL_HISTORY_DAYS = 365;
 let _perpsCache = null;
 let _perpsDailyFundSeries = [];
 let _perpsDailyFundShowFees = true;
@@ -20920,11 +20920,11 @@ function perpsStatRangeMs(range) {
 
 function perpsStatRangeToApiDays(range) {
     // Always fetch max history; client filters by selected stat window.
-    return 90;
+    return PERPS_MAX_FILL_HISTORY_DAYS;
 }
 
 function perpsFillHistoryDays(data) {
-    return data?.summary?.fillHistoryDays ?? 90;
+    return data?.summary?.fillHistoryDays ?? PERPS_MAX_FILL_HISTORY_DAYS;
 }
 
 function perpsSetStatRange(range, btn) {

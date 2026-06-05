@@ -39,7 +39,7 @@ async function handlePerpsCronSnapshot(req, res) {
   const grvtSubAccount = String(
     config.grvtSubAccount || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
   ).trim();
-  const days = Math.min(90, Math.max(1, parseInt(config.days || '30', 10) || 30));
+  const days = Math.min(365, Math.max(1, parseInt(config.days || '30', 10) || 30));
 
   if (!isWallet(wallet)) {
     return res.status(400).json({ error: 'No valid perps wallet in vault:perps_config' });
@@ -98,7 +98,7 @@ async function handlePerps(req, res) {
 
   const wallet = String(req.query.wallet || req.query.hyperliquid || '').trim();
   const nadoWallet = String(req.query.nadoWallet || req.query.nado || wallet).trim();
-  const days = Math.min(90, Math.max(1, parseInt(req.query.days || '30', 10) || 30));
+  const days = Math.min(365, Math.max(1, parseInt(req.query.days || '30', 10) || 30));
 
   const grvtSubAccount = String(
     req.query.grvtSubAccount || req.query.grvt || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
