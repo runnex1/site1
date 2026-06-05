@@ -22581,6 +22581,29 @@ function perpsTrimPairDailySeriesToActivity(rows) {
     return first === -1 ? [] : list.slice(first, last + 1);
 }
 
+/** Split daily rows into sessions; a day with no funding/fees means the position was closed. */
+function perpsSplitDailySeriesIntoSessions(rows) {
+    const list = Array.isArray(rows) ? rows : [];
+    const sessions = [];
+    let current = [];
+    for (const row of list) {
+        if (perpsDailyRowHasPerformanceActivity(row)) {
+            current.push(row);
+        } else if (current.length) {
+            sessions.push(current);
+            current = [];
+        }
+    }
+    if (current.length) sessions.push(current);
+    return sessions;
+}
+
+/** Keep only the latest open session — active days only, no blank candles. */
+function perpsTrimPairDailySeriesToLatestSession(rows) {
+    const sessions = perpsSplitDailySeriesIntoSessions(rows);
+    return sessions.length ? sessions[sessions.length - 1] : [];
+}
+
 function perpsDailySeriesSpanDays(rows) {
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length) return null;
@@ -22598,14 +22621,9 @@ function perpsPairOpenedAtMs(p) {
     return null;
 }
 
-/** Position performance: all funding/fees since the opening trade(s) for this pair. */
+/** Position performance: funding/fees since the position was last opened (skips closed gaps). */
 function perpsFilterPairDailySeriesForPosition(series, p) {
-    let rows = Array.isArray(series) ? series : [];
-    const openMs = perpsPairOpenedAtMs(p);
-    if (openMs != null) {
-        rows = rows.filter(r => new Date(r.day + 'T12:00:00Z').getTime() >= openMs - 86400000);
-    }
-    rows = perpsTrimPairDailySeriesToActivity(rows);
+    let rows = perpsTrimPairDailySeriesToLatestSession(series);
     let cumFunding = 0;
     let cumFees = 0;
     let cumNet = 0;
@@ -22792,10 +22810,12 @@ function perpsOpenPositionChart(pairIdx) {
 
     const displayLegs = perpsPairDisplayLegEntries(p);
     const series = perpsFilterPairDailySeriesForPosition(p.dailyPerformanceSeries || [], p);
-    const openMs = perpsPairOpenedAtMs(p);
+    const sessionStartMs = series.length
+        ? Date.parse((series[0]?.day || '') + 'T12:00:00Z')
+        : null;
     const rangeLabel = series.length
-        ? (openMs
-            ? `Since ${new Date(openMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} · ${perpsDailySeriesSpanDays(series)}d`
+        ? (Number.isFinite(sessionStartMs)
+            ? `Since ${new Date(sessionStartMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })} · ${perpsDailySeriesSpanDays(series)}d`
             : `All time · ${perpsDailySeriesSpanDays(series)}d`)
         : 'No performance events';
     const totals = perpsSumDailyFundingSeries(series, true);
