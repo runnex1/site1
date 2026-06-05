@@ -568,8 +568,10 @@ assert.match(indexHtml, /return PERPS_MAX_FILL_HISTORY_DAYS;/, 'perps API days m
 assert.match(aaveProxyJs, /Math\.min\(365, Math\.max\(1, parseInt\(req\.query\.days/, 'Perps API route must not clamp dashboard history to 90d');
 assert.match(indexHtml, /perpsPositionFundingRecent/, 'position performance modal must include recent funding payments');
 assert.match(indexHtml, /function perpsRecentFundingGroups\(p\)/, 'recent funding payments must support hourly net grouping');
-assert.match(indexHtml, /type: 'venue'/, 'mixed funding intervals must show slow-venue payments separately');
-assert.doesNotMatch(indexHtml, /net-window/, 'recent funding must not double-count hourly legs inside slow windows');
+assert.match(indexHtml, /type: 'net-window'/, 'mixed funding intervals must net slow venue windows with matching hourly legs');
+assert.match(indexHtml, /window net across both legs/, 'recent funding cards must label mixed-interval windows as net cards');
+assert.match(indexHtml, /perpsInferFundingIntervalHours/, 'recent funding must infer payment cadence from event history when metadata is missing');
+assert.match(indexHtml, /hourlyLookbackHours = Math\.max\(8, maxSlowIntervalHours \* 2\)/, 'mixed funding cards must load enough hourly payments to net the last two slow windows');
 assert.match(indexHtml, /touch-action:pan-x/, 'recent funding strip must allow horizontal touch scrolling');
 assert.match(perpsJs, /pair\.recentFundingEvents = fundingEventsForPair\(base, venueA, venueB, paymentSources, sinceMs\);/, 'position modal must receive raw per-pair funding events for slow venues like NADO');
 assert.match(indexHtml, /p\.recentFundingEvents/, 'position modal must prefer raw per-pair funding events over daily chart rows');
