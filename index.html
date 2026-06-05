@@ -878,6 +878,11 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-funding-breakdown { margin-top:0.45rem; display:flex; flex-direction:column; gap:0.2rem; color:#9dacbb; font-size:0.58rem; line-height:1.25; }
 .perps-pos-funding-breakdown-row { display:flex; justify-content:space-between; gap:0.5rem; }
 .perps-pos-funding-empty { padding:0.9rem; color:#9dacbb; font-family:var(--ff-mono); font-size:0.68rem; }
+.perps-leverage-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0.65rem; padding:0.85rem 1rem 1rem; }
+.perps-leverage-card { border:1px solid rgba(134,159,179,0.14); border-radius:11px; background:rgba(255,255,255,0.025); padding:0.72rem 0.78rem; }
+.perps-leverage-name { font-family:var(--ff-mono); font-size:0.62rem; font-weight:900; letter-spacing:0.08em; text-transform:uppercase; color:#9dacbb; }
+.perps-leverage-value { margin-top:0.38rem; font-family:var(--ff-mono); font-size:1.22rem; font-weight:900; color:var(--t1); }
+.perps-leverage-meta { margin-top:0.28rem; font-family:var(--ff-mono); font-size:0.58rem; color:#7f8f9f; line-height:1.45; }
 .perps-config input.perps-masked { letter-spacing:0.08em; color:#9dacbb; }
 .perps-pnl-chart.hoverable, .perps-fund-chart-wrap { cursor:crosshair; }
 .perps-chart-tooltip {
@@ -6723,6 +6728,14 @@ body[data-active-tab="loops"] .loop-pos-val,
               <button type="button" class="perps-btn" onclick="perpsSaveConfigAndRefresh()">Save &amp; connect</button>
             </div>
             <div class="perps-status" id="perpsStatus">Checking saved wallets…</div>
+          </section>
+
+          <section class="perps-panel" style="min-height:0;">
+            <div class="perps-panel-head">
+              <div class="perps-panel-title">Cross-margin leverage</div>
+              <span class="perps-pill">open notional / equity</span>
+            </div>
+            <div class="perps-leverage-grid" id="perpsLeverageGrid"></div>
           </section>
         </div>
       </div>
@@ -23151,7 +23164,7 @@ function perpsSetPositionsTab(tab, btn) {
 
 function perpsRenderPositionsPanel(data) {
     if (_perpsPositionsTab === 'closed') {
-        perpsRenderClosedPositions(data?.closedPairs || [], data?.closedDebug || null);
+        perpsRenderClosedPositions(data?.closedPairs || []);
     } else {
         perpsRenderPortfolioPositions(data?.paired || []);
     }
@@ -23236,13 +23249,12 @@ function perpsClosedDebugNoticeHtml(debug) {
 }
 
 function perpsRenderClosedPositions(closedPairs) {
-    const closedDebug = arguments.length > 1 ? arguments[1] : null;
     const el = document.getElementById('perpsPositionsList');
     const badge = document.getElementById('perpsPairsBadge');
     if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
     if (!el) return;
     if (!closedPairs.length) {
-        el.innerHTML = perpsClosedDebugNoticeHtml(closedDebug) + '<div class="perps-empty">No fully closed hedged rounds found in the available fill history.</div>';
+        el.innerHTML = '<div class="perps-empty">No fully closed hedged rounds found in the available fill history.</div>';
         return;
     }
     const head = `<div class="perps-pos-head closed">
@@ -23254,7 +23266,7 @@ function perpsRenderClosedPositions(closedPairs) {
         <div>Fees</div>
         <div>Closed</div>
     </div>`;
-    el.innerHTML = perpsClosedDebugNoticeHtml(closedDebug) + head + closedPairs.map(p => {
+    el.innerHTML = head + closedPairs.map(p => {
         const sizeLabel = p.size != null ? `${perpsFmtSize(p.size)} ${p.symbol}` : p.symbol;
         const closedAt = perpsFormatEventTime(p.closeTime);
         return `<div class="perps-pos-card"><div class="perps-pos-row closed">
@@ -23520,6 +23532,46 @@ function perpsRenderFundingHistory(hlPayments, nadoPayments, grvtPayments, exten
     }).join('')}</tbody></table>`;
 }
 
+function perpsVenueStateForLeverage(data, venue) {
+    if (venue === 'hyperliquid') return data?.hyperliquid?.state || {};
+    if (venue === 'nado') return data?.nado?.state || {};
+    if (venue === 'grvt') return data?.grvt?.state || {};
+    if (venue === 'extended') return data?.extended?.state || {};
+    return {};
+}
+
+function perpsVenueEquityForLeverage(data, venue) {
+    const s = data?.summary || {};
+    if (venue === 'hyperliquid') return s.hlAccountValue ?? data?.equityNow?.hl ?? null;
+    if (venue === 'nado') return s.nadoAccountValue ?? data?.equityNow?.nado ?? null;
+    if (venue === 'grvt') return s.grvtAccountValue ?? data?.equityNow?.grvt ?? null;
+    if (venue === 'extended') return s.extendedAccountValue ?? data?.equityNow?.extended ?? null;
+    return null;
+}
+
+function perpsRenderCrossMarginLeverage(data) {
+    const el = document.getElementById('perpsLeverageGrid');
+    if (!el) return;
+    const venues = [
+        ['hyperliquid', 'Hyperliquid'],
+        ['nado', 'NADO'],
+        ['grvt', 'GRVT'],
+        ['extended', 'Extended'],
+    ];
+    el.innerHTML = venues.map(([venue, label]) => {
+        const state = perpsVenueStateForLeverage(data, venue);
+        const positions = Array.isArray(state.positions) ? state.positions : [];
+        const notional = positions.reduce((sum, p) => sum + Math.abs(Number(p.notional || 0)), 0);
+        const equity = Number(perpsVenueEquityForLeverage(data, venue));
+        const lev = Number.isFinite(equity) && equity > 0 ? notional / equity : null;
+        return `<div class="perps-leverage-card">
+            <div class="perps-leverage-name">${dashEsc(label)}</div>
+            <div class="perps-leverage-value">${lev != null ? `${lev.toFixed(2)}x` : '—'}</div>
+            <div class="perps-leverage-meta">${perpsFmtUsd(notional)} open notional<br>${Number.isFinite(equity) ? perpsFmtUsd(equity) : '—'} equity · ${positions.length} pos</div>
+        </div>`;
+    }).join('');
+}
+
 function perpsRenderDashboard(data) {
     _perpsCache = data;
     perpsSaveSnapshot(data);
@@ -23530,6 +23582,7 @@ function perpsRenderDashboard(data) {
     perpsRenderPositionsPanel(data);
     perpsRenderUnhedged(data.unhedged || []);
     perpsRenderAlerts(data.paired || [], data.unhedged || [], data.summary || {});
+    perpsRenderCrossMarginLeverage(data);
     _perpsLastRefreshAt = data.fetchedAt || Date.now();
     _perpsLiveAprUpdatedAt = _perpsLastRefreshAt;
     _perpsRefreshError = null;
