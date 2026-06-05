@@ -221,6 +221,107 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 {
+  const close = now - 4 * 86400000;
+  const open = close - 6 * 3600000;
+  const closed = buildClosedPairs(
+    {
+      hyperliquid: [
+        { venue: 'hyperliquid', symbol: 'POL', time: close, side: 'B', px: 1, sz: 500, fee: 1, closedPnl: -20 },
+        { venue: 'hyperliquid', symbol: 'ZK', time: close + 5 * 60 * 1000, side: 'B', px: 1.1, sz: 800, fee: 1, closedPnl: -78 },
+      ],
+      extended: [
+        { venue: 'extended', symbol: 'ZK', time: open, side: 'buy', px: 1, sz: 800, fee: 1 },
+        { venue: 'extended', symbol: 'ZK', time: close + 10 * 60 * 1000, side: 'sell', px: 1.1, sz: 800, fee: 1 },
+      ],
+    },
+    {},
+    {
+      grvt: [],
+      extended: [{
+        market: 'POL-USD',
+        side: 'LONG',
+        createdTime: open,
+        closedTime: close,
+        maxPositionSize: '500',
+        realisedPnl: '18',
+      }],
+    },
+  );
+  assert.equal(closed.length, 2, 'Extended fill replay must add assets missing from sparse position history');
+  assert.deepEqual(closed.map(p => p.symbol).sort(), ['POL', 'ZK']);
+}
+
+{
+  const close = now - 3 * 86400000;
+  const open = close - 6 * 3600000;
+  const closed = buildClosedPairs(
+    {
+      hyperliquid: [{
+        venue: 'hyperliquid',
+        symbol: 'ZK',
+        time: close + 5 * 60 * 1000,
+        side: 'A',
+        px: 1.1,
+        sz: 1200,
+        fee: 1,
+        closedPnl: 42,
+      }],
+      grvt: [],
+    },
+    {},
+    {
+      grvt: [{
+        instrument: 'ZK_USDT_Perp',
+        open_time: String(open * 1e6),
+        close_time: String(close * 1e6),
+        is_long: 'false',
+        status: 'CLOSED',
+        closed_volume_base: '1200',
+        realized_pnl: '-44',
+        cumulative_fee: '2',
+      }],
+      extended: [],
+    },
+  );
+  assert.equal(closed.length, 1, 'GRVT string false is_long must be parsed as a short closed leg');
+  assert.equal(closed[0].shortLeg.venue, 'grvt');
+}
+
+{
+  const specs = [
+    ['hyperliquid', 'nado', 'CMBHLNADO'],
+    ['hyperliquid', 'grvt', 'CMBHLGRVT'],
+    ['hyperliquid', 'extended', 'CMBHLEXT'],
+    ['nado', 'grvt', 'CMBNADOGRVT'],
+    ['nado', 'extended', 'CMBNADOEXT'],
+    ['grvt', 'extended', 'CMBGRVTEXT'],
+  ];
+  const sources = { hyperliquid: [], nado: [], grvt: [], extended: [] };
+  const round = (venue, symbol, side, openTime, closeTime, pnl) => {
+    const openSide = side === 'long' ? 'buy' : 'sell';
+    const closeSide = side === 'long' ? 'sell' : 'buy';
+    return [
+      { venue, symbol, time: openTime, side: openSide, px: 1, sz: 1000, fee: 1, closedPnl: 0, realizedPnl: 0 },
+      { venue, symbol, time: closeTime, side: closeSide, px: 1.1, sz: 1000, fee: 1, closedPnl: pnl, realizedPnl: pnl },
+    ];
+  };
+  specs.forEach(([longVenue, shortVenue, symbol], idx) => {
+    const openTime = now - (idx + 10) * 3600000;
+    const closeTime = openTime + 2 * 3600000;
+    sources[longVenue].push(...round(longVenue, symbol, 'long', openTime, closeTime, 100));
+    sources[shortVenue].push(...round(shortVenue, symbol, 'short', openTime + 60 * 1000, closeTime + 60 * 1000, -98));
+  });
+  const closed = buildClosedPairs(sources, {});
+  assert.equal(closed.length, specs.length, 'all non-Variational exchange combinations must be able to display closed positions');
+  assert.deepEqual(closed.map(p => p.symbol).sort(), specs.map(s => s[2]).sort());
+  for (const [longVenue, shortVenue, symbol] of specs) {
+    const pair = closed.find(p => p.symbol === symbol);
+    assert.equal(pair.longLeg.venue, longVenue, `${symbol} long venue must match`);
+    assert.equal(pair.shortLeg.venue, shortVenue, `${symbol} short venue must match`);
+  }
+}
+
+{
   const t1 = now - 5 * 86400000;
   const t2 = now - 35 * 86400000;
   const t3 = now - 65 * 86400000;
