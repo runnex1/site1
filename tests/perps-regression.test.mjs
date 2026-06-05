@@ -571,11 +571,16 @@ assert.match(indexHtml, /function perpsRecentFundingGroups\(p\)/, 'recent fundin
 assert.match(indexHtml, /type: 'net-window'/, 'mixed funding intervals must net slow venue windows with matching hourly legs');
 assert.match(indexHtml, /window net across both legs/, 'recent funding cards must label mixed-interval windows as net cards');
 assert.match(indexHtml, /perpsInferFundingIntervalHours/, 'recent funding must infer payment cadence from event history when metadata is missing');
-assert.match(indexHtml, /hourlyLookbackHours = Math\.max\(8, maxSlowIntervalHours \* 2\)/, 'mixed funding cards must load enough hourly payments to net the last two slow windows');
+assert.match(indexHtml, /const PERPS_RECENT_FUNDING_CARD_LIMIT = 8;/, 'recent funding payments must show more than two net windows');
+assert.match(indexHtml, /hourlyLookbackHours = Math\.max\(8, maxSlowIntervalHours \* PERPS_RECENT_FUNDING_CARD_LIMIT\)/, 'mixed funding cards must load enough hourly payments to net the visible slow windows');
+assert.match(indexHtml, /rows\.slice\(0, PERPS_RECENT_FUNDING_CARD_LIMIT\)/, 'slow venue recent funding cards must use the shared card limit');
 assert.match(indexHtml, /touch-action:pan-x/, 'recent funding strip must allow horizontal touch scrolling');
 assert.match(perpsJs, /pair\.recentFundingEvents = fundingEventsForPair\(base, venueA, venueB, paymentSources, sinceMs\);/, 'position modal must receive raw per-pair funding events for slow venues like NADO');
 assert.match(indexHtml, /p\.recentFundingEvents/, 'position modal must prefer raw per-pair funding events over daily chart rows');
 assert.match(indexHtml, /perps-pos-funding-strip/, 'recent funding payments must render as a horizontal card strip');
+assert.match(perpsJs, /const d = row\.delta \|\| row;/, 'Hyperliquid funding parser must support top-level funding rows as well as delta rows');
+assert.match(perpsJs, /d\.usdc \?\? row\.usdc/, 'Hyperliquid funding parser must keep the signed USDC payment from the response');
+assert.match(perpsJs, /negative = paid, positive = received/, 'Hyperliquid funding payments must document signed delta semantics');
 assert.match(indexHtml, /Perps DEXs/, 'sidebar and search must use the Perps DEXs label');
 assert.doesNotMatch(indexHtml, /Perps Arb/, 'old Perps Arb label must not remain in the UI');
 assert.match(indexHtml, /function perpsFilterPairDailySeriesForPosition\(series, p\)/, 'position performance must use a dedicated position series filter');

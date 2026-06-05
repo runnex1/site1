@@ -7508,6 +7508,7 @@ const PERPS_LIVE_APR_MS = 15000;
 const PERPS_CHART_WIDTH = 760;
 const PERPS_EQUITY_CHART_START_MS = Date.parse('2026-06-01T08:00:00.000Z');
 const PERPS_MAX_FILL_HISTORY_DAYS = 365;
+const PERPS_RECENT_FUNDING_CARD_LIMIT = 8;
 let _perpsCache = null;
 let _perpsDailyFundSeries = [];
 let _perpsDailyFundShowFees = true;
@@ -22824,7 +22825,7 @@ function perpsRecentFundingRows(p) {
         ));
     }
     const maxSlowIntervalHours = Math.max(0, ...[...intervalByVenue.values()].filter(v => v > 1));
-    const hourlyLookbackHours = Math.max(8, maxSlowIntervalHours * 2);
+    const hourlyLookbackHours = Math.max(8, maxSlowIntervalHours * PERPS_RECENT_FUNDING_CARD_LIMIT);
     const selected = [];
     for (const entry of entries) {
         const key = venueKey(entry.venue);
@@ -22832,7 +22833,7 @@ function perpsRecentFundingRows(p) {
         const intervalHours = intervalByVenue.get(key) || perpsFundingIntervalHoursForVenue(entry.venue, p.symbol);
         const picked = intervalHours <= 1
             ? rows.filter(ev => (ev.time || 0) >= anchorTime - hourlyLookbackHours * 3600000)
-            : rows.slice(0, 2);
+            : rows.slice(0, PERPS_RECENT_FUNDING_CARD_LIMIT);
         picked.forEach(ev => selected.push({ ...ev, intervalHours: ev.intervalHours ?? intervalHours }));
     }
     return selected.sort((a, b) => (b.time || 0) - (a.time || 0));
@@ -22940,7 +22941,7 @@ function perpsRenderRecentFundingPayments(p) {
     }).join('');
     return `<div class="perps-pos-funding-recent-head">` +
         `<div class="perps-pos-funding-recent-title">Recent funding payments</div>` +
-        `<div class="perps-pos-funding-recent-note">Hourly legs net by hour; slower venues net against the matching hourly window</div>` +
+        `<div class="perps-pos-funding-recent-note">Hourly legs net by hour; slower venues show the latest ${PERPS_RECENT_FUNDING_CARD_LIMIT} net windows</div>` +
         `</div><div class="perps-pos-funding-strip">${cards}</div>`;
 }
 
