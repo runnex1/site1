@@ -863,11 +863,11 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-chart-kpi-val.neg { color:#ff5c7a; }
 .perps-pos-chart-canvas-wrap { height:280px; max-height:38vh; min-height:220px; position:relative; }
 .perps-pos-chart-empty { padding:2rem 1rem; text-align:center; color:#9dacbb; font-family:var(--ff-mono); font-size:0.72rem; }
-.perps-pos-funding-recent { margin-top:1rem; border:1px solid rgba(255,255,255,0.08); border-radius:16px; background:rgba(255,255,255,0.025); overflow:hidden; }
+.perps-pos-funding-recent { margin-top:1rem; border:1px solid rgba(255,255,255,0.08); border-radius:16px; background:rgba(255,255,255,0.025); overflow:hidden; min-width:0; }
 .perps-pos-funding-recent-head { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; padding:0.75rem 0.9rem; border-bottom:1px solid rgba(255,255,255,0.07); }
 .perps-pos-funding-recent-title { font-family:var(--ff-mono); font-size:0.68rem; font-weight:900; letter-spacing:0.08em; text-transform:uppercase; color:#64f4c5; }
 .perps-pos-funding-recent-note { font-family:var(--ff-mono); font-size:0.62rem; color:#7f8f9f; text-align:right; }
-.perps-pos-funding-strip { display:flex; gap:0.65rem; overflow-x:auto; padding:0.78rem 0.9rem 0.9rem; scroll-snap-type:x proximity; }
+.perps-pos-funding-strip { display:flex; gap:0.65rem; overflow-x:auto; overflow-y:hidden; padding:0.78rem 0.9rem 0.9rem; scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain; touch-action:pan-x; max-width:100%; }
 .perps-pos-funding-card { flex:0 0 190px; scroll-snap-align:start; padding:0.72rem 0.76rem; border:1px solid rgba(255,255,255,0.075); border-radius:13px; background:rgba(8,14,20,0.48); font-family:var(--ff-mono); }
 .perps-pos-funding-card.net { flex-basis:215px; border-color:rgba(100,244,197,0.14); }
 .perps-pos-funding-time { color:#9dacbb; font-size:0.62rem; line-height:1.35; }
@@ -2932,6 +2932,8 @@ body::after {
   max-width: none;
   width: min(96vw, 780px);
   padding: 1.1rem 1.25rem 1rem;
+  min-width: 0;
+  overflow-x: hidden;
 }
 @keyframes slideUp {
   from { opacity:0; transform:translateY(20px) scale(0.97); }
@@ -22778,56 +22780,38 @@ function perpsRecentFundingRows(p) {
 function perpsRecentFundingGroups(p) {
     const rows = perpsRecentFundingRows(p);
     const entries = perpsPairLegEntries(p);
-    const allHourly = entries.length > 1 && entries.every(entry => perpsFundingIntervalHoursForVenue(entry.venue, p.symbol) <= 1);
-    const byHour = new Map();
-    if (allHourly) {
-        rows.forEach(row => {
-            const hour = Math.floor((row.time || 0) / 3600000) * 3600000;
-            if (!byHour.has(hour)) byHour.set(hour, { type: 'net-hour', time: hour, rows: [], total: 0, intervalHours: 1 });
-            const group = byHour.get(hour);
-            group.rows.push(row);
-            group.total += row.usdc || 0;
-        });
-        return [...byHour.values()].sort((a, b) => b.time - a.time);
-    }
+    const venueKey = venue => String(venue || '').toLowerCase();
+    const intervalFor = entry => perpsFundingIntervalHoursForVenue(entry.venue, p.symbol);
+    const hourlyVenues = new Set(entries.filter(entry => intervalFor(entry) <= 1).map(entry => venueKey(entry.venue)));
+    const slowVenues = new Set(entries.filter(entry => intervalFor(entry) > 1).map(entry => venueKey(entry.venue)));
+    const allHourly = entries.length > 1 && entries.every(entry => intervalFor(entry) <= 1);
 
-    const slowRows = rows
-        .filter(row => (row.intervalHours || 1) > 1)
-        .sort((a, b) => (b.time || 0) - (a.time || 0));
     const groups = [];
-    const used = new Set();
-    const rowKey = row => `${row.entry?.venue || row.venue}:${row.time || 0}:${row.usdc || 0}`;
-
-    for (const anchor of slowRows) {
-        const intervalMs = Math.max(anchor.intervalHours || 1, 1) * 3600000;
-        const anchorTime = anchor.time || 0;
-        const start = anchorTime - intervalMs;
-        const groupRows = rows.filter(row => {
-            const t = row.time || 0;
-            if (row === anchor) return true;
-            if ((row.intervalHours || 1) > 1) return Math.abs(t - anchorTime) <= Math.max(intervalMs, 3600000);
-            return t > start && t <= anchorTime;
-        });
-        groupRows.forEach(row => used.add(rowKey(row)));
-        groups.push({
-            type: 'net-window',
-            time: anchorTime,
-            rows: groupRows,
-            total: groupRows.reduce((sum, row) => sum + (row.usdc || 0), 0),
-            intervalHours: anchor.intervalHours,
-        });
-    }
-
-    for (const row of rows) {
-        if (used.has(rowKey(row))) continue;
+    const hourlyRows = rows.filter(row => hourlyVenues.has(venueKey(row.entry?.venue || row.venue)));
+    const byHour = new Map();
+    hourlyRows.forEach(row => {
         const hour = Math.floor((row.time || 0) / 3600000) * 3600000;
         if (!byHour.has(hour)) byHour.set(hour, { type: 'net-hour', time: hour, rows: [], total: 0, intervalHours: 1 });
         const group = byHour.get(hour);
         group.rows.push(row);
         group.total += row.usdc || 0;
+    });
+    groups.push(...byHour.values());
+
+    if (!allHourly) {
+        rows
+            .filter(row => slowVenues.has(venueKey(row.entry?.venue || row.venue)))
+            .forEach(row => {
+                groups.push({
+                    type: 'venue',
+                    time: row.time || 0,
+                    rows: [row],
+                    total: row.usdc || 0,
+                    intervalHours: row.intervalHours,
+                });
+            });
     }
 
-    groups.push(...byHour.values());
     return groups.sort((a, b) => b.time - a.time);
 }
 
@@ -22839,13 +22823,14 @@ function perpsRenderRecentFundingPayments(p) {
     }
     const cards = groups.map(group => {
         const primary = group.rows[0];
-        const title = group.type === 'net-hour' || group.type === 'net-window'
+        const isNetHour = group.type === 'net-hour';
+        const title = isNetHour
             ? 'Net funding'
             : perpsVenueWithSideHtml(primary.entry.venue, primary.entry.leg.size);
-        const detail = group.type === 'net-hour'
-            ? '1h net across both legs'
-            : group.type === 'net-window'
-                ? `${group.intervalHours}h window across both legs`
+        const detail = isNetHour
+            ? '1h net across hourly legs'
+            : group.type === 'venue'
+                ? `${group.intervalHours}h payment · single leg`
                 : `${Number(primary.entry.leg.size || 0) > 0 ? 'Long' : 'Short'} - ${group.intervalHours <= 1 ? 'last 8h' : `last 2 (${group.intervalHours}h)`}`;
         const byVenue = new Map();
         group.rows.forEach(row => {
@@ -22860,7 +22845,7 @@ function perpsRenderRecentFundingPayments(p) {
             const missing = !row;
             return `<div class="perps-pos-funding-breakdown-row"><span>${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="${missing ? '' : perpsSignedCls(value)}">${missing ? '—' : perpsFmtUsd(value)}</span></div>`;
         }).join('')}</div>`;
-        return `<div class="perps-pos-funding-card ${group.type === 'net-hour' || group.type === 'net-window' ? 'net' : ''}">` +
+        return `<div class="perps-pos-funding-card ${isNetHour ? 'net' : ''}">` +
             `<div class="perps-pos-funding-time">${perpsFormatEventTime(group.time)}</div>` +
             `<div class="perps-pos-funding-main"><div class="perps-pos-funding-label">${title}</div><div class="perps-pos-funding-pay ${perpsSignedCls(group.total)}">${perpsFmtUsd(group.total)}</div></div>` +
             `<div class="perps-pos-funding-sub">${detail}</div>` +
@@ -22869,7 +22854,7 @@ function perpsRenderRecentFundingPayments(p) {
     }).join('');
     return `<div class="perps-pos-funding-recent-head">` +
         `<div class="perps-pos-funding-recent-title">Recent funding payments</div>` +
-        `<div class="perps-pos-funding-recent-note">Hourly pairs are netted by hour; slower venues show last 2 payments</div>` +
+        `<div class="perps-pos-funding-recent-note">Hourly legs net by hour; slower venues show their last 2 payments separately</div>` +
         `</div><div class="perps-pos-funding-strip">${cards}</div>`;
 }
 
