@@ -629,6 +629,14 @@ assert.match(perpsJs, /function grvtFundingSinceOpen\(pos\) \{[\s\S]*?return raw
 
 assert.match(indexHtml, /PM_WALLETS_BACKUP_KEY/, 'Polymarket managed wallets must have a local backup store');
 assert.match(indexHtml, /parsed\.polymarketWallets = mergeWalletAddresses\(data\.polymarketWallets, parsed\.polymarketWallets\);/, 'Cloud hydration must merge Polymarket wallets instead of replacing local wallets');
+assert.match(indexHtml, /async function addNewWallet\(\)/, 'Manage Wallets add action must be async so persistence can finish before sync');
+assert.match(indexHtml, /await saveData\(\);\s*\n\s*renderWalletList\(\);/, 'Manage Wallets must wait for save before refreshing the wallet list and syncing positions');
+assert.match(indexHtml, /function syncPolymarketWalletState\(/, 'Polymarket wallets must have a canonical local merge/persist helper');
+assert.match(indexHtml, /fetchServerPolymarketPositions\(wallets\)/, 'Polymarket position sync must prefer the server endpoint over fragile browser proxy fetches');
+assert.match(syncJs, /req\.query\?\.polymarketPositions === '1'/, 'sync endpoint must expose Polymarket positions for wallet-based sync');
+assert.match(syncJs, /function enrichPolymarketPositions\(positions\)/, 'server-side Polymarket sync must enrich position metadata for logos and links');
+assert.match(syncJs, /marketIcon: pmFirstString\(pos\?\.marketIcon/, 'server-side Polymarket sync must preserve or enrich market icons');
+assert.match(indexHtml, /onerror="this\.replaceWith\(document\.createTextNode/, 'Prediction market logos must fall back to readable initials when image loading fails');
 assert.doesNotMatch(indexHtml, /ondblclick="deletePredictionMarketGroup/, 'Prediction market rows must not delete positions on double click');
 assert.doesNotMatch(indexHtml, /ondblclick="deleteItem\('opinionMarkets'/, 'Opinion rows in Prediction Markets must not delete positions on double click');
 assert.match(indexHtml, /data-market-url="\$\{dashEsc\(marketUrl\)\}"/, 'Prediction market rows must expose a market URL for click-through');

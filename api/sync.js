@@ -23,7 +23,10 @@ const POLYMARKET_PNL_BASE = 'https://user-pnl-api.polymarket.com/user-pnl';
 const MARKET_MOVES_CACHE_MS = 5 * 60 * 1000;
 const MARKET_MOVES_ASSET_LIMIT = 40;
 const MARKET_MOVES_CONCURRENCY = 8;
+const PM_POSITIONS_CACHE_MS = 60 * 1000;
+const PM_METADATA_CONCURRENCY = 4;
 const marketMovesCache = new Map();
+const polymarketPositionsCache = new Map();
 
 async function statusFetch(url, timeout=6000) {
   const start = Date.now();
@@ -235,6 +238,135 @@ async function fetchMarketMovePositions(wallets) {
   return allPositions;
 }
 
+function pmFirstString(...values) {
+  for (const value of values) {
+    const text = String(value || '').trim();
+    if (text) return text;
+  }
+  return '';
+}
+
+function pmGammaMarket(payload) {
+  if (Array.isArray(payload)) return payload[0] || null;
+  if (Array.isArray(payload?.markets)) return payload.markets[0] || null;
+  return payload && typeof payload === 'object' ? payload : null;
+}
+
+function pmGammaIcon(market) {
+  return pmFirstString(
+    market?.icon,
+    market?.image,
+    market?.eventIcon,
+    market?.event?.icon,
+    market?.event?.image,
+    market?.events?.[0]?.icon,
+    market?.events?.[0]?.image,
+  );
+}
+
+function pmGammaEventSlug(market) {
+  return pmFirstString(
+    market?.eventSlug,
+    market?.event_slug,
+    market?.event?.slug,
+    market?.events?.[0]?.slug,
+  );
+}
+
+function pmGammaSlug(market) {
+  return pmFirstString(market?.marketSlug, market?.market_slug, market?.slug);
+}
+
+function pmMarketUrlFrom(pos, market) {
+  const direct = pmFirstString(pos?.marketUrl, pos?.url, market?.marketUrl, market?.url);
+  if (/^https?:\/\//i.test(direct)) return direct;
+  const child = pmFirstString(pos?.marketSlug, pos?.market_slug, pos?.slug, pmGammaSlug(market));
+  const event = pmFirstString(pos?.eventSlug, pos?.event_slug, pmGammaEventSlug(market));
+  if (event && child && event !== child) {
+    return `https://polymarket.com/event/${encodeURIComponent(event)}/${encodeURIComponent(child)}`;
+  }
+  if (child) return `https://polymarket.com/event/${encodeURIComponent(child)}`;
+  return '';
+}
+
+async function fetchGammaMarketForPosition(pos) {
+  const slug = pmFirstString(pos?.marketSlug, pos?.market_slug, pos?.slug);
+  if (slug) {
+    const url = new URL('https://gamma-api.polymarket.com/markets');
+    url.searchParams.set('slug', slug);
+    const market = pmGammaMarket(await fetchPolymarketJson(url, 10000));
+    if (market) return market;
+  }
+  const title = pmFirstString(pos?.title, pos?.marketTitle, pos?.question);
+  if (title) {
+    const url = new URL('https://gamma-api.polymarket.com/markets');
+    url.searchParams.set('active', 'true');
+    url.searchParams.set('closed', 'false');
+    url.searchParams.set('limit', '10');
+    url.searchParams.set('search', title);
+    const rows = await fetchPolymarketJson(url, 10000);
+    const markets = Array.isArray(rows) ? rows : Array.isArray(rows?.markets) ? rows.markets : [];
+    const wanted = title.toLowerCase().replace(/\s+/g, ' ').trim();
+    return markets.find(m => String(m?.question || m?.title || '').toLowerCase().replace(/\s+/g, ' ').trim() === wanted)
+      || markets[0]
+      || null;
+  }
+  return null;
+}
+
+async function enrichPolymarketPositions(positions) {
+  const needs = new Map();
+  for (const pos of positions || []) {
+    const hasIcon = pmFirstString(pos?.marketIcon, pos?.icon, pos?.image, pos?.eventIcon, pos?.thumbnail, pos?.logo);
+    const hasUrl = pmFirstString(pos?.marketUrl, pos?.url);
+    if (hasIcon && hasUrl) continue;
+    const key = pmFirstString(pos?.marketSlug, pos?.market_slug, pos?.slug, pos?.marketId, pos?.conditionId, pos?.asset, pos?.title).toLowerCase();
+    if (key && !needs.has(key)) needs.set(key, pos);
+  }
+  const metadata = new Map();
+  await mapLimit(Array.from(needs.entries()), PM_METADATA_CONCURRENCY, async ([key, pos]) => {
+    try {
+      metadata.set(key, await fetchGammaMarketForPosition(pos));
+    } catch(e) {
+      metadata.set(key, null);
+    }
+  });
+  return (positions || []).map(pos => {
+    const key = pmFirstString(pos?.marketSlug, pos?.market_slug, pos?.slug, pos?.marketId, pos?.conditionId, pos?.asset, pos?.title).toLowerCase();
+    const market = metadata.get(key) || null;
+    return {
+      ...pos,
+      marketIcon: pmFirstString(pos?.marketIcon, pos?.icon, pos?.image, pos?.eventIcon, pos?.thumbnail, pos?.logo, pmGammaIcon(market)),
+      marketUrl: pmMarketUrlFrom(pos, market),
+      slug: pmFirstString(pos?.slug, pmGammaSlug(market)),
+      marketSlug: pmFirstString(pos?.marketSlug, pos?.market_slug, pmGammaSlug(market)),
+      eventSlug: pmFirstString(pos?.eventSlug, pos?.event_slug, pmGammaEventSlug(market)),
+      marketId: pmFirstString(pos?.marketId, pos?.market_id, pos?.conditionId, pos?.condition_id, market?.conditionId, market?.condition_id),
+    };
+  });
+}
+
+async function getPolymarketPositions(query) {
+  const wallets = pnlWalletList(query.wallets);
+  if (!wallets.length) return { status: 400, body: { error: 'No valid Polymarket wallet addresses provided' } };
+  const key = wallets.map(w => w.toLowerCase()).sort().join('|');
+  const cached = polymarketPositionsCache.get(key);
+  if (cached && Date.now() - cached.ts < PM_POSITIONS_CACHE_MS) {
+    return { status: 200, body: { ok: true, cached: true, ...cached.body } };
+  }
+  try {
+    const positions = await enrichPolymarketPositions(await fetchMarketMovePositions(wallets));
+    const body = { wallets: wallets.length, positionCount: positions.length, partial: false, positions };
+    polymarketPositionsCache.set(key, { ts: Date.now(), body });
+    return { status: 200, body: { ok: true, cached: false, ...body } };
+  } catch(e) {
+    if (cached?.body) {
+      return { status: 200, body: { ok: true, cached: true, stale: true, ...cached.body, error: e.message || 'Polymarket positions refresh failed' } };
+    }
+    return { status: 502, body: { error: e.message || 'Polymarket positions refresh failed' } };
+  }
+}
+
 async function getPolymarketMarketMoves(query) {
   const wallets = pnlWalletList(query.wallets);
   if (!wallets.length) return { status: 400, body: { error: 'No valid Polymarket wallet addresses provided' } };
@@ -391,6 +523,10 @@ module.exports = async function handler(req, res) {
       }
       if (req.query?.polymarketPnl === '1') {
         const result = await getPolymarketPnlSeries(req.query || {});
+        return res.status(result.status).json(result.body);
+      }
+      if (req.query?.polymarketPositions === '1') {
+        const result = await getPolymarketPositions(req.query || {});
         return res.status(result.status).json(result.body);
       }
       if (req.query?.marketMoves === '1') {

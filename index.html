@@ -7606,6 +7606,12 @@ function persistPolymarketWalletsLocal() {
     try { localStorage.setItem(PM_WALLETS_BACKUP_KEY, JSON.stringify(data.polymarketWallets)); } catch(e) {}
 }
 
+function syncPolymarketWalletState(...sources) {
+    data.polymarketWallets = mergeWalletAddresses(data.polymarketWallets || [], ...sources);
+    persistPolymarketWalletsLocal();
+    return data.polymarketWallets;
+}
+
 function opportunityPegKey(token) {
     return `${String(token?.chain || '').trim().toLowerCase()}:${String(token?.address || '').trim().toLowerCase()}`;
 }
@@ -8467,28 +8473,31 @@ function renderWalletList() {
     `).join('');
 }
 
-function addNewWallet() {
+async function addNewWallet() {
     const input = document.getElementById('newWalletInput');
     const address = input.value.trim();
     if (!address.startsWith('0x') || address.length < 10) {
         alert('Please enter a valid wallet address starting with 0x');
         return;
     }
-    if (data.polymarketWallets.includes(address)) {
+    if ((data.polymarketWallets || []).some(w => String(w || '').toLowerCase() === address.toLowerCase())) {
         alert('Wallet already added');
         return;
     }
-    data.polymarketWallets.push(address);
-    saveData();
+    syncPolymarketWalletState([address]);
+    await saveData();
     renderWalletList();
     input.value = '';
     fetchPolymarketPositions({ silent:true });
 }
 
-function removeWallet(index) {
+async function removeWallet(index) {
     if (confirm('Remove this wallet?')) {
-        data.polymarketWallets.splice(index, 1);
-        saveData();
+        const wallets = mergeWalletAddresses(data.polymarketWallets || []);
+        wallets.splice(index, 1);
+        data.polymarketWallets = wallets;
+        persistPolymarketWalletsLocal();
+        await saveData();
         renderWalletList();
         fetchPolymarketPositions({ silent:true });
     }
@@ -8547,6 +8556,17 @@ function saveAndSyncOpinion() {
 // POLYMARKET API FETCH ENGINE (POSITIONS & HISTORY)
 // =============================================================================
 let _lastPmAutoSyncAt = 0;
+async function fetchServerPolymarketPositions(wallets) {
+    if (location.protocol === 'file:') return null;
+    const clean = mergeWalletAddresses(wallets || []);
+    if (!clean.length) return { positions: [], partial: false, wallets: 0 };
+    const qs = new URLSearchParams({ polymarketPositions:'1', wallets: clean.join(',') });
+    const response = await fetch('/api/sync?' + qs.toString(), { signal:AbortSignal.timeout(35000) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Polymarket positions returned HTTP ${response.status}`);
+    return payload;
+}
+
 async function fetchPolymarketPositions(options = {}) {
     const silent = !!options.silent;
     const skipUpdateUI = !!options.skipUpdateUI;
@@ -8557,7 +8577,9 @@ async function fetchPolymarketPositions(options = {}) {
     if (loadingRing) loadingRing.className = 'loading-ring';
     if (loadingOverlay && !silent) loadingOverlay.style.display = 'flex';
 
-    if (!data.polymarketWallets || data.polymarketWallets.length === 0) {
+    const wallets = syncPolymarketWalletState(data.polymarketWallets || []);
+
+    if (!wallets.length) {
         if (loadingOverlay) loadingOverlay.style.display = 'none';
         if (!silent) alert('Add at least one Polymarket wallet in Manage Wallets first.');
         return;
@@ -8594,22 +8616,38 @@ async function fetchPolymarketPositions(options = {}) {
     }
 
     try {
-        // Loop for POSITIONS
-        for (let i = 0; i < data.polymarketWallets.length; i++) {
-            const wallet = data.polymarketWallets[i];
-            if (loadingStatus) loadingStatus.textContent = `Syncing positions ${i + 1}/${data.polymarketWallets.length}...`;
-            let limit = 100, offset = 0;
-
+        let serverLoaded = false;
+        if (location.protocol !== 'file:') {
             try {
-                while (true) {
-                    const params = new URLSearchParams({ user: wallet, limit: limit, offset: offset, sortBy: 'TOKENS', sortDirection: 'DESC' });
-                    const responseData = await smartFetch(`${posUrl}?${params.toString()}`);
-                    if (!responseData || responseData.length === 0) break;
-                    aggregatedPositions.push(...responseData.map(p => ({...p, _wallet: wallet})));
-                    if (responseData.length < limit) break;
-                    offset += limit;
-                }
-            } catch (err) { console.error(`Pos sync error ${wallet}:`, err); errors++; }
+                if (loadingStatus) loadingStatus.textContent = `Syncing ${wallets.length} wallet${wallets.length === 1 ? '' : 's'} via server...`;
+                const payload = await fetchServerPolymarketPositions(wallets);
+                aggregatedPositions = Array.isArray(payload?.positions) ? payload.positions : [];
+                errors += payload?.partial ? 1 : 0;
+                serverLoaded = true;
+            } catch (err) {
+                console.warn('Server Polymarket sync failed; falling back to browser fetch:', err);
+                if (loadingStatus) loadingStatus.textContent = 'Server sync failed; trying browser fallback...';
+            }
+        }
+
+        // Browser fallback for local previews or temporary server/API failures.
+        if (!serverLoaded) {
+            for (let i = 0; i < wallets.length; i++) {
+                const wallet = wallets[i];
+                if (loadingStatus) loadingStatus.textContent = `Syncing positions ${i + 1}/${wallets.length}...`;
+                let limit = 100, offset = 0;
+
+                try {
+                    while (true) {
+                        const params = new URLSearchParams({ user: wallet, limit: limit, offset: offset, sortBy: 'TOKENS', sortDirection: 'DESC' });
+                        const responseData = await smartFetch(`${posUrl}?${params.toString()}`);
+                        if (!responseData || responseData.length === 0) break;
+                        aggregatedPositions.push(...responseData.map(p => ({...p, _wallet: wallet})));
+                        if (responseData.length < limit) break;
+                        offset += limit;
+                    }
+                } catch (err) { console.error(`Pos sync error ${wallet}:`, err); errors++; }
+            }
         }
 
         // Process Positions Data
@@ -8630,9 +8668,10 @@ async function fetchPolymarketPositions(options = {}) {
                 asset: pos.asset || pos.tokenId || pos.token_id || pos.clobTokenId || '',
                 marketId: pos.marketId || pos.conditionId || pos.condition_id || '',
                 slug: pos.slug || pos.marketSlug || pos.market_slug || '',
+                marketSlug: pos.marketSlug || pos.market_slug || pos.slug || '',
                 eventSlug: pos.eventSlug || pos.event_slug || '',
                 marketUrl: pos.marketUrl || pos.url || '',
-                marketIcon: pos.icon || pos.image || pos.marketIcon || pos.eventIcon || pos.thumbnail || pos.logo || ''
+                marketIcon: pos.marketIcon || pos.icon || pos.image || pos.eventIcon || pos.thumbnail || pos.logo || ''
             };
         });
 
@@ -14218,10 +14257,11 @@ function predictionMarketLogoText(title) {
 
 function predictionMarketLogoHtml(p) {
     const direct = String(p?.marketIcon || p?.icon || p?.image || p?.logo || '').trim();
+    const fallback = dashEsc(predictionMarketLogoText(p?.title || 'PM'));
     if (/^https?:\/\//i.test(direct) || /^data:image\//i.test(direct)) {
-        return `<img src="${dashEsc(direct)}" alt="">`;
+        return `<img src="${dashEsc(direct)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(document.createTextNode('${fallback}'))">`;
     }
-    return dashEsc(predictionMarketLogoText(p?.title || 'PM'));
+    return fallback;
 }
 
 function predictionRenderSummary() {
