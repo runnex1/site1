@@ -800,7 +800,7 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 1rem 0.65rem; }
 .perps-pos-head, .perps-pos-row {
   display:grid;
-  grid-template-columns:minmax(140px,1.12fr) minmax(190px,1.35fr) minmax(118px,0.95fr) minmax(88px,0.82fr) minmax(80px,0.75fr) minmax(92px,0.82fr) minmax(12px,0.2fr) minmax(88px,0.78fr) minmax(80px,0.74fr) minmax(36px,0.32fr);
+  grid-template-columns:minmax(140px,1.1fr) minmax(190px,1.28fr) minmax(106px,0.72fr) minmax(88px,0.82fr) minmax(80px,0.74fr) minmax(92px,0.82fr) minmax(10px,0.16fr) minmax(88px,0.78fr) minmax(80px,0.74fr) minmax(36px,0.32fr);
   gap:0.65rem 1.15rem; align-items:center;
 }
 .perps-pos-chart-col { display:flex; justify-content:flex-end; align-items:center; }
@@ -838,11 +838,12 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-metric-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:0.78rem; font-weight:800; color:var(--t1); }
 .perps-pos-metric-val.pos { color:#55d66f; }
 .perps-pos-metric-val.neg { color:#ff5c7a; }
-.perps-pos-price-stack { display:flex; flex-direction:column; gap:0.25rem; font-family:var(--ff-mono); font-size:0.58rem; min-width:0; }
-.perps-pos-price-row { display:flex; align-items:baseline; justify-content:space-between; gap:0.45rem; color:#9dacbb; }
-.perps-pos-price-venue { text-transform:capitalize; color:#7f8f9f; white-space:nowrap; }
-.perps-pos-price-main { color:var(--t1); font-weight:850; white-space:nowrap; }
-.perps-pos-price-sub { display:block; margin-top:0.04rem; font-size:0.52rem; color:#617083; text-align:right; white-space:nowrap; }
+.perps-pos-price-stack { display:flex; flex-direction:column; gap:0.32rem; font-family:var(--ff-mono); min-width:0; }
+.perps-pos-price-row { display:grid; grid-template-columns:minmax(54px,1fr) minmax(54px,1fr); gap:0.35rem; align-items:baseline; }
+.perps-pos-price-line { min-width:0; text-align:right; }
+.perps-pos-price-label { display:block; color:#617083; font-size:0.48rem; font-weight:850; letter-spacing:0.07em; text-transform:uppercase; line-height:1; }
+.perps-pos-price-main { display:block; margin-top:0.05rem; color:var(--t1); font-size:0.62rem; font-weight:850; white-space:nowrap; line-height:1.12; }
+.perps-pos-price-liq { display:block; margin-top:0.05rem; color:#7f8f9f; font-size:0.58rem; font-weight:800; white-space:nowrap; line-height:1.12; }
 .perps-pos-apr-col { text-align:right; }
 .perps-pos-apr-val { font-family:var(--ff-mono); font-size:1.05rem; font-weight:900; }
 .perps-pos-apr-val.pos { color:#55d66f; }
@@ -23385,10 +23386,13 @@ function perpsPositionPriceStackHtml(p, displayLegs) {
         const liquidationPx = perpsNumOrNull(entry.leg.liquidationPx);
         const liqStyle = perpsLiquidationRiskStyle(currentPx, liquidationPx);
         return `<div class="perps-pos-price-row">
-            <span class="perps-pos-price-venue">${dashEsc(perpsVenueShort(venue))}</span>
-            <span>
+            <span class="perps-pos-price-line">
+                <span class="perps-pos-price-label">Px</span>
                 <span class="perps-pos-price-main">${perpsFmtPx(currentPx)}</span>
-                <span class="perps-pos-price-sub" ${liqStyle}>Liq ${perpsFmtPx(liquidationPx)}</span>
+            </span>
+            <span class="perps-pos-price-line">
+                <span class="perps-pos-price-label">Liq</span>
+                <span class="perps-pos-price-liq" ${liqStyle}>${perpsFmtPx(liquidationPx)}</span>
             </span>
         </div>`;
     }).join('')}</div>`;
