@@ -829,7 +829,9 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-token { display:flex; align-items:center; gap:0.55rem; min-width:0; }
 .perps-pos-token-name { font-weight:900; font-size:0.92rem; color:var(--t1); }
 .perps-pos-token-meta { font-family:var(--ff-mono); font-size:0.58rem; color:#9dacbb; margin-top:0.12rem; }
-.perps-pos-pill { display:inline-flex; font-family:var(--ff-mono); font-size:0.55rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; padding:0.12rem 0.4rem; border-radius:999px; border:1px solid rgba(89,240,200,0.28); color:#59f0c8; background:rgba(89,240,200,0.08); margin-top:0.2rem; }
+.perps-pos-status-row { display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap; margin-top:0.2rem; }
+.perps-pos-pill { display:inline-flex; font-family:var(--ff-mono); font-size:0.55rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; padding:0.12rem 0.4rem; border-radius:999px; border:1px solid rgba(89,240,200,0.28); color:#59f0c8; background:rgba(89,240,200,0.08); }
+.perps-pos-mid-pill { display:inline-flex; align-items:center; gap:0.22rem; font-family:var(--ff-mono); font-size:0.55rem; font-weight:800; letter-spacing:0.04em; padding:0.12rem 0.4rem; border-radius:999px; border:1px solid rgba(134,159,179,0.2); color:#9dacbb; background:rgba(255,255,255,0.035); }
 .perps-pos-legs { display:flex; flex-direction:column; gap:0.35rem; }
 .perps-pos-leg { display:flex; align-items:center; justify-content:space-between; font-family:var(--ff-mono); font-size:0.68rem; }
 .perps-pos-leg-venue { color:#9dacbb; text-transform:capitalize; }
@@ -838,12 +840,8 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-metric-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:0.78rem; font-weight:800; color:var(--t1); }
 .perps-pos-metric-val.pos { color:#55d66f; }
 .perps-pos-metric-val.neg { color:#ff5c7a; }
-.perps-pos-price-stack { display:flex; flex-direction:column; gap:0.32rem; font-family:var(--ff-mono); min-width:0; }
-.perps-pos-price-row { display:grid; grid-template-columns:minmax(54px,1fr) minmax(54px,1fr); gap:0.35rem; align-items:baseline; }
-.perps-pos-price-line { min-width:0; text-align:right; }
-.perps-pos-price-label { display:block; color:#617083; font-size:0.48rem; font-weight:850; letter-spacing:0.07em; text-transform:uppercase; line-height:1; }
-.perps-pos-price-main { display:block; margin-top:0.05rem; color:var(--t1); font-size:0.62rem; font-weight:850; white-space:nowrap; line-height:1.12; }
-.perps-pos-price-liq { display:block; margin-top:0.05rem; color:#7f8f9f; font-size:0.58rem; font-weight:800; white-space:nowrap; line-height:1.12; }
+.perps-pos-liq-stack { display:flex; flex-direction:column; gap:0.35rem; font-family:var(--ff-mono); min-width:0; }
+.perps-pos-liq-val { font-size:0.78rem; font-weight:800; color:#9dacbb; white-space:nowrap; line-height:1.2; }
 .perps-pos-apr-col { text-align:right; }
 .perps-pos-apr-val { font-family:var(--ff-mono); font-size:1.05rem; font-weight:900; }
 .perps-pos-apr-val.pos { color:#55d66f; }
@@ -23239,7 +23237,7 @@ function perpsRenderPortfolioPositions(paired) {
     const head = `<div class="perps-pos-head">
         <div>Position</div>
         <div>Exchange</div>
-        <div>Price / Liq</div>
+        <div>Liq Price</div>
         <div>Total uPnL</div>
         <div>uPnL</div>
         <div>Current APR</div>
@@ -23257,6 +23255,7 @@ function perpsRenderPortfolioPositions(paired) {
         const periodApr = perpsPairPeriodApr(p, _perpsStatRange);
         const margin = p.avgNotional ?? 0;
         const sizeLabel = legs.a.size != null ? `${perpsFmtSize(legs.a.size)} ${p.symbol}` : p.symbol;
+        const midPx = perpsPositionMidPx(p, displayLegs);
         return `<div class="perps-pos-card"><div class="perps-pos-row">
             <div class="perps-pos-token">
                 <div class="perps-pos-token-row">
@@ -23264,14 +23263,17 @@ function perpsRenderPortfolioPositions(paired) {
                     <div>
                         <div class="perps-pos-token-name">${dashEsc(p.symbol)}</div>
                         <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}</div>
-                        <span class="perps-pos-pill">OPEN</span>
+                        <div class="perps-pos-status-row">
+                            <span class="perps-pos-pill">OPEN</span>
+                            <span class="perps-pos-mid-pill">Mid ${perpsFmtPx(midPx)}</span>
+                        </div>
                     </div>
                 </div>
             </div>
             <div class="perps-pos-legs">
                 ${displayLegs.map(entry => `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="perps-pos-metric-val ${perpsSignedCls(entry.leg.upnl ?? 0)}">${perpsFmtUsd(entry.leg.upnl ?? 0)}</span></div>`).join('')}
             </div>
-            ${perpsPositionPriceStackHtml(p, displayLegs)}
+            ${perpsPositionLiqStackHtml(p, displayLegs)}
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Total uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(totalUpnl)}">${perpsFmtUsd(totalUpnl)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(upnlOnly)}">${perpsFmtUsd(upnlOnly)}</div></div>
             <div class="perps-pos-metric perps-pos-apr-metric" onmouseenter="perpsShowCurrentAprTip(event, ${pairIdx})" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Current APR</div><div class="perps-pos-metric-val ${perpsSignedCls(currentApr)}">${currentApr != null ? perpsFmtPct(currentApr) : '—'}</div></div>
@@ -23419,22 +23421,21 @@ function perpsLiquidationRiskStyle(currentPx, liquidationPx) {
     return `style="color:rgb(255,${green},${blue});text-shadow:0 0 ${Math.round(6 + risk * 8)}px rgba(255,92,122,${(0.18 + risk * 0.36).toFixed(2)})"`;
 }
 
-function perpsPositionPriceStackHtml(p, displayLegs) {
-    return `<div class="perps-pos-price-stack">${displayLegs.map(entry => {
+function perpsPositionMidPx(p, displayLegs) {
+    const prices = (displayLegs || [])
+        .map(entry => perpsLegCurrentPx(p.symbol, entry.venue || entry.leg.venue, entry.leg))
+        .filter(v => v != null);
+    if (prices.length < 2) return prices[0] ?? null;
+    return prices.reduce((sum, v) => sum + v, 0) / prices.length;
+}
+
+function perpsPositionLiqStackHtml(p, displayLegs) {
+    return `<div class="perps-pos-liq-stack">${displayLegs.map(entry => {
         const venue = entry.venue || entry.leg.venue;
         const currentPx = perpsLegCurrentPx(p.symbol, venue, entry.leg);
         const liquidationPx = perpsNumOrNull(entry.leg.liquidationPx);
         const liqStyle = perpsLiquidationRiskStyle(currentPx, liquidationPx);
-        return `<div class="perps-pos-price-row">
-            <span class="perps-pos-price-line">
-                <span class="perps-pos-price-label">Px</span>
-                <span class="perps-pos-price-main">${perpsFmtPx(currentPx)}</span>
-            </span>
-            <span class="perps-pos-price-line">
-                <span class="perps-pos-price-label">Liq</span>
-                <span class="perps-pos-price-liq" ${liqStyle}>${perpsFmtPx(liquidationPx)}</span>
-            </span>
-        </div>`;
+        return `<div class="perps-pos-liq-val" ${liqStyle}>${perpsFmtPx(liquidationPx)}</div>`;
     }).join('')}</div>`;
 }
 

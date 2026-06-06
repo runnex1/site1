@@ -606,11 +606,12 @@ assert.match(perpsJs, /rows\.error = errorMessage\(e\);/, 'NADO rate failures mu
 assert.match(perpsJs, /nadoError: combineErrors\(nadoState, nadoFundingForAnalysis, nadoMatchesForAnalysis, nadoCapitalFlows, \{ error: nadoRates\.error \}\)/, 'Dashboard summary must include NADO rates/funding failures');
 assert.match(indexHtml, /perpsSideBadgeHtml\(legs\.a\.size\)/, 'paired table legs must include long/short badges');
 assert.match(indexHtml, /perpsVenueWithSideHtml\(u\.venue, u\.size\)/, 'unhedged exchange rows must include long/short badges');
-assert.match(indexHtml, /<div>Price \/ Liq<\/div>/, 'open positions must show current and liquidation prices');
-assert.match(indexHtml, /function perpsPositionPriceStackHtml\(p, displayLegs\)/, 'open positions must render both leg prices in a stacked price column');
-assert.doesNotMatch(indexHtml, /perps-pos-price-venue/, 'Price/Liq column must not repeat exchange labels already shown under Exchange');
-assert.match(indexHtml, /perps-pos-price-label">Px/, 'Price/Liq column must use compact Px labels');
-assert.match(indexHtml, /perps-pos-price-label">Liq/, 'Price/Liq column must use compact Liq labels');
+assert.match(indexHtml, /<div>Liq Price<\/div>/, 'open positions must show a liquidation-price-only column');
+assert.match(indexHtml, /function perpsPositionLiqStackHtml\(p, displayLegs\)/, 'open positions must render only liquidation prices in the Liq Price column');
+assert.match(indexHtml, /function perpsPositionMidPx\(p, displayLegs\)/, 'open positions must calculate a mid price from both exchange marks');
+assert.match(indexHtml, /<span class="perps-pos-mid-pill">Mid \$\{perpsFmtPx\(midPx\)\}<\/span>/, 'open positions must show mid price next to OPEN');
+assert.doesNotMatch(indexHtml, /<div>Price \/ Liq<\/div>/, 'old Price / Liq header must be removed');
+assert.doesNotMatch(indexHtml, /perps-pos-price-label">Px/, 'Liq Price column must not show current price labels');
 assert.match(indexHtml, /function perpsLiquidationRiskStyle\(currentPx, liquidationPx\)/, 'liquidation prices must be colored by distance to current price');
 assert.match(indexHtml, /distancePct <= 20 \? 1/, 'liquidation color must reach max red at 20 percent from liquidation');
 assert.match(indexHtml, /hyperliquidMarkPx/, 'Hyperliquid current price must fall back to rate-spread mark price');
