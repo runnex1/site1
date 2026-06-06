@@ -7112,7 +7112,7 @@ const LogoEngine = (() => {
     let geckoMap = {};
     let initDone = false;
     let initPromise = null;
-    const LOGO_CACHE_TTL_MS = 30 * 24 * 3600 * 1000;
+    const LOGO_CACHE_TTL_MS = Number.MAX_SAFE_INTEGER;
     const LOGO_CACHE_KEY = 'vault-logo-cache-v2';
     const LOGO_META_KEY = 'vault-logo-meta-v1';
     let persistedCache = {};
@@ -7125,7 +7125,7 @@ const LogoEngine = (() => {
 
     function freshLogoUrl(key) {
         const item = persistedCache[key];
-        if (!item || !item.url || Date.now() - Number(item.ts || 0) > LOGO_CACHE_TTL_MS) return null;
+        if (!item || !item.url) return null;
         if (isGeneratedFallbackLogo(item.url)) return null;
         return item.url;
     }
@@ -7142,10 +7142,6 @@ const LogoEngine = (() => {
         clearTimeout(persistTimer);
         persistTimer = setTimeout(() => {
             try {
-                const cutoff = Date.now() - LOGO_CACHE_TTL_MS;
-                Object.keys(persistedCache).forEach(key => {
-                    if (Number(persistedCache[key]?.ts || 0) < cutoff) delete persistedCache[key];
-                });
                 localStorage.setItem(LOGO_CACHE_KEY, JSON.stringify(persistedCache));
             } catch(e) {}
         }, 250);
@@ -7161,7 +7157,7 @@ const LogoEngine = (() => {
     function loadLogoMeta() {
         try {
             const parsed = JSON.parse(localStorage.getItem(LOGO_META_KEY) || 'null');
-            if (!parsed || Date.now() - Number(parsed.ts || 0) > LOGO_CACHE_TTL_MS) return false;
+            if (!parsed) return false;
             llamaProtocolMap = parsed.llamaProtocolMap || {};
             geckoMap = parsed.geckoMap || {};
             return true;
@@ -7305,9 +7301,8 @@ const LogoEngine = (() => {
         if (cache[key] && !isGeneratedFallbackLogo(cache[key])) return cache[key];
         if (inflight[key]) return inflight[key];
         inflight[key] = (async () => {
-            const sources = tokenSources(symbol);
-            const resolved = await resolveFirst(sources);
-            const final = resolved || makeSvgFallback(symbol.substring(0, 4).toUpperCase(), symbol);
+            const manual = MANUAL_LOGOS[String(symbol || '').toUpperCase()];
+            const final = manual || makeSvgFallback(symbol.substring(0, 4).toUpperCase(), symbol);
             setLogoCache(key, final);
             delete inflight[key];
             return final;
@@ -7322,9 +7317,7 @@ const LogoEngine = (() => {
         if (cache[key]) return cache[key];
         if (inflight[key]) return inflight[key];
         inflight[key] = (async () => {
-            const sources = protocolSources(name);
-            const resolved = await resolveFirst(sources);
-            const final = resolved || makeSvgFallback(name.charAt(0).toUpperCase(), name);
+            const final = makeSvgFallback(name.charAt(0).toUpperCase(), name);
             setLogoCache(key, final);
             delete inflight[key];
             return final;
@@ -7336,45 +7329,7 @@ const LogoEngine = (() => {
         if (initDone) return;
         if (initPromise) return initPromise;
         initPromise = (async () => {
-            if (loadLogoMeta()) {
-                initDone = true;
-                resolveAllPendingLogos();
-                return;
-            }
-            // Fetch logos silently in background — never touch the status indicator
-            try {
-                const res = await fetch('https://api.llama.fi/protocols', { signal: AbortSignal.timeout(10000) });
-                if (res.ok) {
-                    const list = await res.json();
-                    list.forEach(p => {
-                        if (p.name && p.logo) {
-                            const norm = p.name.toLowerCase().trim();
-                            llamaProtocolMap[norm] = p.logo;
-                            llamaProtocolMap[toSlug(p.name)] = p.logo;
-                            setLogoCache(`protocol:${norm}`, p.logo);
-                        }
-                    });
-                }
-            } catch(e) { console.warn('[LogoEngine] DeFiLlama failed:', e.message); }
-
-            try {
-                const topRes = await fetch(
-                    'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false',
-                    { signal: AbortSignal.timeout(10000) }
-                );
-                if (topRes.ok) {
-                    const topCoins = await topRes.json();
-                    topCoins.forEach(coin => {
-                        const sym = coin.symbol.toUpperCase();
-                        geckoMap[sym] = { id: coin.id, image: coin.image };
-                        if (coin.image && !coin.image.includes('missing')) {
-                            setLogoCache(`token:${sym}`, coin.image);
-                        }
-                    });
-                }
-            } catch(e) { console.warn('[LogoEngine] CoinGecko failed:', e.message); }
-
-            saveLogoMeta();
+            loadLogoMeta();
             initDone = true;
             resolveAllPendingLogos();
         })();
@@ -7391,11 +7346,30 @@ const LogoEngine = (() => {
 
     // Synchronous cache peek — returns cached URL if present (real image), null if missing or SVG fallback
     function _peekTokenImage(symbol) {
-        const v = cache[`token:${symbol.toUpperCase()}`];
+        const key = `token:${symbol.toUpperCase()}`;
+        const v = cache[key] || freshLogoUrl(key);
         return (v && !v.startsWith('data:image/svg')) ? v : null;
     }
 
-    return { init, getTokenLogo, getProtocolLogo, makeSvgFallback, _injectTokenImage, _peekTokenImage };
+    function exportCache() {
+        return persistedCache && typeof persistedCache === 'object' ? persistedCache : {};
+    }
+
+    function importCache(remote) {
+        if (!remote || typeof remote !== 'object') return;
+        let changed = false;
+        Object.entries(remote).forEach(([key, item]) => {
+            if (!key || !item?.url || isGeneratedFallbackLogo(item.url)) return;
+            if (!persistedCache[key] || Number(item.ts || 0) >= Number(persistedCache[key]?.ts || 0)) {
+                persistedCache[key] = { url: item.url, ts: Number(item.ts || 0) || Date.now() };
+                cache[key] = item.url;
+                changed = true;
+            }
+        });
+        if (changed) savePersistedCacheSoon();
+    }
+
+    return { init, getTokenLogo, getProtocolLogo, makeSvgFallback, _injectTokenImage, _peekTokenImage, exportCache, importCache };
 })();
 
 // =============================================================================
@@ -7512,8 +7486,8 @@ const PM_WALLETS_BACKUP_KEY = 'vault-polymarket-wallets-backup';
 const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
 const PERPS_FETCH_TIMEOUT_MS = 55000;
 const PERPS_REFRESH_RETRIES = 1;
-const PERPS_AUTO_REFRESH_MS = 60000;
-const PERPS_LIVE_APR_MS = 15000;
+const PERPS_AUTO_REFRESH_MS = 5 * 60 * 1000;
+const PERPS_LIVE_APR_REFRESH_MINUTE = 2;
 const PERPS_CHART_WIDTH = 760;
 const PERPS_EQUITY_CHART_START_MS = Date.parse('2026-06-01T08:00:00.000Z');
 const PERPS_MAX_FILL_HISTORY_DAYS = 365;
@@ -7525,6 +7499,7 @@ let _perpsRefreshTimer = null;
 let _perpsLiveAprTimer = null;
 let _perpsLiveAprInFlight = false;
 let _perpsLiveAprUpdatedAt = null;
+let _perpsLiveAprLastAttemptAt = null;
 let _perpsLastRefreshAt = null;
 let _perpsRefreshError = null;
 let _perpsStatRange = '7d';
@@ -7812,6 +7787,10 @@ async function loadData() {
                         localStorage.setItem('vault-custom-tokens', JSON.stringify(parsed._customTokens));
                         delete parsed._customTokens;
                     }
+                    if (parsed._logoCache && typeof parsed._logoCache === 'object') {
+                        try { LogoEngine.importCache(parsed._logoCache); } catch(e) {}
+                        delete parsed._logoCache;
+                    }
                     if (parsed._opportunityMonitors && typeof parsed._opportunityMonitors === 'object') {
                         opportunityMonitors = mergeOpportunityMonitorConfigs(parsed._opportunityMonitors, opportunityMonitors);
                         localStorage.setItem(OPPORTUNITY_MONITORS_KEY, JSON.stringify(opportunityMonitors));
@@ -7934,6 +7913,8 @@ async function saveData() {
             aaveMarkets:    _ls('aavecap-markets-v1', '[]'),
             // Custom token address mappings
             customTokens:   _ls(CUSTOM_TOKEN_LS, '{}'),
+            // Current server-level logo cache; do not refresh external logo sources in the browser.
+            logoCache:      (typeof LogoEngine !== 'undefined' && LogoEngine.exportCache ? LogoEngine.exportCache() : {}),
             // Opportunity Zone monitor settings
             opportunityMonitors: _ls(OPPORTUNITY_MONITORS_KEY, '{"pegTokens":[],"includePmNoApy":true}'),
             // Portfolio weekly snapshots
@@ -8861,9 +8842,9 @@ async function fetchPolymarketPositions(options = {}) {
 
 function maybeAutoSyncPolymarketPositions() {
     if (!data.polymarketWallets?.length) return;
-    if (Date.now() - _lastPmAutoSyncAt < 60000) return;
+    if (Date.now() - _lastPmAutoSyncAt < PREDICTION_WALLET_PULSE_MS) return;
     fetchPolymarketPositions({ silent:true });
-    if (typeof refreshActivity === 'function' && document.getElementById('activityMoversContainer')) refreshActivity();
+    if (document.body.dataset.activeTab === 'prediction' && typeof refreshActivity === 'function' && document.getElementById('activityMoversContainer')) refreshActivity();
 }
 
 
@@ -14806,6 +14787,7 @@ function setupPredictionWalletPulseRefresh() {
     if (_predictionWalletPulseTimer) return;
     _predictionWalletPulseTimer = setInterval(() => {
         if (document.hidden) return;
+        if (!['prediction', 'watcher'].includes(document.body.dataset.activeTab || '')) return;
         const wallets = predictionWatchedWalletAddresses();
         if (wallets.length) {
             const key = wallets.slice().sort().join('|');
@@ -14817,7 +14799,7 @@ function setupPredictionWalletPulseRefresh() {
         predictionRefreshMarketMoves({ force:true });
     }, PREDICTION_WALLET_PULSE_MS);
     document.addEventListener('visibilitychange', () => {
-        if (!document.hidden) {
+        if (!document.hidden && ['prediction', 'watcher'].includes(document.body.dataset.activeTab || '')) {
             predictionRenderActivity(++_predictionIntelSeq, { background:true });
             predictionRefreshMarketMoves();
         }
@@ -20422,10 +20404,6 @@ async function tkGeckoResolve(sym) {
         const match = coins.find(c => c.symbol.toUpperCase() === sym) || null;
         const geckoId = match ? match.id : null;
         _tkGeckoIdCache[sym] = geckoId;
-        // Inject the thumb image into LogoEngine's cache so resolveAllPendingLogos picks it up
-        if (match?.thumb && !match.thumb.includes('missing')) {
-            try { LogoEngine._injectTokenImage(sym, match.thumb); } catch(e) {}
-        }
         return geckoId;
     } catch(e) { _tkGeckoIdCache[sym] = null; return null; }
 }
@@ -20456,16 +20434,9 @@ async function tkTryDefiLlama(contractAddrs) {
 // Resolve logo + price via CoinGecko /coins/{id} in one call.
 // Falls back to DeFiLlama if CoinGecko has no USD price (DEX-only tokens like PMUSD).
 async function tkResolveLogoAndPrice(sym) {
-    const logoAlreadyCached = LogoEngine._peekTokenImage(sym);
-
-    // Resolve CoinGecko ID (also injects thumb as side-effect of /search call)
+    // Resolve CoinGecko ID for price lookup only; logos stay on the saved server cache.
     const geckoId = await tkGeckoResolve(sym);
     if (!geckoId) return null;
-
-    // If logo is now cached from the /search thumb, trigger re-render
-    if (!logoAlreadyCached && LogoEngine._peekTokenImage(sym)) {
-        resolveAllPendingLogos();
-    }
 
     // Fetch full coin data: market_data=true + platforms gives us price, image, and contract addresses
     let coinData = null;
@@ -20478,15 +20449,6 @@ async function tkResolveLogoAndPrice(sym) {
     } catch(e) {}
 
     if (coinData) {
-        // Inject logo if we don't have a real one yet
-        if (!LogoEngine._peekTokenImage(sym)) {
-            const img = coinData?.image?.small || coinData?.image?.thumb;
-            if (img && !img.includes('missing')) {
-                LogoEngine._injectTokenImage(sym, img);
-                resolveAllPendingLogos();
-            }
-        }
-
         // Try USD price from CoinGecko
         let usd = coinData?.market_data?.current_price?.usd;
         const chg24h = coinData?.market_data?.price_change_percentage_24h ?? null;
@@ -20562,7 +20524,7 @@ async function fetchCustomTicker(n) {
         return;
     }
 
-    // 3. CoinGecko + DeFiLlama — fetches logo and price; DeFiLlama covers DEX-only tokens
+    // 3. CoinGecko + DeFiLlama — price lookup only; DeFiLlama covers DEX-only tokens
     const geckoResult = await tkResolveLogoAndPrice(sym);
     if (geckoResult) {
         setTickerItem(priceId, chgId, geckoResult.price, geckoResult.chgPct);
@@ -21782,7 +21744,14 @@ function perpsStopAutoRefresh() {
 
 function perpsStartLiveAprRefresh() {
     perpsStopLiveAprRefresh();
-    _perpsLiveAprTimer = setInterval(() => perpsRefreshLiveApr(), PERPS_LIVE_APR_MS);
+    const now = new Date();
+    const next = new Date(now);
+    next.setMinutes(PERPS_LIVE_APR_REFRESH_MINUTE, 0, 0);
+    if (next <= now) next.setHours(next.getHours() + 1);
+    _perpsLiveAprTimer = setTimeout(async () => {
+        await perpsRefreshLiveApr();
+        if (document.body.dataset.activeTab === 'perps') perpsStartLiveAprRefresh();
+    }, Math.max(1000, next.getTime() - now.getTime()));
 }
 
 function perpsStopLiveAprRefresh() {
@@ -21802,7 +21771,10 @@ function perpsUpdateRefreshBar() {
         if (_perpsRefreshError) {
             lastEl.textContent = `Last refresh failed · ${_perpsRefreshError}`;
         } else if (_perpsLastRefreshAt) {
-            lastEl.textContent = `Updated ${new Date(_perpsLastRefreshAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })} · full refresh 1m · live APR 15s`;
+            const liveText = _perpsLiveAprUpdatedAt
+                ? `live funding ${new Date(_perpsLiveAprUpdatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                : 'live funding hourly at :02';
+            lastEl.textContent = `Updated ${new Date(_perpsLastRefreshAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })} · full refresh 5m · ${liveText}`;
         } else {
             lastEl.textContent = 'Waiting for data…';
         }
@@ -22755,16 +22727,39 @@ async function perpsRefreshLiveApr() {
     const hl = perpsResolveHlWallet();
     if (!hl || location.protocol === 'file:') return;
     _perpsLiveAprInFlight = true;
+    _perpsLiveAprLastAttemptAt = Date.now();
     try {
         const symbols = [...new Set(_perpsLastData.paired.map(p => p.symbol).filter(Boolean))];
         const params = new URLSearchParams({ wallet: hl, live: '1', symbols: symbols.join(',') });
         const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
         if (grvtSub) params.set('grvtSubAccount', grvtSub);
-        const res = await fetch('/api/perps?' + params.toString(), { signal: AbortSignal.timeout(12000) });
-        const payload = await res.json();
-        if (!res.ok) throw new Error(payload.error || res.statusText);
-        if (payload.rateSpread) perpsApplyLiveRates(payload.rateSpread, payload.fetchedAt);
+        let payload = null;
+        let lastError = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+                const res = await fetch('/api/perps?' + params.toString(), { signal: AbortSignal.timeout(12000) });
+                payload = await res.json();
+                if (!res.ok) throw new Error(payload.error || res.statusText);
+                break;
+            } catch (e) {
+                lastError = e;
+                payload = null;
+            }
+        }
+        if (!payload) throw lastError || new Error('Live funding fetch failed');
+        if (payload.warning || payload.warnings?.length) {
+            _perpsRefreshError = `Live funding warning: ${[payload.warning, ...(payload.warnings || [])].filter(Boolean).join('; ')}`;
+            perpsUpdateRefreshBar();
+        }
+        if (payload.rateSpread) {
+            perpsApplyLiveRates(payload.rateSpread, payload.fetchedAt);
+            _perpsLiveAprUpdatedAt = payload.fetchedAt || Date.now();
+            if (_perpsRefreshError && /^Live funding/.test(_perpsRefreshError)) _perpsRefreshError = null;
+            perpsUpdateRefreshBar();
+        }
     } catch (e) {
+        _perpsRefreshError = `Live funding retry failed: ${e.message || e}`;
+        perpsUpdateRefreshBar();
         console.warn('[perps live APR]', e);
     } finally {
         _perpsLiveAprInFlight = false;
@@ -23963,7 +23958,6 @@ function perpsRenderDashboard(data) {
     _perpsLiveAprUpdatedAt = _perpsLastRefreshAt;
     _perpsRefreshError = null;
     perpsUpdateRefreshBar();
-    perpsRefreshLiveApr();
 }
 
 function perpsFormatConnectedStatus(payload) {
@@ -23978,6 +23972,8 @@ function perpsFormatConnectedStatus(payload) {
 function perpsDashboardLoadWarnings(payload) {
     const warnings = [];
     const s = payload?.summary || {};
+    if (payload?.warning) warnings.push(payload.warning);
+    if (Array.isArray(payload?.warnings)) warnings.push(...payload.warnings);
     if (s.nadoError) warnings.push(`NADO: ${s.nadoError}`);
     if (payload?.nado?.state?.error) warnings.push(`NADO state: ${payload.nado.state.error}`);
     if (payload?.nado?.funding?.error) warnings.push(`NADO funding: ${payload.nado.funding.error}`);
@@ -23995,7 +23991,7 @@ async function perpsFetchDashboardPayload(params, silent = false) {
             const payload = await res.json();
             if (!res.ok) throw new Error(payload.error || res.statusText);
             const warnings = perpsDashboardLoadWarnings(payload);
-            if (warnings.length && attempt < PERPS_REFRESH_RETRIES) {
+            if (warnings.length && !payload.cached && attempt < PERPS_REFRESH_RETRIES) {
                 if (!silent || document.body.dataset.activeTab === 'perps') {
                     perpsSetStatus(`NADO data warning; retrying (${attempt + 1}/${PERPS_REFRESH_RETRIES})...`);
                 }

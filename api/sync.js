@@ -23,7 +23,7 @@ const POLYMARKET_PNL_BASE = 'https://user-pnl-api.polymarket.com/user-pnl';
 const MARKET_MOVES_CACHE_MS = 5 * 60 * 1000;
 const MARKET_MOVES_ASSET_LIMIT = 40;
 const MARKET_MOVES_CONCURRENCY = 8;
-const PM_POSITIONS_CACHE_MS = 60 * 1000;
+const PM_POSITIONS_CACHE_MS = 5 * 60 * 1000;
 const PM_METADATA_CONCURRENCY = 4;
 const marketMovesCache = new Map();
 const polymarketPositionsCache = new Map();
@@ -552,7 +552,7 @@ module.exports = async function handler(req, res) {
         portfolioRaw, watchlistRaw, watcherWalletsRaw, watcherLinksRaw,
         snapshotsRaw, aaveMarketsRaw, customTokensRaw,
         opinionWalletsRaw, tgChannelsRaw, pmWalletsRaw, opportunityMonitorsRaw,
-        eventHistoryRaw, dismissedMarketsRaw, perpsConfigRaw, perpsSnapshotsRaw,
+        eventHistoryRaw, dismissedMarketsRaw, perpsConfigRaw, perpsSnapshotsRaw, logoCacheRaw,
       ] = await Promise.all([
         kvGet('vault:portfolio'),
         kvGet('vault:watchlist'),
@@ -569,6 +569,7 @@ module.exports = async function handler(req, res) {
         kvGet('vault:dismissed_markets'),
         kvGet('vault:perps_config'),
         kvGet('vault:perps_snapshots'),
+        kvGet('vault:logo_cache'),
       ]);
 
       const parse = (raw, fallback) => {
@@ -591,6 +592,7 @@ module.exports = async function handler(req, res) {
       const dismissedMarkets    = parse(dismissedMarketsRaw, []);
       const perpsConfig         = parse(perpsConfigRaw, {});
       const perpsSnapshots      = parse(perpsSnapshotsRaw, {});
+      const logoCache           = parse(logoCacheRaw, {});
 
       if (Array.isArray(pmWallets)) {
         const seen = new Set();
@@ -624,6 +626,7 @@ module.exports = async function handler(req, res) {
         _dismissedMarkets:    dismissedMarkets,
         _perpsConfig:         perpsConfig,
         _perpsSnapshots:      perpsSnapshots,
+        _logoCache:           logoCache,
       };
 
       return res.status(200).json({ ok: true, result: JSON.stringify(result) });
@@ -683,6 +686,11 @@ module.exports = async function handler(req, res) {
     if (body.customTokens) {
       await kvSet('vault:customtokens', JSON.stringify(body.customTokens));
       saved.customTokens = true;
+    }
+
+    if (body.logoCache && typeof body.logoCache === 'object') {
+      await kvSet('vault:logo_cache', JSON.stringify(body.logoCache));
+      saved.logoCache = true;
     }
 
     if (body.opportunityMonitors) {

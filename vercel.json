@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "ignoreCommand": "[ \"$VERCEL_ENV\" = \"preview\" ]",
   "regions": ["hnd1"],
   "functions": {
     "api/aave-proxy.js": {

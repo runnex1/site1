@@ -3,7 +3,7 @@ name: Perps Equity Snapshot
 
 on:
   schedule:
-    - cron: '0 */4 * * *'
+    - cron: '2 */4 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Trigger 4h equity snapshot
+      - name: Trigger 4h equity snapshot at :02
         env:
           SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
         run: |

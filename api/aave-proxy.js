@@ -13,6 +13,10 @@ const {
 const { kvGet, kvSet } = require('../lib/kv');
 const { fetchLoopRates } = require('../lib/loop-rates');
 
+const responseCache = new Map();
+const PERPS_DASHBOARD_CACHE_MS = 5 * 60 * 1000;
+const LOOP_RATES_CACHE_MS = 15 * 60 * 1000;
+
 function isWallet(v) {
   return typeof v === 'string' && /^0x[a-fA-F0-9]{40}$/.test(v.trim());
 }
@@ -20,6 +24,74 @@ function isWallet(v) {
 function parseJson(raw, fallback) {
   if (!raw) return fallback;
   try { return JSON.parse(raw); } catch (e) { return fallback; }
+}
+
+function sortedCsv(raw) {
+  return String(raw || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))
+    .join(',');
+}
+
+function msUntilNextHourly02() {
+  const now = new Date();
+  const next = new Date(now);
+  next.setMinutes(2, 0, 0);
+  if (next <= now) next.setHours(next.getHours() + 1);
+  return Math.max(60 * 1000, next.getTime() - now.getTime());
+}
+
+function cacheGet(key) {
+  const entry = responseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) return null;
+  return entry.body;
+}
+
+function cacheSet(key, body, ttlMs) {
+  responseCache.set(key, {
+    body,
+    expiresAt: Date.now() + Math.max(1000, ttlMs),
+    savedAt: Date.now(),
+  });
+  return body;
+}
+
+async function fetchWithRetry(fn, label, retries = 1) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  const message = lastError?.message || String(lastError || 'failed');
+  throw new Error(`${label} retry failed: ${message}`);
+}
+
+async function cachedJson(key, ttlMs, label, fn) {
+  const cached = cacheGet(key);
+  if (cached) return { ...cached, cached: true };
+  try {
+    const body = await fetchWithRetry(fn, label, 1);
+    return cacheSet(key, body, ttlMs);
+  } catch (e) {
+    const stale = responseCache.get(key)?.body;
+    if (stale) {
+      const warning = `${label} retry failed; showing cached data: ${e.message || e}`;
+      return {
+        ...stale,
+        cached: true,
+        stale: true,
+        warning,
+        warnings: [...new Set([...(stale.warnings || []), warning])],
+      };
+    }
+    throw e;
+  }
 }
 
 async function handlePerpsCronSnapshot(req, res) {
@@ -111,7 +183,12 @@ async function handlePerps(req, res) {
         .split(',')
         .map(s => s.trim())
         .filter(Boolean);
-      const data = await fetchPerpsLiveRates({ grvtSubAccount, symbols });
+      const data = await cachedJson(
+        `perps:live:${grvtSubAccount}:${sortedCsv(req.query.symbols)}`,
+        msUntilNextHourly02(),
+        'Perps live funding',
+        () => fetchPerpsLiveRates({ grvtSubAccount, symbols }),
+      );
       return res.status(200).json(data);
     } catch (e) {
       console.error('[perps-live]', e);
@@ -127,12 +204,17 @@ async function handlePerps(req, res) {
   }
 
   try {
-    const data = await fetchPerpsDashboard({
-      hyperliquid: wallet,
-      nado: nadoWallet,
-      grvtSubAccount,
-      days,
-    });
+    const data = await cachedJson(
+      `perps:dashboard:${wallet.toLowerCase()}:${nadoWallet.toLowerCase()}:${grvtSubAccount}:${days}`,
+      PERPS_DASHBOARD_CACHE_MS,
+      'Perps dashboard',
+      () => fetchPerpsDashboard({
+        hyperliquid: wallet,
+        nado: nadoWallet,
+        grvtSubAccount,
+        days,
+      }),
+    );
     return res.status(200).json(data);
   } catch (e) {
     console.error('[perps]', e);
@@ -154,7 +236,12 @@ async function handleLoopRates(req, res) {
     .filter(Boolean);
 
   try {
-    const data = await fetchLoopRates({ wallets });
+    const data = await cachedJson(
+      `loop-rates:${wallets.map(w => w.toLowerCase()).sort().join(',')}`,
+      LOOP_RATES_CACHE_MS,
+      'Loop rates',
+      () => fetchLoopRates({ wallets }),
+    );
     return res.status(200).json(data);
   } catch (e) {
     console.error('[loop-rates]', e);
