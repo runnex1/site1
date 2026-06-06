@@ -606,6 +606,13 @@ assert.match(perpsJs, /rows\.error = errorMessage\(e\);/, 'NADO rate failures mu
 assert.match(perpsJs, /nadoError: combineErrors\(nadoState, nadoFundingForAnalysis, nadoMatchesForAnalysis, nadoCapitalFlows, \{ error: nadoRates\.error \}\)/, 'Dashboard summary must include NADO rates/funding failures');
 assert.match(indexHtml, /perpsSideBadgeHtml\(legs\.a\.size\)/, 'paired table legs must include long/short badges');
 assert.match(indexHtml, /perpsVenueWithSideHtml\(u\.venue, u\.size\)/, 'unhedged exchange rows must include long/short badges');
+assert.match(indexHtml, /<div>Price \/ Liq<\/div>/, 'open positions must show current and liquidation prices');
+assert.match(indexHtml, /function perpsPositionPriceStackHtml\(p, displayLegs\)/, 'open positions must render both leg prices in a stacked price column');
+assert.match(indexHtml, /function perpsLiquidationRiskStyle\(currentPx, liquidationPx\)/, 'liquidation prices must be colored by distance to current price');
+assert.match(indexHtml, /distancePct <= 20 \? 1/, 'liquidation color must reach max red at 20 percent from liquidation');
+assert.match(indexHtml, /hyperliquidMarkPx/, 'Hyperliquid current price must fall back to rate-spread mark price');
+assert.match(perpsJs, /liquidationPx: parseFloat\(pos\.liquidationPx \|\| pos\.liqPx \|\| 0\) \|\| null/, 'Hyperliquid position mapping must preserve liquidation price');
+assert.match(perpsJs, /hyperliquidMarkPx: hl\?\.markPx \?\? null/, 'rate spread rows must expose Hyperliquid mark price for position rows');
 assert.match(indexHtml, /perpsRateSpreadRow\(p\.symbol\)/, 'Current APR must fall back to the latest rate-spread row');
 assert.match(indexHtml, /rateA \?\? p\.fundingRate8hA/, 'live APR polling must preserve previous leg rates when a response is partial');
 assert.match(indexHtml, /if \(native\.rateDecimal == null\)/, 'Current APR tooltip must fall back to pair-level leg rates');

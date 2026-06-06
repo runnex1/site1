@@ -800,7 +800,7 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 1rem 0.65rem; }
 .perps-pos-head, .perps-pos-row {
   display:grid;
-  grid-template-columns:minmax(140px,1.15fr) minmax(210px,1.6fr) minmax(88px,0.95fr) minmax(80px,0.9fr) minmax(92px,0.95fr) minmax(16px,0.35fr) minmax(88px,0.92fr) minmax(80px,0.88fr) minmax(36px,0.42fr);
+  grid-template-columns:minmax(140px,1.12fr) minmax(190px,1.35fr) minmax(118px,0.95fr) minmax(88px,0.82fr) minmax(80px,0.75fr) minmax(92px,0.82fr) minmax(12px,0.2fr) minmax(88px,0.78fr) minmax(80px,0.74fr) minmax(36px,0.32fr);
   gap:0.65rem 1.15rem; align-items:center;
 }
 .perps-pos-chart-col { display:flex; justify-content:flex-end; align-items:center; }
@@ -838,6 +838,11 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-metric-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:0.78rem; font-weight:800; color:var(--t1); }
 .perps-pos-metric-val.pos { color:#55d66f; }
 .perps-pos-metric-val.neg { color:#ff5c7a; }
+.perps-pos-price-stack { display:flex; flex-direction:column; gap:0.25rem; font-family:var(--ff-mono); font-size:0.58rem; min-width:0; }
+.perps-pos-price-row { display:flex; align-items:baseline; justify-content:space-between; gap:0.45rem; color:#9dacbb; }
+.perps-pos-price-venue { text-transform:capitalize; color:#7f8f9f; white-space:nowrap; }
+.perps-pos-price-main { color:var(--t1); font-weight:850; white-space:nowrap; }
+.perps-pos-price-sub { display:block; margin-top:0.04rem; font-size:0.52rem; color:#617083; text-align:right; white-space:nowrap; }
 .perps-pos-apr-col { text-align:right; }
 .perps-pos-apr-val { font-family:var(--ff-mono); font-size:1.05rem; font-weight:900; }
 .perps-pos-apr-val.pos { color:#55d66f; }
@@ -23193,6 +23198,7 @@ function perpsRenderPortfolioPositions(paired) {
     const head = `<div class="perps-pos-head">
         <div>Position</div>
         <div>Exchange</div>
+        <div>Price / Liq</div>
         <div>Total uPnL</div>
         <div>uPnL</div>
         <div>Current APR</div>
@@ -23224,6 +23230,7 @@ function perpsRenderPortfolioPositions(paired) {
             <div class="perps-pos-legs">
                 ${displayLegs.map(entry => `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="perps-pos-metric-val ${perpsSignedCls(entry.leg.upnl ?? 0)}">${perpsFmtUsd(entry.leg.upnl ?? 0)}</span></div>`).join('')}
             </div>
+            ${perpsPositionPriceStackHtml(p, displayLegs)}
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Total uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(totalUpnl)}">${perpsFmtUsd(totalUpnl)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(upnlOnly)}">${perpsFmtUsd(upnlOnly)}</div></div>
             <div class="perps-pos-metric perps-pos-apr-metric" onmouseenter="perpsShowCurrentAprTip(event, ${pairIdx})" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Current APR</div><div class="perps-pos-metric-val ${perpsSignedCls(currentApr)}">${currentApr != null ? perpsFmtPct(currentApr) : '—'}</div></div>
@@ -23312,32 +23319,79 @@ function perpsVenueShort(venue) {
 function perpsPairLegs(p) {
     if (p.pairType === 'hl_nado') {
         return {
-            a: { label: 'HL', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen },
-            b: { label: 'Nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen },
+            a: { label: 'HL', venue: 'hyperliquid', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen, markPx: p.hl?.markPx, liquidationPx: p.hl?.liquidationPx },
+            b: { label: 'Nado', venue: 'nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen, markPx: p.nado?.markPx, liquidationPx: p.nado?.liquidationPx },
         };
     }
     if (p.crossLegA && p.crossLegB) {
         return {
             a: {
                 label: perpsVenueShort(p.crossLegA.venue),
+                venue: p.crossLegA.venue,
                 size: p.crossLegA.size,
                 entry: p.crossLegA.entryPx,
                 upnl: p.crossLegA.unrealizedPnl,
                 funding: p.legAFundingSinceOpen,
+                markPx: p.crossLegA.markPx,
+                liquidationPx: p.crossLegA.liquidationPx,
             },
             b: {
                 label: perpsVenueShort(p.crossLegB.venue),
+                venue: p.crossLegB.venue,
                 size: p.crossLegB.size,
                 entry: p.crossLegB.entryPx,
                 upnl: p.crossLegB.unrealizedPnl,
                 funding: p.legBFundingSinceOpen,
+                markPx: p.crossLegB.markPx,
+                liquidationPx: p.crossLegB.liquidationPx,
             },
         };
     }
     return {
-        a: { label: 'A', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen },
-        b: { label: 'B', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen },
+        a: { label: 'A', venue: p.venueA || 'hyperliquid', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen },
+        b: { label: 'B', venue: p.venueB || 'nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen },
     };
+}
+
+function perpsNumOrNull(v) {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function perpsLegCurrentPx(symbol, venue, leg) {
+    const direct = perpsNumOrNull(leg?.markPx);
+    if (direct != null) return direct;
+    const row = perpsRateSpreadRow(symbol);
+    const key = { hyperliquid: 'hyperliquidMarkPx', nado: 'nadoMarkPx', grvt: 'grvtMarkPx', extended: 'extendedMarkPx' }[venue];
+    return key ? perpsNumOrNull(row?.[key]) : null;
+}
+
+function perpsLiquidationRiskStyle(currentPx, liquidationPx) {
+    const current = perpsNumOrNull(currentPx);
+    const liq = perpsNumOrNull(liquidationPx);
+    if (current == null || liq == null) return '';
+    const distancePct = Math.abs(current - liq) / current * 100;
+    const risk = distancePct <= 20 ? 1 : Math.max(0, Math.min(1, (50 - distancePct) / 30));
+    if (risk <= 0) return '';
+    const green = Math.round(156 - risk * 64);
+    const blue = Math.round(187 - risk * 65);
+    return `style="color:rgb(255,${green},${blue});text-shadow:0 0 ${Math.round(6 + risk * 8)}px rgba(255,92,122,${(0.18 + risk * 0.36).toFixed(2)})"`;
+}
+
+function perpsPositionPriceStackHtml(p, displayLegs) {
+    return `<div class="perps-pos-price-stack">${displayLegs.map(entry => {
+        const venue = entry.venue || entry.leg.venue;
+        const currentPx = perpsLegCurrentPx(p.symbol, venue, entry.leg);
+        const liquidationPx = perpsNumOrNull(entry.leg.liquidationPx);
+        const liqStyle = perpsLiquidationRiskStyle(currentPx, liquidationPx);
+        return `<div class="perps-pos-price-row">
+            <span class="perps-pos-price-venue">${dashEsc(perpsVenueShort(venue))}</span>
+            <span>
+                <span class="perps-pos-price-main">${perpsFmtPx(currentPx)}</span>
+                <span class="perps-pos-price-sub" ${liqStyle}>Liq ${perpsFmtPx(liquidationPx)}</span>
+            </span>
+        </div>`;
+    }).join('')}</div>`;
 }
 
 function perpsSideBadgeHtml(size) {
