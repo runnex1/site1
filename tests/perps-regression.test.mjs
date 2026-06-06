@@ -20,8 +20,7 @@ const {
   mergeNadoMatches,
   pairOpenedAtMs,
   computeNadoLiquidationPx,
-  estimateHyperliquidLiquidationPx,
-  estimateGrvtLiquidationPx,
+  liquidationPriceFrom,
   normalizeGrvtPositionRow,
 } = require('../lib/perps.js');
 const aaveProxyHandler = require('../api/aave-proxy.js');
@@ -622,14 +621,15 @@ assert.match(indexHtml, /hyperliquidMarkPx/, 'Hyperliquid current price must fal
 assert.match(perpsJs, /function liquidationPriceFrom\(obj, pxFn = v => firstNumber\(v\)\)/, 'position mapping must use a tolerant liquidation price extractor');
 assert.match(perpsJs, /estimatedLiquidationPrice/, 'liquidation price extraction must check common estimated liquidation aliases');
 assert.match(perpsJs, /obj\?\.balance\?\.\[key\]/, 'liquidation price extraction must check nested balance fields');
-assert.match(perpsJs, /function nadoLiquidationPriceFrom\(balanceRow, ctx = null\)/, 'NADO liquidation price extraction must handle x18, direct fields, and computed fallback');
-assert.match(perpsJs, /function estimateHyperliquidLiquidationPx\(pos, markPx = null\)/, 'Hyperliquid must estimate liquidation when API returns null');
-assert.match(perpsJs, /liquidationPx: estimateHyperliquidLiquidationPx\(/, 'Hyperliquid position mapping must preserve or estimate liquidation price');
+assert.match(perpsJs, /function nadoLiquidationPriceFrom\(balanceRow, ctx = null\)/, 'NADO liquidation price extraction must handle x18, direct fields, and official formula');
+assert.doesNotMatch(perpsJs, /proportionalHealth/, 'NADO must not invent liquidation prices from notional-weighted health');
+assert.doesNotMatch(perpsJs, /function estimateHyperliquidLiquidationPx\(/, 'Hyperliquid must not estimate liquidation when API returns null');
+assert.doesNotMatch(perpsJs, /function estimateGrvtLiquidationPx\(/, 'GRVT must not estimate liquidation when API omits est_liquidation_price');
+assert.match(perpsJs, /liquidationPx: liquidationPriceFrom\(pos\)/, 'Hyperliquid position mapping must use API liquidation price only');
 assert.match(perpsJs, /liquidationPx: nadoLiquidationPriceFrom\(b, \{/, 'NADO position mapping must compute liquidation from maintenance health');
-assert.match(perpsJs, /proportionalHealth/, 'NADO must fall back to notional-weighted maintenance health when account formula is very safe');
 assert.match(perpsJs, /function computeNadoLiquidationPx\(/, 'NADO liquidation must be computable from oracle and maintenance health');
 assert.match(perpsJs, /function normalizeGrvtPositionRow\(/, 'GRVT position mapping must normalize lite API aliases');
-assert.match(perpsJs, /function estimateGrvtLiquidationPx\(/, 'GRVT must estimate liquidation when account summary omits est_liquidation_price');
+assert.match(perpsJs, /liquidationPx: liquidationPriceFrom\(p, grvtPx\)/, 'GRVT position mapping must use API est_liquidation_price only');
 assert.match(perpsJs, /grvtTradesPost\('positions'/, 'GRVT state must fetch the dedicated positions endpoint for liquidation prices');
 assert.match(perpsJs, /hyperliquidMarkPx: hl\?\.markPx \?\? null/, 'rate spread rows must expose Hyperliquid mark price for position rows');
 assert.match(indexHtml, /perpsRateSpreadRow\(p\.symbol\)/, 'Current APR must fall back to the latest rate-spread row');
@@ -707,26 +707,24 @@ assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketI
   });
   assert.ok(nadoLiq > 0 && nadoLiq < 0.323475, 'NADO long liquidation must sit below oracle');
 
-  const hlLiq = estimateHyperliquidLiquidationPx({
-    szi: '590000',
-    entryPx: '0.03146',
-    marginUsed: '516.57',
-    maxLeverage: 5,
-    liquidationPx: null,
-  }, 0.03146);
-  assert.ok(hlLiq > 0 && hlLiq < 0.03146, 'HL cross long must estimate liquidation below mark when API is null');
+  const nadoVerySafe = computeNadoLiquidationPx({
+    amount: 12000,
+    oracle: 0.71,
+    maintenanceHealth: 26442,
+    longWeightMaint: 0.95,
+    shortWeightMaint: 1.05,
+  });
+  assert.equal(nadoVerySafe, null, 'NADO official formula must return null when position is very safe');
 
-  const hlDirect = estimateHyperliquidLiquidationPx({ liquidationPx: '0.669877', szi: '-1000' });
-  assert.equal(hlDirect, 0.669877, 'HL estimator must prefer API liquidation when present');
+  assert.equal(liquidationPriceFrom({ liquidationPx: '0.669877' }), 0.669877, 'Hyperliquid must use API liquidation when present');
+  assert.equal(liquidationPriceFrom({ liquidationPx: null }), null, 'Hyperliquid must show no liquidation when API returns null');
 
-  const grvtLiq = estimateGrvtLiquidationPx(normalizeGrvtPositionRow({
+  const grvtLiq = liquidationPriceFrom(normalizeGrvtPositionRow({
     i: 'IP_USDT_Perp',
-    s: '44000',
-    mp: '321424037',
-    ep: '401468346',
-    l: '10',
-  }), 18227.79);
-  assert.ok(grvtLiq > 0 && grvtLiq < 0.321424037, 'GRVT cross long must estimate liquidation below mark when el is missing');
+    el: '287500000',
+  }), v => (Number(v) >= 1e6 ? Number(v) / 1e9 : Number(v)));
+  assert.ok(grvtLiq > 0 && grvtLiq < 0.5, 'GRVT must use API est_liquidation_price when provided');
+  assert.equal(liquidationPriceFrom(normalizeGrvtPositionRow({ i: 'IP_USDT_Perp', s: '44000' })), null, 'GRVT must show no liquidation when API omits el');
 }
 
 {
