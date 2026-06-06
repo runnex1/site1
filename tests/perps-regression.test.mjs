@@ -739,7 +739,9 @@ assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketI
   assert.equal(merged.totalFees, 4);
 }
 
-assert.match(indexHtml, /const PROTO_APR_MIN_HOURS = 8;/, 'protocol APR must use an 8-hour minimum elapsed window');
+assert.match(indexHtml, /const PROTO_APR_FLOOR_HOURS = 24;/, 'protocol APR must floor short gaps to 24 hours');
+assert.match(indexHtml, /const PROTO_APR_EXACT_AFTER_HOURS = 8;/, 'protocol APR must use exact elapsed time once imports are 8h or more apart');
+assert.match(indexHtml, /function protocolAprDaysDiff\(baselineTs, newerTs\)/, 'protocol APR must branch between 24h floor and exact elapsed time');
 assert.match(indexHtml, /const PROTO_APR_MAX_ABS = 80;/, 'protocol APR must hide rates at or above 80%');
 assert.match(indexHtml, /const PROTO_VALUE_CHANGE_MAX = 700;/, 'protocol APR must hide positions with value changes above $700');
 assert.match(indexHtml, /const MAX_PROTOCOL_SNAPSHOTS = 5;/, 'protocol snapshots must keep up to five previous imports');
