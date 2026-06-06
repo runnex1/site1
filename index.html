@@ -2284,6 +2284,7 @@ body::after {
 }
 #defiTab > .section .section-header { padding:0.9rem 1rem 0.7rem; margin:0; border-bottom:1px solid rgba(148,163,184,0.12); }
 #defiTab > .section > .data-table,
+#defiTab > .section > #protocolPositionsToolbar,
 #defiTab > .section > #protocolViewToggle,
 #defiTab > .section > .pm-search-wrap { margin-left:1rem; margin-right:1rem; }
 #defiTab > .section > .data-table { margin-bottom:1rem; max-height:390px; overflow:auto; }
@@ -6064,8 +6065,8 @@ body[data-active-tab="loops"] .loop-pos-val,
               </button>
             </div>
           </div>
-          <!-- View toggle pill -->
-          <div style="display:flex;align-items:center;gap:0.65rem;flex-wrap:wrap;margin-bottom:0.85rem;">
+          <!-- View toggle + snapshot picker -->
+          <div id="protocolPositionsToolbar" style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;margin:0 1rem 0.85rem;width:calc(100% - 2rem);">
             <div id="protocolViewToggle" style="display:flex;align-items:center;gap:0;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:8px;overflow:hidden;width:fit-content;">
               <button id="btnCurrentPositions" onclick="switchProtocolView('current')" title=""
                 style="padding:5px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;border-right:1px solid var(--border-mid);transition:all 0.15s;background:var(--teal-10);color:var(--teal);font-family:var(--ff-body);">
@@ -6076,11 +6077,16 @@ body[data-active-tab="loops"] .loop-pos-val,
                 📸 Snapshot
               </button>
             </div>
-            <div id="protocolSnapshotPicker" style="display:none;align-items:center;gap:0.45rem;">
-              <label for="protocolSnapshotSelect" style="font-size:0.72rem;color:var(--t3);font-weight:600;">View snapshot</label>
-              <select id="protocolSnapshotSelect" onchange="selectProtocolSnapshot(this.value)"
-                style="background:var(--surf-2);border:1px solid var(--border-mid);border-radius:6px;color:var(--t1);padding:4px 8px;font-size:0.75rem;font-family:var(--ff-mono);min-width:220px;">
-              </select>
+            <div id="protocolSnapshotPickerWrap" style="display:none;position:relative;margin-left:auto;">
+              <button type="button" id="protocolSnapshotSelectBtn" onclick="toggleProtocolSnapshotPicker()"
+                style="padding:5px 12px;font-size:0.72rem;font-weight:700;cursor:pointer;border:1px solid var(--border-mid);border-radius:6px;background:var(--surf-2);color:var(--t2);font-family:var(--ff-body);">
+                Select
+              </button>
+              <div id="protocolSnapshotPicker" style="display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:6;min-width:260px;padding:0.45rem;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.35);">
+                <select id="protocolSnapshotSelect" onchange="selectProtocolSnapshot(this.value)"
+                  style="width:100%;background:var(--surf-3);border:1px solid var(--border-mid);border-radius:6px;color:var(--t1);padding:6px 8px;font-size:0.75rem;font-family:var(--ff-mono);">
+                </select>
+              </div>
             </div>
           </div>
           <div class="data-table">
@@ -8046,6 +8052,7 @@ const PROTO_APR_FLOOR_DAYS = PROTO_APR_FLOOR_HOURS / 24;
 const PROTO_APR_MAX_ABS = 80;
 const PROTO_VALUE_CHANGE_MAX = 700;
 let _protocolSelectedSnapshotTs = null; // null = latest snapshot baseline for APR
+let _protocolSnapshotPickerOpen = false;
 
 function buildPositionMap(protocols) {
     const positions = {};
@@ -8235,6 +8242,106 @@ function calcPositionAPR(posKey) {
     if (Math.abs(apr) >= PROTO_APR_MAX_ABS) return { apr: null };
 
     return { apr, daysDiff, oldTs: baseline.ts, newTs: newerTs };
+}
+
+function getSnapshotAprPair(viewedSnap) {
+    const snaps = getProtocolSnapshots();
+    if (!viewedSnap || !snaps.length) return { newer: null, older: null };
+    const idx = snaps.findIndex(s => Number(s.ts) === Number(viewedSnap.ts));
+    if (idx < 0) return { newer: viewedSnap, older: null };
+    return { newer: snaps[idx], older: snaps[idx + 1] || null };
+}
+
+function calcSnapshotPositionAPR(posKey, newerSnap, olderSnap) {
+    if (!newerSnap || !olderSnap) return { apr: null };
+    const daysDiff = protocolAprDaysDiff(olderSnap.ts, newerSnap.ts);
+    if (daysDiff === null) return { apr: null };
+    const newerVal = getPositionMapValue(newerSnap.positions, posKey);
+    const olderVal = getPositionMapValue(olderSnap.positions, posKey);
+    if (!olderVal || newerVal === null) return { apr: null };
+    if (Math.abs(newerVal - olderVal) > PROTO_VALUE_CHANGE_MAX) return { apr: null };
+    const apr = ((newerVal - olderVal) / olderVal) * (365 / daysDiff) * 100;
+    if (Math.abs(apr) >= PROTO_APR_MAX_ABS) return { apr: null };
+    return { apr, daysDiff };
+}
+
+function protocolAprStatsBetweenSnapshots(p, newerSnap, olderSnap) {
+    if (!p?.sections?.length || !newerSnap || !olderSnap) return { apr: null, weight: 0 };
+    let totalWeight = 0, weightedSum = 0, hasAny = false;
+    const typeCounts = {};
+    for (const sec of p.sections) {
+        if (!sec.positions) continue;
+        const sectionType = sec.type || 'Yield';
+        typeCounts[sectionType] = (typeCounts[sectionType] || 0) + 1;
+        const sectionIndex = typeCounts[sectionType] > 1 ? `[${typeCounts[sectionType]}]` : '';
+        const isLendingSection = (sec.positions || []).some(pos => ['supplied','borrowed'].includes(String(pos.sub || '').toLowerCase()));
+        let sectionNetValue = 0, sectionWeighted = 0, sectionHas = false;
+        for (const pos of sec.positions) {
+            const key = `${p.name}|||${sectionType}${sectionIndex}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+            let { apr } = calcSnapshotPositionAPR(key, newerSnap, olderSnap);
+            if (apr === null) continue;
+            const val = protocolPositionValue(pos);
+            const sub = String(pos.sub || '').toLowerCase();
+            if (sub === 'borrowed') apr = -Math.abs(apr);
+            if (isLendingSection) {
+                sectionWeighted += apr * val;
+                sectionNetValue += sub === 'borrowed' ? -val : val;
+                sectionHas = true;
+            } else {
+                weightedSum += apr * val;
+                totalWeight += val;
+            }
+            hasAny = true;
+        }
+        if (isLendingSection && sectionHas) {
+            weightedSum += sectionWeighted;
+            totalWeight += Math.max(Math.abs(sectionNetValue), 1);
+        }
+    }
+    return hasAny && totalWeight > 0 ? { apr: weightedSum / totalWeight, weight: totalWeight } : { apr: null, weight: 0 };
+}
+
+function protocolAprBreakdownBetweenSnapshots(p, newerSnap, olderSnap) {
+    if (!p?.sections?.length || !newerSnap || !olderSnap) return null;
+    let suppliedWeight = 0, suppliedWeighted = 0;
+    let borrowedWeight = 0, borrowedWeighted = 0;
+    const typeCounts = {};
+    for (const sec of p.sections) {
+        if (!sec.positions) continue;
+        const sectionType = sec.type || 'Yield';
+        typeCounts[sectionType] = (typeCounts[sectionType] || 0) + 1;
+        const sectionIndex = typeCounts[sectionType] > 1 ? `[${typeCounts[sectionType]}]` : '';
+        for (const pos of sec.positions) {
+            const key = `${p.name}|||${sectionType}${sectionIndex}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+            let { apr } = calcSnapshotPositionAPR(key, newerSnap, olderSnap);
+            if (apr === null) continue;
+            const val = Math.abs(protocolPositionValue(pos));
+            if (!val) continue;
+            const sub = String(pos.sub || '').toLowerCase();
+            if (sub === 'borrowed') {
+                apr = -Math.abs(apr);
+                borrowedWeighted += apr * val;
+                borrowedWeight += val;
+            } else {
+                suppliedWeighted += apr * val;
+                suppliedWeight += val;
+            }
+        }
+    }
+    const suppliedApr = suppliedWeight ? suppliedWeighted / suppliedWeight : null;
+    const borrowedApr = borrowedWeight ? borrowedWeighted / borrowedWeight : null;
+    const totalApr = protocolAprStatsBetweenSnapshots(p, newerSnap, olderSnap).apr;
+    if (suppliedApr === null && borrowedApr === null && totalApr === null) return null;
+    return { suppliedApr, borrowedApr, totalApr };
+}
+
+function snapshotAprBadgeHtml(posKey, sub, newerSnap, olderSnap) {
+    let { apr } = calcSnapshotPositionAPR(posKey, newerSnap, olderSnap);
+    if (apr === null) return `<span class="apr-badge neu">—</span>`;
+    if (sub?.toLowerCase() === 'borrowed') apr = -Math.abs(apr);
+    const cls = apr > 0 ? 'pos' : apr < 0 ? 'neg' : 'neu';
+    const sign = apr > 0 ? '+' : '';
+    return `<span class="apr-badge ${cls}">${sign}${apr.toFixed(1)}%</span>`;
 }
 
 function calcDefi24hYield() {
@@ -9681,7 +9788,7 @@ function processProtocolsImport() {
 
     let imported = 0;
     for (const block of protocolBlocks) {
-        if (/^nado/i.test(String(block.name || '').trim())) continue;
+        if (/nado/i.test(String(block.name || ''))) continue;
         const blockLines = rawLines.slice(block.start, block.end);
         const sections   = parsePositions(blockLines);
 
@@ -12662,20 +12769,34 @@ function updateProtocolTabTitles() {
     if (btnS) btnS.title = baseline ? `Snapshot ${formatProtocolImportTs(baseline.ts)}` : '';
 }
 
+function toggleProtocolSnapshotPicker() {
+    _protocolSnapshotPickerOpen = !_protocolSnapshotPickerOpen;
+    renderProtocolSnapshotPicker();
+}
+
+function closeProtocolSnapshotPicker() {
+    _protocolSnapshotPickerOpen = false;
+    const picker = document.getElementById('protocolSnapshotPicker');
+    if (picker) picker.style.display = 'none';
+}
+
 function renderProtocolSnapshotPicker() {
+    const wrap = document.getElementById('protocolSnapshotPickerWrap');
     const picker = document.getElementById('protocolSnapshotPicker');
     const select = document.getElementById('protocolSnapshotSelect');
     const snaps = getProtocolSnapshots();
-    if (!picker || !select) return;
-    if (!snaps.length) {
+    if (!wrap || !picker || !select) return;
+    const showWrap = _protocolView === 'snapshot' && snaps.length > 0;
+    wrap.style.display = showWrap ? 'block' : 'none';
+    if (!showWrap) {
         picker.style.display = 'none';
         select.innerHTML = '';
         return;
     }
-    picker.style.display = _protocolView === 'snapshot' ? 'flex' : 'none';
+    picker.style.display = _protocolSnapshotPickerOpen ? 'block' : 'none';
     const selectedTs = _protocolSelectedSnapshotTs || snaps[0].ts;
     select.innerHTML = snaps.map((snap, idx) => {
-        const label = `${idx === 0 && !_protocolSelectedSnapshotTs ? 'Latest · ' : ''}${formatProtocolImportTs(snap.ts)}`;
+        const label = `${idx === 0 && Number(selectedTs) === Number(snaps[0].ts) ? 'Latest · ' : ''}${formatProtocolImportTs(snap.ts)}`;
         return `<option value="${snap.ts}"${Number(snap.ts) === Number(selectedTs) ? ' selected' : ''}>${label}</option>`;
     }).join('');
 }
@@ -12686,6 +12807,7 @@ function selectProtocolSnapshot(tsValue) {
     if (_protocolSelectedSnapshotTs && !snaps.some(s => Number(s.ts) === Number(_protocolSelectedSnapshotTs))) {
         _protocolSelectedSnapshotTs = snaps[0]?.ts ?? null;
     }
+    closeProtocolSnapshotPicker();
     updateProtocolTabTitles();
     updateTotalDefiApr();
     if (_protocolView === 'snapshot') renderProtocolsSnapshot();
@@ -13365,6 +13487,7 @@ let _protocolView = 'current'; // 'current' | 'snapshot'
 
 function switchProtocolView(view) {
     _protocolView = view;
+    if (view !== 'snapshot') closeProtocolSnapshotPicker();
     const btnC = document.getElementById('btnCurrentPositions');
     const btnS = document.getElementById('btnSnapshotPositions');
     if (btnC && btnS) {
@@ -13406,9 +13529,14 @@ function renderProtocolsSnapshot() {
     const fmtV = v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const snapDateTime = formatProtocolImportTs(snap.ts);
     const grandTotal = snapProtocols.reduce((s, p) => s + (Number(p.value) || 0), 0);
+    const aprPair = getSnapshotAprPair(snap);
+    const yieldNote = aprPair.older
+        ? `Yield vs ${formatProtocolImportTs(aprPair.older.ts)}`
+        : 'No earlier snapshot for yield';
 
     // Render each protocol exactly like renderProtocols does
     const rowsHtml = [...snapProtocols].sort((a, b) => b.value - a.value).map((p, i) => {
+        const breakdown = protocolAprBreakdownBetweenSnapshots(p, aprPair.newer, aprPair.older) || {};
         const hasSections = p.sections && p.sections.some(s => s.positions && s.positions.length > 0);
 
         let drawerHtml = '';
@@ -13450,12 +13578,14 @@ function renderProtocolsSnapshot() {
                     const tokensHtml = (pos.tokens || []).length
                         ? pos.tokens.map(t => `<div>${t}</div>`).join('')
                         : '<div style="color:var(--t3);font-style:italic">—</div>';
+                    const posKey = `${p.name}|||${_secType}${_secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+                    const aprHtml = snapshotAprBadgeHtml(posKey, pos.sub, aprPair.newer, aprPair.older);
                     return `${subHeader}<div class="drawer-position">
                         <div>
                             <div class="drawer-position-name">${pos.pool}</div>
                             <div class="drawer-position-tokens">${tokensHtml}</div>
                         </div>
-                        <div class="drawer-position-apr"><span class="apr-badge neu">—</span></div>
+                        <div class="drawer-position-apr">${aprHtml}</div>
                         <div class="drawer-position-value">${isLendingSection && ['supplied','borrowed'].includes((pos.sub || '').toLowerCase()) ? '' : fmtV(pos.value)}</div>
                     </div>`;
                 }).join('');
@@ -13501,9 +13631,9 @@ function renderProtocolsSnapshot() {
                 </div>
                 <div>${dashEsc(protocolPositionSummary(p))}</div>
                 <div class="value">${fmtV(netValue)}</div>
-                <div>—</div>
-                <div>—</div>
-                <div><span class="apr-badge neu">—</span></div>
+                <div>${dashAprHtml(breakdown.suppliedApr, { plain: true })}</div>
+                <div>${dashAprHtml(breakdown.borrowedApr, { plain: true })}</div>
+                <div>${dashAprHtml(breakdown.totalApr)}</div>
                 <div>${health.cls ? `<span class="defi-health ${health.cls}">${health.label}<small>${health.word}</small></span>` : '-'}</div>
                 <div class="defi-proto-unlock-note"><span class="defi-unlock-text">${dashEsc(protocolUnlockSummary(p))}</span></div>
                 <div></div>
@@ -13513,8 +13643,8 @@ function renderProtocolsSnapshot() {
     }).join('');
 
     table.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:0.55rem 1.5rem 0.6rem;font-size:0.72rem;color:var(--amber);font-family:var(--ff-mono);background:rgba(245,158,11,0.06);border-bottom:1px solid rgba(245,158,11,0.15);">
-            <span>📸 Snapshot · ${snapDateTime}</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;padding:0.55rem 1.5rem 0.6rem;font-size:0.72rem;color:var(--amber);font-family:var(--ff-mono);background:rgba(245,158,11,0.06);border-bottom:1px solid rgba(245,158,11,0.15);">
+            <span>📸 Snapshot · ${snapDateTime}<small style="display:block;color:var(--t3);font-size:0.66rem;margin-top:0.15rem;">${yieldNote}</small></span>
             <span style="font-weight:700;">${fmtV(grandTotal)}</span>
         </div>
         ${rowsHtml}

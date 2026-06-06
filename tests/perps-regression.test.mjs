@@ -747,7 +747,10 @@ assert.match(indexHtml, /const PROTO_VALUE_CHANGE_MAX = 700;/, 'protocol APR mus
 assert.match(indexHtml, /const MAX_PROTOCOL_SNAPSHOTS = 5;/, 'protocol snapshots must keep up to five previous imports');
 assert.match(indexHtml, /function getAprBaselineSnapshot\(\)/, 'protocol APR must use the selected snapshot baseline');
 assert.match(indexHtml, /function selectProtocolSnapshot\(tsValue\)/, 'snapshot picker must drive the APR baseline on Current');
-assert.ok(indexHtml.includes("if (/^nado/i.test(String(block.name || '').trim())) continue;"), 'Nado imports must be skipped during protocol text import');
+assert.ok(indexHtml.includes("if (/nado/i.test(String(block.name || ''))) continue;"), 'protocol names containing Nado must be skipped during text import');
+assert.match(indexHtml, /function calcSnapshotPositionAPR\(posKey, newerSnap, olderSnap\)/, 'snapshot view must compute yields against the prior snapshot');
+assert.match(indexHtml, /function toggleProtocolSnapshotPicker\(\)/, 'snapshot picker must open only after clicking Select');
+assert.ok(indexHtml.includes('id="protocolSnapshotSelectBtn"'), 'snapshot section must expose a Select button');
 assert.match(indexHtml, /📸 Snapshot/, 'protocol snapshot tab must be renamed to Snapshot');
 assert.doesNotMatch(indexHtml, /📸 First Snapshot/, 'protocol snapshot tab must not keep the First Snapshot label');
 assert.match(indexHtml, /<div>Protocol<\/div><div>Type<\/div><div>Position<\/div>/, 'protocol positions table must drop the Network column');
