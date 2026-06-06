@@ -2326,6 +2326,10 @@ body::after {
 }
 .defi-table-footer span:first-child { margin-right:auto; }
 .defi-table-footer strong { color:var(--t1); font-family:var(--ff-mono); }
+.defi-apr-plain { font-family:var(--ff-mono); font-size:0.82rem; font-weight:700; }
+.defi-apr-plain.pos { color:var(--green); }
+.defi-apr-plain.neg { color:var(--red); }
+.defi-apr-plain.neu { color:var(--t3); }
 .defi-health.good { color:var(--green); }
 .defi-health.warn { color:var(--amber); }
 .defi-health.bad { color:var(--red); }
@@ -6054,13 +6058,6 @@ body[data-active-tab="loops"] .loop-pos-val,
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
                 Jupiter
               </button>
-              <button onclick="setCurrentAsFirstSnapshot()"
-                title="Save current positions as First Snapshot for APR baseline"
-                style="font-size:0.7rem;padding:3px 8px;background:rgba(245,158,11,0.12);color:var(--amber);border:1px solid rgba(245,158,11,0.25);border-radius:6px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:4px;height:28px;">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Snapshot
-              </button>
-
               <button class="btn-base danger-btn" onclick="deleteAllData('protocols')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                 Clear
@@ -6619,7 +6616,7 @@ body[data-active-tab="loops"] .loop-pos-val,
               </div>
               <div class="perps-stat-sub" id="perpsStatEquitySub">HL · Nado · GRVT · Ext</div>
             </div>
-            <div class="perps-stat-card"><div class="perps-stat-label">Total PnL</div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">last 24h · funding − fees</div></div>
+            <div class="perps-stat-card"><div class="perps-stat-label">Total PnL</div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">selected window · funding − fees</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Avg APR</div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">chart PnL ÷ avg equity</div></div>
           </section>
@@ -6866,23 +6863,6 @@ body[data-active-tab="loops"] .loop-pos-val,
     <div class="form-group">
       <label class="form-label">DeFi positions — paste from your portfolio tracker</label>
       <textarea id="importProtocolsText" placeholder="Paste copied DeFi positions text…"></textarea>
-    </div>
-    <div class="form-group" style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;">
-      <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.82rem;color:var(--t2);user-select:none;">
-        <input type="checkbox" id="firstSnapshotToggle" onchange="toggleFirstSnapshot()"
-          style="width:15px;height:15px;accent-color:var(--amber);cursor:pointer;">
-        <span>First Snapshot</span>
-        <span style="font-size:0.72rem;color:var(--t3)">(historical reference — won't update positions)</span>
-      </label>
-    </div>
-    <div id="firstSnapshotDateRow" style="display:none;gap:0.5rem;align-items:center;flex-wrap:wrap;padding-bottom:0.5rem;">
-      <span style="font-size:0.8rem;color:var(--t2);">Snapshot date &amp; time:</span>
-      <input type="date" id="firstSnapshotDate"
-        style="background:var(--surface-2);border:1px solid var(--border-mid);border-radius:6px;
-               color:var(--t1);padding:4px 8px;font-size:0.8rem;font-family:var(--ff-mono);">
-      <input type="time" id="firstSnapshotTime" value="12:00"
-        style="background:var(--surface-2);border:1px solid var(--border-mid);border-radius:6px;
-               color:var(--t1);padding:4px 8px;font-size:0.8rem;font-family:var(--ff-mono);width:90px;">
     </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal('importProtocols')">Cancel</button>
@@ -9498,38 +9478,10 @@ function processTokensImport() {
 }
 
 
-function setCurrentAsFirstSnapshot() {
-    if (!data.protocols || !data.protocols.length) {
-        alert('No protocol positions loaded.');
-        return;
-    }
-    if (!confirm('Set current positions as First Snapshot?\nThis will replace any existing snapshot and is used as the APR baseline.')) return;
-    // Preserve the original snapshot timestamp if one already exists
-    const existing = loadProtocolImportHistory().find(e => e.firstSnapshot);
-    const ts = existing ? existing.ts : Date.now();
-    saveProtocolImportHistory(data.protocols, { ts, firstSnapshot: true });
-    alert('✅ First Snapshot updated (date kept: ' + new Date(ts).toLocaleString() + ')');
-    // Refresh whichever view is currently active
-    if (typeof _protocolView !== 'undefined' && _protocolView === 'snapshot') {
-        renderProtocolsSnapshot();
-    } else {
-        renderProtocols();
-    }
-}
-
-function toggleFirstSnapshot() {
-    const checked = document.getElementById('firstSnapshotToggle')?.checked;
-    const row = document.getElementById('firstSnapshotDateRow');
-    if (row) row.style.display = checked ? 'flex' : 'none';
-    if (checked) {
-        // Default date to today
-        const d = document.getElementById('firstSnapshotDate');
-        if (d && !d.value) d.value = new Date().toISOString().slice(0, 10);
-    }
-}
 function processProtocolsImport() {
     const text = document.getElementById('importProtocolsText').value;
     if (!text) return;
+    const previousProtocols = JSON.parse(JSON.stringify(data.protocols || []));
 
     // ── Section-type keywords ────────────────────────────────────────────────
     const SECTION_TYPES = ['Lending','Vesting','Staking','Staked','Deposit','Yield','Farming','DEX','Leveraged Farming'];
@@ -9699,36 +9651,14 @@ function processProtocolsImport() {
         imported++;
     }
 
-    const isFirstSnapshot = document.getElementById('firstSnapshotToggle')?.checked;
-
-    if (isFirstSnapshot) {
-        // Use already-parsed data.protocols as the snapshot source, then restore previous state
-        const dateVal = document.getElementById('firstSnapshotDate')?.value;
-        const timeVal = document.getElementById('firstSnapshotTime')?.value || '12:00';
-        if (!dateVal) { alert('Please select a date for the First Snapshot.'); return; }
-        const ts = new Date(`${dateVal}T${timeVal}:00`).getTime();
-        if (isNaN(ts)) { alert('Invalid date/time for First Snapshot.'); return; }
-
-        saveProtocolImportHistory(data.protocols, { ts, firstSnapshot: true });
-
-        // Restore protocols to what they were before (snapshot shouldn't change display)
-        loadData();
-        closeModal('importProtocols');
-        document.getElementById('importProtocolsText').value = '';
-        document.getElementById('firstSnapshotToggle').checked = false;
-        document.getElementById('firstSnapshotDateRow').style.display = 'none';
-        alert(`✅ First Snapshot saved for ${new Date(ts).toLocaleString()}`);
-        // Refresh view if snapshot toggle is active
-        if (typeof _protocolView !== 'undefined' && _protocolView === 'snapshot') {
-            renderProtocolsSnapshot();
-        }
-    } else {
-        saveProtocolImportHistory(data.protocols); saveData(); updateUI();
-        closeModal('importProtocols');
-        document.getElementById('importProtocolsText').value = '';
-        if (imported > 0) alert(`✅ Imported ${imported} protocol positions`);
-        else alert('No protocols detected.');
-    }
+    if (previousProtocols.length) promoteProtocolsToFirstSnapshot(previousProtocols);
+    saveProtocolImportHistory(data.protocols);
+    saveData();
+    updateUI();
+    closeModal('importProtocols');
+    document.getElementById('importProtocolsText').value = '';
+    if (imported > 0) alert(`✅ Imported ${imported} protocol positions`);
+    else alert('No protocols detected.');
 }
 
 // =============================================================================
@@ -10469,7 +10399,7 @@ function renderDefiYieldPanel(avg) {
         <div class="${pct >= 0 ? 'positive' : 'negative'}" style="font-family:var(--ff-mono);text-align:right">${Number.isFinite(pct) ? ((pct >= 0 ? '' : '-') + Math.abs(pct).toFixed(2) + '%') : '-'}</div>
     </div>`;
     const hint = !hasSnapshot
-        ? '<div class="dash-empty" style="padding:0.55rem 0 0.35rem;font-size:0.74rem;">Save a <strong>First Snapshot</strong> (DeFi → Snapshot) to unlock APY-based yield estimates.</div>'
+        ? '<div class="dash-empty" style="padding:0.55rem 0 0.35rem;font-size:0.74rem;">Import protocol positions again to set a <strong>First Snapshot</strong> baseline and unlock APY-based yield estimates.</div>'
         : '';
     yieldPanel.innerHTML = [
         row('Supply Yield', supplyYield, supplyValue ? (supplyYield / supplyValue) * 100 : 0, '#35E27A'),
@@ -10722,10 +10652,22 @@ function protocolAprBreakdown(p) {
     if (suppliedApr === null && borrowedApr === null && totalApr === null && !otherWeight) return null;
     return { suppliedApr, borrowedApr, totalApr, otherApr: otherWeight ? otherWeighted / otherWeight : null };
 }
-function dashAprHtml(apr) {
-    if (apr === null || apr === undefined || !Number.isFinite(Number(apr))) return '<span class="apr-badge neu">-</span>';
+function dashAprHtml(apr, opts = {}) {
+    const plain = !!opts.plain;
+    if (apr === null || apr === undefined || !Number.isFinite(Number(apr))) {
+        return plain ? '—' : '<span class="apr-badge neu">-</span>';
+    }
     const n = Number(apr), cls = n > 0 ? 'pos' : n < 0 ? 'neg' : 'neu', sign = n > 0 ? '+' : '';
+    if (plain) return `<span class="defi-apr-plain ${cls}">${sign}${n.toFixed(1)}%</span>`;
     return `<span class="apr-badge ${cls}">${sign}${n.toFixed(1)}%</span>`;
+}
+function promoteProtocolsToFirstSnapshot(protocols) {
+    if (!Array.isArray(protocols) || !protocols.length) return;
+    const history = loadProtocolImportHistory();
+    const lastRegular = history.filter(e => !e.firstSnapshot).sort((a, b) => a.ts - b.ts).pop();
+    const existingFirst = history.find(e => e.firstSnapshot);
+    const snapTs = lastRegular?.ts ?? existingFirst?.ts ?? Date.now();
+    saveProtocolImportHistory(protocols, { ts: snapTs, firstSnapshot: true });
 }
 function protocolSectionKeyPrefix(p, section) {
     const sectionType = section?.type || 'Yield';
@@ -10768,49 +10710,15 @@ function lendingSectionApyBreakdown(p, section) {
 }
 function lendingApyStripHtml(breakdown) {
     if (!breakdown) return '';
-    return `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.25rem 0 0.45rem;">
-        <span class="apr-badge neu">Total APY ${dashAprHtml(breakdown.totalApr)}</span>
-        ${breakdown.suppliedApr !== null ? `<span class="apr-badge pos">Supply APY ${dashAprHtml(breakdown.suppliedApr)}</span>` : ''}
-        ${breakdown.borrowedApr !== null ? `<span class="apr-badge neg">Borrow APY ${dashAprHtml(breakdown.borrowedApr)}</span>` : ''}
+    return `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.25rem 0 0.45rem;font-size:0.78rem;color:var(--t2);">
+        Total APY ${dashAprHtml(breakdown.totalApr)}
     </div>`;
 }
-function protocolTotalApyHtml(p, compact=false, idx=null) {
+function protocolTotalApyHtml(p, compact=false) {
     const breakdown = protocolAprBreakdown(p);
     if (!breakdown) return '<span class="apr-badge neu">-</span>';
     const total = dashAprHtml(breakdown.totalApr);
-    const hasLoop = breakdown.suppliedApr !== null || breakdown.borrowedApr !== null;
-    if (!hasLoop || idx === null) {
-        if (!hasLoop) return `<span style="display:flex;align-items:center;gap:0.25rem">Total ${total}</span>`;
-        // compact (loops page) — keep old inline style
-        const supply = breakdown.suppliedApr !== null ? `Supply ${dashAprHtml(breakdown.suppliedApr)}` : '';
-        const borrow = breakdown.borrowedApr !== null ? `Borrow ${dashAprHtml(breakdown.borrowedApr)}` : '';
-        return `<div style="display:flex;flex-direction:${compact?'column':'row'};gap:0.22rem;align-items:flex-start;flex-wrap:wrap">
-            <span style="display:flex;align-items:center;gap:0.25rem">Total ${total}</span>
-            <span style="display:flex;align-items:center;gap:0.22rem;opacity:0.82;font-size:0.72rem">${supply}</span>
-            <span style="display:flex;align-items:center;gap:0.22rem;opacity:0.82;font-size:0.72rem">${borrow}</span>
-        </div>`;
-    }
-    const supplyBadge = breakdown.suppliedApr !== null
-        ? `<span class="apr-badge pos" style="font-size:0.72rem">Supply ${dashAprHtml(breakdown.suppliedApr)}</span>` : '';
-    const borrowBadge = breakdown.borrowedApr !== null
-        ? `<span class="apr-badge neg" style="font-size:0.72rem">Borrow ${dashAprHtml(breakdown.borrowedApr)}</span>` : '';
-    return `<div>
-        <div style="display:flex;align-items:center;gap:0.25rem;flex-wrap:wrap">
-            <span style="display:flex;align-items:center;gap:0.25rem">Total ${total}</span>
-            <button class="apy-detail-btn" id="lapy-btn-${idx}"
-                onclick="event.stopPropagation();toggleLendingApyDetail(${idx})" title="Show Supply / Borrow APY">▼</button>
-        </div>
-        <div class="apy-detail-panel" id="lapy-${idx}">
-            ${supplyBadge}${borrowBadge}
-        </div>
-    </div>`;
-}
-function toggleLendingApyDetail(idx) {
-    const panel = document.getElementById('lapy-' + idx);
-    const btn   = document.getElementById('lapy-btn-' + idx);
-    if (!panel) return;
-    panel.classList.toggle('open');
-    if (btn) btn.classList.toggle('open');
+    return `<span style="display:flex;align-items:center;gap:0.25rem">Total ${total}</span>`;
 }
 function protocolDashboardApyHtml(p) {
     const breakdown = protocolAprBreakdown(p);
@@ -12958,8 +12866,8 @@ function renderProtocols() {
                 </div>
                 <div>${dashEsc(protocolPositionSummary(p))}</div>
                 <div><input class="defi-edit-input" type="number" min="0" step="0.01" value="${Number(netValue || 0).toFixed(2)}" aria-label="Edit ${dashEsc(p.name)} USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolEditable(${i},this.value)" onblur="updateProtocolEditable(${i},this.value)"></div>
-                <div>${dashAprHtml(breakdown.suppliedApr)}</div>
-                <div>${dashAprHtml(breakdown.borrowedApr)}</div>
+                <div>${dashAprHtml(breakdown.suppliedApr, { plain: true })}</div>
+                <div>${dashAprHtml(breakdown.borrowedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.totalApr)}</div>
                 <div>${health.cls ? `<span class="defi-health ${health.cls}">${health.label}<small>${health.word}</small></span>` : '-'}</div>
                 <div class="defi-proto-unlock-note">
@@ -12978,8 +12886,8 @@ function renderProtocols() {
     }).join('') + `<div class="defi-table-footer">
         <span>Total</span>
         <strong>${dashUsd(protocolTotal)}</strong>
-        <span>Supply ${dashAprHtml(totalBreakdown.supplyW ? totalBreakdown.supply / totalBreakdown.supplyW : null)}</span>
-        <span>Borrow ${dashAprHtml(totalBreakdown.borrowW ? totalBreakdown.borrow / totalBreakdown.borrowW : null)}</span>
+        <span>Supply ${dashAprHtml(totalBreakdown.supplyW ? totalBreakdown.supply / totalBreakdown.supplyW : null, { plain: true })}</span>
+        <span>Borrow ${dashAprHtml(totalBreakdown.borrowW ? totalBreakdown.borrow / totalBreakdown.borrowW : null, { plain: true })}</span>
         <span>Total ${dashAprHtml(totalBreakdown.totalW ? totalBreakdown.total / totalBreakdown.totalW : null)}</span>
     </div>`;
 }
@@ -13387,7 +13295,7 @@ function renderProtocolsSnapshot() {
     const snap = history.find(e => e.firstSnapshot);
 
     if (!snap) {
-        table.innerHTML = '<div class="empty-state"><div class="empty-icon">📸</div><div>No first snapshot saved yet.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">Use the Snapshot button or import with "First Snapshot" checked.</small></div></div>';
+        table.innerHTML = '<div class="empty-state"><div class="empty-icon">📸</div><div>No first snapshot saved yet.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">Import positions twice — the previous import becomes the First Snapshot baseline for yield/APR.</small></div></div>';
         return;
     }
 
@@ -21061,11 +20969,6 @@ function perpsRenderFundingForTimeWindow(data) {
     perpsRenderDailyFundingChart(series, perpsStatRangeLabel(_perpsStatRange));
 }
 
-/** Total PnL = rolling last-24h net (funding − fees), independent of the stat time window. */
-function perpsRolling24hPnlSeries(data) {
-    return perpsFilterDailySeries(data?.dailyFundingSeries || [], '1d');
-}
-
 function perpsSyncTotalPnlStat(series, rangeLabel) {
     const totals = perpsSumDailyFundingSeries(series, true);
     const totalPnl = series.length ? totals.net : null;
@@ -21086,9 +20989,9 @@ function perpsSyncTotalPnlStat(series, rangeLabel) {
     return { totalPnl, chartTotals: totals };
 }
 
-function perpsSyncTotalPnlRolling24h(data) {
-    const series = perpsRolling24hPnlSeries(data || _perpsLastData);
-    return perpsSyncTotalPnlStat(series, '24h');
+function perpsSyncTotalPnlForRange(data, range) {
+    const series = perpsFilterDailySeries((data || _perpsLastData)?.dailyFundingSeries || [], range);
+    return perpsSyncTotalPnlStat(series, perpsStatRangeLabel(range));
 }
 
 function perpsFilterDailySeries(series, range) {
@@ -22132,7 +22035,6 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
         if (totalEl) { totalEl.textContent = '—'; totalEl.className = 'perps-pnl-total'; }
         const noteEl = document.getElementById('perpsDailyFundNote');
         if (noteEl) noteEl.textContent = 'No funding payments in selected range';
-        perpsSyncTotalPnlRolling24h(_perpsLastData);
         return;
     }
     const chart = perpsBuildDailyFundingBars(points, _perpsDailyFundShowFees);
@@ -22231,7 +22133,6 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
         wrap.onmouseleave = () => { if (tip) tip.style.display = 'none'; };
     }
     _perpsDailyFundChartState = chart;
-    perpsSyncTotalPnlRolling24h(_perpsLastData);
 }
 
 function perpsBuildChart(series, netSeries) {
@@ -23205,7 +23106,7 @@ function perpsRenderStatsBar(data) {
             aprSub.textContent = `${stats.rangeLabel} · need equity snapshots in window`;
         }
     }
-    perpsSyncTotalPnlRolling24h(data);
+    perpsSyncTotalPnlForRange(data, _perpsStatRange);
 }
 
 function perpsSetPositionsTab(tab, btn) {
