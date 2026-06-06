@@ -19,6 +19,8 @@ const {
   filterFullyClosedPairs,
   mergeNadoMatches,
   pairOpenedAtMs,
+  computeNadoLiquidationPx,
+  estimateHyperliquidLiquidationPx,
 } = require('../lib/perps.js');
 const aaveProxyHandler = require('../api/aave-proxy.js');
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -618,9 +620,11 @@ assert.match(indexHtml, /hyperliquidMarkPx/, 'Hyperliquid current price must fal
 assert.match(perpsJs, /function liquidationPriceFrom\(obj, pxFn = v => firstNumber\(v\)\)/, 'position mapping must use a tolerant liquidation price extractor');
 assert.match(perpsJs, /estimatedLiquidationPrice/, 'liquidation price extraction must check common estimated liquidation aliases');
 assert.match(perpsJs, /obj\?\.balance\?\.\[key\]/, 'liquidation price extraction must check nested balance fields');
-assert.match(perpsJs, /function nadoLiquidationPriceFrom\(balanceRow\)/, 'NADO liquidation price extraction must handle x18 and normal price fields safely');
-assert.match(perpsJs, /liquidationPx: liquidationPriceFrom\(pos\)/, 'Hyperliquid position mapping must preserve liquidation price');
-assert.match(perpsJs, /liquidationPx: nadoLiquidationPriceFrom\(b\)/, 'NADO position mapping must preserve liquidation price fields');
+assert.match(perpsJs, /function nadoLiquidationPriceFrom\(balanceRow, ctx = null\)/, 'NADO liquidation price extraction must handle x18, direct fields, and computed fallback');
+assert.match(perpsJs, /function estimateHyperliquidLiquidationPx\(pos, markPx = null\)/, 'Hyperliquid must estimate liquidation when API returns null');
+assert.match(perpsJs, /liquidationPx: estimateHyperliquidLiquidationPx\(/, 'Hyperliquid position mapping must preserve or estimate liquidation price');
+assert.match(perpsJs, /liquidationPx: nadoLiquidationPriceFrom\(b, \{/, 'NADO position mapping must compute liquidation from maintenance health');
+assert.match(perpsJs, /function computeNadoLiquidationPx\(/, 'NADO liquidation must be computable from oracle and maintenance health');
 assert.match(perpsJs, /hyperliquidMarkPx: hl\?\.markPx \?\? null/, 'rate spread rows must expose Hyperliquid mark price for position rows');
 assert.match(indexHtml, /perpsRateSpreadRow\(p\.symbol\)/, 'Current APR must fall back to the latest rate-spread row');
 assert.match(indexHtml, /rateA \?\? p\.fundingRate8hA/, 'live APR polling must preserve previous leg rates when a response is partial');
@@ -685,6 +689,29 @@ assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketI
     nado: { ONDO: { symbol: 'ONDO-PERP', size: 28000 } },
   });
   assert.equal(filtered.length, 0, 'closed tab must hide rounds while either venue still holds size');
+}
+
+{
+  const nadoLiq = computeNadoLiquidationPx({
+    amount: 200000,
+    oracle: 0.323475,
+    maintenanceHealth: 5000,
+    longWeightMaint: 0.95,
+    shortWeightMaint: 1.05,
+  });
+  assert.ok(nadoLiq > 0 && nadoLiq < 0.323475, 'NADO long liquidation must sit below oracle');
+
+  const hlLiq = estimateHyperliquidLiquidationPx({
+    szi: '590000',
+    entryPx: '0.03146',
+    marginUsed: '516.57',
+    maxLeverage: 5,
+    liquidationPx: null,
+  }, 0.03146);
+  assert.ok(hlLiq > 0 && hlLiq < 0.03146, 'HL cross long must estimate liquidation below mark when API is null');
+
+  const hlDirect = estimateHyperliquidLiquidationPx({ liquidationPx: '0.669877', szi: '-1000' });
+  assert.equal(hlDirect, 0.669877, 'HL estimator must prefer API liquidation when present');
 }
 
 {
