@@ -5324,6 +5324,10 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loops-panel-head { min-height:56px; display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.86rem 1.08rem; border-bottom:1px solid rgba(148,163,184,0.13); background:rgba(7,18,26,0.72); }
 .loops-panel-title { display:flex; align-items:baseline; gap:0.72rem; font-family:var(--ff-display); font-size:1.02rem; line-height:1; font-weight:850; letter-spacing:0.1em; text-transform:uppercase; color:var(--t1); }
 .loops-count { padding:0.18rem 0.56rem; border:1px solid rgba(56,189,248,0.24); border-radius:5px; background:rgba(56,189,248,0.08); color:var(--sky); font-family:var(--ff-mono); font-size:0.66rem; font-weight:850; letter-spacing:0; text-transform:none; }
+.loops-head-actions { display:flex; align-items:center; justify-content:flex-end; gap:0.55rem; flex-wrap:wrap; }
+.loops-sync-btn { border:1px solid rgba(95,205,190,0.25); background:rgba(95,205,190,0.08); color:var(--teal); border-radius:7px; padding:0.38rem 0.62rem; font-family:var(--ff-mono); font-size:0.62rem; font-weight:850; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; }
+.loops-sync-btn.secondary { border-color:rgba(148,163,184,0.18); background:rgba(255,255,255,0.03); color:var(--t3); }
+.loops-sync-btn:disabled { opacity:0.55; cursor:wait; }
 .loops-updated { color:var(--t3); font-family:var(--ff-mono); font-size:0.68rem; font-weight:650; }
 .loops-grid { display:grid; grid-template-columns:1fr; gap:12px; padding:12px; }
 .loop-card { min-width:0; overflow:hidden; padding:0; border:1px solid rgba(110,231,216,0.15); border-radius:7px; background:linear-gradient(180deg, rgba(8,25,35,.98), rgba(5,16,23,.99)); }
@@ -6186,7 +6190,11 @@ body[data-active-tab="loops"] .loop-pos-val,
           <div class="loops-panel">
             <div class="loops-panel-head">
               <div class="loops-panel-title">Loops <span class="loops-count" id="loopsCount">0 positions</span></div>
-              <div class="loops-updated" id="loopsUpdated">waiting for data</div>
+              <div class="loops-head-actions">
+                <button type="button" class="loops-sync-btn secondary" onclick="openWatcherWalletModal('yield')">Yield wallets</button>
+                <button type="button" class="loops-sync-btn" id="loopsSyncBtn" onclick="syncLoopApiPositions()">Sync live</button>
+                <div class="loops-updated" id="loopsUpdated">waiting for data</div>
+              </div>
             </div>
             <div id="loopsGrid" class="loops-grid"></div>
           </div>
@@ -8535,7 +8543,7 @@ function switchTab(tab, opts = {}) {
     if (_pc) _pc.classList.toggle('tab-watcher', tab === 'watcher');
     if (_pc) _pc.classList.toggle('tab-perps', tab === 'perps');
     if (tab === 'terminal') { terminalRenderAlerts(); }
-    if (tab === 'loops') { renderLoops(); }
+    if (tab === 'loops') { renderLoops(); maybeAutoSyncLoopPositions(); }
     if (tab === 'prediction') {
         renderPredSubtabs();
         renderPredictionMarkets();
@@ -10876,6 +10884,157 @@ function lendingApyStripHtml(breakdown) {
         Total APY ${dashAprHtml(breakdown.totalApr)}
     </div>`;
 }
+let loopApiState = {
+    loading: false,
+    triedAuto: false,
+    updatedAt: null,
+    positions: [],
+    errors: [],
+    coverage: null,
+};
+
+function loopYieldWalletAddresses() {
+    const wallets = Array.isArray(watcherWallets) ? watcherWallets : [];
+    return [...new Set(wallets
+        .filter(w => (w.category || '').toLowerCase() === 'yield')
+        .map(w => String(w.address || '').trim())
+        .filter(w => /^0x[a-fA-F0-9]{40}$/.test(w)))];
+}
+
+function loopApiShortWallet(address) {
+    const a = String(address || '');
+    return a.length > 12 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a;
+}
+
+function loopApiToDisplayPosition(pos) {
+    const supplied = Array.isArray(pos.supplied) ? pos.supplied : [];
+    const borrowed = Array.isArray(pos.borrowed) ? pos.borrowed : [];
+    const suppliedPositions = supplied.map(item => ({
+        pool: `${item.symbol || 'Asset'}${item.role ? ' ' + item.role : ''}`,
+        tokens: item.symbol ? [`${Number(item.value || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })} ${item.symbol}`] : [],
+        value: Number(item.value || 0),
+        liveApy: item.apy,
+        sub: 'Supplied',
+    }));
+    const borrowedPositions = borrowed.map(item => ({
+        pool: item.symbol || 'Debt',
+        tokens: item.symbol ? [`${Number(item.value || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })} ${item.symbol}`] : [],
+        value: Number(item.value || 0),
+        liveApy: item.apy,
+        sub: 'Borrowed',
+    }));
+    const totalApr = Number(pos.netApy);
+    const suppliedApr = Number(pos.supplyApy);
+    const borrowedApr = Number(pos.borrowApy);
+    return {
+        p: { name: pos.protocol || 'Protocol' },
+        sectionLabel: pos.marketName || pos.marketId || 'Live position',
+        netValue: Number(pos.netValue || 0),
+        totalSupplied: Number(pos.totalSupplied || 0),
+        totalBorrowed: Number(pos.totalBorrowed || 0),
+        suppliedPositions,
+        borrowedPositions,
+        health: pos.health,
+        apy: {
+            totalApr: Number.isFinite(totalApr) ? totalApr : null,
+            suppliedApr: Number.isFinite(suppliedApr) ? suppliedApr : null,
+            borrowedApr: Number.isFinite(borrowedApr) ? borrowedApr : null,
+        },
+        network: [pos.chainName || pos.chainId, 'Live API', loopApiShortWallet(pos.wallet)].filter(Boolean).join(' - '),
+        live: true,
+        raw: pos,
+    };
+}
+
+function loopImportedPositions() {
+    const loops = [];
+    for (const p of data.protocols || []) {
+        if (!p.sections) continue;
+        const lendingSections = p.sections.filter(s => s.type === 'Lending' || s.type === 'Leveraged Farming');
+        lendingSections.forEach((sec, secIndex) => {
+            let totalSupplied = 0, totalBorrowed = 0;
+            const suppliedPositions = [], borrowedPositions = [];
+            let health = sec.health ? parseFloat(sec.health) : null;
+            for (const pos of (sec.positions || [])) {
+                const sub = String(pos.sub || '').toLowerCase();
+                if (sub === 'supplied') {
+                    totalSupplied += protocolPositionValue(pos);
+                    suppliedPositions.push(pos);
+                } else if (sub === 'borrowed') {
+                    totalBorrowed += protocolPositionValue(pos);
+                    borrowedPositions.push(pos);
+                }
+            }
+            if (!borrowedPositions.length) return;
+            if (!health && p.chain?.includes('Health')) {
+                const m = p.chain.match(/[\d.]+/);
+                if (m) health = parseFloat(m[0]);
+            }
+            const sectionLabel = lendingSections.length > 1
+                ? `${sec.type || 'Lending'} ${secIndex + 1}`
+                : (sec.type || 'Lending');
+            loops.push({
+                p,
+                sectionLabel,
+                netValue: totalSupplied - totalBorrowed,
+                totalSupplied,
+                totalBorrowed,
+                suppliedPositions,
+                borrowedPositions,
+                health,
+                apy: lendingSectionApyBreakdown(p, sec),
+                network: protocolNetworkLabel(p),
+                live: false,
+            });
+        });
+    }
+    return loops;
+}
+
+async function syncLoopApiPositions({ silent = false } = {}) {
+    const wallets = loopYieldWalletAddresses();
+    const btn = document.getElementById('loopsSyncBtn');
+    if (!wallets.length) {
+        loopApiState.positions = [];
+        loopApiState.errors = [{ provider: 'loops', message: 'Add at least one Yield wallet first.' }];
+        if (!silent) alert('Add at least one Yield wallet first.');
+        renderLoops();
+        return;
+    }
+    loopApiState.loading = true;
+    if (btn) { btn.disabled = true; btn.textContent = 'Syncing...'; }
+    setTextSafe('loopsUpdated', 'syncing live APIs...');
+    try {
+        const qs = new URLSearchParams({ wallets: wallets.join(',') });
+        const response = await fetch('/api/loop-rates?' + qs.toString(), { cache: 'no-store', signal: AbortSignal.timeout(55000) });
+        const json = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(json.error || `Loop API HTTP ${response.status}`);
+        loopApiState.updatedAt = Number(json.updatedAt) || Date.now();
+        loopApiState.positions = Array.isArray(json.positions) ? json.positions : [];
+        loopApiState.errors = Array.isArray(json.errors) ? json.errors : [];
+        loopApiState.coverage = json.coverage || null;
+    } catch (e) {
+        loopApiState.errors = [{ provider: 'loops', message: e.message || 'Live loop sync failed' }];
+        if (!silent) alert('Live loop sync failed: ' + (e.message || e));
+    } finally {
+        loopApiState.loading = false;
+        if (btn) { btn.disabled = false; btn.textContent = 'Sync live'; }
+        renderLoops();
+    }
+}
+
+function maybeAutoSyncLoopPositions() {
+    if (loopApiState.triedAuto || loopApiState.loading) return;
+    if (!loopYieldWalletAddresses().length) return;
+    loopApiState.triedAuto = true;
+    syncLoopApiPositions({ silent: true });
+}
+
+function setTextSafe(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+}
+
 function protocolTotalApyHtml(p, compact=false) {
     const breakdown = protocolAprBreakdown(p);
     if (!breakdown) return '<span class="apr-badge neu">-</span>';
@@ -13273,46 +13432,13 @@ function renderLoops() {
     const healthClass = health => !Number.isFinite(health) ? '' : health >= 1.5 ? 'safe' : health >= 1.1 ? 'warn' : 'danger';
     const statusText = cls => cls === 'danger' ? 'Risk' : cls === 'warn' ? 'Watch' : 'Safe';
 
-    const loops = [];
-    for (const p of data.protocols || []) {
-        if (!p.sections) continue;
-        const lendingSections = p.sections.filter(s => s.type === 'Lending' || s.type === 'Leveraged Farming');
-        lendingSections.forEach((sec, secIndex) => {
-            let totalSupplied = 0, totalBorrowed = 0;
-            const suppliedPositions = [], borrowedPositions = [];
-            let health = sec.health ? parseFloat(sec.health) : null;
-            for (const pos of (sec.positions || [])) {
-                const sub = String(pos.sub || '').toLowerCase();
-                if (sub === 'supplied') {
-                    totalSupplied += protocolPositionValue(pos);
-                    suppliedPositions.push(pos);
-                } else if (sub === 'borrowed') {
-                    totalBorrowed += protocolPositionValue(pos);
-                    borrowedPositions.push(pos);
-                }
-            }
-            if (!borrowedPositions.length) return;
-            if (!health && p.chain?.includes('Health')) {
-                const m = p.chain.match(/[\d.]+/);
-                if (m) health = parseFloat(m[0]);
-            }
-            const sectionLabel = lendingSections.length > 1
-                ? `${sec.type || 'Lending'} ${secIndex + 1}`
-                : (sec.type || 'Lending');
-            loops.push({
-                p,
-                sectionLabel,
-                netValue: totalSupplied - totalBorrowed,
-                totalSupplied,
-                totalBorrowed,
-                suppliedPositions,
-                borrowedPositions,
-                health,
-                apy: lendingSectionApyBreakdown(p, sec),
-                network: protocolNetworkLabel(p),
-            });
-        });
-    }
+    const livePositions = Array.isArray(loopApiState.positions)
+        ? loopApiState.positions.filter(p => Number(p.totalBorrowed || 0) > 0.01)
+        : [];
+    const loops = livePositions.length
+        ? livePositions.map(loopApiToDisplayPosition)
+        : loopImportedPositions();
+    const usingLive = livePositions.length > 0;
 
     if (!loops.length) {
         if (countEl) countEl.textContent = '0 positions';
@@ -13323,8 +13449,9 @@ function renderLoops() {
         setText('loopsKpiApy', '-');
         setText('loopsKpiHealth', '-');
         setText('loopsKpiHealthSub', 'No health ratio');
-        setText('loopsUpdated', 'waiting for data');
-        grid.innerHTML = '<div class="empty-state"><div class="empty-icon">...</div><div>No loops detected.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">Import Lending protocol positions that include Supplied and Borrowed sides.</small></div></div>';
+        const hasWallets = loopYieldWalletAddresses().length > 0;
+        setText('loopsUpdated', hasWallets ? 'no live loops found' : 'waiting for data');
+        grid.innerHTML = `<div class="empty-state"><div class="empty-icon">...</div><div>No loops detected.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">${hasWallets ? 'Synced yield wallets did not return borrowed positions. Imported Lending positions are still used as fallback when available.' : 'Add Yield wallets or import Lending protocol positions that include Supplied and Borrowed sides.'}</small></div></div>`;
         return;
     }
 
@@ -13353,7 +13480,9 @@ function renderLoops() {
     setText('loopsKpiHealth', weakest ? Number(weakest.health).toFixed(2) : '-');
     setText('loopsKpiHealthSub', weakest ? `${weakest.p.name} - ${weakest.sectionLabel}` : 'No health ratio');
     setHealthClass(healthEl, weakestCls);
-    setText('loopsUpdated', 'updated now');
+    const liveStamp = loopApiState.updatedAt ? new Date(loopApiState.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    const fluidNote = usingLive && loopApiState.coverage?.fluidPositionSource === 'not-configured' ? ' - Fluid needs key' : '';
+    setText('loopsUpdated', usingLive ? `live ${liveStamp}${fluidNote}` : 'import fallback');
 
     function posRows(positions, side) {
         if (!positions.length) return '<div style="font-size:0.72rem;color:var(--t3);font-style:italic">-</div>';
@@ -16279,6 +16408,7 @@ function addWatcherWallet() {
 
     watcherWallets.push({ id: Date.now().toString(), address, label, category, addedAt: Date.now() });
     saveWatcherWallets();
+    if (category === 'yield') { loopApiState.triedAuto = false; loopApiState.positions = []; }
     if (addrEl) addrEl.value = '';
     if (labelEl) labelEl.value = '';
     renderWatcherWalletList(category);
@@ -16290,6 +16420,7 @@ function removeWatcherWallet(id) {
     const entry = watcherWallets.find(w => w.id === id);
     watcherWallets = watcherWallets.filter(w => w.id !== id);
     saveWatcherWallets();
+    if (entry?.category === 'yield') { loopApiState.triedAuto = false; loopApiState.positions = []; renderLoops(); }
     if (entry) renderWatcherWalletList(entry.category);
     renderWatcherWallets();
     renderWatcherPmActivity();

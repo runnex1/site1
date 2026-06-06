@@ -11,6 +11,7 @@ const {
   buildEquitySnapshotFromDashboard,
 } = require('../lib/perps');
 const { kvGet, kvSet } = require('../lib/kv');
+const { fetchLoopRates } = require('../lib/loop-rates');
 
 function isWallet(v) {
   return typeof v === 'string' && /^0x[a-fA-F0-9]{40}$/.test(v.trim());
@@ -139,7 +140,33 @@ async function handlePerps(req, res) {
   }
 }
 
+async function handleLoopRates(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  const wallets = String(req.query.wallets || req.query.wallet || '')
+    .split(',')
+    .map(w => w.trim())
+    .filter(Boolean);
+
+  try {
+    const data = await fetchLoopRates({ wallets });
+    return res.status(200).json(data);
+  } catch (e) {
+    console.error('[loop-rates]', e);
+    return res.status(500).json({ error: e.message || 'Loop rates fetch failed' });
+  }
+}
+
 module.exports = async function handler(req, res) {
+  if (req.query.loopRates === '1') {
+    return handleLoopRates(req, res);
+  }
+
   if (req.method === 'GET' && (
     req.query.wallet
     || req.query.hyperliquid

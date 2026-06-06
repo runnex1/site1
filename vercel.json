@@ -11,6 +11,7 @@
     }
   },
   "rewrites": [
-    { "source": "/api/perps", "destination": "/api/aave-proxy" }
+    { "source": "/api/perps", "destination": "/api/aave-proxy" },
+    { "source": "/api/loop-rates", "destination": "/api/aave-proxy?loopRates=1" }
   ]
 }
