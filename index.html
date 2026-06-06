@@ -2297,8 +2297,8 @@ body::after {
 }
 #defiTab .protocols-header,
 #defiTab .protocols-row {
-  min-width:1360px;
-  grid-template-columns: 170px 100px 95px 190px 120px 105px 105px 105px 85px 140px 28px;
+  min-width:1240px;
+  grid-template-columns: 170px 95px 190px 120px 105px 105px 105px 85px 140px 28px;
 }
 #defiTab .protocols-row.snapshot-row {
   min-width:760px;
@@ -2504,7 +2504,7 @@ body::after {
 #defiTab .protocols-header,
 #defiTab .protocols-row {
   min-width:0;
-  grid-template-columns: 1.15fr 0.72fr 0.62fr 1.1fr 0.82fr 0.72fr 0.72fr 0.72fr 0.62fr 0.78fr 34px;
+  grid-template-columns: 1.15fr 0.62fr 1.1fr 0.82fr 0.72fr 0.72fr 0.72fr 0.62fr 0.78fr 34px;
 }
 #defiTab .token-info {
   gap:0.58rem;
@@ -6065,19 +6065,27 @@ body[data-active-tab="loops"] .loop-pos-val,
             </div>
           </div>
           <!-- View toggle pill -->
-          <div id="protocolViewToggle" style="display:flex;align-items:center;gap:0;margin-bottom:0.85rem;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:8px;overflow:hidden;width:fit-content;">
-            <button id="btnCurrentPositions" onclick="switchProtocolView('current')"
-              style="padding:5px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;border-right:1px solid var(--border-mid);transition:all 0.15s;background:var(--teal-10);color:var(--teal);font-family:var(--ff-body);">
-              Current
-            </button>
-            <button id="btnSnapshotPositions" onclick="switchProtocolView('snapshot')"
-              style="padding:5px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;transition:all 0.15s;background:transparent;color:var(--t3);font-family:var(--ff-body);">
-              📸 First Snapshot
-            </button>
+          <div style="display:flex;align-items:center;gap:0.65rem;flex-wrap:wrap;margin-bottom:0.85rem;">
+            <div id="protocolViewToggle" style="display:flex;align-items:center;gap:0;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:8px;overflow:hidden;width:fit-content;">
+              <button id="btnCurrentPositions" onclick="switchProtocolView('current')" title=""
+                style="padding:5px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;border-right:1px solid var(--border-mid);transition:all 0.15s;background:var(--teal-10);color:var(--teal);font-family:var(--ff-body);">
+                Current
+              </button>
+              <button id="btnSnapshotPositions" onclick="switchProtocolView('snapshot')" title=""
+                style="padding:5px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;transition:all 0.15s;background:transparent;color:var(--t3);font-family:var(--ff-body);">
+                📸 Snapshot
+              </button>
+            </div>
+            <div id="protocolSnapshotPicker" style="display:none;align-items:center;gap:0.45rem;">
+              <label for="protocolSnapshotSelect" style="font-size:0.72rem;color:var(--t3);font-weight:600;">View snapshot</label>
+              <select id="protocolSnapshotSelect" onchange="selectProtocolSnapshot(this.value)"
+                style="background:var(--surf-2);border:1px solid var(--border-mid);border-radius:6px;color:var(--t1);padding:4px 8px;font-size:0.75rem;font-family:var(--ff-mono);min-width:220px;">
+              </select>
+            </div>
           </div>
           <div class="data-table">
             <div class="table-header protocols-header">
-              <div>Protocol</div><div>Network</div><div>Type</div><div>Position</div><div>Net Value</div><div>Supply APY</div><div>Borrow APY</div><div>Total APY</div><div>Health</div><div>Unlock / Notes</div><div></div>
+              <div>Protocol</div><div>Type</div><div>Position</div><div>Net Value</div><div>Supply APY</div><div>Borrow APY</div><div>Total APY</div><div>Health</div><div>Unlock / Notes</div><div></div>
             </div>
             <div id="protocolsTable"></div>
           </div>
@@ -8031,6 +8039,12 @@ function maybeSaveSnapshot() {
 const PROTO_HISTORY_KEY = 'protocol-import-history';
 const PROTO_HISTORY_VERSION = 3; // bump when key format changes
 const MAX_HISTORY_ENTRIES = 30; // keep last 30 imports
+const MAX_PROTOCOL_SNAPSHOTS = 5;
+const PROTO_APR_MIN_HOURS = 8;
+const PROTO_APR_MIN_DAYS = PROTO_APR_MIN_HOURS / 24;
+const PROTO_APR_MAX_ABS = 80;
+const PROTO_VALUE_CHANGE_MAX = 700;
+let _protocolSelectedSnapshotTs = null; // null = latest snapshot baseline for APR
 
 function buildPositionMap(protocols) {
     const positions = {};
@@ -8082,112 +8096,145 @@ function getPositionMapValue(positions, posKey) {
     return bestKey ? positions[bestKey] : null;
 }
 
-function saveProtocolImportHistory(protocols, { ts = Date.now(), firstSnapshot = false } = {}) {
-    try {
-        // Always preserve the first snapshot regardless of version or cap
-        const prevHistory = loadProtocolImportHistory();
-        const existingFirstSnap = prevHistory.find(e => e.firstSnapshot);
-
-        let history = prevHistory.filter(e => e.v === PROTO_HISTORY_VERSION && !e.firstSnapshot);
-        const positions = buildPositionMap(protocols);
-        // For first snapshots, also store the full protocol objects so the snapshot view
-        // can render identically to the current view
-        const entry = {
-            v: PROTO_HISTORY_VERSION, ts, positions,
-            firstSnapshot: firstSnapshot || undefined,
-            ...(firstSnapshot ? { protocols: JSON.parse(JSON.stringify(protocols)) } : {})
-        };
-
-        if (firstSnapshot) {
-            // Replace existing first snapshot
-            history.unshift(entry);
-        } else {
-            // Re-prepend preserved first snapshot, then add new regular entry
-            if (existingFirstSnap) history.unshift(existingFirstSnap);
-            history.push(entry);
-            // Trim regular entries only (keep first snapshot)
-            const regularEntries = history.filter(e => !e.firstSnapshot);
-            while (regularEntries.length > MAX_HISTORY_ENTRIES) regularEntries.shift();
-            history = existingFirstSnap ? [existingFirstSnap, ...regularEntries] : regularEntries;
-        }
-
-        localStorage.setItem(PROTO_HISTORY_KEY, JSON.stringify(history));
-    } catch(e) { console.warn('Protocol history save failed:', e); }
+function isProtocolSnapshotEntry(e) {
+    return !!(e && (e.snapshot || e.firstSnapshot) && e.positions);
 }
 
 function loadProtocolImportHistory() {
-    try { return JSON.parse(localStorage.getItem(PROTO_HISTORY_KEY) || '[]'); }
-    catch(e) { return []; }
+    try {
+        const history = JSON.parse(localStorage.getItem(PROTO_HISTORY_KEY) || '[]');
+        return history.map(e => {
+            if (e.firstSnapshot && !e.snapshot) {
+                const next = { ...e, snapshot: true };
+                delete next.firstSnapshot;
+                return next;
+            }
+            return e;
+        });
+    } catch(e) { return []; }
 }
 
-/**
- * For a given "ProtocolName|||PoolName" key, find the best pair of history
- * entries to compute APR.
- * Priority: pair with distance 7–9 days. Fallback: closest pair >= 2 days.
- * Returns { apr: number|null, daysDiff: number|null, oldTs, newTs }
- */
-function calcPositionAPR(posKey) {
-    const history = loadProtocolImportHistory();
-    const allEntries = history.filter(e => getPositionMapValue(e.positions, posKey) !== null);
-    const firstSnap  = allEntries.find(e => e.firstSnapshot);
-    let   regular    = allEntries.filter(e => !e.firstSnapshot).sort((a, b) => a.ts - b.ts);
+function getProtocolSnapshots() {
+    return loadProtocolImportHistory()
+        .filter(e => isProtocolSnapshotEntry(e) && e.v === PROTO_HISTORY_VERSION)
+        .sort((a, b) => Number(b.ts) - Number(a.ts))
+        .slice(0, MAX_PROTOCOL_SNAPSHOTS);
+}
 
-    // Always require a first snapshot
-    if (!firstSnap) return { apr: null };
+function getProtocolRegularImports() {
+    return loadProtocolImportHistory()
+        .filter(e => !isProtocolSnapshotEntry(e) && e.v === PROTO_HISTORY_VERSION && e.positions)
+        .sort((a, b) => Number(a.ts) - Number(b.ts));
+}
 
-    // If no regular import exists, synthesise one from live data.protocols
-    if (regular.length < 1) {
-        const livePositions = buildPositionMap(data.protocols);
-        if (getPositionMapValue(livePositions, posKey) === null) return { apr: null };
-        regular = [{ ts: Date.now(), positions: livePositions, firstSnapshot: false }];
+function getLatestProtocolImportTs() {
+    const regular = getProtocolRegularImports();
+    const ts = regular.length ? Number(regular[regular.length - 1].ts) : NaN;
+    return Number.isFinite(ts) ? ts : Date.now();
+}
+
+function formatProtocolImportTs(ts) {
+    if (!Number.isFinite(Number(ts))) return '';
+    return new Date(Number(ts)).toLocaleString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', hour12: true
+    });
+}
+
+function getAprBaselineSnapshot() {
+    const snaps = getProtocolSnapshots();
+    if (!snaps.length) return null;
+    if (_protocolSelectedSnapshotTs) {
+        return snaps.find(s => Number(s.ts) === Number(_protocolSelectedSnapshotTs)) || snaps[0];
     }
+    return snaps[0];
+}
 
+function getProtocolSnapshotForView() {
+    const snaps = getProtocolSnapshots();
+    if (!snaps.length) return null;
+    const targetTs = _protocolSelectedSnapshotTs || snaps[0].ts;
+    return snaps.find(s => Number(s.ts) === Number(targetTs)) || snaps[0];
+}
+
+function saveProtocolSnapshot(protocols, ts = Date.now()) {
+    try {
+        const prev = loadProtocolImportHistory();
+        const snapshots = prev.filter(e => isProtocolSnapshotEntry(e) && e.v === PROTO_HISTORY_VERSION);
+        const regular = prev.filter(e => !isProtocolSnapshotEntry(e) && e.v === PROTO_HISTORY_VERSION);
+        const entry = {
+            v: PROTO_HISTORY_VERSION,
+            ts,
+            snapshot: true,
+            positions: buildPositionMap(protocols),
+            protocols: JSON.parse(JSON.stringify(protocols))
+        };
+        const nextSnaps = [entry, ...snapshots.filter(s => Number(s.ts) !== Number(ts))]
+            .sort((a, b) => Number(b.ts) - Number(a.ts))
+            .slice(0, MAX_PROTOCOL_SNAPSHOTS);
+        localStorage.setItem(PROTO_HISTORY_KEY, JSON.stringify([...nextSnaps, ...regular]));
+    } catch(e) { console.warn('Protocol snapshot save failed:', e); }
+}
+
+function saveProtocolImportHistory(protocols, { ts = Date.now() } = {}) {
+    try {
+        const prev = loadProtocolImportHistory();
+        const snapshots = prev.filter(e => isProtocolSnapshotEntry(e) && e.v === PROTO_HISTORY_VERSION);
+        let regular = prev.filter(e => !isProtocolSnapshotEntry(e) && e.v === PROTO_HISTORY_VERSION);
+        regular.push({
+            v: PROTO_HISTORY_VERSION,
+            ts,
+            positions: buildPositionMap(protocols)
+        });
+        while (regular.length > MAX_HISTORY_ENTRIES) regular.shift();
+        localStorage.setItem(PROTO_HISTORY_KEY, JSON.stringify([...snapshots, ...regular]));
+    } catch(e) { console.warn('Protocol history save failed:', e); }
+}
+
+function promoteProtocolsToSnapshot(protocols) {
+    if (!Array.isArray(protocols) || !protocols.length) return;
+    const lastRegular = getProtocolRegularImports().pop();
+    const existing = getProtocolSnapshots().find(s => lastRegular && Number(s.ts) === Number(lastRegular.ts));
+    const snapTs = lastRegular?.ts ?? Date.now();
+    if (existing) return;
+    saveProtocolSnapshot(protocols, snapTs);
+}
+
+/** APR between selected snapshot baseline and current live positions. */
+function calcPositionAPR(posKey) {
+    const baseline = getAprBaselineSnapshot();
+    if (!baseline) return { apr: null };
+
+    const newerPositions = buildPositionMap(data.protocols);
+    const newerTs = getLatestProtocolImportTs();
     const MS_PER_DAY = 86400000;
 
-    const newer = regular[regular.length - 1];
-    const older = firstSnap;
-
-    // Need at least a small time gap — clamp to minimum 1 day so APR formula works
-    const rawDiff = (newer.ts - older.ts) / MS_PER_DAY;
+    const rawDiff = (newerTs - Number(baseline.ts)) / MS_PER_DAY;
     if (rawDiff < 0) return { apr: null };
-    const daysDiff = Math.max(rawDiff, 1);
+    const daysDiff = Math.max(rawDiff, PROTO_APR_MIN_DAYS);
 
-    const newerVal = getPositionMapValue(newer.positions, posKey);
-    const olderVal = getPositionMapValue(older.positions, posKey);
-    if (!olderVal) return { apr: null };
+    const newerVal = getPositionMapValue(newerPositions, posKey);
+    const olderVal = getPositionMapValue(baseline.positions, posKey);
+    if (!olderVal || newerVal === null) return { apr: null };
 
-    // Ignore positions where the absolute value change exceeds $500
-    // (likely a deposit/withdrawal, not yield)
-    if (Math.abs(newerVal - olderVal) > 500) return { apr: null };
+    if (Math.abs(newerVal - olderVal) > PROTO_VALUE_CHANGE_MAX) return { apr: null };
 
     const apr = ((newerVal - olderVal) / olderVal) * (365 / daysDiff) * 100;
+    if (Math.abs(apr) >= PROTO_APR_MAX_ABS) return { apr: null };
 
-    // Ignore implausibly high/low APRs (likely noise or bad data)
-    if (Math.abs(apr) >= 60) return { apr: null };
-
-    return { apr, daysDiff };
+    return { apr, daysDiff, oldTs: baseline.ts, newTs: newerTs };
 }
 
 function calcDefi24hYield() {
-    const history = loadProtocolImportHistory();
-    const firstSnap = history.find(e => e.firstSnapshot);
-    if (!firstSnap || !firstSnap.positions) return { value: null, count: 0, daysDiff: null };
+    const baseline = getAprBaselineSnapshot();
+    if (!baseline?.positions) return { value: null, count: 0, daysDiff: null, latestTs: null, baselineTs: null };
 
-    const latestSnap = history
-        .filter(e => !e.firstSnapshot && e.positions && Number.isFinite(Number(e.ts)))
-        .sort((a, b) => Number(a.ts) - Number(b.ts))
-        .pop();
-    if (!latestSnap) return { value: null, count: 0, daysDiff: null };
+    const currentPositions = buildPositionMap(data.protocols);
+    const latestTs = getLatestProtocolImportTs();
+    const rawDiff = (latestTs - Number(baseline.ts)) / 86400000;
+    if (!Number.isFinite(rawDiff) || rawDiff <= 0) return { value: null, count: 0, daysDiff: null, latestTs: null, baselineTs: baseline.ts };
 
-    const latestPositions = latestSnap.positions;
-    if (!latestPositions || typeof latestPositions !== 'object') {
-        return { value: null, count: 0, daysDiff: null };
-    }
-    const rawDiff = (Number(latestSnap.ts) - Number(firstSnap.ts)) / 86400000;
-    if (!Number.isFinite(rawDiff) || rawDiff <= 0) return { value: null, count: 0, daysDiff: null };
-    const daysDiff = Math.max(rawDiff, 1 / 24);
-
-    let dailyYield = 0;
+    let periodYield = 0;
     let count = 0;
 
     for (const p of data.protocols) {
@@ -8200,31 +8247,34 @@ function calcDefi24hYield() {
             const secIdx = sectionCounts[secType] > 1 ? `[${sectionCounts[secType]}]` : '';
             for (const pos of sec.positions) {
                 const key = `${p.name}|||${secType}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
-                let { apr } = calcPositionAPR(key);
-                if (apr === null || !(key in firstSnap.positions) || !(key in latestPositions)) continue;
-
-                let delta = Number(latestPositions[key] || 0) - Number(firstSnap.positions[key] || 0);
-                if (pos.sub?.toLowerCase() === 'borrowed') delta = -delta;
-                dailyYield += delta / daysDiff;
+                const olderVal = getPositionMapValue(baseline.positions, key);
+                const newerVal = getPositionMapValue(currentPositions, key);
+                if (olderVal === null || newerVal === null) continue;
+                const aprCheck = calcPositionAPR(key);
+                if (aprCheck.apr === null) continue;
+                let delta = newerVal - olderVal;
+                if (String(pos.sub || '').toLowerCase() === 'borrowed') delta = -delta;
+                periodYield += delta;
                 count++;
             }
         }
     }
 
-    return { value: dailyYield, count, daysDiff, latestTs: Number(latestSnap.ts) || null };
+    return {
+        value: periodYield,
+        count,
+        daysDiff: Math.max(rawDiff, PROTO_APR_MIN_DAYS),
+        latestTs,
+        baselineTs: Number(baseline.ts) || null
+    };
 }
 
 function calcDefiSnapshotYieldPnl() {
-    const history = loadProtocolImportHistory();
-    const firstSnap = history.find(e => e.firstSnapshot && e.positions);
-    const latestSnap = history
-        .filter(e => !e.firstSnapshot && e.positions && Number.isFinite(Number(e.ts)))
-        .sort((a, b) => Number(a.ts) - Number(b.ts))
-        .pop();
-    if (!firstSnap || !latestSnap) return { value: 0, count: 0 };
+    const baseline = getAprBaselineSnapshot();
+    if (!baseline?.positions) return { value: 0, count: 0 };
+    const currentPositions = buildPositionMap(data.protocols);
     let value = 0;
     let count = 0;
-    const latestPositions = latestSnap.positions || {};
     for (const p of data.protocols || []) {
         if (!p.sections) continue;
         const sectionCounts = {};
@@ -8235,8 +8285,10 @@ function calcDefiSnapshotYieldPnl() {
             for (const pos of sec.positions || []) {
                 const key = `${p.name}|||${secType}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
                 const aprCheck = calcPositionAPR(key);
-                if (aprCheck.apr === null || !(key in firstSnap.positions) || !(key in latestPositions)) continue;
-                let delta = Number(latestPositions[key] || 0) - Number(firstSnap.positions[key] || 0);
+                const olderVal = getPositionMapValue(baseline.positions, key);
+                const newerVal = getPositionMapValue(currentPositions, key);
+                if (aprCheck.apr === null || olderVal === null || newerVal === null) continue;
+                let delta = newerVal - olderVal;
                 if (String(pos.sub || '').toLowerCase() === 'borrowed') delta = -delta;
                 if (!Number.isFinite(delta)) continue;
                 value += delta;
@@ -9617,6 +9669,7 @@ function processProtocolsImport() {
 
     let imported = 0;
     for (const block of protocolBlocks) {
+        if (/^nado/i.test(String(block.name || '').trim())) continue;
         const blockLines = rawLines.slice(block.start, block.end);
         const sections   = parsePositions(blockLines);
 
@@ -9651,7 +9704,7 @@ function processProtocolsImport() {
         imported++;
     }
 
-    if (previousProtocols.length) promoteProtocolsToFirstSnapshot(previousProtocols);
+    if (previousProtocols.length) promoteProtocolsToSnapshot(previousProtocols);
     saveProtocolImportHistory(data.protocols);
     saveData();
     updateUI();
@@ -10147,12 +10200,11 @@ window.updateUI = function updateUI() {
         dyVal.style.color = defiYield.value === null ? 'var(--t1)' : v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--t1)';
     }
     if (dySub) {
-        const basedOn = defiYield.latestTs
-            ? new Date(defiYield.latestTs).toLocaleDateString('en-US', { month:'short', day:'numeric' })
-            : null;
+        const periodLabel = defiYield.daysDiff ? protocolAprPeriodLabel() : null;
+        const baselineLabel = defiYield.baselineTs ? formatProtocolImportTs(defiYield.baselineTs) : null;
         dySub.textContent = defiYield.count
-            ? `${defiYield.count} APY position${defiYield.count === 1 ? '' : 's'} - based on ${basedOn || 'latest'} data`
-            : 'no APY baseline';
+            ? `${defiYield.count} position${defiYield.count === 1 ? '' : 's'} · ${periodLabel || 'period yield'}${baselineLabel ? ` · since ${baselineLabel}` : ''}`
+            : 'no snapshot baseline';
     }
 
     // DeFi side panels must render even if a later table/chart renderer throws
@@ -10341,8 +10393,8 @@ function updateDefiStandaloneNote(id, value) {
     note.updatedAt = Date.now();
     saveData();
 }
-function defiHasFirstSnapshot() {
-    return loadProtocolImportHistory().some(e => e.firstSnapshot && e.positions && typeof e.positions === 'object');
+function defiHasProtocolSnapshot() {
+    return getProtocolSnapshots().length > 0;
 }
 function defiScrollToProtocols() {
     switchTab('defi');
@@ -10368,13 +10420,13 @@ function renderDefiYieldPanel(avg) {
     const yieldPanel = document.getElementById('defiYieldBreakdownPanel');
     if (!yieldPanel) return;
     let supplyValue = 0, borrowValue = 0, supplyYield = 0, borrowCost = 0;
-    const hasSnapshot = defiHasFirstSnapshot();
+    const hasSnapshot = defiHasProtocolSnapshot();
     for (const p of data.protocols || []) {
         const b = protocolAprBreakdown(p);
         for (const sec of p.sections || []) for (const pos of sec.positions || []) {
             const val = Math.abs(protocolPositionValue(pos));
             const sub = String(pos.sub || '').toLowerCase();
-            if (sub === 'supplied') {
+            if (sub !== 'borrowed') {
                 supplyValue += val;
                 if (b && b.suppliedApr !== null && Number.isFinite(Number(b.suppliedApr)) && val) {
                     supplyYield += val * Number(b.suppliedApr) / 100;
@@ -10399,7 +10451,7 @@ function renderDefiYieldPanel(avg) {
         <div class="${pct >= 0 ? 'positive' : 'negative'}" style="font-family:var(--ff-mono);text-align:right">${Number.isFinite(pct) ? ((pct >= 0 ? '' : '-') + Math.abs(pct).toFixed(2) + '%') : '-'}</div>
     </div>`;
     const hint = !hasSnapshot
-        ? '<div class="dash-empty" style="padding:0.55rem 0 0.35rem;font-size:0.74rem;">Import protocol positions again to set a <strong>First Snapshot</strong> baseline and unlock APY-based yield estimates.</div>'
+        ? '<div class="dash-empty" style="padding:0.55rem 0 0.35rem;font-size:0.74rem;">Import protocol positions again to save a <strong>Snapshot</strong> baseline and unlock APY-based yield estimates.</div>'
         : '';
     yieldPanel.innerHTML = [
         row('Supply Yield', supplyYield, supplyValue ? (supplyYield / supplyValue) * 100 : 0, '#35E27A'),
@@ -10494,8 +10546,11 @@ function renderDefiCockpit() {
     const yv = Number(yield24h.value);
     setText('defiKpiYield', yield24h.value === null ? '$0' : dashSignedUsd(yv));
     setColor('defiKpiYield', yield24h.value === null ? 'var(--t1)' : yv > 0 ? 'var(--green)' : yv < 0 ? 'var(--red)' : 'var(--t1)');
-    const basedOn = yield24h.latestTs ? new Date(yield24h.latestTs).toLocaleDateString('en-US', { month:'short', day:'numeric' }) : null;
-    setText('defiKpiYieldSub', yield24h.count ? `${yield24h.count} APY position${yield24h.count === 1 ? '' : 's'} · based on ${basedOn || 'latest'}` : 'no APY baseline');
+    const baselineLabel = yield24h.baselineTs ? formatProtocolImportTs(yield24h.baselineTs) : null;
+    const periodLabel = yield24h.daysDiff ? protocolAprPeriodLabel() : null;
+    setText('defiKpiYieldSub', yield24h.count
+        ? `${yield24h.count} position${yield24h.count === 1 ? '' : 's'} · ${periodLabel || 'period yield'}${baselineLabel ? ` · since ${baselineLabel}` : ''}`
+        : 'no snapshot baseline');
     setText('defiKpiApy', avg === null ? '-' : `${avg > 0 ? '+' : ''}${avg.toFixed(1)}%`);
     setColor('defiKpiApy', avg === null ? 'var(--t1)' : avg > 0 ? 'var(--green)' : avg < 0 ? 'var(--red)' : 'var(--t1)');
     const stableExposure = stableRows.reduce((sum,x)=>sum+Number(x.value||0),0);
@@ -10618,7 +10673,6 @@ function protocolAprBreakdown(p) {
     if (!p?.sections?.length) return null;
     let suppliedWeight = 0, suppliedWeighted = 0;
     let borrowedWeight = 0, borrowedWeighted = 0;
-    let otherWeight = 0, otherWeighted = 0;
     const typeCounts = {};
     for (const sec of p.sections) {
         if (!sec.positions) continue;
@@ -10636,12 +10690,9 @@ function protocolAprBreakdown(p) {
                 apr = -Math.abs(apr);
                 borrowedWeighted += apr * val;
                 borrowedWeight += val;
-            } else if (sub === 'supplied') {
+            } else {
                 suppliedWeighted += apr * val;
                 suppliedWeight += val;
-            } else {
-                otherWeighted += apr * val;
-                otherWeight += val;
             }
         }
     }
@@ -10649,8 +10700,8 @@ function protocolAprBreakdown(p) {
     const borrowedApr = borrowedWeight ? borrowedWeighted / borrowedWeight : null;
     const total = protocolAprStats(p);
     const totalApr = total.apr;
-    if (suppliedApr === null && borrowedApr === null && totalApr === null && !otherWeight) return null;
-    return { suppliedApr, borrowedApr, totalApr, otherApr: otherWeight ? otherWeighted / otherWeight : null };
+    if (suppliedApr === null && borrowedApr === null && totalApr === null) return null;
+    return { suppliedApr, borrowedApr, totalApr };
 }
 function dashAprHtml(apr, opts = {}) {
     const plain = !!opts.plain;
@@ -10660,14 +10711,6 @@ function dashAprHtml(apr, opts = {}) {
     const n = Number(apr), cls = n > 0 ? 'pos' : n < 0 ? 'neg' : 'neu', sign = n > 0 ? '+' : '';
     if (plain) return `<span class="defi-apr-plain ${cls}">${sign}${n.toFixed(1)}%</span>`;
     return `<span class="apr-badge ${cls}">${sign}${n.toFixed(1)}%</span>`;
-}
-function promoteProtocolsToFirstSnapshot(protocols) {
-    if (!Array.isArray(protocols) || !protocols.length) return;
-    const history = loadProtocolImportHistory();
-    const lastRegular = history.filter(e => !e.firstSnapshot).sort((a, b) => a.ts - b.ts).pop();
-    const existingFirst = history.find(e => e.firstSnapshot);
-    const snapTs = lastRegular?.ts ?? existingFirst?.ts ?? Date.now();
-    saveProtocolImportHistory(protocols, { ts: snapTs, firstSnapshot: true });
 }
 function protocolSectionKeyPrefix(p, section) {
     const sectionType = section?.type || 'Yield';
@@ -12586,13 +12629,54 @@ function startLiveTokenPrices() {
 // =============================================================================
 // TOTAL DeFi APR
 // =============================================================================
-function firstProtocolSnapshotAgeLabel() {
-    const firstSnap = loadProtocolImportHistory().find(e => e.firstSnapshot && Number.isFinite(Number(e.ts)));
-    if (!firstSnap) return '';
-    const days = Math.max(0, (Date.now() - Number(firstSnap.ts)) / 86400000);
-    if (days < 1) return 'since <1 day';
-    const whole = Math.floor(days);
-    return `since ${whole} day${whole === 1 ? '' : 's'}`;
+function protocolAprPeriodLabel() {
+    const baseline = getAprBaselineSnapshot();
+    if (!baseline) return '';
+    const latestTs = getLatestProtocolImportTs();
+    const hours = Math.max((latestTs - Number(baseline.ts)) / 3600000, PROTO_APR_MIN_HOURS);
+    if (hours < 24) return `since ${Math.round(hours)}h`;
+    const days = Math.floor(hours / 24);
+    return `since ${days} day${days === 1 ? '' : 's'}`;
+}
+
+function updateProtocolTabTitles() {
+    const btnC = document.getElementById('btnCurrentPositions');
+    const btnS = document.getElementById('btnSnapshotPositions');
+    const currentTs = getLatestProtocolImportTs();
+    const baseline = getAprBaselineSnapshot();
+    if (btnC) btnC.title = currentTs ? `Imported ${formatProtocolImportTs(currentTs)}` : '';
+    if (btnS) btnS.title = baseline ? `Snapshot ${formatProtocolImportTs(baseline.ts)}` : '';
+}
+
+function renderProtocolSnapshotPicker() {
+    const picker = document.getElementById('protocolSnapshotPicker');
+    const select = document.getElementById('protocolSnapshotSelect');
+    const snaps = getProtocolSnapshots();
+    if (!picker || !select) return;
+    if (!snaps.length) {
+        picker.style.display = 'none';
+        select.innerHTML = '';
+        return;
+    }
+    picker.style.display = _protocolView === 'snapshot' ? 'flex' : 'none';
+    const selectedTs = _protocolSelectedSnapshotTs || snaps[0].ts;
+    select.innerHTML = snaps.map((snap, idx) => {
+        const label = `${idx === 0 && !_protocolSelectedSnapshotTs ? 'Latest · ' : ''}${formatProtocolImportTs(snap.ts)}`;
+        return `<option value="${snap.ts}"${Number(snap.ts) === Number(selectedTs) ? ' selected' : ''}>${label}</option>`;
+    }).join('');
+}
+
+function selectProtocolSnapshot(tsValue) {
+    const snaps = getProtocolSnapshots();
+    _protocolSelectedSnapshotTs = tsValue ? Number(tsValue) : null;
+    if (_protocolSelectedSnapshotTs && !snaps.some(s => Number(s.ts) === Number(_protocolSelectedSnapshotTs))) {
+        _protocolSelectedSnapshotTs = snaps[0]?.ts ?? null;
+    }
+    updateProtocolTabTitles();
+    updateTotalDefiApr();
+    if (_protocolView === 'snapshot') renderProtocolsSnapshot();
+    else renderProtocols();
+    try { renderDefiCockpit(); } catch (e) { console.warn('[DeFi cockpit refresh]', e); }
 }
 
 function updateTotalDefiApr() {
@@ -12620,7 +12704,7 @@ function updateTotalDefiApr() {
     el.style.color        = col;
     el.style.background   = bg;
     el.style.borderColor  = bdr;
-    const ageLabel = firstProtocolSnapshotAgeLabel();
+    const ageLabel = protocolAprPeriodLabel();
     el.textContent        = `avg APR ${sign}${avg.toFixed(1)}%${ageLabel ? ` (${ageLabel})` : ''}`;
 }
 
@@ -12851,7 +12935,6 @@ function renderProtocols() {
         const breakdown = protocolAprBreakdown(p) || {};
         const health = protocolHealthSummary(p);
         const netValue = protocolNetValue(p);
-        const network = protocolNetworkLabel(p);
 
         return `<div class="protocol-row-wrap">
             <div class="table-row protocols-row row-${typeKey}" ondblclick="deleteItem('protocols',${i})">
@@ -12859,7 +12942,6 @@ function renderProtocols() {
                     ${makeLogo(p.name, true, 30)}
                     <div class="token-name">${p.name}</div>
                 </div>
-                <div><span class="defi-network-pill">${dashEsc(network)}</span></div>
                 <div style="display:flex;flex-direction:column;gap:0.3rem;align-items:flex-start">
                     <span class="badge badge-${typeKey}">${dashEsc(p.type || '-')}</span>
                     ${expandBtn}
@@ -12890,6 +12972,8 @@ function renderProtocols() {
         <span>Borrow ${dashAprHtml(totalBreakdown.borrowW ? totalBreakdown.borrow / totalBreakdown.borrowW : null, { plain: true })}</span>
         <span>Total ${dashAprHtml(totalBreakdown.totalW ? totalBreakdown.total / totalBreakdown.totalW : null)}</span>
     </div>`;
+    updateProtocolTabTitles();
+    renderProtocolSnapshotPicker();
 }
 
 // =============================================================================
@@ -13037,7 +13121,7 @@ function renderLoops() {
     }).join('');
 }
 
-// ── Protocol view toggle (current vs. first snapshot) ────────────────────────
+// ── Protocol view toggle (current vs. snapshot) ────────────────────────────
 function renderLoops() {
     const grid = document.getElementById('loopsGrid');
     const countEl = document.getElementById('loopsCount');
@@ -13282,33 +13366,32 @@ function switchProtocolView(view) {
             btnC.style.color      = 'var(--t3)';
         }
     }
-    if (view === 'snapshot') {
-        renderProtocolsSnapshot();
-    } else {
-        renderProtocols();
-    }
+    updateProtocolTabTitles();
+    renderProtocolSnapshotPicker();
+    if (view === 'snapshot') renderProtocolsSnapshot();
+    else renderProtocols();
 }
 
 function renderProtocolsSnapshot() {
     const table = document.getElementById('protocolsTable');
-    const history = loadProtocolImportHistory();
-    const snap = history.find(e => e.firstSnapshot);
+    renderProtocolSnapshotPicker();
+    updateProtocolTabTitles();
+    const snap = getProtocolSnapshotForView();
 
     if (!snap) {
-        table.innerHTML = '<div class="empty-state"><div class="empty-icon">📸</div><div>No first snapshot saved yet.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">Import positions twice — the previous import becomes the First Snapshot baseline for yield/APR.</small></div></div>';
+        table.innerHTML = '<div class="empty-state"><div class="empty-icon">📸</div><div>No snapshot saved yet.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">Import positions twice — the previous import becomes a Snapshot baseline for yield/APR.</small></div></div>';
         return;
     }
 
-    // Use saved full protocol objects if available (new snapshots), otherwise fall back to flat map
     const snapProtocols = snap.protocols;
     if (!snapProtocols || !snapProtocols.length) {
-        table.innerHTML = '<div class="empty-state"><div class="empty-icon">📸</div><div>Snapshot has no protocol data.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">Re-save your snapshot to enable full view.</small></div></div>';
+        table.innerHTML = '<div class="empty-state"><div class="empty-icon">📸</div><div>Snapshot has no protocol data.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">Import again to capture a full snapshot.</small></div></div>';
         return;
     }
 
     const fmtV = v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const snapDate = new Date(snap.ts).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-    const grandTotal = snapProtocols.reduce((s, p) => s + p.value, 0);
+    const snapDateTime = formatProtocolImportTs(snap.ts);
+    const grandTotal = snapProtocols.reduce((s, p) => s + (Number(p.value) || 0), 0);
 
     // Render each protocol exactly like renderProtocols does
     const rowsHtml = [...snapProtocols].sort((a, b) => b.value - a.value).map((p, i) => {
@@ -13390,6 +13473,8 @@ function renderProtocolsSnapshot() {
             : '';
 
         const typeKey = (p.type || 'yield').toLowerCase().split(' ')[0];
+        const health = protocolHealthSummary(p);
+        const netValue = protocolNetValue(p);
         return `<div class="protocol-row-wrap">
             <div class="table-row protocols-row row-${typeKey}">
                 <div class="token-info">
@@ -13397,12 +13482,17 @@ function renderProtocolsSnapshot() {
                     <div class="token-name">${p.name}</div>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:0.3rem;align-items:flex-start">
-                    <span class="badge badge-${typeKey}">${p.type}</span>
+                    <span class="badge badge-${typeKey}">${dashEsc(p.type || '-')}</span>
                     ${expandBtn}
                 </div>
-                <div class="value">${fmtV(p.value)}</div>
+                <div>${dashEsc(protocolPositionSummary(p))}</div>
+                <div class="value">${fmtV(netValue)}</div>
+                <div>—</div>
+                <div>—</div>
                 <div><span class="apr-badge neu">—</span></div>
-                <div class="percentage" style="font-size:0.7rem;color:var(--t3);">${snapDate}</div>
+                <div>${health.cls ? `<span class="defi-health ${health.cls}">${health.label}<small>${health.word}</small></span>` : '-'}</div>
+                <div class="defi-proto-unlock-note"><span class="defi-unlock-text">${dashEsc(protocolUnlockSummary(p))}</span></div>
+                <div></div>
             </div>
             ${drawerHtml}
         </div>`;
@@ -13410,7 +13500,7 @@ function renderProtocolsSnapshot() {
 
     table.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;padding:0.55rem 1.5rem 0.6rem;font-size:0.72rem;color:var(--amber);font-family:var(--ff-mono);background:rgba(245,158,11,0.06);border-bottom:1px solid rgba(245,158,11,0.15);">
-            <span>📸 First Snapshot · ${snapDate}</span>
+            <span>📸 Snapshot · ${snapDateTime}</span>
             <span style="font-weight:700;">${fmtV(grandTotal)}</span>
         </div>
         ${rowsHtml}

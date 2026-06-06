@@ -739,4 +739,17 @@ assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketI
   assert.equal(merged.totalFees, 4);
 }
 
+assert.match(indexHtml, /const PROTO_APR_MIN_HOURS = 8;/, 'protocol APR must use an 8-hour minimum elapsed window');
+assert.match(indexHtml, /const PROTO_APR_MAX_ABS = 80;/, 'protocol APR must hide rates at or above 80%');
+assert.match(indexHtml, /const PROTO_VALUE_CHANGE_MAX = 700;/, 'protocol APR must hide positions with value changes above $700');
+assert.match(indexHtml, /const MAX_PROTOCOL_SNAPSHOTS = 5;/, 'protocol snapshots must keep up to five previous imports');
+assert.match(indexHtml, /function getAprBaselineSnapshot\(\)/, 'protocol APR must use the selected snapshot baseline');
+assert.match(indexHtml, /function selectProtocolSnapshot\(tsValue\)/, 'snapshot picker must drive the APR baseline on Current');
+assert.ok(indexHtml.includes("if (/^nado/i.test(String(block.name || '').trim())) continue;"), 'Nado imports must be skipped during protocol text import');
+assert.match(indexHtml, /📸 Snapshot/, 'protocol snapshot tab must be renamed to Snapshot');
+assert.doesNotMatch(indexHtml, /📸 First Snapshot/, 'protocol snapshot tab must not keep the First Snapshot label');
+assert.match(indexHtml, /<div>Protocol<\/div><div>Type<\/div><div>Position<\/div>/, 'protocol positions table must drop the Network column');
+assert.match(indexHtml, /periodYield \+= delta;/, '24h yield must use raw period deltas instead of dividing by elapsed time');
+assert.match(indexHtml, /suppliedWeighted \+= apr \* val;\s*\n\s*suppliedWeight \+= val;/, 'supply APY must include all non-borrowed protocol positions');
+
 console.log('PASS: perps accounting and dashboard regression checks');
