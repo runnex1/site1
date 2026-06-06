@@ -831,7 +831,7 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-token-meta { font-family:var(--ff-mono); font-size:0.58rem; color:#9dacbb; margin-top:0.12rem; }
 .perps-pos-status-row { display:flex; align-items:center; gap:0.35rem; flex-wrap:wrap; margin-top:0.2rem; }
 .perps-pos-pill { display:inline-flex; font-family:var(--ff-mono); font-size:0.55rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; padding:0.12rem 0.4rem; border-radius:999px; border:1px solid rgba(89,240,200,0.28); color:#59f0c8; background:rgba(89,240,200,0.08); }
-.perps-pos-mid-pill { display:inline-flex; align-items:center; gap:0.22rem; font-family:var(--ff-mono); font-size:0.55rem; font-weight:800; letter-spacing:0.04em; padding:0.12rem 0.4rem; border-radius:999px; border:1px solid rgba(134,159,179,0.2); color:#9dacbb; background:rgba(255,255,255,0.035); }
+.perps-pos-live-px { font-family:var(--ff-mono); font-size:0.58rem; font-weight:700; color:#c5d0db; letter-spacing:0.02em; }
 .perps-pos-legs { display:flex; flex-direction:column; gap:0.35rem; }
 .perps-pos-leg { display:flex; align-items:center; justify-content:space-between; font-family:var(--ff-mono); font-size:0.68rem; }
 .perps-pos-leg-venue { color:#9dacbb; text-transform:capitalize; }
@@ -23265,7 +23265,7 @@ function perpsRenderPortfolioPositions(paired) {
                         <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}</div>
                         <div class="perps-pos-status-row">
                             <span class="perps-pos-pill">OPEN</span>
-                            <span class="perps-pos-mid-pill">Mid ${perpsFmtPx(midPx)}</span>
+                            <span class="perps-pos-live-px">${perpsFmtPx(midPx)}</span>
                         </div>
                     </div>
                 </div>

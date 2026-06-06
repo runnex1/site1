@@ -612,7 +612,8 @@ assert.match(indexHtml, /perpsVenueWithSideHtml\(u\.venue, u\.size\)/, 'unhedged
 assert.match(indexHtml, /<div>Liq Price<\/div>/, 'open positions must show a liquidation-price-only column');
 assert.match(indexHtml, /function perpsPositionLiqStackHtml\(p, displayLegs\)/, 'open positions must render only liquidation prices in the Liq Price column');
 assert.match(indexHtml, /function perpsPositionMidPx\(p, displayLegs\)/, 'open positions must calculate a mid price from both exchange marks');
-assert.match(indexHtml, /<span class="perps-pos-mid-pill">Mid \$\{perpsFmtPx\(midPx\)\}<\/span>/, 'open positions must show mid price next to OPEN');
+assert.ok(indexHtml.includes('<span class="perps-pos-live-px">${perpsFmtPx(midPx)}</span>'), 'open positions must show live price next to OPEN without a mid pill');
+assert.doesNotMatch(indexHtml, /perps-pos-mid-pill/, 'open positions must not wrap live price in a mid pill');
 assert.doesNotMatch(indexHtml, /<div>Price \/ Liq<\/div>/, 'old Price / Liq header must be removed');
 assert.doesNotMatch(indexHtml, /perps-pos-price-label">Px/, 'Liq Price column must not show current price labels');
 assert.match(indexHtml, /function perpsLiquidationRiskStyle\(currentPx, liquidationPx\)/, 'liquidation prices must be colored by distance to current price');
