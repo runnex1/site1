@@ -594,8 +594,16 @@ assert.match(perpsJs, /const perfDays = Math\.min\(PERPS_MAX_FILL_HISTORY_DAYS, 
 assert.match(perpsJs, /days: perfDays,\s*\n\s*pairedBases: \[p\.symbol\]/, 'per-pair performance series must use computed performance window');
 assert.match(indexHtml, /function perpsSyncTotalPnlRolling24h\(data\)/, 'Total PnL must use rolling 24h independent of stat window');
 assert.match(indexHtml, /perpsSumDailyFundingSeries\(rows, true\)/, 'Net APR must use the same active-session rows as position performance');
+assert.match(indexHtml, /function perpsFilterPairLatestSessionForRange\(series, range\)/, 'Position Net APR must filter to the latest session before applying the selected range');
+assert.match(indexHtml, /const rows = perpsFilterPairLatestSessionForRange\(rawRows, range\);/, 'Position Net APR must not include older sessions in all-time APR');
 assert.match(indexHtml, /function perpsPairAprDaysForRows\(p, range, rows\)/, 'Position Net APR must not annualize rolling 24h rows as two calendar days');
 assert.match(indexHtml, /const days = perpsPairAprDaysForRows\(p, range, rows\);/, 'Position Net APR must use fixed stat-window days when a fixed range is selected');
+assert.match(indexHtml, /const PERPS_REFRESH_RETRIES = 1;/, 'Perps dashboard load must retry transient API failures once');
+assert.match(indexHtml, /function perpsDashboardLoadWarnings\(payload\)/, 'Perps dashboard must inspect partial NADO failures before rendering');
+assert.match(indexHtml, /perpsFetchDashboardPayload\(params, silent\)/, 'Perps refresh must use the retrying dashboard fetch helper');
+assert.match(indexHtml, /summary\?\.nadoError/, 'Perps alert bar must surface persistent NADO API failures');
+assert.match(perpsJs, /rows\.error = errorMessage\(e\);/, 'NADO rate failures must be reported instead of silently returning empty rates');
+assert.match(perpsJs, /nadoError: combineErrors\(nadoState, nadoFundingForAnalysis, nadoMatchesForAnalysis, nadoCapitalFlows, \{ error: nadoRates\.error \}\)/, 'Dashboard summary must include NADO rates/funding failures');
 assert.match(indexHtml, /perpsSideBadgeHtml\(legs\.a\.size\)/, 'paired table legs must include long/short badges');
 assert.match(indexHtml, /perpsVenueWithSideHtml\(u\.venue, u\.size\)/, 'unhedged exchange rows must include long/short badges');
 assert.match(indexHtml, /perpsRateSpreadRow\(p\.symbol\)/, 'Current APR must fall back to the latest rate-spread row');

@@ -7505,6 +7505,7 @@ const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
 const PM_WALLETS_BACKUP_KEY = 'vault-polymarket-wallets-backup';
 const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
 const PERPS_FETCH_TIMEOUT_MS = 55000;
+const PERPS_REFRESH_RETRIES = 1;
 const PERPS_AUTO_REFRESH_MS = 60000;
 const PERPS_LIVE_APR_MS = 15000;
 const PERPS_CHART_WIDTH = 760;
@@ -22240,6 +22241,9 @@ function perpsRenderAlerts(paired, unhedged, summary) {
     const bar = document.getElementById('perpsAlertBar');
     if (!bar) return;
     const pills = [];
+    if (summary?.nadoError) {
+        pills.push(`NADO: ${summary.nadoError}`);
+    }
     if (summary?.grvtError) {
         pills.push(`GRVT: ${summary.grvtError}`);
     } else if (summary?.grvtConfigured && !(summary.grvtPositionCount > 0) && (summary.grvtAccountValue ?? 0) <= 0) {
@@ -22263,7 +22267,7 @@ function perpsRenderAlerts(paired, unhedged, summary) {
         return;
     }
     bar.style.display = 'flex';
-    bar.className = 'perps-alert-bar' + ((summary?.grvtError || summary?.extendedError) ? ' warn' : '');
+    bar.className = 'perps-alert-bar' + ((summary?.nadoError || summary?.grvtError || summary?.extendedError) ? ' warn' : '');
     bar.innerHTML = pills.map(t => `<span class="perps-alert-pill">${dashEsc(t)}</span>`).join('');
 }
 
@@ -22462,7 +22466,7 @@ function perpsPairPeriodApr(p, range) {
     const margin = p.avgNotional ?? 0;
     if (!margin) return null;
     const rawRows = Array.isArray(p.dailyPerformanceSeries) ? p.dailyPerformanceSeries : [];
-    const rows = perpsFilterPairDailySeries(rawRows, p, range);
+    const rows = perpsFilterPairLatestSessionForRange(rawRows, range);
     if (rows.length) {
         const totals = perpsSumDailyFundingSeries(rows, true);
         const days = perpsPairAprDaysForRows(p, range, rows);
@@ -22717,6 +22721,19 @@ function perpsFilterPairDailySeriesForPosition(series, p) {
         cumNet += dailyNet;
         return { ...row, dailyFunding, dailyFees, dailyNet, cumFunding, cumFees, cumNet };
     });
+}
+
+function perpsFilterPairLatestSessionForRange(series, range) {
+    let rows = perpsTrimPairDailySeriesToLatestSession(series);
+    const ms = perpsStatRangeMs(range);
+    if (ms) {
+        const cutoff = Date.now() - ms;
+        rows = rows
+            .filter(r => new Date(r.day + 'T23:59:59.999Z').getTime() >= cutoff)
+            .map(r => perpsTrimDailyRowToCutoff(r, cutoff))
+            .filter(Boolean);
+    }
+    return perpsRecomputeDailySeriesCumulative(rows);
 }
 
 function perpsFilterPairDailySeries(series, p, range) {
@@ -23587,11 +23604,55 @@ function perpsRenderDashboard(data) {
 function perpsFormatConnectedStatus(payload) {
     const s = payload?.summary || {};
     let status = `Connected · ${payload?.paired?.length || 0} pairs · equity ${perpsFmtUsd((s.hlAccountValue ?? 0) + (s.nadoAccountValue ?? 0) + (s.grvtAccountValue ?? 0) + (s.extendedAccountValue ?? 0))}`;
+    if (s.nadoError) status += ` · NADO: ${s.nadoError}`;
     if (s.grvtError) status += ` · GRVT: ${s.grvtError}`;
     if (s.extendedError) status += ` · Extended: ${s.extendedError}`;
     return status;
 }
 
+function perpsDashboardLoadWarnings(payload) {
+    const warnings = [];
+    const s = payload?.summary || {};
+    if (s.nadoError) warnings.push(`NADO: ${s.nadoError}`);
+    if (payload?.nado?.state?.error) warnings.push(`NADO state: ${payload.nado.state.error}`);
+    if (payload?.nado?.funding?.error) warnings.push(`NADO funding: ${payload.nado.funding.error}`);
+    if (payload?.nado?.matches?.error) warnings.push(`NADO matches: ${payload.nado.matches.error}`);
+    return [...new Set(warnings.filter(Boolean))];
+}
+
+async function perpsFetchDashboardPayload(params, silent = false) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= PERPS_REFRESH_RETRIES; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), PERPS_FETCH_TIMEOUT_MS);
+        try {
+            const res = await fetch('/api/perps?' + params.toString(), { signal: controller.signal });
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.error || res.statusText);
+            const warnings = perpsDashboardLoadWarnings(payload);
+            if (warnings.length && attempt < PERPS_REFRESH_RETRIES) {
+                if (!silent || document.body.dataset.activeTab === 'perps') {
+                    perpsSetStatus(`NADO data warning; retrying (${attempt + 1}/${PERPS_REFRESH_RETRIES})...`);
+                }
+                continue;
+            }
+            return { payload, warnings };
+        } catch (e) {
+            lastError = e;
+            if (attempt < PERPS_REFRESH_RETRIES) {
+                if (!silent || document.body.dataset.activeTab === 'perps') {
+                    const msg = e.name === 'AbortError' ? 'API timed out' : (e.message || 'fetch failed');
+                    perpsSetStatus(`Perps API failed; retrying (${attempt + 1}/${PERPS_REFRESH_RETRIES}) - ${msg}`);
+                }
+                continue;
+            }
+            throw lastError;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+    throw lastError || new Error('Perps API failed');
+}
 async function perpsRefresh(silent = false) {
     perpsImportConfigFromPortfolio();
     perpsRepairSavedConfig();
@@ -23610,18 +23671,18 @@ async function perpsRefresh(silent = false) {
         return false;
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), PERPS_FETCH_TIMEOUT_MS);
     try {
         await perpsHydrateSnapshotsFromCloud();
         const params = new URLSearchParams({ wallet: hl, days: String(perpsStatRangeToApiDays(_perpsStatRange)) });
         if (nadoRaw && /^0x[a-fA-F0-9]{40}$/.test(nadoRaw)) params.set('nadoWallet', nadoRaw);
         const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
         if (grvtSub) params.set('grvtSubAccount', grvtSub);
-        const res = await fetch('/api/perps?' + params.toString(), { signal: controller.signal });
-        const payload = await res.json();
-        if (!res.ok) throw new Error(payload.error || res.statusText);
+        const { payload, warnings } = await perpsFetchDashboardPayload(params, silent);
         perpsRenderDashboard(payload);
+        if (warnings.length) {
+            _perpsRefreshError = `Loaded after retry with warnings: ${warnings.join('; ')}`;
+            perpsUpdateRefreshBar();
+        }
         if (!silent || document.body.dataset.activeTab === 'perps') {
             perpsSetStatus(perpsFormatConnectedStatus(payload));
         }
@@ -23636,8 +23697,6 @@ async function perpsRefresh(silent = false) {
         }
         console.error('[perps]', e);
         return false;
-    } finally {
-        clearTimeout(timeoutId);
     }
 }
 
