@@ -632,8 +632,8 @@ assert.match(perpsJs, /enrichClosedPairsSessionPnl\(closedPairsFiltered/, 'dashb
   assert.equal(sampled.record.equitySampleMode, 'concurrent_balance_only', 'snapshot must identify balance-only sampling');
 }
 
-assert.match(indexHtml, /if \(store\[bucket\]\) return;/, 'browser snapshots must be append-only within each 4h bucket');
-assert.match(indexHtml, /if \(!perpsIsEquitySnapshotEligible\(data\)\) return;/, 'browser snapshots must reject incomplete reads');
+assert.match(indexHtml, /if \(store\[bucket\]\) return false;/, 'browser snapshots must be append-only within each 4h bucket');
+assert.match(indexHtml, /if \(!perpsIsEquitySnapshotEligible\(data\)\) return false;/, 'browser snapshots must reject incomplete reads');
 assert.match(aaveProxyJs, /portfolio\?\.perpsArb/, 'cron snapshots must recover wallet config from the saved portfolio');
 assert.match(aaveProxyJs, /kvSet\('vault:perps_config'/, 'cron snapshots must persist recovered wallet config');
 assert.match(aaveProxyJs, /fetchPerpsEquitySnapshot\(\{/, 'cron snapshots must use the lightweight concurrent balance sampler');
@@ -739,7 +739,13 @@ assert.match(perpsJs, /hyperliquidMarkPx: hl\?\.markPx \?\? null/, 'rate spread 
 assert.match(indexHtml, /perpsRateSpreadRow\(p\.symbol\)/, 'Current APR must fall back to the latest rate-spread row');
 assert.match(indexHtml, /rateA \?\? p\.fundingRate8hA/, 'live APR polling must preserve previous leg rates when a response is partial');
 assert.match(indexHtml, /if \(native\.rateDecimal == null\)/, 'Current APR tooltip must fall back to pair-level leg rates');
-assert.match(indexHtml, /perpsApplyLiveRates\(payload\.rateSpread, payload\.fetchedAt\)/, 'Current APR tooltip must retain the exact live-rate update time');
+assert.match(indexHtml, /if \(data\.rateSpread\) perpsApplyLiveRates\(data\.rateSpread, data\.fetchedAt\)/, 'Current APR tooltip must retain the exact live-rate update time');
+assert.match(indexHtml, /const PERPS_SCHEDULED_REFRESH_MINUTES = \[10, 50, 55\]/, 'Perps dashboard must refresh on a fixed hourly schedule');
+assert.match(indexHtml, /function perpsManualRefresh\(/, 'Positions panel must expose a manual refresh control');
+assert.match(indexHtml, /id="perpsManualRefreshBtn"/, 'Positions panel must render the manual refresh button');
+assert.match(indexHtml, /function perpsShouldRenderEquityChart\(snapshotAdded, cloudSnapshotsAdded\)/, 'equity chart must refresh only when a new 4h snapshot point is added');
+assert.doesNotMatch(indexHtml, /PERPS_AUTO_REFRESH_MS/, 'Perps dashboard must not poll on a short interval');
+assert.doesNotMatch(indexHtml, /function perpsRefreshLiveApr\(/, 'Perps dashboard must not run a separate live APR poll');
 assert.match(perpsJs, /function grvtFundingSinceOpen\(pos\) \{[\s\S]*?return raw;/, 'GRVT cumulative funding must keep the same account-credit sign as funding history');
 
 assert.match(indexHtml, /PM_WALLETS_BACKUP_KEY/, 'Polymarket managed wallets must have a local backup store');
@@ -757,7 +763,7 @@ assert.doesNotMatch(indexHtml, /ondblclick="deleteItem\('opinionMarkets'/, 'Opin
 assert.match(indexHtml, /data-market-url="\$\{dashEsc\(marketUrl\)\}"/, 'Prediction market rows must expose a market URL for click-through');
 assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketId \|\| pos\.market_id\}/, 'Opinion positions must keep a market URL for click-through');
 {
-  const renderDashboard = indexHtml.slice(indexHtml.indexOf('function perpsRenderDashboard(data)'), indexHtml.indexOf('function perpsFormatConnectedStatus'));
+  const renderDashboard = indexHtml.slice(indexHtml.indexOf('function perpsRenderDashboard(data, opts = {})'), indexHtml.indexOf('function perpsFormatConnectedStatus'));
   assert.ok(renderDashboard.indexOf('perpsSaveSnapshot(data);') < renderDashboard.indexOf('data._equitySeries = perpsBuildEquitySeries(data);'), 'dashboard must save the current 4h snapshot before building the plotted series');
 }
 

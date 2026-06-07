@@ -655,6 +655,17 @@ body[data-active-tab="perps"] .topbar,
   display:flex; align-items:center; justify-content:space-between; gap:0.5rem;
 }
 .perps-panel-title { font-weight:900; letter-spacing:0.08em; text-transform:uppercase; font-size:0.82rem; color:var(--t1); }
+.perps-panel-title-row { display:flex; align-items:center; gap:0.4rem; }
+.perps-refresh-btn {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:1.55rem; height:1.55rem; padding:0;
+  border:1px solid rgba(134,159,179,0.22);
+  background:rgba(255,255,255,0.03); color:#9dacbb;
+  border-radius:6px; cursor:pointer; flex-shrink:0;
+}
+.perps-refresh-btn:hover:not(:disabled) { border-color:rgba(89,240,200,0.35); color:#59f0c8; background:rgba(89,240,200,0.08); }
+.perps-refresh-btn:disabled { opacity:0.55; cursor:wait; }
+.perps-refresh-btn svg { width:12px; height:12px; }
 .perps-pill { font-family:var(--ff-mono); font-size:0.65rem; font-weight:800; padding:0.2rem 0.55rem; border-radius:999px; border:1px solid rgba(89,240,200,0.3); color:#59f0c8; background:rgba(89,240,200,0.08); }
 .perps-pill.blue { border-color:rgba(99,183,255,0.35); color:#63b7ff; background:rgba(99,183,255,0.08); }
 .perps-table-wrap { flex:1; overflow:auto; padding:0 0.5rem 0.5rem; }
@@ -6692,7 +6703,12 @@ body[data-active-tab="loops"] .loop-pos-val,
 
           <section class="perps-panel">
             <div class="perps-panel-head">
-              <div class="perps-panel-title">Positions</div>
+              <div class="perps-panel-title-row">
+                <div class="perps-panel-title">Positions</div>
+                <button type="button" class="perps-refresh-btn" id="perpsManualRefreshBtn" onclick="perpsManualRefresh()" title="Refresh perps data" aria-label="Refresh perps data">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+                </button>
+              </div>
               <div class="perps-position-tabs" role="tablist" aria-label="Position status">
                 <button type="button" class="perps-position-tab active" data-perps-positions-tab="live" onclick="perpsSetPositionsTab('live', this)">Live</button>
                 <button type="button" class="perps-position-tab" data-perps-positions-tab="closed" onclick="perpsSetPositionsTab('closed', this)">Closed</button>
@@ -7486,8 +7502,7 @@ const PM_WALLETS_BACKUP_KEY = 'vault-polymarket-wallets-backup';
 const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
 const PERPS_FETCH_TIMEOUT_MS = 55000;
 const PERPS_REFRESH_RETRIES = 1;
-const PERPS_AUTO_REFRESH_MS = 5 * 60 * 1000;
-const PERPS_LIVE_APR_REFRESH_MINUTE = 2;
+const PERPS_SCHEDULED_REFRESH_MINUTES = [10, 50, 55];
 const PERPS_CHART_WIDTH = 760;
 const PERPS_EQUITY_CHART_START_MS = Date.parse('2026-06-01T08:00:00.000Z');
 const PERPS_MAX_FILL_HISTORY_DAYS = 365;
@@ -7495,11 +7510,9 @@ let _perpsCache = null;
 let _perpsDailyFundSeries = [];
 let _perpsDailyFundShowFees = true;
 let _perpsDailyFundChartState = null;
-let _perpsRefreshTimer = null;
-let _perpsLiveAprTimer = null;
-let _perpsLiveAprInFlight = false;
+let _perpsScheduledRefreshTimer = null;
+let _perpsRefreshInFlight = false;
 let _perpsLiveAprUpdatedAt = null;
-let _perpsLiveAprLastAttemptAt = null;
 let _perpsLastRefreshAt = null;
 let _perpsRefreshError = null;
 let _perpsStatRange = '7d';
@@ -21728,37 +21741,71 @@ function perpsToggleConfigFoot() {
     else perpsApplyWalletMasks();
 }
 
+function perpsNextScheduledRefreshDelayMs() {
+    const now = Date.now();
+    const base = new Date(now);
+    const candidates = [];
+    for (let hourOffset = 0; hourOffset < 48; hourOffset++) {
+        for (const minute of PERPS_SCHEDULED_REFRESH_MINUTES) {
+            const target = new Date(base);
+            target.setSeconds(0, 0);
+            target.setMilliseconds(0);
+            target.setMinutes(minute, 0, 0);
+            target.setHours(base.getHours() + hourOffset);
+            if (target.getTime() > now) candidates.push(target.getTime());
+        }
+    }
+    candidates.sort((a, b) => a - b);
+    return Math.max(1000, (candidates[0] || (now + 3600000)) - now);
+}
+
+function perpsScheduleNextAutoRefresh() {
+    if (_perpsScheduledRefreshTimer) {
+        clearTimeout(_perpsScheduledRefreshTimer);
+        _perpsScheduledRefreshTimer = null;
+    }
+    _perpsScheduledRefreshTimer = setTimeout(async () => {
+        _perpsScheduledRefreshTimer = null;
+        if (document.body.dataset.activeTab === 'perps') {
+            await perpsRefresh(true);
+            perpsScheduleNextAutoRefresh();
+        }
+    }, perpsNextScheduledRefreshDelayMs());
+}
+
 function perpsStartAutoRefresh() {
     perpsStopAutoRefresh();
-    _perpsRefreshTimer = setInterval(() => perpsRefresh(true), PERPS_AUTO_REFRESH_MS);
-    perpsStartLiveAprRefresh();
+    perpsScheduleNextAutoRefresh();
 }
 
 function perpsStopAutoRefresh() {
-    if (_perpsRefreshTimer) {
-        clearInterval(_perpsRefreshTimer);
-        _perpsRefreshTimer = null;
+    if (_perpsScheduledRefreshTimer) {
+        clearTimeout(_perpsScheduledRefreshTimer);
+        _perpsScheduledRefreshTimer = null;
     }
-    perpsStopLiveAprRefresh();
 }
 
-function perpsStartLiveAprRefresh() {
-    perpsStopLiveAprRefresh();
-    const now = new Date();
-    const next = new Date(now);
-    next.setMinutes(PERPS_LIVE_APR_REFRESH_MINUTE, 0, 0);
-    if (next <= now) next.setHours(next.getHours() + 1);
-    _perpsLiveAprTimer = setTimeout(async () => {
-        await perpsRefreshLiveApr();
-        if (document.body.dataset.activeTab === 'perps') perpsStartLiveAprRefresh();
-    }, Math.max(1000, next.getTime() - now.getTime()));
+async function perpsManualRefresh() {
+    if (_perpsRefreshInFlight) return;
+    const btn = document.getElementById('perpsManualRefreshBtn');
+    if (btn) btn.disabled = true;
+    try {
+        await perpsRefresh(false);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
-function perpsStopLiveAprRefresh() {
-    if (_perpsLiveAprTimer) {
-        clearInterval(_perpsLiveAprTimer);
-        _perpsLiveAprTimer = null;
+function perpsCountEquityBuckets() {
+    try {
+        return Object.keys(JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}')).length;
+    } catch (e) {
+        return 0;
     }
+}
+
+function perpsShouldRenderEquityChart(snapshotAdded, cloudSnapshotsAdded) {
+    return Boolean(snapshotAdded || cloudSnapshotsAdded || !_perpsEquityChartState);
 }
 
 function perpsUpdateRefreshBar() {
@@ -21771,12 +21818,9 @@ function perpsUpdateRefreshBar() {
         if (_perpsRefreshError) {
             lastEl.textContent = `Last refresh failed · ${_perpsRefreshError}`;
         } else if (_perpsLastRefreshAt) {
-            const liveText = _perpsLiveAprUpdatedAt
-                ? `live funding ${new Date(_perpsLiveAprUpdatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
-                : 'live funding hourly at :02';
-            lastEl.textContent = `Updated ${new Date(_perpsLastRefreshAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })} · full refresh 5m · ${liveText}`;
+            lastEl.textContent = `Updated ${new Date(_perpsLastRefreshAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })} · auto :10 / :50 / :55 · equity chart every 4h`;
         } else {
-            lastEl.textContent = 'Waiting for data…';
+            lastEl.textContent = 'Waiting for data… · auto :10 / :50 / :55';
         }
     }
 }
@@ -22046,7 +22090,7 @@ function perpsSetStatus(msg) {
 
 function perpsSaveSnapshot(data) {
     try {
-        if (!perpsIsEquitySnapshotEligible(data)) return;
+        if (!perpsIsEquitySnapshotEligible(data)) return false;
         const bucket = perpsEquityBucketKey(data.fetchedAt || Date.now());
         const s = data.summary;
         const hlAccountValue = s.hlAccountValue ?? data.equityNow?.hl ?? 0;
@@ -22056,7 +22100,7 @@ function perpsSaveSnapshot(data) {
         const totalEquity = hlAccountValue + nadoAccountValue + grvtAccountValue + extendedAccountValue;
         const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
         const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
-        if (store[bucket]) return;
+        if (store[bucket]) return false;
         const fetchedAt = data.fetchedAt || Date.now();
         store[bucket] = {
             date: new Date(fetchedAt).toISOString().slice(0, 10),
@@ -22075,7 +22119,10 @@ function perpsSaveSnapshot(data) {
         keys.slice(-180).forEach(k => { pruned[k] = store[k]; });
         localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(pruned));
         if (typeof saveData === 'function') saveData();
-    } catch (e) {}
+        return true;
+    } catch (e) {
+        return false;
+    }
 }
 
 function perpsIsEquitySnapshotEligible(data) {
@@ -22720,50 +22767,6 @@ function perpsApplyLiveRates(rateSpread, fetchedAt = null) {
         if (nextSpread != null) p.currentSpread8h = nextSpread;
     }
     perpsRenderPositionsPanel(_perpsLastData);
-}
-
-async function perpsRefreshLiveApr() {
-    if (_perpsLiveAprInFlight || !_perpsLastData?.paired?.length) return;
-    const hl = perpsResolveHlWallet();
-    if (!hl || location.protocol === 'file:') return;
-    _perpsLiveAprInFlight = true;
-    _perpsLiveAprLastAttemptAt = Date.now();
-    try {
-        const symbols = [...new Set(_perpsLastData.paired.map(p => p.symbol).filter(Boolean))];
-        const params = new URLSearchParams({ wallet: hl, live: '1', symbols: symbols.join(',') });
-        const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
-        if (grvtSub) params.set('grvtSubAccount', grvtSub);
-        let payload = null;
-        let lastError = null;
-        for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-                const res = await fetch('/api/perps?' + params.toString(), { signal: AbortSignal.timeout(12000) });
-                payload = await res.json();
-                if (!res.ok) throw new Error(payload.error || res.statusText);
-                break;
-            } catch (e) {
-                lastError = e;
-                payload = null;
-            }
-        }
-        if (!payload) throw lastError || new Error('Live funding fetch failed');
-        if (payload.warning || payload.warnings?.length) {
-            _perpsRefreshError = `Live funding warning: ${[payload.warning, ...(payload.warnings || [])].filter(Boolean).join('; ')}`;
-            perpsUpdateRefreshBar();
-        }
-        if (payload.rateSpread) {
-            perpsApplyLiveRates(payload.rateSpread, payload.fetchedAt);
-            _perpsLiveAprUpdatedAt = payload.fetchedAt || Date.now();
-            if (_perpsRefreshError && /^Live funding/.test(_perpsRefreshError)) _perpsRefreshError = null;
-            perpsUpdateRefreshBar();
-        }
-    } catch (e) {
-        _perpsRefreshError = `Live funding retry failed: ${e.message || e}`;
-        perpsUpdateRefreshBar();
-        console.warn('[perps live APR]', e);
-    } finally {
-        _perpsLiveAprInFlight = false;
-    }
 }
 
 /** Net APR: annualized (funding − trading fees) for the selected window. */
@@ -23943,12 +23946,16 @@ function perpsRenderCrossMarginLeverage(data) {
     }).join('');
 }
 
-function perpsRenderDashboard(data) {
+function perpsRenderDashboard(data, opts = {}) {
     _perpsCache = data;
-    perpsSaveSnapshot(data);
+    _perpsLastData = data;
+    const snapshotAdded = perpsSaveSnapshot(data);
     data._equitySeries = perpsBuildEquitySeries(data);
+    if (data.rateSpread) perpsApplyLiveRates(data.rateSpread, data.fetchedAt);
     perpsRenderStatsBar(data);
-    perpsRenderEquityChart(data);
+    if (perpsShouldRenderEquityChart(snapshotAdded, opts.cloudSnapshotsAdded)) {
+        perpsRenderEquityChart(data);
+    }
     perpsRenderFundingForTimeWindow(data);
     perpsRenderPositionsPanel(data);
     perpsRenderUnhedged(data.unhedged || []);
@@ -24015,11 +24022,14 @@ async function perpsFetchDashboardPayload(params, silent = false) {
     throw lastError || new Error('Perps API failed');
 }
 async function perpsRefresh(silent = false) {
+    if (_perpsRefreshInFlight) return false;
+    _perpsRefreshInFlight = true;
     perpsImportConfigFromPortfolio();
     perpsRepairSavedConfig();
     const hl = perpsResolveHlWallet();
     const nadoRaw = perpsReadConfigField('perpsNadoWallet', 'nado');
     if (!hl) {
+        _perpsRefreshInFlight = false;
         if (!silent) perpsSetStatus('Enter a valid Hyperliquid wallet and click Save & connect.');
         return false;
     }
@@ -24028,18 +24038,21 @@ async function perpsRefresh(silent = false) {
     if (location.protocol === 'file:') {
         _perpsRefreshError = 'Requires deployed site or local server';
         perpsUpdateRefreshBar();
+        _perpsRefreshInFlight = false;
         if (!silent) perpsSetStatus('Perps dashboard requires the local server or live site — file:// cannot call /api/perps.');
         return false;
     }
 
     try {
+        const bucketsBefore = perpsCountEquityBuckets();
         await perpsHydrateSnapshotsFromCloud();
+        const cloudSnapshotsAdded = perpsCountEquityBuckets() > bucketsBefore;
         const params = new URLSearchParams({ wallet: hl, days: String(perpsStatRangeToApiDays(_perpsStatRange)) });
         if (nadoRaw && /^0x[a-fA-F0-9]{40}$/.test(nadoRaw)) params.set('nadoWallet', nadoRaw);
         const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
         if (grvtSub) params.set('grvtSubAccount', grvtSub);
         const { payload, warnings } = await perpsFetchDashboardPayload(params, silent);
-        perpsRenderDashboard(payload);
+        perpsRenderDashboard(payload, { cloudSnapshotsAdded });
         if (warnings.length) {
             _perpsRefreshError = `Loaded after retry with warnings: ${warnings.join('; ')}`;
             perpsUpdateRefreshBar();
@@ -24058,6 +24071,8 @@ async function perpsRefresh(silent = false) {
         }
         console.error('[perps]', e);
         return false;
+    } finally {
+        _perpsRefreshInFlight = false;
     }
 }
 
