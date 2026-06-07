@@ -21122,21 +21122,27 @@ function tkEditSave(idx) {
     if (!input) return;
     const sym = input.value.trim().toUpperCase();
     const source = String(sourceInput?.value || 'auto');
-    if (sym) {
-        const list = tickerLoadCustomEntries();
-        if (idx >= 0 && idx < list.length) {
+    const list = tickerLoadCustomEntries();
+    if (idx >= 0 && idx < list.length) {
+        if (!sym) {
             delete _tkGeckoIdCache[list[idx].symbol];
             delete _tkJupiterMintCache[list[idx].symbol];
-            list[idx] = { symbol: sym, source: TICKER_SOURCES.includes(source) ? source : 'auto' };
+            list.splice(idx, 1);
             tickerSaveCustomEntries(list);
-            tkSetLabel(idx, sym, list[idx].source);
-            const priceEl = document.getElementById(`${slug}-price`);
-            const chgEl = document.getElementById(`${slug}-chg`);
-            if (priceEl) priceEl.textContent = '…';
-            if (chgEl) chgEl.textContent = '';
-            fetchCustomTickerByIndex(idx);
-            tickerSetupMarquee();
+            tickerRenderCustomItems();
+            return;
         }
+        delete _tkGeckoIdCache[list[idx].symbol];
+        delete _tkJupiterMintCache[list[idx].symbol];
+        list[idx] = { symbol: sym, source: TICKER_SOURCES.includes(source) ? source : 'auto' };
+        tickerSaveCustomEntries(list);
+        tkSetLabel(idx, sym, list[idx].source);
+        const priceEl = document.getElementById(`${slug}-price`);
+        const chgEl = document.getElementById(`${slug}-chg`);
+        if (priceEl) priceEl.textContent = '…';
+        if (chgEl) chgEl.textContent = '';
+        fetchCustomTickerByIndex(idx);
+        tickerSetupMarquee();
     }
     if (editor) editor.style.display = 'none';
     if (lbl) lbl.style.display = '';
