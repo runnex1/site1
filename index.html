@@ -20799,11 +20799,14 @@ async function fetchMarketTicker() {
 const TICKER_CUSTOM_KEY = 'vault_ticker_custom';
 const TICKER_CUSTOM_V2_KEY = 'vault_ticker_custom_v2';
 const TICKER_SCROLL_DELAY_MS = 5000;
+const TICKER_HOVER_DWELL_MS = 2000;
 const TICKER_SCROLL_SPEED_PX_PER_SEC = 26;
 const TICKER_MAX_CUSTOM = 16;
 const TICKER_SOURCES = ['coingecko', 'jupiter', 'tradfi', 'auto'];
 
 let _tickerScrollDelayTimer = null;
+let _tickerHoverDwellTimer = null;
+let _tickerMarqueeHeld = false;
 let _tkGeckoIdCache = {};
 let _tkJupiterMintCache = {};
 
@@ -21164,14 +21167,33 @@ function tickerRefreshDupClone() {
     track.appendChild(dup);
 }
 
+function tickerRestartMarqueeAnimation(track) {
+    if (!track || track.dataset.marqueeActive !== '1') return;
+    track.style.removeProperty('transform');
+    track.classList.remove('scrolling', 'paused');
+    void track.offsetWidth;
+    track.classList.add('scrolling');
+}
+
+function tickerHoldMarqueeAtStart(track) {
+    if (!track || track.dataset.marqueeActive !== '1') return;
+    track.classList.remove('scrolling', 'paused');
+    track.style.transform = 'translateX(0)';
+}
+
 function tickerSetupMarquee() {
     const viewport = document.getElementById('tickerStripViewport');
     const track = document.getElementById('tickerStripTrack');
     const sequence = document.getElementById('tickerStripSequence');
     if (!viewport || !track || !sequence) return;
 
+    clearTimeout(_tickerHoverDwellTimer);
+    _tickerHoverDwellTimer = null;
+    _tickerMarqueeHeld = false;
     track.classList.remove('scrolling', 'paused');
+    track.style.removeProperty('transform');
     track.style.removeProperty('--ticker-scroll-duration');
+    track.dataset.marqueeActive = '0';
     track.querySelectorAll('.ticker-strip-sequence-dup').forEach(el => el.remove());
 
     clearTimeout(_tickerScrollDelayTimer);
@@ -21188,6 +21210,7 @@ function tickerSetupMarquee() {
 
         const duration = Math.max(seqWidth / TICKER_SCROLL_SPEED_PX_PER_SEC, 24);
         track.style.setProperty('--ticker-scroll-duration', `${duration}s`);
+        track.dataset.marqueeActive = '1';
         track.classList.add('scrolling');
     }, TICKER_SCROLL_DELAY_MS);
 }
@@ -21196,8 +21219,24 @@ function tickerInitMarqueeControls() {
     const viewport = document.getElementById('tickerStripViewport');
     const track = document.getElementById('tickerStripTrack');
     if (!viewport || !track) return;
-    viewport.addEventListener('mouseenter', () => track.classList.add('paused'));
-    viewport.addEventListener('mouseleave', () => track.classList.remove('paused'));
+
+    viewport.addEventListener('mouseenter', () => {
+        clearTimeout(_tickerHoverDwellTimer);
+        _tickerHoverDwellTimer = setTimeout(() => {
+            if (track.dataset.marqueeActive !== '1') return;
+            _tickerMarqueeHeld = true;
+            tickerHoldMarqueeAtStart(track);
+        }, TICKER_HOVER_DWELL_MS);
+    });
+
+    viewport.addEventListener('mouseleave', () => {
+        clearTimeout(_tickerHoverDwellTimer);
+        _tickerHoverDwellTimer = null;
+        if (_tickerMarqueeHeld) {
+            _tickerMarqueeHeld = false;
+            tickerRestartMarqueeAnimation(track);
+        }
+    });
 }
 
 // Try Binance for a symbol (appends USDT). Returns { price, chgPct } or null.

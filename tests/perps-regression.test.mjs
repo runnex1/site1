@@ -620,6 +620,8 @@ assert.match(indexHtml, /params\.set\('knownClosedKeys', knownClosedKeys\.join\(
 assert.match(indexHtml, /data\.closedPairs = perpsCacheNewClosedPairs\(data\.closedPairs/, 'dashboard render must append only new closed pairs to the cache');
 assert.match(indexHtml, /const TICKER_REFRESH_MS = 60 \* 1000/, 'market ticker must refresh every minute');
 assert.match(indexHtml, /TICKER_SCROLL_DELAY_MS = 5000/, 'market ticker must start scrolling after a 5 second delay');
+assert.match(indexHtml, /TICKER_HOVER_DWELL_MS = 2000/, 'market ticker must pause and reset after 2 seconds of hover');
+assert.match(indexHtml, /function tickerHoldMarqueeAtStart\(track\)/, 'hover dwell must reset ticker marquee to the start position');
 assert.match(indexHtml, /function tickerSubmitAdd\(/, 'market ticker must let users add custom symbols manually');
 assert.match(indexHtml, /tickerAddSource/, 'market ticker add flow must let users choose CoinGecko, Jupiter, or TradFi');
 assert.match(indexHtml, /function tkFetchCoingeckoLogo\(/, 'custom ticker logos must resolve from CoinGecko');
