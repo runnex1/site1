@@ -21230,18 +21230,19 @@ function tickerInitMarqueeControls() {
         clearTimeout(_tickerHoverDwellTimer);
         _tickerHoverDwellTimer = setTimeout(() => {
             if (track.dataset.marqueeActive !== '1') return;
-            _tickerMarqueeHeld = true;
-            tickerHoldMarqueeAtStart(track);
+            if (_tickerMarqueeHeld) {
+                _tickerMarqueeHeld = false;
+                tickerRestartMarqueeAnimation(track);
+            } else {
+                _tickerMarqueeHeld = true;
+                tickerHoldMarqueeAtStart(track);
+            }
         }, TICKER_HOVER_DWELL_MS);
     });
 
     viewport.addEventListener('mouseleave', () => {
         clearTimeout(_tickerHoverDwellTimer);
         _tickerHoverDwellTimer = null;
-        if (_tickerMarqueeHeld) {
-            _tickerMarqueeHeld = false;
-            tickerRestartMarqueeAnimation(track);
-        }
     });
 }
 

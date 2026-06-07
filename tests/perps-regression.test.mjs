@@ -622,6 +622,8 @@ assert.match(indexHtml, /const TICKER_REFRESH_MS = 60 \* 1000/, 'market ticker m
 assert.match(indexHtml, /TICKER_SCROLL_DELAY_MS = 5000/, 'market ticker must start scrolling after a 5 second delay');
 assert.match(indexHtml, /TICKER_HOVER_DWELL_MS = 2000/, 'market ticker must pause and reset after 2 seconds of hover');
 assert.match(indexHtml, /function tickerHoldMarqueeAtStart\(track\)/, 'hover dwell must reset ticker marquee to the start position');
+assert.match(indexHtml, /if \(_tickerMarqueeHeld\) \{\s*_tickerMarqueeHeld = false;\s*tickerRestartMarqueeAnimation\(track\)/, 'second hover dwell must resume ticker scrolling');
+assert.match(indexHtml, /viewport\.addEventListener\('mouseleave', \(\) => \{\s*clearTimeout\(_tickerHoverDwellTimer\);\s*_tickerHoverDwellTimer = null;\s*\}\)/, 'ticker must stay paused on mouse leave until the next hover dwell');
 assert.match(indexHtml, /function tickerSubmitAdd\(/, 'market ticker must let users add custom symbols manually');
 assert.match(indexHtml, /list\.splice\(idx, 1\)/, 'clearing a custom ticker symbol on edit must remove it from the bar');
 assert.match(indexHtml, /tickerAddSource/, 'market ticker add flow must let users choose CoinGecko, Jupiter, or TradFi');
