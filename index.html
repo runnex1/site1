@@ -4132,6 +4132,10 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   transition: opacity 0.15s;
 }
 .ticker-asset:hover { opacity: 0.8; }
+.ticker-asset-custom { flex-shrink: 0; align-items: center; }
+.ticker-asset-custom .ticker-asset-name { line-height: 1.2; overflow: visible; }
+.ticker-asset-custom .ticker-asset-icon { align-self: center; }
+#tickerCustomSlot { display: contents; }
 .ticker-asset-icon {
   width: 28px; height: 28px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
@@ -5907,7 +5911,6 @@ body[data-active-tab="loops"] .loop-pos-val,
           </div>
           <div class="ticker-change flat" id="tk-sp-chg"></div>
         </div>
-        <div id="tickerCustomSlot"></div>
           </div>
         </div>
       </div>
@@ -20782,17 +20785,20 @@ function tkGetSym(idx) {
     return list[idx] || '';
 }
 
-function tkSetLabel(idx, sym) {
+async function tkSetLabel(idx, sym) {
     const slug = tkCustomSlug(idx);
     const lbl = document.getElementById(`${slug}-label`);
     const icon = document.getElementById(`${slug}-icon`);
     if (lbl) lbl.textContent = sym;
     if (icon) {
         const fallback = LogoEngine.makeSvgFallback(sym.substring(0, 3), sym);
-        icon.innerHTML = `<img data-logo-symbol="${sym}" data-logo-type="token"
-            src="${fallback}" alt="${sym}"
+        icon.innerHTML = `<img src="${fallback}" alt="${dashEsc(sym)}"
             style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
-        resolveAllPendingLogos();
+        try {
+            const url = await LogoEngine.getTokenLogo(sym);
+            const img = icon.querySelector('img');
+            if (img && url) img.src = url;
+        } catch (e) {}
     }
 }
 
@@ -20817,11 +20823,24 @@ function tickerCustomItemHtml(sym, idx) {
         </div>`;
 }
 
-function tickerRenderCustomItems() {
+function tickerClearCustomItems() {
+    const sequence = document.getElementById('tickerStripSequence');
+    if (!sequence) return;
+    sequence.querySelectorAll('.ticker-asset-custom').forEach(el => {
+        const prev = el.previousElementSibling;
+        if (prev?.classList?.contains('ticker-strip-sep')) prev.remove();
+        el.remove();
+    });
     const slot = document.getElementById('tickerCustomSlot');
-    if (!slot) return;
+    if (slot) slot.remove();
+}
+
+function tickerRenderCustomItems() {
+    const sequence = document.getElementById('tickerStripSequence');
+    if (!sequence) return;
+    tickerClearCustomItems();
     const symbols = tickerLoadCustomSymbols();
-    slot.innerHTML = symbols.map((sym, idx) => tickerCustomItemHtml(sym, idx)).join('');
+    sequence.insertAdjacentHTML('beforeend', symbols.map((sym, idx) => tickerCustomItemHtml(sym, idx)).join(''));
     symbols.forEach((sym, idx) => tkSetLabel(idx, sym));
     tickerSetupMarquee();
 }
