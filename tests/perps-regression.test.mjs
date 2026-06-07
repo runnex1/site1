@@ -484,6 +484,53 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.equal(closed[0].longLeg.reconstructedFromClosingFills, true, 'recovered long leg must be marked as reconstructed');
 }
 
+{
+  const close = now - 30 * 60 * 1000;
+  const open = close - 4 * 3600000;
+  const closed = buildClosedPairs({
+    nado: [
+      { venue: 'nado', symbol: 'UNI', time: close, side: 'sell', px: 9.5, size: 6800, fee: 5, realizedPnl: -7078 },
+    ],
+  }, {}, {
+    extended: [{
+      market: 'UNI-USD',
+      side: 'SHORT',
+      createdTime: open,
+      closedTime: close + 30 * 1000,
+      maxPositionSize: '11800',
+      realisedPnl: '12257',
+    }],
+  });
+  assert.equal(closed.length, 0, 'closed reconstruction must not pair legs with a large token-size mismatch');
+}
+
+{
+  const close = now - 20 * 60 * 1000;
+  const open = close - 4 * 3600000;
+  const closed = buildClosedPairs({
+    nado: [
+      { venue: 'nado', symbol: 'UNI', time: open, side: 'buy', px: 9, size: 6800, fee: 1, realizedPnl: 0 },
+      { venue: 'nado', symbol: 'UNI', time: close, side: 'sell', px: 9.5, size: 6800, fee: 5, realizedPnl: -200 },
+    ],
+    extended: [
+      { venue: 'extended', symbol: 'UNI', time: open + 1000, side: 'sell', px: 9, sz: 6800, fee: 1, closedPnl: 0 },
+      { venue: 'extended', symbol: 'UNI', time: close + 1000, side: 'buy', px: 8.95, sz: 6800, fee: 1, closedPnl: 0 },
+    ],
+  }, {}, {
+    extended: [{
+      market: 'UNI-USD',
+      side: 'SHORT',
+      createdTime: open,
+      closedTime: close + 1000,
+      maxPositionSize: '11800',
+      realisedPnl: '12257',
+    }],
+  });
+  assert.equal(closed.length, 1, 'Extended fill replay must survive when position history has the wrong max size');
+  assert.equal(closed[0].shortLeg.size, 6800, 'closed pair must use the size-matched Extended fill leg');
+  assert.ok(closed[0].sizeMismatchPct <= 5, 'closed pair must stay within the allowed size mismatch');
+}
+
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
 assert.match(indexHtml, /dayStart < cutoff\) return null;/, 'summary-only boundary rows must not count as full last-24h PnL');
 assert.match(indexHtml, /return perpsRecomputeDailySeriesCumulative\(trimmed\);/, 'trimmed daily rows must rebuild cumulative totals from the selected window');
