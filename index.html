@@ -7766,6 +7766,11 @@ async function loadData() {
         }
     } catch (e) {}
 
+    loadWatchlist();
+    loadWatcherLinks();
+    loadWatcherWallets();
+    loopsHydrateApiStateFromLocal();
+
     // 2. Restore tab state FIRST (so tab-specific layout CSS is active), then render
     document.body.dataset.activeTab = initialTab;
     updateUI();
@@ -7794,6 +7799,10 @@ async function loadData() {
                         localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets));
                         renderWatcherWallets();
                         delete parsed._watcherWallets;
+                        if (document.body.dataset.activeTab === 'loops') {
+                            loopApiState.triedAuto = false;
+                            maybeAutoSyncLoopPositions();
+                        }
                     }
                     if (parsed._watchlist && Array.isArray(parsed._watchlist)) {
                         watchlist = parsed._watchlist;
@@ -7900,10 +7909,6 @@ async function loadData() {
     } catch(e) {}
 
     loadDomeConfig();
-
-    loadWatchlist();
-    loadWatcherLinks();
-    loadWatcherWallets();
 }
 
 async function saveData() {
@@ -10937,8 +10942,33 @@ let loopApiState = {
     coverage: null,
 };
 const LOOP_SNAPSHOTS_KEY = 'vault-loop-snapshots';
+const LOOP_API_STATE_KEY = 'vault-loop-api-state';
 let loopSnapshotsStore = {};
 let _loopSnapshotsHydratePromise = null;
+
+function loopsHydrateApiStateFromLocal() {
+    try {
+        const raw = localStorage.getItem(LOOP_API_STATE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (!Array.isArray(saved.positions) || !saved.positions.length) return;
+        loopApiState.updatedAt = Number(saved.updatedAt) || loopApiState.updatedAt;
+        loopApiState.positions = saved.positions;
+        loopApiState.errors = Array.isArray(saved.errors) ? saved.errors : [];
+        loopApiState.coverage = saved.coverage || loopApiState.coverage;
+    } catch (e) {}
+}
+
+function loopsPersistApiState() {
+    try {
+        localStorage.setItem(LOOP_API_STATE_KEY, JSON.stringify({
+            updatedAt: loopApiState.updatedAt,
+            positions: loopApiState.positions,
+            errors: loopApiState.errors,
+            coverage: loopApiState.coverage,
+        }));
+    } catch (e) {}
+}
 
 function loopsLoadSnapshotsLocal() {
     try {
@@ -10978,7 +11008,7 @@ function loopHistoryPoints(positionId) {
             if (!pos) return null;
             return {
                 ts: Number(snap.fetchedAt) || 0,
-                netValue: Number(pos.netValue),
+                netValue: Number(pos.economicNetValue ?? pos.netValue),
                 netApy: Number(pos.netApy),
             };
         })
@@ -11047,6 +11077,7 @@ function loopApiToDisplayPosition(pos) {
         liveApy: item.apy,
         nativeApy: item.nativeApy,
         merklApy: item.merklApy,
+        defillamaApy: item.defillamaApy,
         sub: 'Supplied',
     }));
     const borrowedPositions = borrowed.map(item => ({
@@ -11146,6 +11177,7 @@ async function syncLoopApiPositions({ silent = false } = {}) {
         loopApiState.positions = Array.isArray(json.positions) ? json.positions : [];
         loopApiState.errors = Array.isArray(json.errors) ? json.errors : [];
         loopApiState.coverage = json.coverage || null;
+        loopsPersistApiState();
     } catch (e) {
         loopApiState.errors = [{ provider: 'loops', message: e.message || 'Live loop sync failed' }];
         if (!silent) alert('Live loop sync failed: ' + (e.message || e));
@@ -13616,16 +13648,16 @@ function renderLoops() {
     const fluidLiveMissing = !liveProtocols.has('fluid');
     const morphoLiveMissing = !liveProtocols.has('morpho');
     const fluidUnavailable = (loopApiState.errors || []).some(e => String(e.provider || '').toLowerCase() === 'fluid');
-    const supplementalImported = loopImportedPositions().filter(imp => {
+    const usingLive = liveLoops.length > 0;
+    const supplementalImported = usingLive ? [] : loopImportedPositions().filter(imp => {
         const name = String(imp.p?.name || '').toLowerCase();
         if (fluidLiveMissing && fluidUnavailable && name.includes('fluid')) return true;
         if (morphoLiveMissing && name.includes('morpho')) return true;
         return false;
     });
-    const loops = liveLoops.length || supplementalImported.length
+    const loops = usingLive || supplementalImported.length
         ? [...liveLoops, ...supplementalImported]
         : loopImportedPositions();
-    const usingLive = liveLoops.length > 0;
 
     if (!loops.length) {
         if (countEl) countEl.textContent = '0 positions';
@@ -13751,8 +13783,12 @@ function renderLoops() {
         const suppliedApr = Number(apy?.suppliedApr);
         const borrowedApr = Number(apy?.borrowedApr);
         const merklApr = suppliedPositions.reduce((max, pos) => Math.max(max, Number(pos.merklApy || 0)), 0);
-        const supplyApyTitle = merklApr > 0 && Number.isFinite(suppliedApr)
-            ? `Native ${(suppliedApr - merklApr).toFixed(2)}% + Merkl ${merklApr.toFixed(2)}%`
+        const defillamaApr = suppliedPositions.reduce((max, pos) => Math.max(max, Number(pos.defillamaApy || 0)), 0);
+        const supplyApyTitle = (merklApr > 0 || defillamaApr > 0) && Number.isFinite(suppliedApr)
+            ? [
+                defillamaApr > 0 ? `DeFiLlama ${defillamaApr.toFixed(2)}%` : '',
+                merklApr > 0 ? `Merkl ${merklApr.toFixed(2)}%` : '',
+            ].filter(Boolean).join(' + ')
             : '';
         const liqBuffer = Number.isFinite(h) && h > 0 ? Math.max(0, (1 - (1 / h)) * 100) : null;
         const networkTag = network && network !== '-' ? `<span class="loop-tag network">${dashEsc(network)}</span>` : '';

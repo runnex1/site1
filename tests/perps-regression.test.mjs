@@ -628,8 +628,12 @@ assert.match(loopRatesJs, /fluidPositionSource: 'fluid-official-api'/, 'Fluid po
 assert.doesNotMatch(loopRatesJs, /DEFINITIV_API_KEY/, 'Fluid loops must not require a Definitiv API key');
 assert.match(loopRatesJs, /api\.merkl\.xyz/, 'Loop APR must include Merkl reward campaigns');
 assert.match(loopRatesJs, /rewards\/active-opportunities/, 'Merkl enrichment must use active opportunities for live reward APR');
+assert.match(loopRatesJs, /fetchDefillamaYieldApyIndex/, 'yield-bearing collateral must use DeFiLlama APY when protocol supply APY is zero');
+assert.match(loopRatesJs, /economicNetValue/, 'loop positions must include Merkl rewards in economic net value for snapshots');
+assert.match(indexHtml, /LOOP_API_STATE_KEY/, 'loops tab must cache last live API state across page refreshes');
 assert.match(indexHtml, /supplementalImported/, 'Loops must keep imported Fluid/Morpho positions when live API coverage is incomplete');
 const loopSnapshotsJs = readFileSync(join(ROOT, 'lib', 'loop-snapshots.js'), 'utf8');
+assert.match(loopSnapshotsJs, /economicNetValue/, 'loop snapshots must persist Merkl-inclusive economic net value');
 assert.match(loopSnapshotsJs, /function loopSnapshotBucketKey\(ms\)/, 'loop snapshots must bucket history on 6h intervals');
 assert.match(loopSnapshotsJs, /function appendLoopSnapshotStore\(store, data/, 'loop snapshots must append server-side history');
 assert.match(aaveProxyJs, /loopCronSnapshot/, 'loop cron snapshots must be exposed through aave-proxy');
