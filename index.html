@@ -13513,10 +13513,22 @@ function renderLoops() {
     const livePositions = Array.isArray(loopApiState.positions)
         ? loopApiState.positions.filter(p => Number(p.totalBorrowed || 0) > 0.01)
         : [];
-    const loops = livePositions.length
-        ? livePositions.map(loopApiToDisplayPosition)
+    const liveLoops = livePositions.map(loopApiToDisplayPosition);
+    const liveProtocols = new Set(livePositions.map(p => String(p.protocol || '').toLowerCase()));
+    const fluidLiveMissing = !liveProtocols.has('fluid');
+    const morphoLiveMissing = !liveProtocols.has('morpho');
+    const fluidUnavailable = loopApiState.coverage?.fluidPositionSource === 'not-configured'
+        || (loopApiState.errors || []).some(e => String(e.provider || '').toLowerCase() === 'fluid');
+    const supplementalImported = loopImportedPositions().filter(imp => {
+        const name = String(imp.p?.name || '').toLowerCase();
+        if (fluidLiveMissing && fluidUnavailable && name.includes('fluid')) return true;
+        if (morphoLiveMissing && name.includes('morpho')) return true;
+        return false;
+    });
+    const loops = liveLoops.length || supplementalImported.length
+        ? [...liveLoops, ...supplementalImported]
         : loopImportedPositions();
-    const usingLive = livePositions.length > 0;
+    const usingLive = liveLoops.length > 0;
 
     if (!loops.length) {
         if (countEl) countEl.textContent = '0 positions';
