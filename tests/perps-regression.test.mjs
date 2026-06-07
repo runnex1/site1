@@ -497,6 +497,7 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
       side: 'SHORT',
       createdTime: open,
       closedTime: close + 30 * 1000,
+      closedSize: '318.5',
       maxPositionSize: '11800',
       realisedPnl: '12257',
     }],
