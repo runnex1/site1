@@ -4124,6 +4124,27 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   border-color: rgba(0,212,170,0.45);
   background: rgba(0,212,170,0.08);
 }
+.ticker-source-select {
+  margin-top: 0.22rem;
+  width: 100%;
+  max-width: 148px;
+  background: var(--surf-3);
+  border: 1px solid var(--border-mid);
+  border-radius: 4px;
+  color: var(--t1);
+  font-family: var(--ff-mono);
+  font-size: 0.58rem;
+  padding: 2px 4px;
+  outline: none;
+}
+.ticker-source-select:focus { border-color: var(--teal); }
+.ticker-source-badge {
+  font-size: 0.48rem;
+  letter-spacing: 0.04em;
+  color: var(--t3);
+  text-transform: uppercase;
+  font-weight: 700;
+}
 .ticker-asset {
   display: flex; align-items: center; gap: 0.6rem;
   padding: 0 1.5rem 0 0;
@@ -5914,7 +5935,7 @@ body[data-active-tab="loops"] .loop-pos-val,
           </div>
         </div>
       </div>
-      <button class="ticker-add-btn" id="tickerAddBtn" type="button" title="Add token or stock" onclick="tickerAddCustom()">+</button>
+      <button class="ticker-add-btn" id="tickerAddBtn" type="button" title="Add token or stock" onclick="openModal('tickerAdd')">+</button>
       <div class="ticker-strip-refresh" id="tickerRefreshTime"></div>
     </div>
 
@@ -6946,6 +6967,30 @@ body[data-active-tab="loops"] .loop-pos-val,
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal('importProtocols')">Cancel</button>
       <button class="btn btn-primary" onclick="processProtocolsImport()">Import Protocols</button>
+    </div>
+  </div>
+</div>
+
+<div id="tickerAddModal" class="modal">
+  <div class="modal-content" style="max-width:420px;">
+    <div class="modal-header">Add Ticker</div>
+    <div class="modal-sub">Choose a symbol and price source. Logos are fetched from the same provider.</div>
+    <div class="form-group">
+      <label class="form-label">Symbol</label>
+      <input type="text" class="form-input" id="tickerAddSymbol" maxlength="10" placeholder="e.g. HOME, AAPL, BONK"
+        onkeydown="if(event.key==='Enter')tickerSubmitAdd()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Price source</label>
+      <select class="form-select" id="tickerAddSource">
+        <option value="coingecko">CoinGecko (crypto)</option>
+        <option value="jupiter">Jupiter (Solana tokens)</option>
+        <option value="tradfi">TradFi (stocks / ETFs)</option>
+      </select>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('tickerAdd')">Cancel</button>
+      <button class="btn btn-primary" onclick="tickerSubmitAdd()">Add</button>
     </div>
   </div>
 </div>
@@ -8709,6 +8754,12 @@ function openModal(type) {
         document.getElementById('jupiterFetchBtn').disabled = false;
     }
     if (type === 'opportunityMonitor') renderOpportunityMonitorList();
+    if (type === 'tickerAdd') {
+        const symEl = document.getElementById('tickerAddSymbol');
+        const srcEl = document.getElementById('tickerAddSource');
+        if (symEl) symEl.value = '';
+        if (srcEl) srcEl.value = 'coingecko';
+    }
     document.getElementById(`${type}Modal`).classList.add('active');
 }
 function closeModal(type) { document.getElementById(`${type}Modal`).classList.remove('active'); }
@@ -20737,7 +20788,7 @@ async function fetchMarketTicker() {
 
     // Run all in parallel — custom tickers fire independently
     Promise.all([...binancePromises, ...yahooPromises]);
-    tickerLoadCustomSymbols().forEach((sym, idx) => fetchCustomTickerByIndex(idx));
+    tickerLoadCustomEntries().forEach((entry, idx) => fetchCustomTickerByIndex(idx));
     tickerRefreshDupClone();
 }
 
@@ -20746,64 +20797,232 @@ async function fetchMarketTicker() {
 // =============================================================================
 
 const TICKER_CUSTOM_KEY = 'vault_ticker_custom';
+const TICKER_CUSTOM_V2_KEY = 'vault_ticker_custom_v2';
 const TICKER_SCROLL_DELAY_MS = 5000;
 const TICKER_SCROLL_SPEED_PX_PER_SEC = 26;
 const TICKER_MAX_CUSTOM = 16;
+const TICKER_SOURCES = ['coingecko', 'jupiter', 'tradfi', 'auto'];
 
 let _tickerScrollDelayTimer = null;
 let _tkGeckoIdCache = {};
+let _tkJupiterMintCache = {};
 
 function tkCustomSlug(idx) {
     return `tk-custom-${idx}`;
 }
 
-function tickerLoadCustomSymbols() {
+function tickerNormalizeEntry(raw) {
+    if (typeof raw === 'string') {
+        const symbol = String(raw || '').trim().toUpperCase();
+        return symbol ? { symbol, source: 'auto' } : null;
+    }
+    const symbol = String(raw?.symbol || '').trim().toUpperCase();
+    if (!symbol) return null;
+    const source = TICKER_SOURCES.includes(raw?.source) ? raw.source : 'auto';
+    return { symbol, source };
+}
+
+function tickerLoadCustomEntries() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(TICKER_CUSTOM_V2_KEY) || 'null');
+        if (Array.isArray(saved) && saved.length) {
+            return saved.map(tickerNormalizeEntry).filter(Boolean);
+        }
+    } catch (e) {}
+    const legacySymbols = [];
     try {
         const saved = JSON.parse(localStorage.getItem(TICKER_CUSTOM_KEY) || 'null');
         if (Array.isArray(saved) && saved.length) {
-            return [...new Set(saved.map(s => String(s || '').trim().toUpperCase()).filter(Boolean))];
+            legacySymbols.push(...saved.map(s => String(s || '').trim().toUpperCase()).filter(Boolean));
         }
     } catch (e) {}
-    const legacy = [];
-    for (let n = 1; n <= 2; n++) {
-        const legacySym = localStorage.getItem(`vault_tk_c${n}`);
-        if (legacySym) legacy.push(String(legacySym).trim().toUpperCase());
+    if (!legacySymbols.length) {
+        for (let n = 1; n <= 2; n++) {
+            const legacySym = localStorage.getItem(`vault_tk_c${n}`);
+            if (legacySym) legacySymbols.push(String(legacySym).trim().toUpperCase());
+        }
     }
-    const defaults = legacy.length ? legacy : ['MSFT', 'NVDA'];
-    tickerSaveCustomSymbols(defaults);
-    return defaults;
+    const defaults = legacySymbols.length ? legacySymbols : ['MSFT', 'NVDA'];
+    const entries = [...new Set(defaults)].map(symbol => ({ symbol, source: 'auto' }));
+    tickerSaveCustomEntries(entries);
+    return entries;
 }
 
-function tickerSaveCustomSymbols(symbols) {
-    const list = [...new Set((symbols || []).map(s => String(s || '').trim().toUpperCase()).filter(Boolean))];
-    try { localStorage.setItem(TICKER_CUSTOM_KEY, JSON.stringify(list)); } catch (e) {}
-    return list;
+function tickerSaveCustomEntries(entries) {
+    const list = (entries || []).map(tickerNormalizeEntry).filter(Boolean);
+    const seen = new Set();
+    const deduped = list.filter(entry => {
+        const key = `${entry.symbol}:${entry.source}`;
+        if (seen.has(entry.symbol)) return false;
+        seen.add(entry.symbol);
+        return true;
+    });
+    try {
+        localStorage.setItem(TICKER_CUSTOM_V2_KEY, JSON.stringify(deduped));
+        localStorage.setItem(TICKER_CUSTOM_KEY, JSON.stringify(deduped.map(e => e.symbol)));
+    } catch (e) {}
+    return deduped;
+}
+
+function tickerLoadCustomSymbols() {
+    return tickerLoadCustomEntries().map(e => e.symbol);
+}
+
+function tickerGetEntry(idx) {
+    const list = tickerLoadCustomEntries();
+    return list[idx] || null;
 }
 
 function tkGetSym(idx) {
-    const list = tickerLoadCustomSymbols();
-    return list[idx] || '';
+    return tickerGetEntry(idx)?.symbol || '';
 }
 
-async function tkSetLabel(idx, sym) {
+function tkSourceLabel(source) {
+    if (source === 'jupiter') return 'Jupiter';
+    if (source === 'tradfi') return 'TradFi';
+    if (source === 'coingecko') return 'CoinGecko';
+    return 'Auto';
+}
+
+async function tkResolveJupiterMint(sym) {
+    const upper = String(sym || '').toUpperCase();
+    if (_tkJupiterMintCache[upper] !== undefined) return _tkJupiterMintCache[upper];
+    if (JUPITER_MINTS[upper]) {
+        _tkJupiterMintCache[upper] = JUPITER_MINTS[upper];
+        return JUPITER_MINTS[upper];
+    }
+    try {
+        const r = await fetch(
+            `https://lite-api.jup.ag/tokens/v1/mints/by-symbol?symbol=${encodeURIComponent(upper)}`,
+            { signal: AbortSignal.timeout(8000) },
+        );
+        if (r.ok) {
+            const mints = await r.json();
+            const mint = Array.isArray(mints) && mints[0] ? String(mints[0]) : null;
+            _tkJupiterMintCache[upper] = mint;
+            return mint;
+        }
+    } catch (e) {}
+    _tkJupiterMintCache[upper] = null;
+    return null;
+}
+
+async function tkFetchCoingeckoLogo(sym) {
+    const upper = String(sym || '').toUpperCase();
+    try {
+        const r = await fetch(
+            `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(upper)}`,
+            { signal: AbortSignal.timeout(7000) },
+        );
+        if (r.ok) {
+            const d = await r.json();
+            const match = (d?.coins || []).find(c => String(c?.symbol || '').toUpperCase() === upper);
+            const thumb = match?.large || match?.thumb;
+            if (thumb) {
+                LogoEngine._injectTokenImage(upper, thumb);
+                return thumb;
+            }
+        }
+    } catch (e) {}
+    const geckoId = await tkGeckoResolve(upper);
+    if (!geckoId) return null;
+    try {
+        const r = await fetch(
+            `https://api.coingecko.com/api/v3/coins/${geckoId}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`,
+            { signal: AbortSignal.timeout(7000) },
+        );
+        if (r.ok) {
+            const d = await r.json();
+            const url = d?.image?.small || d?.image?.thumb || d?.image?.large;
+            if (url) {
+                LogoEngine._injectTokenImage(upper, url);
+                return url;
+            }
+        }
+    } catch (e) {}
+    return null;
+}
+
+async function tkFetchJupiterLogo(sym) {
+    const mint = await tkResolveJupiterMint(sym);
+    if (!mint) return null;
+    try {
+        const r = await fetch(
+            `https://lite-api.jup.ag/tokens/v1/token/${mint}`,
+            { signal: AbortSignal.timeout(8000) },
+        );
+        if (r.ok) {
+            const d = await r.json();
+            const url = d?.logoURI || d?.logo;
+            if (url) {
+                LogoEngine._injectTokenImage(String(sym || '').toUpperCase(), url);
+                return url;
+            }
+        }
+    } catch (e) {}
+    return null;
+}
+
+async function tkFetchTradfiLogo(sym) {
+    const upper = String(sym || '').toUpperCase();
+    const urls = [
+        `https://financialmodelingprep.com/image-stock/${upper}.png`,
+        `https://eodhd.com/img/logos/US/${upper}.png`,
+        `https://eodhd.com/img/logos/ETF/${upper}.png`,
+    ];
+    for (const url of urls) {
+        const ok = await new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => resolve(url);
+            img.onerror = () => resolve(null);
+            img.src = url;
+            setTimeout(() => resolve(null), 3500);
+        });
+        if (ok) {
+            LogoEngine._injectTokenImage(upper, ok);
+            return ok;
+        }
+    }
+    return null;
+}
+
+async function tkFetchLogo(sym, source) {
+    const upper = String(sym || '').toUpperCase();
+    const cached = LogoEngine._peekTokenImage(upper);
+    if (cached) return cached;
+    if (source === 'coingecko') return await tkFetchCoingeckoLogo(upper);
+    if (source === 'jupiter') return await tkFetchJupiterLogo(upper);
+    if (source === 'tradfi') return await tkFetchTradfiLogo(upper);
+    return (await tkFetchCoingeckoLogo(upper))
+        || (await tkFetchJupiterLogo(upper))
+        || (await tkFetchTradfiLogo(upper));
+}
+
+async function tkSetLabel(idx, sym, source) {
+    const entry = tickerGetEntry(idx);
+    const src = source || entry?.source || 'auto';
     const slug = tkCustomSlug(idx);
     const lbl = document.getElementById(`${slug}-label`);
+    const badge = document.getElementById(`${slug}-source`);
     const icon = document.getElementById(`${slug}-icon`);
     if (lbl) lbl.textContent = sym;
+    if (badge) badge.textContent = tkSourceLabel(src);
     if (icon) {
         const fallback = LogoEngine.makeSvgFallback(sym.substring(0, 3), sym);
         icon.innerHTML = `<img src="${fallback}" alt="${dashEsc(sym)}"
             style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
         try {
-            const url = await LogoEngine.getTokenLogo(sym);
+            const url = await tkFetchLogo(sym, src);
             const img = icon.querySelector('img');
             if (img && url) img.src = url;
         } catch (e) {}
     }
 }
 
-function tickerCustomItemHtml(sym, idx) {
+function tickerCustomItemHtml(entry, idx) {
     const slug = tkCustomSlug(idx);
+    const sym = entry.symbol;
+    const source = entry.source || 'auto';
     return `
         <div class="ticker-strip-sep"></div>
         <div class="ticker-asset ticker-asset-custom" data-ticker-custom-idx="${idx}">
@@ -20813,9 +21032,16 @@ function tickerCustomItemHtml(sym, idx) {
               <span id="${slug}-label">${dashEsc(sym)}</span>
               <button class="ticker-edit-btn" onclick="tkEditStart(${idx})" title="Edit symbol">✎</button>
             </div>
+            <span class="ticker-source-badge" id="${slug}-source">${tkSourceLabel(source)}</span>
             <div id="${slug}-editor" style="display:none;">
               <input class="ticker-custom-input" id="${slug}-input" maxlength="10" placeholder="AAPL"
                 onkeydown="if(event.key==='Enter')tkEditSave(${idx});if(event.key==='Escape')tkEditCancel(${idx});">
+              <select class="ticker-source-select" id="${slug}-source-input">
+                <option value="coingecko"${source === 'coingecko' ? ' selected' : ''}>CoinGecko</option>
+                <option value="jupiter"${source === 'jupiter' ? ' selected' : ''}>Jupiter</option>
+                <option value="tradfi"${source === 'tradfi' ? ' selected' : ''}>TradFi</option>
+                <option value="auto"${source === 'auto' ? ' selected' : ''}>Auto</option>
+              </select>
             </div>
             <div class="ticker-asset-price" id="${slug}-price">—</div>
           </div>
@@ -20839,25 +21065,28 @@ function tickerRenderCustomItems() {
     const sequence = document.getElementById('tickerStripSequence');
     if (!sequence) return;
     tickerClearCustomItems();
-    const symbols = tickerLoadCustomSymbols();
-    sequence.insertAdjacentHTML('beforeend', symbols.map((sym, idx) => tickerCustomItemHtml(sym, idx)).join(''));
-    symbols.forEach((sym, idx) => tkSetLabel(idx, sym));
+    const entries = tickerLoadCustomEntries();
+    sequence.insertAdjacentHTML('beforeend', entries.map((entry, idx) => tickerCustomItemHtml(entry, idx)).join(''));
+    entries.forEach((entry, idx) => tkSetLabel(idx, entry.symbol, entry.source));
     tickerSetupMarquee();
 }
 
-function tickerAddCustom() {
-    const sym = prompt('Add ticker symbol (stock or crypto, e.g. AAPL, SOL, STRC):');
-    if (!sym) return;
-    const upper = sym.trim().toUpperCase();
-    if (!upper || !/^[A-Z0-9.\-]{1,10}$/.test(upper)) return;
-    const list = tickerLoadCustomSymbols();
-    if (list.includes(upper)) return;
+function tickerSubmitAdd() {
+    const symEl = document.getElementById('tickerAddSymbol');
+    const srcEl = document.getElementById('tickerAddSource');
+    const sym = String(symEl?.value || '').trim().toUpperCase();
+    const source = String(srcEl?.value || 'coingecko');
+    if (!sym || !/^[A-Z0-9.\-]{1,10}$/.test(sym)) return;
+    if (!TICKER_SOURCES.includes(source) || source === 'auto') return;
+    const list = tickerLoadCustomEntries();
+    if (list.some(e => e.symbol === sym)) return;
     if (list.length >= TICKER_MAX_CUSTOM) {
         alert(`Maximum ${TICKER_MAX_CUSTOM} custom tickers.`);
         return;
     }
-    list.push(upper);
-    tickerSaveCustomSymbols(list);
+    list.push({ symbol: sym, source });
+    tickerSaveCustomEntries(list);
+    closeModal('tickerAdd');
     tickerRenderCustomItems();
     fetchCustomTickerByIndex(list.length - 1);
 }
@@ -20866,11 +21095,16 @@ function tkEditStart(idx) {
     const slug = tkCustomSlug(idx);
     const editor = document.getElementById(`${slug}-editor`);
     const input  = document.getElementById(`${slug}-input`);
+    const sourceInput = document.getElementById(`${slug}-source-input`);
     const lbl    = document.getElementById(`${slug}-label`);
+    const badge  = document.getElementById(`${slug}-source`);
+    const entry = tickerGetEntry(idx);
     if (!editor || !input) return;
-    input.value = tkGetSym(idx);
+    input.value = entry?.symbol || '';
+    if (sourceInput) sourceInput.value = entry?.source || 'auto';
     editor.style.display = 'block';
     if (lbl) lbl.style.display = 'none';
+    if (badge) badge.style.display = 'none';
     input.focus();
     input.select();
 }
@@ -20878,17 +21112,21 @@ function tkEditStart(idx) {
 function tkEditSave(idx) {
     const slug = tkCustomSlug(idx);
     const input  = document.getElementById(`${slug}-input`);
+    const sourceInput = document.getElementById(`${slug}-source-input`);
     const editor = document.getElementById(`${slug}-editor`);
     const lbl    = document.getElementById(`${slug}-label`);
+    const badge  = document.getElementById(`${slug}-source`);
     if (!input) return;
     const sym = input.value.trim().toUpperCase();
+    const source = String(sourceInput?.value || 'auto');
     if (sym) {
-        const list = tickerLoadCustomSymbols();
+        const list = tickerLoadCustomEntries();
         if (idx >= 0 && idx < list.length) {
-            delete _tkGeckoIdCache[list[idx]];
-            list[idx] = sym;
-            tickerSaveCustomSymbols(list);
-            tkSetLabel(idx, sym);
+            delete _tkGeckoIdCache[list[idx].symbol];
+            delete _tkJupiterMintCache[list[idx].symbol];
+            list[idx] = { symbol: sym, source: TICKER_SOURCES.includes(source) ? source : 'auto' };
+            tickerSaveCustomEntries(list);
+            tkSetLabel(idx, sym, list[idx].source);
             const priceEl = document.getElementById(`${slug}-price`);
             const chgEl = document.getElementById(`${slug}-chg`);
             if (priceEl) priceEl.textContent = '…';
@@ -20899,14 +21137,17 @@ function tkEditSave(idx) {
     }
     if (editor) editor.style.display = 'none';
     if (lbl) lbl.style.display = '';
+    if (badge) badge.style.display = '';
 }
 
 function tkEditCancel(idx) {
     const slug = tkCustomSlug(idx);
     const editor = document.getElementById(`${slug}-editor`);
     const lbl    = document.getElementById(`${slug}-label`);
+    const badge  = document.getElementById(`${slug}-source`);
     if (editor) editor.style.display = 'none';
     if (lbl) lbl.style.display = '';
+    if (badge) badge.style.display = '';
 }
 
 function tickerRefreshDupClone() {
@@ -21039,7 +21280,8 @@ async function tkResolveLogoAndPrice(sym) {
     } catch(e) {}
 
     if (coinData) {
-        // Try USD price from CoinGecko
+        const logoUrl = coinData?.image?.small || coinData?.image?.thumb || coinData?.image?.large;
+        if (logoUrl) LogoEngine._injectTokenImage(sym, logoUrl);
         let usd = coinData?.market_data?.current_price?.usd;
         const chg24h = coinData?.market_data?.price_change_percentage_24h ?? null;
         if (usd > 0) return { price: usd, chgPct: chg24h };
@@ -21090,47 +21332,81 @@ async function tkTryCoinpaprika(sym) {
     } catch(e) { return null; }
 }
 
+async function tkTryJupiter(sym) {
+    const mint = await tkResolveJupiterMint(sym);
+    if (!mint) return null;
+    const urls = [
+        `https://api.jup.ag/price/v2?ids=${encodeURIComponent(mint)}`,
+        `https://lite-api.jup.ag/price/v2?ids=${encodeURIComponent(mint)}`,
+        `https://api.jup.ag/price/v3?ids=${encodeURIComponent(mint)}`,
+    ];
+    for (const url of urls) {
+        try {
+            const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+            if (!r.ok) continue;
+            const d = await r.json();
+            const price = parseJupiterPriceResponse(d, mint);
+            if (price != null && price > 0) return { price, chgPct: null };
+        } catch (e) {}
+    }
+    return null;
+}
+
 async function fetchCustomTickerByIndex(idx) {
-    const sym = tkGetSym(idx);
-    if (!sym) return;
-    tkSetLabel(idx, sym);
+    const entry = tickerGetEntry(idx);
+    if (!entry?.symbol) return;
+    const { symbol: sym, source } = entry;
+    await tkSetLabel(idx, sym, source);
     const slug = tkCustomSlug(idx);
     const priceId = `${slug}-price`;
     const chgId   = `${slug}-chg`;
 
-    // 1. Try Binance (handles major crypto + anything with a USDT pair)
-    const binanceResult = await tkTryBinance(sym);
-    if (binanceResult) {
-        setTickerItem(priceId, chgId, binanceResult.price, binanceResult.chgPct);
-        // Still resolve logo in background (Binance gives no image)
-        tkResolveLogoAndPrice(sym);
-        return;
+    if (source === 'jupiter') {
+        const jupiterResult = await tkTryJupiter(sym);
+        if (jupiterResult) {
+            setTickerItem(priceId, chgId, jupiterResult.price, jupiterResult.chgPct);
+            return;
+        }
+    } else if (source === 'tradfi') {
+        const yahooResult = await fetchYahoo(encodeURIComponent(sym));
+        if (yahooResult) {
+            setTickerItem(priceId, chgId, yahooResult.price, yahooResult.chgPct);
+            return;
+        }
+    } else if (source === 'coingecko') {
+        const geckoResult = await tkResolveLogoAndPrice(sym);
+        if (geckoResult) {
+            setTickerItem(priceId, chgId, geckoResult.price, geckoResult.chgPct);
+            return;
+        }
+        const paprikaResult = await tkTryCoinpaprika(sym);
+        if (paprikaResult) {
+            setTickerItem(priceId, chgId, paprikaResult.price, paprikaResult.chgPct);
+            return;
+        }
+    } else {
+        const binanceResult = await tkTryBinance(sym);
+        if (binanceResult) {
+            setTickerItem(priceId, chgId, binanceResult.price, binanceResult.chgPct);
+            return;
+        }
+        const yahooResult = await fetchYahoo(encodeURIComponent(sym));
+        if (yahooResult) {
+            setTickerItem(priceId, chgId, yahooResult.price, yahooResult.chgPct);
+            return;
+        }
+        const geckoResult = await tkResolveLogoAndPrice(sym);
+        if (geckoResult) {
+            setTickerItem(priceId, chgId, geckoResult.price, geckoResult.chgPct);
+            return;
+        }
+        const paprikaResult = await tkTryCoinpaprika(sym);
+        if (paprikaResult) {
+            setTickerItem(priceId, chgId, paprikaResult.price, paprikaResult.chgPct);
+            return;
+        }
     }
 
-    // 2. Try Yahoo Finance (stocks, ETFs, indices like SPY, QQQ, AAPL, etc.)
-    const yahooResult = await fetchYahoo(encodeURIComponent(sym));
-    if (yahooResult) {
-        setTickerItem(priceId, chgId, yahooResult.price, yahooResult.chgPct);
-        // Still resolve logo in background
-        tkResolveLogoAndPrice(sym);
-        return;
-    }
-
-    // 3. CoinGecko + DeFiLlama — price lookup only; DeFiLlama covers DEX-only tokens
-    const geckoResult = await tkResolveLogoAndPrice(sym);
-    if (geckoResult) {
-        setTickerItem(priceId, chgId, geckoResult.price, geckoResult.chgPct);
-        return;
-    }
-
-    // 4. Coinpaprika — independent data source, works for tokens CoinGecko can't price in USD
-    const paprikaResult = await tkTryCoinpaprika(sym);
-    if (paprikaResult) {
-        setTickerItem(priceId, chgId, paprikaResult.price, paprikaResult.chgPct);
-        return;
-    }
-
-    // 5. Nothing worked
     const pe = document.getElementById(priceId);
     if (pe) pe.textContent = 'N/A';
 }
