@@ -21818,9 +21818,9 @@ function perpsUpdateRefreshBar() {
         if (_perpsRefreshError) {
             lastEl.textContent = `Last refresh failed · ${_perpsRefreshError}`;
         } else if (_perpsLastRefreshAt) {
-            lastEl.textContent = `Updated ${new Date(_perpsLastRefreshAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })} · auto :10 / :50 / :55 · equity chart every 4h`;
+            lastEl.textContent = `Updated ${new Date(_perpsLastRefreshAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
         } else {
-            lastEl.textContent = 'Waiting for data… · auto :10 / :50 / :55';
+            lastEl.textContent = 'Waiting for data…';
         }
     }
 }
