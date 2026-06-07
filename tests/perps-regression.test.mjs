@@ -14,6 +14,7 @@ const {
   buildEquitySnapshotFromDashboard,
   buildClosedPairs,
   buildClosedLegsFromExchangeHistory,
+  enrichClosedPairsSessionPnl,
   buildDailyFundingSeries,
   computeCombinedNetDeposits,
   filterFullyClosedPairs,
@@ -550,6 +551,38 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.equal(closed.length, 0, 'large raw fill-vs-fill size mismatches must still be rejected');
 }
 
+{
+  const close = now - 3600000;
+  const sessionStart = close - 5 * 86400000;
+  const sessionFunding = (symbol, perDay, days) => Array.from({ length: days }, (_, i) => ({
+    symbol,
+    time: sessionStart + i * 86400000 + 3600000,
+    usdc: perDay,
+  }));
+  const hlPayments = sessionFunding('UNI', 6, 5);
+  const grvtPayments = sessionFunding('UNI', -5, 5);
+  const closed = buildClosedPairs({
+    hyperliquid: [
+      { venue: 'hyperliquid', symbol: 'UNI', time: close, side: 'A', px: 10, sz: 100, fee: 2, closedPnl: 50 },
+    ],
+    grvt: [
+      { venue: 'grvt', symbol: 'UNI', time: close + 60000, side: 'buy', px: 10.1, sz: 100, fee: 1.5, closedPnl: -48 },
+    ],
+  }, { hyperliquid: hlPayments, grvt: grvtPayments });
+  assert.equal(closed.length, 1, 'UNI closing-fill recovery must still pair opposite legs');
+  assert.equal(closed[0].funding, 0, 'fill-window closed legs miss funding when open predates history');
+
+  const enriched = enrichClosedPairsSessionPnl(closed, {
+    hlPayments,
+    grvtPayments,
+    hlFills: [{ symbol: 'UNI', time: close, fee: 2 }],
+    grvtFills: [{ symbol: 'UNI', time: close + 60000, fee: 1.5 }],
+  }, 30);
+  assert.equal(enriched[0].funding, 5, 'closed UNI must include full latest-session funding from both venues');
+  assert.equal(enriched[0].fees, 3.5, 'closed UNI must include latest-session trading fees');
+  assert.equal(enriched[0].netPnl, closed[0].closeSlippage + 5 - 3.5, 'closed net PnL must use session funding and fees');
+}
+
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
 assert.match(indexHtml, /dayStart < cutoff\) return null;/, 'summary-only boundary rows must not count as full last-24h PnL');
 assert.match(indexHtml, /return perpsRecomputeDailySeriesCumulative\(trimmed\);/, 'trimmed daily rows must rebuild cumulative totals from the selected window');
@@ -561,6 +594,8 @@ assert.doesNotMatch(perpsJs, /positions\.reduce\(\(s, p\) => s \+ \(p\.notional 
 assert.match(perpsJs, /funding: extendedFundingWindow,/, 'Extended response must expose selected-window funding');
 assert.match(perpsJs, /fundingSinceOpen: extendedFundingSinceOpen,/, 'Extended response must preserve since-open funding separately');
 assert.match(perpsJs, /stats\.funding_rate/, 'Extended rates must tolerate snake_case funding-rate fields');
+assert.match(perpsJs, /function enrichClosedPairsSessionPnl\(closedPairs, dailySeriesInputs/, 'closed positions must enrich funding and fees from the latest performance session');
+assert.match(perpsJs, /enrichClosedPairsSessionPnl\(closedPairsFiltered/, 'dashboard closed pairs must use session-aligned PnL');
 
 {
   const dashboard = (fetchedAt, total, overrides = {}) => ({
