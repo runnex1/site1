@@ -12,6 +12,11 @@ const {
 } = require('../lib/perps');
 const { kvGet, kvSet } = require('../lib/kv');
 const { fetchLoopRates } = require('../lib/loop-rates');
+const {
+  appendLoopSnapshotStore,
+  buildLoopSnapshotFromRates,
+  loopYieldWalletsFromWatcherList,
+} = require('../lib/loop-snapshots');
 
 const responseCache = new Map();
 const PERPS_DASHBOARD_CACHE_MS = 5 * 60 * 1000;
@@ -231,6 +236,55 @@ async function handlePerps(req, res) {
   }
 }
 
+async function handleLoopCronSnapshot(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const secret = String(req.headers['x-sync-secret'] || req.query.secret || '');
+  if (!process.env.SYNC_SECRET || secret !== process.env.SYNC_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const watcherWallets = parseJson(await kvGet('vault:watcherwallets'), []);
+  const wallets = loopYieldWalletsFromWatcherList(watcherWallets);
+  if (!wallets.length) {
+    return res.status(400).json({ error: 'No yield wallets configured in vault:watcherwallets' });
+  }
+
+  try {
+    const data = await fetchLoopRates({ wallets });
+    const savedSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
+    const store = appendLoopSnapshotStore(savedSnapshots, data);
+    await kvSet('vault:loop_snapshots', JSON.stringify(store));
+    const { key, record } = buildLoopSnapshotFromRates(data);
+    return res.status(200).json({
+      ok: true,
+      bucket: key,
+      fetchedAt: record.fetchedAt,
+      positionCount: record.positions.length,
+      snapshotCount: Object.keys(store).length,
+    });
+  } catch (e) {
+    console.error('[loop-cron]', e);
+    return res.status(500).json({ error: e.message || 'Loop cron snapshot failed' });
+  }
+}
+
+async function handleLoopSnapshots(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  try {
+    const loopSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
+    return res.status(200).json({ ok: true, loopSnapshots });
+  } catch (e) {
+    console.error('[loop-snapshots]', e);
+    return res.status(500).json({ error: e.message || 'Loop snapshots fetch failed' });
+  }
+}
+
 async function handleLoopRates(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -259,6 +313,12 @@ async function handleLoopRates(req, res) {
 }
 
 module.exports = async function handler(req, res) {
+  if (req.query.loopCronSnapshot === '1') {
+    return handleLoopCronSnapshot(req, res);
+  }
+  if (req.query.loopSnapshots === '1') {
+    return handleLoopSnapshots(req, res);
+  }
   if (req.query.loopRates === '1') {
     return handleLoopRates(req, res);
   }

@@ -548,6 +548,10 @@ module.exports = async function handler(req, res) {
         const perpsSnapshots = parseJson(await kvGet('vault:perps_snapshots'), {});
         return res.status(200).json({ ok: true, perpsSnapshots });
       }
+      if (req.query?.loopSnapshots === '1') {
+        const loopSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
+        return res.status(200).json({ ok: true, loopSnapshots });
+      }
       const [
         portfolioRaw, watchlistRaw, watcherWalletsRaw, watcherLinksRaw,
         snapshotsRaw, aaveMarketsRaw, customTokensRaw,

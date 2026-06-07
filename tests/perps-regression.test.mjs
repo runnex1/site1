@@ -629,6 +629,30 @@ assert.doesNotMatch(loopRatesJs, /DEFINITIV_API_KEY/, 'Fluid loops must not requ
 assert.match(loopRatesJs, /api\.merkl\.xyz/, 'Loop APR must include Merkl reward campaigns');
 assert.match(loopRatesJs, /rewards\/active-opportunities/, 'Merkl enrichment must use active opportunities for live reward APR');
 assert.match(indexHtml, /supplementalImported/, 'Loops must keep imported Fluid/Morpho positions when live API coverage is incomplete');
+const loopSnapshotsJs = readFileSync(join(ROOT, 'lib', 'loop-snapshots.js'), 'utf8');
+assert.match(loopSnapshotsJs, /function loopSnapshotBucketKey\(ms\)/, 'loop snapshots must bucket history on 6h intervals');
+assert.match(loopSnapshotsJs, /function appendLoopSnapshotStore\(store, data/, 'loop snapshots must append server-side history');
+assert.match(aaveProxyJs, /loopCronSnapshot/, 'loop cron snapshots must be exposed through aave-proxy');
+assert.match(aaveProxyJs, /vault:loop_snapshots/, 'loop snapshots must persist in KV');
+assert.match(syncJs, /loopSnapshots === '1'/, 'sync endpoint must hydrate loop snapshot history');
+assert.match(indexHtml, /loop-history-chart/, 'loop cards must render history below the supply/borrow meter');
+assert.match(indexHtml, /function loopHistoryChartHtml\(points\)/, 'loops tab must build per-position history charts from snapshots');
+
+{
+  const { appendLoopSnapshotStore, loopSnapshotBucketKey } = require('../lib/loop-snapshots.js');
+  const ts = Date.UTC(2026, 5, 29, 13, 0);
+  const data = {
+    updatedAt: ts,
+    wallets: ['0x07e6ae8F553DC77B8b372e4d20dAb797475E6119'],
+    positions: [{ id: 'aave:1', protocol: 'Aave', totalBorrowed: 100, netValue: 10, totalSupplied: 110, netApy: 5 }],
+  };
+  const bucket = loopSnapshotBucketKey(ts);
+  const store = appendLoopSnapshotStore({}, data);
+  assert.equal(Object.keys(store).length, 1, 'first loop snapshot must be stored');
+  assert.equal(store[bucket].positions[0].id, 'aave:1');
+  const store2 = appendLoopSnapshotStore(store, data);
+  assert.equal(Object.keys(store2).length, 1, 'same 6h bucket must not duplicate loop snapshots');
+}
 
 {
   const dashboard = (fetchedAt, total, overrides = {}) => ({
@@ -816,6 +840,25 @@ assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketI
   };
   await aaveProxyHandler({ method: 'GET', headers: {}, query: { cronSnapshot: '1' } }, res);
   assert.equal(statusCode, 401, 'cron snapshot GET must reach the protected Perps handler without a wallet query');
+  assert.equal(responseBody?.error, 'Unauthorized');
+}
+
+{
+  let statusCode = null;
+  let responseBody = null;
+  const res = {
+    setHeader() {},
+    status(code) {
+      statusCode = code;
+      return this;
+    },
+    json(body) {
+      responseBody = body;
+      return body;
+    },
+  };
+  await aaveProxyHandler({ method: 'GET', headers: {}, query: { loopCronSnapshot: '1' } }, res);
+  assert.equal(statusCode, 401, 'loop cron snapshot must require SYNC_SECRET');
   assert.equal(responseBody?.error, 'Unauthorized');
 }
 

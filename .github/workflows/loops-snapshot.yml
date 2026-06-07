@@ -1,0 +1,27 @@
+# Records loop position net value and APY every 6 hours for the Loops history chart.
+name: Loops Snapshot
+
+on:
+  schedule:
+    - cron: '5 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger 6h loop snapshot at :05
+        env:
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+        run: |
+          STATUS=$(curl -s -o /tmp/loops-cron.json -w "%{http_code}" \
+            --max-time 180 \
+            -H "x-sync-secret: ${SYNC_SECRET}" \
+            "https://testedefi.vercel.app/api/loop-rates?loopCronSnapshot=1")
+          echo "Response status: $STATUS"
+          cat /tmp/loops-cron.json || true
+          if [ "$STATUS" != "200" ]; then
+            echo "Warning: loop snapshot returned $STATUS"
+            exit 1
+          fi
