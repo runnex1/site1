@@ -623,6 +623,9 @@ assert.match(indexHtml, /function syncTabRefreshTimers\(tab\)/, 'tab switches mu
 const loopRatesJs = readFileSync(join(ROOT, 'lib', 'loop-rates.js'), 'utf8');
 assert.match(loopRatesJs, /function morphoUsdFromRaw\(amountRaw, asset\)/, 'Morpho loops must derive USD from raw token amounts when Morpho omits USD fields');
 assert.match(loopRatesJs, /borrowAssets borrowAssetsUsd/, 'Morpho loop query must request raw borrow asset amounts');
+assert.match(loopRatesJs, /api\.fluid\.instadapp\.io/, 'Fluid loops must use the official Fluid API');
+assert.match(loopRatesJs, /fluidPositionSource: 'fluid-official-api'/, 'Fluid position source must identify the official API');
+assert.doesNotMatch(loopRatesJs, /DEFINITIV_API_KEY/, 'Fluid loops must not require a Definitiv API key');
 assert.match(indexHtml, /supplementalImported/, 'Loops must keep imported Fluid/Morpho positions when live API coverage is incomplete');
 
 {
