@@ -15,6 +15,8 @@ const {
   buildClosedPairs,
   buildClosedLegsFromExchangeHistory,
   enrichClosedPairsSessionPnl,
+  closedPairStableKey,
+  filterFreshClosedPairs,
   buildDailyFundingSeries,
   computeCombinedNetDeposits,
   filterFullyClosedPairs,
@@ -583,6 +585,20 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.equal(enriched[0].netPnl, closed[0].closeSlippage + 5 - 3.5, 'closed net PnL must use session funding and fees');
 }
 
+{
+  const pair = {
+    symbol: 'UNI',
+    closeTime: 1700000000000,
+    longLeg: { venue: 'hyperliquid' },
+    shortLeg: { venue: 'grvt' },
+  };
+  const key = closedPairStableKey(pair);
+  const rows = [pair, { ...pair, closeTime: 1700001000000, shortLeg: { venue: 'nado' } }];
+  const fresh = filterFreshClosedPairs(rows, [key]);
+  assert.equal(fresh.length, 1, 'known closed keys must skip already-saved closed rounds');
+  assert.equal(closedPairStableKey(fresh[0]), closedPairStableKey(rows[1]), 'only unseen closed rounds should remain for enrichment');
+}
+
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
 assert.match(indexHtml, /dayStart < cutoff\) return null;/, 'summary-only boundary rows must not count as full last-24h PnL');
 assert.match(indexHtml, /return perpsRecomputeDailySeriesCumulative\(trimmed\);/, 'trimmed daily rows must rebuild cumulative totals from the selected window');
@@ -595,7 +611,14 @@ assert.match(perpsJs, /funding: extendedFundingWindow,/, 'Extended response must
 assert.match(perpsJs, /fundingSinceOpen: extendedFundingSinceOpen,/, 'Extended response must preserve since-open funding separately');
 assert.match(perpsJs, /stats\.funding_rate/, 'Extended rates must tolerate snake_case funding-rate fields');
 assert.match(perpsJs, /function enrichClosedPairsSessionPnl\(closedPairs, dailySeriesInputs/, 'closed positions must enrich funding and fees from the latest performance session');
-assert.match(perpsJs, /enrichClosedPairsSessionPnl\(closedPairsFiltered/, 'dashboard closed pairs must use session-aligned PnL');
+assert.match(perpsJs, /enrichClosedPairsSessionPnl\(freshClosedPairs/, 'dashboard closed pairs must use session-aligned PnL');
+assert.match(perpsJs, /function filterFreshClosedPairs\(pairs, knownClosedKeys\)/, 'known closed pairs must skip session enrichment on the server');
+assert.match(aaveProxyJs, /knownClosedKeys\.length/, 'incremental closed-pair requests must bypass the shared dashboard cache');
+assert.match(indexHtml, /const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pairs'/, 'closed pairs must persist locally');
+assert.match(indexHtml, /params\.set\('knownClosedKeys', knownClosedKeys\.join\(','\)\)/, 'perps refresh must tell the API which closed rounds are already cached');
+assert.match(indexHtml, /data\.closedPairs = perpsCacheNewClosedPairs\(data\.closedPairs/, 'dashboard render must append only new closed pairs to the cache');
+assert.match(indexHtml, /const TICKER_REFRESH_MS = 60 \* 1000/, 'market ticker must refresh every minute');
+assert.match(indexHtml, /function syncTabRefreshTimers\(tab\)/, 'tab switches must start and stop feature refresh timers');
 
 {
   const dashboard = (fetchedAt, total, overrides = {}) => ({

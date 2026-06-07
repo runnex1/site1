@@ -203,18 +203,27 @@ async function handlePerps(req, res) {
     return res.status(400).json({ error: 'Valid nado wallet required' });
   }
 
+  const knownClosedKeys = String(req.query.knownClosedKeys || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const dashboardOpts = {
+    hyperliquid: wallet,
+    nado: nadoWallet,
+    grvtSubAccount,
+    days,
+    knownClosedKeys,
+  };
+
   try {
-    const data = await cachedJson(
-      `perps:dashboard:${wallet.toLowerCase()}:${nadoWallet.toLowerCase()}:${grvtSubAccount}:${days}`,
-      PERPS_DASHBOARD_CACHE_MS,
-      'Perps dashboard',
-      () => fetchPerpsDashboard({
-        hyperliquid: wallet,
-        nado: nadoWallet,
-        grvtSubAccount,
-        days,
-      }),
-    );
+    const data = knownClosedKeys.length
+      ? await fetchPerpsDashboard(dashboardOpts)
+      : await cachedJson(
+        `perps:dashboard:${wallet.toLowerCase()}:${nadoWallet.toLowerCase()}:${grvtSubAccount}:${days}`,
+        PERPS_DASHBOARD_CACHE_MS,
+        'Perps dashboard',
+        () => fetchPerpsDashboard(dashboardOpts),
+      );
     return res.status(200).json(data);
   } catch (e) {
     console.error('[perps]', e);

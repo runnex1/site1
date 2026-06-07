@@ -7498,6 +7498,8 @@ const PERPS_CONFIG_KEY = 'vault-perps-config';
 const PERPS_CONFIG_BACKUP_KEY = 'vault-perps-config-backup';
 const PERPS_SESSION_KEY = 'vault-perps-wallets-session';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
+const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pairs';
+const TICKER_VISIBLE_TABS = new Set(['overview', 'etf', 'terminal', 'history']);
 const PM_WALLETS_BACKUP_KEY = 'vault-polymarket-wallets-backup';
 const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
 const PERPS_FETCH_TIMEOUT_MS = 55000;
@@ -7512,6 +7514,9 @@ let _perpsDailyFundShowFees = true;
 let _perpsDailyFundChartState = null;
 let _perpsScheduledRefreshTimer = null;
 let _perpsRefreshInFlight = false;
+let _marketTickerTimer = null;
+let _eventLogRefreshTimer = null;
+let _walletFlashTimer = null;
 let _perpsLiveAprUpdatedAt = null;
 let _perpsLastRefreshAt = null;
 let _perpsRefreshError = null;
@@ -7836,6 +7841,10 @@ async function loadData() {
                         perpsMergeSnapshotsFromServer(parsed._perpsSnapshots);
                         delete parsed._perpsSnapshots;
                     }
+                    if (Array.isArray(parsed._perpsClosedPairs)) {
+                        perpsMergeClosedPairsFromServer(parsed._perpsClosedPairs);
+                        delete parsed._perpsClosedPairs;
+                    }
 
                     parsed.polymarketWallets = mergeWalletAddresses(data.polymarketWallets, parsed.polymarketWallets);
 
@@ -7949,6 +7958,7 @@ async function saveData() {
                 return perpsIsValidEthAddress(cfg.hyperliquid) ? cfg : undefined;
             })(),
             perpsSnapshots: _ls(PERPS_SNAPSHOTS_KEY, '{}'),
+            perpsClosedPairs: _ls(PERPS_CLOSED_PAIRS_KEY, '[]'),
             // Dismissed opportunities (market IDs)
             dismissedMarkets: _dismissedMarkets || [],
         };
@@ -8577,6 +8587,38 @@ function switchTab(tab, opts = {}) {
     }
     if (tab === 'defi') {
         try { renderDefiCockpit(); } catch (e) { console.error('[DeFi cockpit]', e); }
+    }
+    if (tab === 'etf' && typeof refreshEtfLivePrices === 'function') {
+        refreshEtfLivePrices();
+    }
+    syncTabRefreshTimers(tab);
+}
+
+function syncTabRefreshTimers(tab) {
+    const active = tab || document.body.dataset.activeTab || 'overview';
+    if (TICKER_VISIBLE_TABS.has(active)) startMarketTickerRefresh();
+    else stopMarketTickerRefresh();
+
+    if (active === 'defi') startLiveTokenPrices();
+    else stopLiveTokenPrices();
+
+    if (active === 'overview') startOverviewDashboardRefreshes();
+    else stopOverviewDashboardRefreshes();
+
+    if (active === 'prediction') setupPredictionWalletPulseRefresh();
+    else stopPredictionWalletPulseRefresh();
+
+    if (active === 'terminal') {
+        if (typeof terminalAlerts !== 'undefined' && terminalAlerts.some(a => !a.triggered)) terminalStartPolling();
+    } else {
+        terminalStopPolling();
+    }
+
+    if (active === 'watcher') {
+        startWalletFlashPreview();
+        if (typeof window.aaveCapFetchAll === 'function') window.aaveCapFetchAll();
+    } else {
+        stopWalletFlashPreview();
     }
 }
 
@@ -12467,22 +12509,57 @@ function orderOpportunityRows(rows) {
 function setupPegMonitorRefresh() {
     if (_dashOpportunityPegInterval) return;
     _dashOpportunityPegInterval = setInterval(() => {
-        if (document.hidden) return;
+        if (document.hidden || document.body.dataset.activeTab !== 'overview') return;
         if (Date.now() - _dashOpportunityPegLastRefresh >= OPPORTUNITY_PEG_REFRESH_MS) {
             renderDashboardOpportunityZone({ background:true });
         }
     }, OPPORTUNITY_PEG_REFRESH_MS);
-    document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && Date.now() - _dashOpportunityPegLastRefresh >= OPPORTUNITY_PEG_REFRESH_MS) {
-            renderDashboardOpportunityZone({ background:true });
-        }
-    });
+    if (!document._pegVisibilityBound) {
+        document._pegVisibilityBound = true;
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden || document.body.dataset.activeTab !== 'overview') return;
+            if (Date.now() - _dashOpportunityPegLastRefresh >= OPPORTUNITY_PEG_REFRESH_MS) {
+                renderDashboardOpportunityZone({ background:true });
+            }
+        });
+    }
+}
+function stopPegMonitorRefresh() {
+    if (_dashOpportunityPegInterval) {
+        clearInterval(_dashOpportunityPegInterval);
+        _dashOpportunityPegInterval = null;
+    }
 }
 function setupOpportunityLiveRefresh() {
     if (_dashOpportunityLiveInterval) return;
     _dashOpportunityLiveInterval = setInterval(() => {
-        if (!document.hidden) refreshOpportunityLiveOddsCache();
+        if (document.hidden || document.body.dataset.activeTab !== 'overview') return;
+        refreshOpportunityLiveOddsCache();
     }, OPPORTUNITY_ODDS_CACHE_MS);
+}
+function stopOpportunityLiveRefresh() {
+    if (_dashOpportunityLiveInterval) {
+        clearInterval(_dashOpportunityLiveInterval);
+        _dashOpportunityLiveInterval = null;
+    }
+}
+function startOverviewDashboardRefreshes() {
+    setupPegMonitorRefresh();
+    setupOpportunityLiveRefresh();
+    if (!_eventLogRefreshTimer && typeof refreshServerEventLog === 'function') {
+        _eventLogRefreshTimer = setInterval(() => {
+            if (document.hidden || document.body.dataset.activeTab !== 'overview') return;
+            refreshServerEventLog(true);
+        }, 60000);
+    }
+}
+function stopOverviewDashboardRefreshes() {
+    stopPegMonitorRefresh();
+    stopOpportunityLiveRefresh();
+    if (_eventLogRefreshTimer) {
+        clearInterval(_eventLogRefreshTimer);
+        _eventLogRefreshTimer = null;
+    }
 }
 async function refreshOpportunityLiveOddsCache() {
     if (_dashOpportunityLiveRefreshing) return;
@@ -12844,6 +12921,7 @@ let _tokenPriceTimer = null;
 let livePrices = {}; // symbol.toUpperCase() → USD price
 
 async function fetchLiveTokenPrices() {
+    if (document.body.dataset.activeTab !== 'defi' || document.hidden) return;
     if (!data.tokens.length) return;
 
     const pulse  = document.getElementById('tokenPricePulse');
@@ -12896,6 +12974,12 @@ function startLiveTokenPrices() {
     if (_tokenPriceTimer) return;
     fetchLiveTokenPrices();
     _tokenPriceTimer = setInterval(fetchLiveTokenPrices, 60000);
+}
+function stopLiveTokenPrices() {
+    if (_tokenPriceTimer) {
+        clearInterval(_tokenPriceTimer);
+        _tokenPriceTimer = null;
+    }
 }
 
 // =============================================================================
@@ -14799,8 +14883,7 @@ async function fetchServerMarketMoves(wallets) {
 function setupPredictionWalletPulseRefresh() {
     if (_predictionWalletPulseTimer) return;
     _predictionWalletPulseTimer = setInterval(() => {
-        if (document.hidden) return;
-        if (!['prediction', 'watcher'].includes(document.body.dataset.activeTab || '')) return;
+        if (document.hidden || document.body.dataset.activeTab !== 'prediction') return;
         const wallets = predictionWatchedWalletAddresses();
         if (wallets.length) {
             const key = wallets.slice().sort().join('|');
@@ -14811,12 +14894,20 @@ function setupPredictionWalletPulseRefresh() {
         }
         predictionRefreshMarketMoves({ force:true });
     }, PREDICTION_WALLET_PULSE_MS);
-    document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && ['prediction', 'watcher'].includes(document.body.dataset.activeTab || '')) {
+    if (!document._predictionVisibilityBound) {
+        document._predictionVisibilityBound = true;
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden || document.body.dataset.activeTab !== 'prediction') return;
             predictionRenderActivity(++_predictionIntelSeq, { background:true });
             predictionRefreshMarketMoves();
-        }
-    });
+        });
+    }
+}
+function stopPredictionWalletPulseRefresh() {
+    if (_predictionWalletPulseTimer) {
+        clearInterval(_predictionWalletPulseTimer);
+        _predictionWalletPulseTimer = null;
+    }
 }
 
 async function predictionRenderActivity(seq, opts={}) {
@@ -17449,6 +17540,7 @@ function wlShowFileServeInstructions() {
     container.appendChild(div);
 }
 async function wlRefreshPrices() {
+    if (document.body.dataset.activeTab !== 'watcher' || document.hidden) return;
     const dot    = document.getElementById('wlPollDot');
     const status = document.getElementById('wlRefreshStatus');
     if (dot) dot.style.background = 'var(--amber)';
@@ -19764,6 +19856,7 @@ function terminalStopPolling() {
 }
 
 async function terminalPoll() {
+    if (document.body.dataset.activeTab !== 'terminal' || document.hidden) return;
     const active = terminalAlerts.filter(a => !a.triggered);
     if (!active.length) { terminalStopPolling(); terminalSetStatus('idle', false); return; }
     terminalSetStatus('polling…', true);
@@ -20189,7 +20282,7 @@ function renderDailyBrief() {
 // =============================================================================
 // MARKET TICKER — BTC, ETH, Gold, S&P 500, Custom1, Custom2
 // =============================================================================
-const TICKER_REFRESH_MS = 10 * 1000; // 10 seconds
+const TICKER_REFRESH_MS = 60 * 1000;
 
 // Significant-decimal rule: for prices under $1, show the first non-zero decimal
 // digit plus two more. e.g. 0.000742 → "$0.000742", 0.031 → "$0.0310", 0.85 → "$0.85"
@@ -20285,7 +20378,38 @@ async function fetchYahoo(ySymbol) {
     } catch(e) { return null; }
 }
 
+function startMarketTickerRefresh() {
+    if (_marketTickerTimer) return;
+    fetchMarketTicker();
+    _marketTickerTimer = setInterval(fetchMarketTicker, TICKER_REFRESH_MS);
+}
+function stopMarketTickerRefresh() {
+    if (_marketTickerTimer) {
+        clearInterval(_marketTickerTimer);
+        _marketTickerTimer = null;
+    }
+}
+function startWalletFlashPreview() {
+    if (_walletFlashTimer) return;
+    _walletFlashTimer = setInterval(() => {
+        if (document.body.dataset.activeTab !== 'watcher') return;
+        const card = document.getElementById('wv-card-1');
+        if (card) {
+            card.classList.remove('wv-flash');
+            void card.offsetWidth;
+            card.classList.add('wv-flash');
+        }
+    }, 8000);
+}
+function stopWalletFlashPreview() {
+    if (_walletFlashTimer) {
+        clearInterval(_walletFlashTimer);
+        _walletFlashTimer = null;
+    }
+}
+
 async function fetchMarketTicker() {
+    if (!TICKER_VISIBLE_TABS.has(document.body.dataset.activeTab || '') || document.hidden) return;
     // --- BTC + ETH: Binance (fast, CORS-open) ---
     const binancePairs = [
         { symbol: 'BTCUSDT', priceId: 'tk-btc-price', chgId: 'tk-btc-chg' },
@@ -20561,8 +20685,6 @@ async function fetchCustomTicker(n) {
     tkSetLabel(1, tkGetSym(1));
     tkSetLabel(2, tkGetSym(2));
 })();
-fetchMarketTicker();
-setInterval(fetchMarketTicker, TICKER_REFRESH_MS);
 
 // =============================================================================
 // =============================================================================
@@ -20949,9 +21071,7 @@ async function fetchDailyNews() {
 // =============================================================================
 (async () => {
     await loadData();
-    startLiveTokenPrices();
     syncEtfsServerSide();
-    refreshEtfLivePrices();
     applyEtfDcaSchedules();
 })();
 LogoEngine.init(); // runs in background, never blocks UI
@@ -21766,8 +21886,10 @@ function perpsScheduleNextAutoRefresh() {
     }
     _perpsScheduledRefreshTimer = setTimeout(async () => {
         _perpsScheduledRefreshTimer = null;
-        if (document.body.dataset.activeTab === 'perps') {
+        if (document.body.dataset.activeTab === 'perps' && !document.hidden) {
             await perpsRefresh(true);
+            perpsScheduleNextAutoRefresh();
+        } else if (document.body.dataset.activeTab === 'perps') {
             perpsScheduleNextAutoRefresh();
         }
     }, perpsNextScheduledRefreshDelayMs());
@@ -21862,6 +21984,62 @@ async function perpsSaveConfigAndRefresh() {
     perpsApplyWalletMasks();
     perpsUpdateConfigVisibility();
     await perpsRefresh(false);
+}
+
+function perpsClosedPairKey(pair) {
+    const symbol = String(pair?.symbol || '').trim().toUpperCase();
+    const closeTime = Number(pair?.closeTime || 0);
+    const longVenue = pair?.longLeg?.venue || '';
+    const shortVenue = pair?.shortLeg?.venue || '';
+    if (!symbol || !closeTime || !longVenue || !shortVenue) return '';
+    return `${symbol}|${closeTime}|${longVenue}|${shortVenue}`;
+}
+
+function perpsLoadCachedClosedPairs() {
+    try {
+        const rows = JSON.parse(localStorage.getItem(PERPS_CLOSED_PAIRS_KEY) || '[]');
+        return Array.isArray(rows) ? rows : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function perpsPersistCachedClosedPairs(rows) {
+    try {
+        const list = Array.isArray(rows) ? rows : [];
+        localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, JSON.stringify(list));
+        if (typeof saveData === 'function') saveData();
+    } catch (e) {}
+}
+
+function perpsMergeClosedPairsFromServer(serverRows) {
+    const incoming = Array.isArray(serverRows) ? serverRows : [];
+    if (!incoming.length) return perpsLoadCachedClosedPairs();
+    const byKey = new Map(perpsLoadCachedClosedPairs().map(p => [perpsClosedPairKey(p), p]));
+    let added = false;
+    for (const pair of incoming) {
+        const key = perpsClosedPairKey(pair);
+        if (!key || byKey.has(key)) continue;
+        byKey.set(key, pair);
+        added = true;
+    }
+    const merged = [...byKey.values()].sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
+    if (added) perpsPersistCachedClosedPairs(merged);
+    return merged;
+}
+
+function perpsCacheNewClosedPairs(freshPairs) {
+    const byKey = new Map(perpsLoadCachedClosedPairs().map(p => [perpsClosedPairKey(p), p]));
+    let added = false;
+    for (const pair of freshPairs || []) {
+        const key = perpsClosedPairKey(pair);
+        if (!key || byKey.has(key)) continue;
+        byKey.set(key, pair);
+        added = true;
+    }
+    const merged = [...byKey.values()].sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
+    if (added) perpsPersistCachedClosedPairs(merged);
+    return merged;
 }
 
 function perpsMergeSnapshotsFromServer(serverSnaps) {
@@ -23949,6 +24127,7 @@ function perpsRenderCrossMarginLeverage(data) {
 function perpsRenderDashboard(data, opts = {}) {
     _perpsCache = data;
     _perpsLastData = data;
+    data.closedPairs = perpsCacheNewClosedPairs(data.closedPairs || []);
     const snapshotAdded = perpsSaveSnapshot(data);
     data._equitySeries = perpsBuildEquitySeries(data);
     if (data.rateSpread) perpsApplyLiveRates(data.rateSpread, data.fetchedAt);
@@ -24047,7 +24226,9 @@ async function perpsRefresh(silent = false) {
         const bucketsBefore = perpsCountEquityBuckets();
         await perpsHydrateSnapshotsFromCloud();
         const cloudSnapshotsAdded = perpsCountEquityBuckets() > bucketsBefore;
+        const knownClosedKeys = perpsLoadCachedClosedPairs().map(perpsClosedPairKey).filter(Boolean);
         const params = new URLSearchParams({ wallet: hl, days: String(perpsStatRangeToApiDays(_perpsStatRange)) });
+        if (knownClosedKeys.length) params.set('knownClosedKeys', knownClosedKeys.join(','));
         if (nadoRaw && /^0x[a-fA-F0-9]{40}$/.test(nadoRaw)) params.set('nadoWallet', nadoRaw);
         const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
         if (grvtSub) params.set('grvtSubAccount', grvtSub);
@@ -24127,15 +24308,6 @@ function switchWTab(name, btn) {
     if (name === 'wallets') updateWatcherWalletCount();
 }
 
-// ── Wallet card flash sim (preview only) ──────────────────────────
-setInterval(() => {
-    const card = document.getElementById('wv-card-1');
-    if (card) {
-        card.classList.remove('wv-flash');
-        void card.offsetWidth;
-        card.classList.add('wv-flash');
-    }
-}, 8000);
 
 </script>
 
@@ -24310,6 +24482,7 @@ document.addEventListener("click", function(e){
 
   // ── Fetch all markets in one batched GraphQL query ───────────────────
   window.aaveCapFetchAll = async function () {
+    if (document.body.dataset.activeTab !== 'watcher' || document.hidden) return;
     if (markets.length === 0) return;
 
     const btn = document.getElementById('aavecap-refresh-btn');
@@ -24465,14 +24638,15 @@ document.addEventListener("click", function(e){
       if (btn) { btn.textContent = '✓ Alert On'; btn.style.background = 'var(--teal-20)'; }
       const secs = Math.max(30, parseInt(document.getElementById('aavecap-interval')?.value) || 60);
       if (st) st.textContent = 'Checking every ' + secs + 's';
-      alertTimer = setInterval(window.aaveCapFetchAll, secs * 1000);
+      alertTimer = setInterval(() => {
+        if (document.body.dataset.activeTab === 'watcher' && !document.hidden) window.aaveCapFetchAll();
+      }, secs * 1000);
       window.aaveCapFetchAll();
     });
   };
 
   // ── Init ─────────────────────────────────────────────────────────────
   renderCards();
-  window.aaveCapFetchAll();
 })();
 </script>
 
@@ -24658,11 +24832,12 @@ document.addEventListener("click", function(e){
 
       // Sync portfolio every 5 minutes in background
       setInterval(syncPortfolioToServer, 5 * 60 * 1000);
-      // Start polling server for fired alerts every 10 seconds
-      setInterval(pollForFiredAlerts, 10000);
-      if (typeof refreshServerEventLog === 'function') {
+      // Poll fired alerts only while the Terminal tab is active.
+      setInterval(() => {
+        if (document.body.dataset.activeTab === 'terminal' && !document.hidden) pollForFiredAlerts();
+      }, 10000);
+      if (typeof refreshServerEventLog === 'function' && document.body.dataset.activeTab === 'overview') {
         refreshServerEventLog(true);
-        setInterval(() => refreshServerEventLog(true), 60000);
       }
     }
     if (++attempts > 50) clearInterval(poll);
