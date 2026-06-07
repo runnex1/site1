@@ -619,6 +619,9 @@ assert.match(indexHtml, /const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pair
 assert.match(indexHtml, /params\.set\('knownClosedKeys', knownClosedKeys\.join\(','\)\)/, 'perps refresh must tell the API which closed rounds are already cached');
 assert.match(indexHtml, /data\.closedPairs = perpsCacheNewClosedPairs\(data\.closedPairs/, 'dashboard render must append only new closed pairs to the cache');
 assert.match(indexHtml, /const TICKER_REFRESH_MS = 60 \* 1000/, 'market ticker must refresh every minute');
+assert.match(indexHtml, /TICKER_SCROLL_DELAY_MS = 5000/, 'market ticker must start scrolling after a 5 second delay');
+assert.match(indexHtml, /function tickerAddCustom\(/, 'market ticker must let users add custom symbols manually');
+assert.match(indexHtml, /ticker-strip-viewport/, 'market ticker must use a scrolling viewport for overflow symbols');
 assert.match(indexHtml, /function syncTabRefreshTimers\(tab\)/, 'tab switches must start and stop feature refresh timers');
 const loopRatesJs = readFileSync(join(ROOT, 'lib', 'loop-rates.js'), 'utf8');
 assert.match(loopRatesJs, /function morphoUsdFromRaw\(amountRaw, asset\)/, 'Morpho loops must derive USD from raw token amounts when Morpho omits USD fields');
