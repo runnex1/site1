@@ -5361,13 +5361,14 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-apy-value { margin-top:0.16rem; font-family:var(--ff-mono); font-size:1.34rem; line-height:1; font-weight:900; color:var(--green); }
 .loop-apy-value.neg { color:var(--red); }
 .loop-apy-value.neu { color:var(--t3); }
-.loop-metrics { display:grid; grid-template-columns:repeat(6, minmax(0,1fr)); gap:1px; background:rgba(148,163,184,0.10); border-bottom:1px solid rgba(148,163,184,0.10); }
+.loop-metrics { display:grid; grid-template-columns:repeat(8, minmax(0,1fr)); gap:1px; background:rgba(148,163,184,0.10); border-bottom:1px solid rgba(148,163,184,0.10); }
 .loop-metric { min-width:0; padding:0.74rem 0.76rem; background:rgba(4,13,19,0.92); }
 .loop-metric-label { color:var(--t3); font-family:var(--ff-display); font-size:0.58rem; line-height:1.15; font-weight:850; letter-spacing:0.1em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .loop-metric-value { margin-top:0.28rem; font-family:var(--ff-mono); font-size:0.82rem; line-height:1.08; font-weight:850; color:var(--t1); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .loop-metric-value.supply, .loops-value.supply { color:var(--teal); }
 .loop-metric-value.borrow, .loops-value.borrow { color:var(--red); }
 .loop-metric-value.good { color:var(--green); }
+.loop-metric-value.neg { color:var(--red); }
 .loop-metric-value.warn { color:var(--amber); }
 .loop-meter-wrap { padding:0.72rem 0.94rem 0.84rem; display:grid; grid-template-columns:1fr auto; gap:0.76rem; align-items:center; border-bottom:1px solid rgba(148,163,184,0.10); }
 .loop-meter-copy { min-width:0; color:var(--t3); font-family:var(--ff-display); font-size:0.68rem; line-height:1.25; font-weight:700; }
@@ -5572,7 +5573,7 @@ body[data-active-tab="loops"] .loop-metric,
 body[data-active-tab="loops"] .loop-metrics,
 .page-content.tab-loops .loop-metrics,
 .page-content:has(#loopsTab.active) .loop-metrics {
-  grid-template-columns:repeat(5, minmax(0,1fr));
+  grid-template-columns:repeat(4, minmax(0,1fr));
 }
 body[data-active-tab="loops"] .loop-metric-label,
 .page-content.tab-loops .loop-metric-label,
@@ -11016,6 +11017,66 @@ function loopHistoryPoints(positionId) {
         .sort((a, b) => a.ts - b.ts);
 }
 
+const LOOP_SNAPSHOT_MS_PER_DAY = 86400000;
+
+function loopSnapshotRealizedApy(points, targetDays, endValue, endTs) {
+    const end = Number(endTs);
+    const endVal = Number(endValue);
+    if (!end || !Number.isFinite(endVal)) return null;
+
+    const sorted = (points || [])
+        .filter(p => p && Number(p.ts) && Number.isFinite(Number(p.netValue)))
+        .map(p => ({ ts: Number(p.ts), netValue: Number(p.netValue) }))
+        .sort((a, b) => a.ts - b.ts);
+
+    const target = Math.max(1, Number(targetDays) || 7);
+    const windowStart = end - target * LOOP_SNAPSHOT_MS_PER_DAY;
+    const firstTs = sorted.length ? sorted[0].ts : end;
+    const baselineTs = Math.max(windowStart, firstTs);
+
+    let baselineVal = null;
+    let baselinePointTs = baselineTs;
+    for (let i = sorted.length - 1; i >= 0; i--) {
+        if (sorted[i].ts <= baselineTs) {
+            baselineVal = sorted[i].netValue;
+            baselinePointTs = sorted[i].ts;
+            break;
+        }
+    }
+    if (baselineVal === null && sorted.length) {
+        baselineVal = sorted[0].netValue;
+        baselinePointTs = sorted[0].ts;
+    }
+    if (!Number.isFinite(baselineVal) || Math.abs(baselineVal) < 0.01) return null;
+
+    const periodDays = Math.max(end - baselinePointTs, 0) / LOOP_SNAPSHOT_MS_PER_DAY;
+    if (periodDays < 1 / 24) return null;
+
+    const apy = ((endVal - baselineVal) / baselineVal) * (365 / periodDays) * 100;
+
+    return {
+        apy,
+        periodDays,
+        targetDays: target,
+        partial: periodDays < target - 0.01,
+        baselineValue: baselineVal,
+        endValue: endVal,
+    };
+}
+
+function loopSnapshotApyMetricHtml(targetDays, points, endValue, endTs) {
+    const result = loopSnapshotRealizedApy(points, targetDays, endValue, endTs);
+    if (!result || !Number.isFinite(result.apy)) {
+        return `<div class="loop-metric"><div class="loop-metric-label">${targetDays}d APY</div><div class="loop-metric-value neu">-</div></div>`;
+    }
+    const cls = result.apy > 0 ? 'good' : result.apy < 0 ? 'neg' : 'neu';
+    const title = result.partial
+        ? `Realized ${result.periodDays.toFixed(1)}d (position shorter than ${targetDays}d)`
+        : `Realized ${targetDays}d from 6h snapshots`;
+    const star = result.partial ? '*' : '';
+    return `<div class="loop-metric"><div class="loop-metric-label" title="${dashEsc(title)}">${targetDays}d APY${star}</div><div class="loop-metric-value ${cls}" title="${dashEsc(title)}">${result.apy.toFixed(2)}%</div></div>`;
+}
+
 function loopHistoryChartHtml(points) {
     if (!points || points.length < 2) {
         return '<div class="loop-history-chart empty"><span>History builds every 6h after server snapshots</span></div>';
@@ -13794,6 +13855,17 @@ function renderLoops() {
         const networkTag = network && network !== '-' ? `<span class="loop-tag network">${dashEsc(network)}</span>` : '';
         const apyCls = Number.isFinite(totalApr) ? (totalApr > 0 ? '' : totalApr < 0 ? 'neg' : 'neu') : 'neu';
         const apyText = Number.isFinite(totalApr) ? totalApr.toFixed(2) + '%' : '-';
+        const historyPoints = loop.live && loop.raw?.id ? loopHistoryPoints(loop.raw.id) : [];
+        const liveEndValue = loop.live && loop.raw
+            ? Number(loop.raw.economicNetValue ?? loop.raw.netValue ?? netValue)
+            : null;
+        const liveEndTs = loopApiState.updatedAt || Date.now();
+        const apy7dHtml = loop.live && loop.raw?.id
+            ? loopSnapshotApyMetricHtml(7, historyPoints, liveEndValue, liveEndTs)
+            : '<div class="loop-metric"><div class="loop-metric-label">7d APY</div><div class="loop-metric-value neu">-</div></div>';
+        const apy30dHtml = loop.live && loop.raw?.id
+            ? loopSnapshotApyMetricHtml(30, historyPoints, liveEndValue, liveEndTs)
+            : '<div class="loop-metric"><div class="loop-metric-label">30d APY</div><div class="loop-metric-value neu">-</div></div>';
 
         return `
         <div class="loop-card">
@@ -13819,6 +13891,8 @@ function renderLoops() {
                 <div class="loop-metric"><div class="loop-metric-label">Liq. Buffer</div><div class="loop-metric-value ${liqBuffer !== null && liqBuffer < 8 ? 'warn' : 'good'}">${liqBuffer === null ? '-' : liqBuffer.toFixed(2) + '%'}</div></div>
                 <div class="loop-metric"><div class="loop-metric-label">Supply APY</div><div class="loop-metric-value good"${supplyApyTitle ? ` title="${dashEsc(supplyApyTitle)}"` : ''}>${Number.isFinite(suppliedApr) ? suppliedApr.toFixed(2) + '%' : '-'}${merklApr > 0 ? '<span style="font-size:0.68rem;color:var(--t3);margin-left:0.25rem">Merkl</span>' : ''}</div></div>
                 <div class="loop-metric"><div class="loop-metric-label">Borrow APY</div><div class="loop-metric-value borrow">${Number.isFinite(borrowedApr) ? borrowedApr.toFixed(2) + '%' : '-'}</div></div>
+                ${apy7dHtml}
+                ${apy30dHtml}
             </div>
             <div class="loop-meter-wrap">
                 <div class="loop-meter-copy">

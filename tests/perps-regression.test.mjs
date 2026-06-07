@@ -641,6 +641,44 @@ assert.match(aaveProxyJs, /vault:loop_snapshots/, 'loop snapshots must persist i
 assert.match(syncJs, /loopSnapshots === '1'/, 'sync endpoint must hydrate loop snapshot history');
 assert.match(indexHtml, /loop-history-chart/, 'loop cards must render history below the supply/borrow meter');
 assert.match(indexHtml, /function loopHistoryChartHtml\(points\)/, 'loops tab must build per-position history charts from snapshots');
+assert.match(indexHtml, /function loopSnapshotRealizedApy\(points, targetDays, endValue, endTs\)/, 'loops tab must compute realized APY from snapshots');
+assert.match(indexHtml, /7d APY/, 'loop cards must show 7d realized APY');
+assert.match(indexHtml, /30d APY/, 'loop cards must show 30d realized APY');
+
+{
+  const { loopSnapshotRealizedApy, MS_PER_DAY } = require('../lib/loop-snapshot-apy.js');
+  const now = Date.UTC(2026, 5, 29, 12);
+  const partial = loopSnapshotRealizedApy(
+    [{ ts: now - 3 * MS_PER_DAY, netValue: 100000 }],
+    7,
+    103000,
+    now,
+  );
+  assert.ok(partial?.partial, 'short position history must mark 7d APY as partial');
+  assert.ok(Math.abs(partial.periodDays - 3) < 0.01, 'partial 7d APY must use full position period');
+  assert.ok(Math.abs(partial.apy - 365) < 0.5, '3% gain over 3d must annualize to ~365% APY');
+
+  const full = loopSnapshotRealizedApy(
+    [
+      { ts: now - 7 * MS_PER_DAY, netValue: 100000 },
+      { ts: now - 3 * MS_PER_DAY, netValue: 104000 },
+    ],
+    7,
+    107000,
+    now,
+  );
+  assert.ok(full && !full.partial, '7d window with enough history must not be partial');
+  assert.ok(Math.abs(full.apy - 365) < 0.5, '7% gain over 7d must annualize to ~365% APY');
+
+  const partial30 = loopSnapshotRealizedApy(
+    [{ ts: now - 10 * MS_PER_DAY, netValue: 50000 }],
+    30,
+    52000,
+    now,
+  );
+  assert.ok(partial30?.partial, '10d history must mark 30d APY as partial');
+  assert.ok(Math.abs(partial30.periodDays - 10) < 0.01, '30d APY must use full period when position is younger than 30d');
+}
 
 {
   const { appendLoopSnapshotStore, loopSnapshotBucketKey } = require('../lib/loop-snapshots.js');
