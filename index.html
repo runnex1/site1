@@ -4138,16 +4138,9 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   outline: none;
 }
 .ticker-source-select:focus { border-color: var(--teal); }
-.ticker-source-badge {
-  font-size: 0.48rem;
-  letter-spacing: 0.04em;
-  color: var(--t3);
-  text-transform: uppercase;
-  font-weight: 700;
-}
 .ticker-asset {
-  display: flex; align-items: center; gap: 0.6rem;
-  padding: 0 1.5rem 0 0;
+  display: flex; align-items: center; gap: 0.72rem;
+  padding: 0 2.1rem 0 0;
   height: 100%;
   cursor: default;
   transition: opacity 0.15s;
@@ -4186,7 +4179,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 .ticker-change.flat { color: var(--t3);    background: transparent; }
 .ticker-strip-sep {
   width: 1px; height: 22px; background: var(--border);
-  flex-shrink: 0; margin-right: 1.5rem;
+  flex-shrink: 0; margin-right: 2.1rem;
 }
 .ticker-strip-refresh {
   flex-shrink: 0;
@@ -4276,8 +4269,8 @@ body {
 }
 .ticker-strip-inner,
 .ticker-strip-sequence { padding: 0 1.2rem; }
-.ticker-asset { min-width: 170px; }
-.ticker-strip-sep { height: 36px; background: rgba(148,163,184,0.18); margin-right: 1.2rem; }
+.ticker-asset { min-width: 188px; }
+.ticker-strip-sep { height: 36px; background: rgba(148,163,184,0.18); margin-right: 2rem; }
 .ticker-change { background: transparent !important; }
 .page-content { padding: 10px; }
 .dash-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(330px, 0.72fr); gap: 10px; }
@@ -4337,7 +4330,7 @@ body {
 .dash-dismiss-btn:hover { background:rgba(239,68,68,0.12); color:var(--red); opacity:1; }
 .dash-empty { color: var(--t3); font-size:0.82rem; padding: 1rem; }
 @media (max-width: 1180px) { .dash-grid { grid-template-columns: 1fr; } .dash-grid > .dash-panel { grid-column: 1 / -1 !important; } .topbar-metrics { grid-template-columns: 1fr; } .topbar { flex-direction:column; } .topbar-metric { border-left:0; border-top:1px solid rgba(148,163,184,0.14); padding:0.75rem 0; } }
-@media (max-width: 760px) { .sidebar { margin:0; height:auto; border-radius:0; } .main-area { padding:0; } .topbar, .market-ticker-strip { margin-left:0; margin-right:0; border-radius:0; } .ticker-asset { min-width:140px; } .dash-event-card { gap:0.4rem; } .dash-event-age { display:none; } }
+@media (max-width: 760px) { .sidebar { margin:0; height:auto; border-radius:0; } .main-area { padding:0; } .topbar, .market-ticker-strip { margin-left:0; margin-right:0; border-radius:0; } .ticker-asset { min-width:156px; } .dash-event-card { gap:0.4rem; } .dash-event-age { display:none; } }
 
 /* Reference dashboard density */
 body { overflow: hidden; }
@@ -4353,11 +4346,11 @@ body { overflow: hidden; }
 .market-ticker-strip { min-height: 40px; }
 .ticker-strip-inner,
 .ticker-strip-sequence { min-height: 40px; padding: 0 0.95rem; }
-.ticker-asset { min-width: 148px; gap: 0.52rem; }
+.ticker-asset { min-width: 162px; gap: 0.62rem; padding-right: 1.65rem; }
 .ticker-asset-icon { width: 22px !important; height: 22px !important; }
 .ticker-asset-price { font-size: 0.72rem; }
 .ticker-change { font-size: 0.6rem; padding: 0 3px; }
-.ticker-strip-sep { height: 26px; margin-right: 0.75rem; }
+.ticker-strip-sep { height: 26px; margin-right: 1.35rem; }
 .ticker-strip-refresh { font-size: 0.6rem; }
 .page-content { height: calc(100vh - 118px); overflow: auto; padding: 10px; }
 .page-content.tab-overview { overflow: hidden; }
@@ -21006,10 +20999,8 @@ async function tkSetLabel(idx, sym, source) {
     const src = source || entry?.source || 'auto';
     const slug = tkCustomSlug(idx);
     const lbl = document.getElementById(`${slug}-label`);
-    const badge = document.getElementById(`${slug}-source`);
     const icon = document.getElementById(`${slug}-icon`);
     if (lbl) lbl.textContent = sym;
-    if (badge) badge.textContent = tkSourceLabel(src);
     if (icon) {
         const fallback = LogoEngine.makeSvgFallback(sym.substring(0, 3), sym);
         icon.innerHTML = `<img src="${fallback}" alt="${dashEsc(sym)}"
@@ -21035,7 +21026,6 @@ function tickerCustomItemHtml(entry, idx) {
               <span id="${slug}-label">${dashEsc(sym)}</span>
               <button class="ticker-edit-btn" onclick="tkEditStart(${idx})" title="Edit symbol">✎</button>
             </div>
-            <span class="ticker-source-badge" id="${slug}-source">${tkSourceLabel(source)}</span>
             <div id="${slug}-editor" style="display:none;">
               <input class="ticker-custom-input" id="${slug}-input" maxlength="10" placeholder="AAPL"
                 onkeydown="if(event.key==='Enter')tkEditSave(${idx});if(event.key==='Escape')tkEditCancel(${idx});">
@@ -21100,14 +21090,12 @@ function tkEditStart(idx) {
     const input  = document.getElementById(`${slug}-input`);
     const sourceInput = document.getElementById(`${slug}-source-input`);
     const lbl    = document.getElementById(`${slug}-label`);
-    const badge  = document.getElementById(`${slug}-source`);
     const entry = tickerGetEntry(idx);
     if (!editor || !input) return;
     input.value = entry?.symbol || '';
     if (sourceInput) sourceInput.value = entry?.source || 'auto';
     editor.style.display = 'block';
     if (lbl) lbl.style.display = 'none';
-    if (badge) badge.style.display = 'none';
     input.focus();
     input.select();
 }
@@ -21118,7 +21106,6 @@ function tkEditSave(idx) {
     const sourceInput = document.getElementById(`${slug}-source-input`);
     const editor = document.getElementById(`${slug}-editor`);
     const lbl    = document.getElementById(`${slug}-label`);
-    const badge  = document.getElementById(`${slug}-source`);
     if (!input) return;
     const sym = input.value.trim().toUpperCase();
     const source = String(sourceInput?.value || 'auto');
@@ -21146,17 +21133,14 @@ function tkEditSave(idx) {
     }
     if (editor) editor.style.display = 'none';
     if (lbl) lbl.style.display = '';
-    if (badge) badge.style.display = '';
 }
 
 function tkEditCancel(idx) {
     const slug = tkCustomSlug(idx);
     const editor = document.getElementById(`${slug}-editor`);
     const lbl    = document.getElementById(`${slug}-label`);
-    const badge  = document.getElementById(`${slug}-source`);
     if (editor) editor.style.display = 'none';
     if (lbl) lbl.style.display = '';
-    if (badge) badge.style.display = '';
 }
 
 function tickerRefreshDupClone() {

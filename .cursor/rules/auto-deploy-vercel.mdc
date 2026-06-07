@@ -1,24 +1,24 @@
 ---
-description: Auto-commit and push to Vercel after build/implement tasks
+description: Auto-commit and push to Vercel after any code changes (user policy)
 alwaysApply: true
 ---
 
-# Auto-deploy after builds
+# Auto-deploy (standing user policy)
 
-When the user asks you to **build**, **implement**, or **fix** something in this repo (not question-only or review-only tasks):
+The user wants **automatic production deploys**. After completing any task that changes repo files:
 
-1. Complete the code changes.
-2. **Commit and push to `origin/main`** at the end to trigger the Vercel deploy — without waiting for a separate "deploy" request.
-3. Follow the git safety protocol: no force push, no git config changes, no secrets in commits, HEREDOC-style commit messages.
-4. After push, briefly confirm deploy status (commit hash + live URL: https://testedefi.vercel.app).
+1. Run relevant tests if the project has them for the touched area.
+2. **Commit and push to `origin/main`** to trigger Vercel — do not wait for a separate "deploy" request.
+3. Follow git safety: no force push, no git config changes, no secrets in commits.
+4. After push, briefly confirm deploy (commit hash + https://testedefi.vercel.app).
 
-## Skip auto-deploy when
+## Skip auto-deploy only when
 
-- User explicitly says not to deploy, commit, or push.
-- The task was read-only (explain, review, plan only) with no code changes.
-- There are no changes to commit.
+- User explicitly says not to deploy, commit, or push in that message.
+- The task was read-only (explain, review, plan) with **no** file changes.
+- There are genuinely no changes to commit.
 
 ## Deploy target
 
 - Production: pushes to `main` → Vercel auto-builds `testedefi.vercel.app`.
-- Do not create new `api/*.js` files beyond the 12-function limit (extend existing handlers + rewrites).
+- Do not add standalone `api/*.js` beyond the 12-function Hobby limit (extend existing handlers + `vercel.json` rewrites).
