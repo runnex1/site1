@@ -10950,6 +10950,8 @@ function loopApiToDisplayPosition(pos) {
         tokens: item.symbol ? [`${Number(item.value || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })} ${item.symbol}`] : [],
         value: Number(item.value || 0),
         liveApy: item.apy,
+        nativeApy: item.nativeApy,
+        merklApy: item.merklApy,
         sub: 'Supplied',
     }));
     const borrowedPositions = borrowed.map(item => ({
@@ -13649,7 +13651,12 @@ function renderLoops() {
             : `<div class="loop-health-box"><div class="loop-health-label">Health Ratio</div><div class="loop-health-value">-</div></div>`;
         const statusCls = hCls === 'danger' ? 'danger' : hCls === 'warn' ? 'warn' : '';
         const totalApr = Number(apy?.totalApr);
+        const suppliedApr = Number(apy?.suppliedApr);
         const borrowedApr = Number(apy?.borrowedApr);
+        const merklApr = suppliedPositions.reduce((max, pos) => Math.max(max, Number(pos.merklApy || 0)), 0);
+        const supplyApyTitle = merklApr > 0 && Number.isFinite(suppliedApr)
+            ? `Native ${(suppliedApr - merklApr).toFixed(2)}% + Merkl ${merklApr.toFixed(2)}%`
+            : '';
         const liqBuffer = Number.isFinite(h) && h > 0 ? Math.max(0, (1 - (1 / h)) * 100) : null;
         const networkTag = network && network !== '-' ? `<span class="loop-tag network">${dashEsc(network)}</span>` : '';
         const apyCls = Number.isFinite(totalApr) ? (totalApr > 0 ? '' : totalApr < 0 ? 'neg' : 'neu') : 'neu';
@@ -13677,6 +13684,7 @@ function renderLoops() {
                 <div class="loop-metric"><div class="loop-metric-label">Net Value</div><div class="loop-metric-value">${fmtV(netValue)}</div></div>
                 <div class="loop-metric"><div class="loop-metric-label">LTV</div><div class="loop-metric-value ${ltvCls}">${ltv.toFixed(1)}%</div></div>
                 <div class="loop-metric"><div class="loop-metric-label">Liq. Buffer</div><div class="loop-metric-value ${liqBuffer !== null && liqBuffer < 8 ? 'warn' : 'good'}">${liqBuffer === null ? '-' : liqBuffer.toFixed(2) + '%'}</div></div>
+                <div class="loop-metric"><div class="loop-metric-label">Supply APY</div><div class="loop-metric-value good"${supplyApyTitle ? ` title="${dashEsc(supplyApyTitle)}"` : ''}>${Number.isFinite(suppliedApr) ? suppliedApr.toFixed(2) + '%' : '-'}${merklApr > 0 ? '<span style="font-size:0.68rem;color:var(--t3);margin-left:0.25rem">Merkl</span>' : ''}</div></div>
                 <div class="loop-metric"><div class="loop-metric-label">Borrow APY</div><div class="loop-metric-value borrow">${Number.isFinite(borrowedApr) ? borrowedApr.toFixed(2) + '%' : '-'}</div></div>
             </div>
             <div class="loop-meter-wrap">
