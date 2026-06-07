@@ -634,7 +634,7 @@ assert.match(indexHtml, /LOOP_API_STATE_KEY/, 'loops tab must cache last live AP
 assert.match(indexHtml, /supplementalImported/, 'Loops must keep imported Fluid/Morpho positions when live API coverage is incomplete');
 const loopSnapshotsJs = readFileSync(join(ROOT, 'lib', 'loop-snapshots.js'), 'utf8');
 assert.match(loopSnapshotsJs, /economicNetValue/, 'loop snapshots must persist Merkl-inclusive economic net value');
-assert.match(loopSnapshotsJs, /function loopSnapshotBucketKey\(ms\)/, 'loop snapshots must bucket history on 6h intervals');
+assert.match(loopSnapshotsJs, /LOOP_SNAPSHOT_BUCKET_HOURS = 3/, 'loop snapshots must bucket history on 3h intervals');
 assert.match(loopSnapshotsJs, /function appendLoopSnapshotStore\(store, data/, 'loop snapshots must append server-side history');
 assert.match(aaveProxyJs, /loopCronSnapshot/, 'loop cron snapshots must be exposed through aave-proxy');
 assert.match(aaveProxyJs, /vault:loop_snapshots/, 'loop snapshots must persist in KV');
@@ -693,8 +693,29 @@ assert.match(indexHtml, /30d APY/, 'loop cards must show 30d realized APY');
   assert.equal(Object.keys(store).length, 1, 'first loop snapshot must be stored');
   assert.equal(store[bucket].positions[0].id, 'aave:1');
   const store2 = appendLoopSnapshotStore(store, data);
-  assert.equal(Object.keys(store2).length, 1, 'same 6h bucket must not duplicate loop snapshots');
+  assert.equal(Object.keys(store2).length, 1, 'same 3h bucket must not duplicate loop snapshots');
 }
+
+{
+  const { collectLoopLogoTargets, tokenLogoKey, protocolLogoKey } = require('../lib/logo-resolver.js');
+  const targets = collectLoopLogoTargets([
+    {
+      protocol: 'Aave',
+      supplied: [{ symbol: 'USDe' }],
+      borrowed: [{ symbol: 'USDm' }],
+    },
+  ]);
+  const keys = new Set(targets.map(t => t.key));
+  assert.ok(keys.has(protocolLogoKey('Aave')), 'loop logo resolver must include Aave protocol logos');
+  assert.ok(keys.has(protocolLogoKey('Morpho')), 'loop logo resolver must always include Morpho protocol logos');
+  assert.ok(keys.has(tokenLogoKey('USDE')), 'loop logo resolver must include supplied token logos');
+  assert.ok(keys.has(tokenLogoKey('USDM')), 'loop logo resolver must include borrowed token logos');
+}
+
+assert.match(aaveProxyJs, /ensureLoopLogoCache/, 'loop rates cron must persist embedded logos server-side');
+assert.match(syncJs, /logoCache === '1'/, 'sync endpoint must expose server logo cache for loops hydration');
+assert.match(indexHtml, /function makeLoopLogo\(symbol, isProtocol/, 'loops tab must render logos from server cache only');
+assert.match(indexHtml, /logoCache=1/, 'loops tab must hydrate server logo cache');
 
 {
   const dashboard = (fetchedAt, total, overrides = {}) => ({

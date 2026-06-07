@@ -17,6 +17,7 @@ const {
   buildLoopSnapshotFromRates,
   loopYieldWalletsFromWatcherList,
 } = require('../lib/loop-snapshots');
+const { ensureLoopLogoCache } = require('../lib/logo-resolver');
 
 const responseCache = new Map();
 const PERPS_DASHBOARD_CACHE_MS = 5 * 60 * 1000;
@@ -236,6 +237,18 @@ async function handlePerps(req, res) {
   }
 }
 
+async function persistLoopLogoCache(positions) {
+  try {
+    const saved = parseJson(await kvGet('vault:logo_cache'), {});
+    const { cache, changed } = await ensureLoopLogoCache(saved, positions, { maxResolve: 16 });
+    if (changed) await kvSet('vault:logo_cache', JSON.stringify(cache));
+    return changed;
+  } catch (e) {
+    console.warn('[loop-logos]', e.message || e);
+    return false;
+  }
+}
+
 async function handleLoopCronSnapshot(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const secret = String(req.headers['x-sync-secret'] || req.query.secret || '');
@@ -254,6 +267,7 @@ async function handleLoopCronSnapshot(req, res) {
     const savedSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
     const store = appendLoopSnapshotStore(savedSnapshots, data);
     await kvSet('vault:loop_snapshots', JSON.stringify(store));
+    const logosUpdated = await persistLoopLogoCache(data.positions);
     const { key, record } = buildLoopSnapshotFromRates(data);
     return res.status(200).json({
       ok: true,
@@ -261,6 +275,7 @@ async function handleLoopCronSnapshot(req, res) {
       fetchedAt: record.fetchedAt,
       positionCount: record.positions.length,
       snapshotCount: Object.keys(store).length,
+      logosUpdated,
     });
   } catch (e) {
     console.error('[loop-cron]', e);
@@ -305,6 +320,7 @@ async function handleLoopRates(req, res) {
       'Loop rates',
       () => fetchLoopRates({ wallets }),
     );
+    await persistLoopLogoCache(data.positions);
     return res.status(200).json(data);
   } catch (e) {
     console.error('[loop-rates]', e);

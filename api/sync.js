@@ -552,6 +552,10 @@ module.exports = async function handler(req, res) {
         const loopSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
         return res.status(200).json({ ok: true, loopSnapshots });
       }
+      if (req.query?.logoCache === '1') {
+        const logoCache = parseJson(await kvGet('vault:logo_cache'), {});
+        return res.status(200).json({ ok: true, logoCache });
+      }
       const [
         portfolioRaw, watchlistRaw, watcherWalletsRaw, watcherLinksRaw,
         snapshotsRaw, aaveMarketsRaw, customTokensRaw,

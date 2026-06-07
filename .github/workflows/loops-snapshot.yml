@@ -1,9 +1,9 @@
-# Records loop position net value and APY every 6 hours for the Loops history chart.
+# Records loop position net value and APY every 3 hours for the Loops history chart.
 name: Loops Snapshot
 
 on:
   schedule:
-    - cron: '5 */6 * * *'
+    - cron: '5 */3 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Trigger 6h loop snapshot at :05
+      - name: Trigger 3h loop snapshot at :05
         env:
           SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
         run: |

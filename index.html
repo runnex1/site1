@@ -7373,7 +7373,13 @@ const LogoEngine = (() => {
     function _peekTokenImage(symbol) {
         const key = `token:${symbol.toUpperCase()}`;
         const v = cache[key] || freshLogoUrl(key);
-        return (v && !v.startsWith('data:image/svg')) ? v : null;
+        return (v && !isGeneratedFallbackLogo(v)) ? v : null;
+    }
+
+    function _peekProtocolImage(name) {
+        const key = `protocol:${String(name || '').toLowerCase()}`;
+        const v = cache[key] || freshLogoUrl(key);
+        return (v && !isGeneratedFallbackLogo(v)) ? v : null;
     }
 
     function exportCache() {
@@ -7394,7 +7400,7 @@ const LogoEngine = (() => {
         if (changed) savePersistedCacheSoon();
     }
 
-    return { init, getTokenLogo, getProtocolLogo, makeSvgFallback, _injectTokenImage, _peekTokenImage, exportCache, importCache };
+    return { init, getTokenLogo, getProtocolLogo, makeSvgFallback, _injectTokenImage, _peekTokenImage, _peekProtocolImage, exportCache, importCache };
 })();
 
 // =============================================================================
@@ -7418,6 +7424,20 @@ function makeLogo(symbol, isProtocol = false, size = 40) {
     return `<div class="token-logo" style="width:${size}px;height:${size}px;flex-shrink:0;overflow:hidden;border-radius:50%;display:flex;align-items:center;justify-content:center;">
         <img data-logo-symbol="${symbol}" data-logo-type="${isProtocol ? 'protocol' : 'token'}"
              src="${fallback}" alt="${symbol}"
+             style="width:100%;height:100%;object-fit:cover;border-radius:50%;">
+    </div>`;
+}
+
+function makeLoopLogo(symbol, isProtocol = false, size = 40) {
+    const cached = isProtocol
+        ? LogoEngine._peekProtocolImage(symbol)
+        : LogoEngine._peekTokenImage(symbol);
+    const src = cached || LogoEngine.makeSvgFallback(
+        isProtocol ? symbol.charAt(0).toUpperCase() : symbol.substring(0, 4).toUpperCase(),
+        symbol
+    );
+    return `<div class="token-logo" style="width:${size}px;height:${size}px;flex-shrink:0;overflow:hidden;border-radius:50%;display:flex;align-items:center;justify-content:center;">
+        <img src="${src}" alt="${dashEsc(symbol)}"
              style="width:100%;height:100%;object-fit:cover;border-radius:50%;">
     </div>`;
 }
@@ -10990,12 +11010,21 @@ async function loopsEnsureSnapshotsHydrated() {
     _loopSnapshotsHydratePromise = (async () => {
         loopsLoadSnapshotsLocal();
         try {
-            const res = await fetch('/api/sync?loopSnapshots=1', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
-            const body = await res.json().catch(() => ({}));
-            if (res.ok && body?.loopSnapshots) {
-                loopsMergeSnapshotsFromServer(body.loopSnapshots);
-                renderLoops();
+            const [snapRes, logoRes] = await Promise.all([
+                fetch('/api/sync?loopSnapshots=1', { cache: 'no-store', signal: AbortSignal.timeout(8000) }),
+                fetch('/api/sync?logoCache=1', { cache: 'no-store', signal: AbortSignal.timeout(8000) }),
+            ]);
+            const snapBody = await snapRes.json().catch(() => ({}));
+            const logoBody = await logoRes.json().catch(() => ({}));
+            let changed = false;
+            if (snapRes.ok && snapBody?.loopSnapshots) {
+                loopsMergeSnapshotsFromServer(snapBody.loopSnapshots);
+                changed = true;
             }
+            if (logoRes.ok && logoBody?.logoCache) {
+                try { LogoEngine.importCache(logoBody.logoCache); changed = true; } catch (e) {}
+            }
+            if (changed) renderLoops();
         } catch (e) {}
     })();
     return _loopSnapshotsHydratePromise;
@@ -11072,14 +11101,14 @@ function loopSnapshotApyMetricHtml(targetDays, points, endValue, endTs) {
     const cls = result.apy > 0 ? 'good' : result.apy < 0 ? 'neg' : 'neu';
     const title = result.partial
         ? `Realized ${result.periodDays.toFixed(1)}d (position shorter than ${targetDays}d)`
-        : `Realized ${targetDays}d from 6h snapshots`;
+        : `Realized ${targetDays}d from 3h snapshots`;
     const star = result.partial ? '*' : '';
     return `<div class="loop-metric"><div class="loop-metric-label" title="${dashEsc(title)}">${targetDays}d APY${star}</div><div class="loop-metric-value ${cls}" title="${dashEsc(title)}">${result.apy.toFixed(2)}%</div></div>`;
 }
 
 function loopHistoryChartHtml(points) {
     if (!points || points.length < 2) {
-        return '<div class="loop-history-chart empty"><span>History builds every 6h after server snapshots</span></div>';
+        return '<div class="loop-history-chart empty"><span>History builds every 3h after server snapshots</span></div>';
     }
     const w = 320;
     const h = 52;
@@ -11103,7 +11132,7 @@ function loopHistoryChartHtml(points) {
         : '';
     const last = points[points.length - 1];
     const fmtUsd = v => '$' + Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
-    return `<div class="loop-history-chart" title="6h snapshots: teal = net value, amber = net APY">
+    return `<div class="loop-history-chart" title="3h snapshots: teal = net value, amber = net APY">
         <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
             <path class="loop-history-val" d="${valPath}" fill="none" stroke-width="1.5"></path>
             ${apyPath ? `<path class="loop-history-apy" d="${apyPath}" fill="none" stroke-width="1.5"></path>` : ''}
@@ -11245,6 +11274,17 @@ async function syncLoopApiPositions({ silent = false } = {}) {
     } finally {
         loopApiState.loading = false;
         if (btn) { btn.disabled = false; btn.textContent = 'Sync live'; }
+        try {
+            fetch('/api/sync?logoCache=1', { cache: 'no-store', signal: AbortSignal.timeout(8000) })
+                .then(r => r.json().catch(() => ({})))
+                .then(body => {
+                    if (body?.logoCache) {
+                        LogoEngine.importCache(body.logoCache);
+                        renderLoops();
+                    }
+                })
+                .catch(() => {});
+        } catch (e) {}
         renderLoops();
     }
 }
@@ -13826,7 +13866,7 @@ function renderLoops() {
             ...borrowedPositions.flatMap(positionTokenSymbols),
         ]).slice(0, 4);
         if (!symbols.length) return '';
-        return `<div class="loop-token-logos">${symbols.map(sym => makeLogo(sym, false, 28)).join('')}</div>`;
+        return `<div class="loop-token-logos">${symbols.map(sym => makeLoopLogo(sym, false, 28)).join('')}</div>`;
     };
 
     grid.innerHTML = loops.map((loop) => {
@@ -13871,7 +13911,7 @@ function renderLoops() {
         <div class="loop-card">
             <div class="loop-card-top">
                 <div class="loop-protocol-mark">
-                    ${makeLogo(p.name, true, 30)}
+                    ${makeLoopLogo(p.name, true, 30)}
                     <div class="loop-protocol-name">${dashEsc(p.name)}</div>
                 </div>
                 <div class="loop-title-wrap">
