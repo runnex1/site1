@@ -501,7 +501,11 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
       realisedPnl: '12257',
     }],
   });
-  assert.equal(closed.length, 0, 'closed reconstruction must not pair legs with a large token-size mismatch');
+  assert.equal(closed.length, 1, 'closed reconstruction should recover a history leg whose reported max size is too large');
+  assert.equal(closed[0].size, 6800, 'closed pair should use the matched smaller close size');
+  assert.equal(closed[0].shortLeg.size, 6800, 'oversized history leg should be scaled to the matched close size');
+  assert.equal(closed[0].shortLeg.sizeAdjustedFrom, 11800, 'scaled history leg should preserve the original reported size');
+  assert.ok(Math.abs(closed[0].closeSlippage) < 50, 'scaled history leg must not bring back the false huge close slippage');
 }
 
 {
@@ -529,6 +533,20 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.equal(closed.length, 1, 'Extended fill replay must survive when position history has the wrong max size');
   assert.equal(closed[0].shortLeg.size, 6800, 'closed pair must use the size-matched Extended fill leg');
   assert.ok(closed[0].sizeMismatchPct <= 5, 'closed pair must stay within the allowed size mismatch');
+  assert.equal(closed[0].shortLeg.sizeAdjustedFrom, undefined, 'exact fill reconstruction should win over scaled history');
+}
+
+{
+  const close = now - 10 * 60 * 1000;
+  const closed = buildClosedPairs({
+    hyperliquid: [
+      { venue: 'hyperliquid', symbol: 'TEST', time: close, side: 'A', px: 1, sz: 1000, fee: 1, closedPnl: 100 },
+    ],
+    nado: [
+      { venue: 'nado', symbol: 'TEST', time: close + 1000, side: 'buy', px: 1, size: 600, fee: 1, realizedPnl: -98 },
+    ],
+  }, {});
+  assert.equal(closed.length, 0, 'large raw fill-vs-fill size mismatches must still be rejected');
 }
 
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
