@@ -5424,14 +5424,14 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-card:hover { border-color:rgba(110,231,216,0.26); background:linear-gradient(180deg, rgba(10,31,42,.98), rgba(5,16,23,.99)); }
 .loop-card-head { display:grid; grid-template-columns:38px minmax(0,1fr) auto; gap:12px; align-items:start; padding:12px 14px 10px; border-bottom:1px solid rgba(148,163,184,0.10); }
 .loop-card-head .asset-logo, .loop-card-head img { width:36px; height:36px; border-radius:9px; }
-.loop-card-id { min-width:0; }
-.loop-card-protocol { font-size:0.9rem; font-weight:850; line-height:1.1; color:var(--t1); }
-.loop-card-pair { margin-top:4px; font-family:var(--ff-mono); font-size:0.95rem; font-weight:800; letter-spacing:-0.02em; line-height:1; }
+.loop-card-id { min-width:0; display:flex; flex-direction:column; gap:0; }
+.loop-card-protocol { font-size:0.9rem; font-weight:850; line-height:1.2; color:var(--t1); margin-bottom:10px; }
+.loop-card-pair { margin-top:0; margin-bottom:6px; font-family:var(--ff-mono); font-size:0.95rem; font-weight:800; letter-spacing:-0.02em; line-height:1.15; }
 .loop-pair-sup { color:var(--t1); }
 .loop-pair-arrow { color:var(--t3); margin:0 5px; font-weight:600; }
 .loop-pair-bor { color:var(--red); }
-.loop-card-chips { margin-top:5px; display:flex; flex-wrap:wrap; gap:6px; }
-.loop-head-apy { margin-top:6px; font-family:var(--ff-mono); font-size:0.62rem; font-weight:650; color:var(--t3); }
+.loop-card-chips { margin-top:0; margin-bottom:4px; display:flex; flex-wrap:wrap; gap:6px; }
+.loop-head-apy { margin-top:0; font-family:var(--ff-mono); font-size:0.62rem; font-weight:650; color:var(--t3); }
 .loop-head-apy span { font-weight:900; color:var(--green); }
 .loop-head-apy span.neg { color:var(--red); }
 .loop-head-apy span.neu { color:var(--t3); }
