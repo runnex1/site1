@@ -5441,10 +5441,10 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 }
 .loop-pair-leg { display:inline-flex; align-items:center; gap:8px; min-width:0; }
 .loop-pair-leg .token-logo { flex-shrink:0; box-shadow:0 0 0 2px rgba(5,16,23,0.96); }
-.loop-pair-name { font-family:var(--ff-mono); font-size:0.94em; font-weight:800; white-space:nowrap; }
-.loop-pair-leg.supply .loop-pair-name { color:var(--t1); }
-.loop-pair-leg.borrow .loop-pair-name { color:#fda4af; }
+.loop-pair-name { font-family:var(--ff-mono); font-size:0.94em; font-weight:800; white-space:nowrap; color:var(--t1); }
 .loop-pair-sep { color:rgba(236,238,248,0.42); font-family:var(--ff-mono); font-size:0.88em; font-weight:700; }
+.loop-protocol-mark { display:inline-flex; align-items:center; flex-shrink:0; }
+.loop-protocol-mark .token-logo { border-radius:8px; box-shadow:0 0 0 1.5px rgba(5,16,23,0.96); }
 .loop-head-stat {
   padding:0; background:none; text-align:right; min-width:0; flex-shrink:0;
 }
@@ -5479,7 +5479,7 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-realized-mini { border:1px solid rgba(148,163,184,0.12); border-radius:6px; padding:7px 8px; background:rgba(4,13,19,0.55); }
 .loop-realized-label { font-family:var(--ff-display); font-size:0.5rem; font-weight:850; letter-spacing:0.08em; text-transform:uppercase; color:var(--t3); }
 .loop-realized-val { margin-top:4px; font-family:var(--ff-mono); font-size:0.76rem; font-weight:800; color:var(--green); }
-.loop-realized-val.partial { color:var(--amber); }
+.loop-realized-val.partial { color:var(--sky); }
 .loop-realized-val.neu { color:var(--t3); }
 .loop-card-top { display:grid; grid-template-columns:42px minmax(0,1fr) auto; gap:0.78rem; align-items:center; padding:0.86rem 0.94rem 0.72rem; border-bottom:1px solid rgba(148,163,184,0.10); }
 .loop-card-top .asset-logo, .loop-card-top img { width:38px; height:38px; border-radius:10px; }
@@ -5515,16 +5515,17 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-history-mode-btn { border:0; background:transparent; color:var(--t3); padding:0.24rem 0.52rem; font-family:var(--ff-mono); font-size:0.56rem; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; cursor:pointer; }
 .loop-history-mode-btn:hover:not(:disabled) { color:var(--t1); background:rgba(255,255,255,0.04); }
 .loop-history-mode-btn.active { color:var(--teal); background:rgba(45,212,191,0.12); }
-.loop-history-chart.mode-apy .loop-history-mode-btn.active { color:var(--amber); background:rgba(251,191,36,0.12); }
+.loop-history-chart.mode-apy .loop-history-mode-btn.active { color:var(--sky); background:rgba(56,189,248,0.12); }
 .loop-history-mode-btn:disabled { opacity:0.35; cursor:not-allowed; }
 .loop-history-chart-wrap { position:relative; }
 .loop-history-chart svg { display:block; width:100%; height:120px; cursor:crosshair; }
+.loop-history-grid { stroke:rgba(148,163,184,0.09); stroke-width:1; pointer-events:none; }
 .loop-history-hover-line { stroke:rgba(148,163,184,0.38); stroke-width:1; stroke-dasharray:4 3; pointer-events:none; }
-.loop-history-hover-dot { fill:var(--amber); stroke:rgba(4,13,19,0.92); stroke-width:2; pointer-events:none; }
+.loop-history-hover-dot { fill:var(--sky); stroke:rgba(4,13,19,0.92); stroke-width:2; pointer-events:none; }
 .loop-history-chart.mode-val .loop-history-hover-dot { fill:var(--teal); }
 .loop-history-tooltip {
   position:fixed; z-index:80; min-width:108px; pointer-events:none; transform:translate(-50%, -112%);
-  padding:0.38rem 0.48rem; border:1px solid rgba(251,191,36,0.28); border-radius:5px;
+  padding:0.38rem 0.48rem; border:1px solid rgba(56,189,248,0.28); border-radius:5px;
   background:rgba(5,15,22,0.96); box-shadow:0 14px 30px rgba(0,0,0,0.28);
   color:var(--t1); font-family:var(--ff-mono); font-size:0.72rem; font-weight:800; line-height:1.2;
   white-space:nowrap; opacity:0; transition:opacity 120ms ease;
@@ -5532,10 +5533,11 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-history-chart.mode-val .loop-history-tooltip { border-color:rgba(45,212,191,0.28); }
 .loop-history-tooltip.visible { opacity:1; }
 .loop-history-tooltip span { display:block; margin-top:0.12rem; color:var(--t3); font-size:0.58rem; font-weight:650; }
-.loop-history-val { stroke:rgba(45,212,191,0.95); }
-.loop-history-apy { stroke:rgba(251,191,36,0.92); }
-.loop-history-area-val { fill:rgba(45,212,191,0.10); stroke:none; }
-.loop-history-area-apy { fill:rgba(251,191,36,0.10); stroke:none; }
+.loop-history-val { stroke:rgba(45,212,191,0.95); stroke-linecap:round; stroke-linejoin:round; }
+.loop-history-apy { stroke:rgba(56,189,248,0.95); stroke-linecap:round; stroke-linejoin:round; }
+.loop-history-area-val { fill:rgba(45,212,191,0.12); stroke:none; }
+.loop-history-area-apy { fill:rgba(56,189,248,0.12); stroke:none; }
+.loop-history-chart.mode-apy .loop-history-foot .loop-history-leg.apy.now { color:var(--sky); }
 .loop-history-chart.mode-val .loop-history-series-apy,
 .loop-history-chart.mode-val .loop-history-leg.apy,
 .loop-history-chart.mode-val .loop-history-foot .loop-history-leg.apy { display:none; }
@@ -11370,6 +11372,10 @@ function loopHistoryChartHtml(points) {
         ya: Number.isFinite(p.netApy) ? +yApy(p.netApy).toFixed(2) : null,
     }));
     const pointsAttr = encodeURIComponent(JSON.stringify(chartPoints));
+    const gridLines = [0.25, 0.5, 0.75].map(frac => {
+        const y = (pad.t + ih * (1 - frac)).toFixed(1);
+        return `<line class="loop-history-grid" x1="${pad.l}" y1="${y}" x2="${w - pad.r}" y2="${y}"></line>`;
+    }).join('');
     return `<div class="loop-history-chart mode-${defaultMode}" data-points="${pointsAttr}" data-chart-w="${w}" data-chart-h="${h}">
         <div class="loop-history-head">
             <span class="loop-history-title">${defaultMode === 'apy' ? 'APY' : 'Net value'}</span>
@@ -11380,6 +11386,7 @@ function loopHistoryChartHtml(points) {
         </div>
         <div class="loop-history-chart-wrap">
             <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true" onmousemove="loopHistoryChartHover(event)" onmouseleave="loopHistoryChartHoverEnd(event)">
+                <g class="loop-history-grid-lines">${gridLines}</g>
                 <g class="loop-history-series-val">
                     <path class="loop-history-area-val" d="${valSeries.area}"></path>
                     <path class="loop-history-val" d="${valSeries.line}" fill="none" stroke-width="2.2"></path>
@@ -14157,7 +14164,7 @@ function renderLoops() {
                             healthBadgeCls,
                         )}
                     </div>
-                    <div class="loop-head-meta">${networkChip}${walletChip}</div>
+                    <div class="loop-head-meta"><span class="loop-protocol-mark" title="${dashEsc(p.name)}">${makeLoopLogo(p.name, true, 26)}</span>${networkChip}${walletChip}</div>
                 </div>
             </div>
             <div class="loop-card-main">

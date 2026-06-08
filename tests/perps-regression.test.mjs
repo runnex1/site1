@@ -722,7 +722,10 @@ assert.match(indexHtml, /function loopPairLegHtml\(/, 'loop pair title must rend
 assert.match(indexHtml, /loopPairLegHtml\(supplied, 'supply'\)/, 'loop pair title must show supply leg with logo');
 assert.match(indexHtml, /loopPairLegHtml\(borrowed, 'borrow'\)/, 'loop pair title must show borrow leg with logo');
 assert.doesNotMatch(indexHtml, /loop-head-eyebrow">\$\{dashEsc\(p\.name\)\}/, 'loop cards must not show protocol name in header');
-assert.doesNotMatch(indexHtml, /makeLoopLogo\(p\.name, true, 38\)/, 'loop cards must not show protocol logo in header');
+assert.match(indexHtml, /loop-protocol-mark" title="\$\{dashEsc\(p\.name\)\}">\$\{makeLoopLogo\(p\.name, true, 26\)\}/, 'loop cards must show protocol logo without protocol name text');
+assert.doesNotMatch(indexHtml, /#fda4af/, 'loop borrow token must not use red title color');
+assert.match(indexHtml, /loop-history-apy \{ stroke:rgba\(56,189,248/, 'loop APY chart must use sky blue instead of orange');
+assert.match(indexHtml, /loop-history-grid/, 'loop history chart must render subtle grid lines');
 assert.match(indexHtml, /function loopEffectiveNetValue\(/, 'loops must use Merkl-inclusive economic net value for live positions');
 assert.match(indexHtml, /loopEffectiveNetValue\(loop\)/, 'loops KPIs and cards must rank and sum economic net value');
 assert.match(indexHtml, /function perpsPairLatestSessionPnl\(/, 'perps positions must compute latest-session PnL for open rows');
