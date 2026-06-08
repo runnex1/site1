@@ -645,7 +645,7 @@ assert.match(indexHtml, /forceCollect: true/, 'dashboard event log polls must fo
 assert.match(indexHtml, /eventLog=1&force=1/, 'dashboard must request forced event-log collection');
 const eventLogJs = readFileSync(join(ROOT, 'lib', 'event-log.js'), 'utf8');
 assert.match(eventLogJs, /fetchKobeissiPosts/, 'event log must scrape Kobeissi Letter Telegram headlines');
-assert.match(eventLogJs, /\\bBREAKING\\b/i\.test\(text\)/, 'event log must include only breaking Kobeissi headlines');
+assert.match(eventLogJs, /if \(!\/\\bBREAKING\\b\/i\.test\(text\)\) continue;/, 'event log must include only breaking Kobeissi headlines');
 assert.doesNotMatch(eventLogJs, /'Kobeissi Letter'/, 'event log must not add non-breaking Kobeissi headlines');
 assert.match(indexHtml, /ticker-strip-viewport/, 'market ticker must use a scrolling viewport for overflow symbols');
 assert.match(indexHtml, /function syncTabRefreshTimers\(tab\)/, 'tab switches must start and stop feature refresh timers');
