@@ -5428,8 +5428,12 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 }
 .loop-card-head .asset-logo, .loop-card-head img { width:38px; height:38px; border-radius:10px; }
 .loop-head-body { min-width:0; display:flex; flex-direction:column; gap:10px; }
-.loop-head-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-.loop-head-titles { min-width:0; }
+.loop-head-top {
+  display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:end; gap:12px 16px;
+}
+.loop-head-titles { min-width:0; justify-self:start; }
+.loop-head-stat.apy { justify-self:center; text-align:center; }
+.loop-head-stat.health { justify-self:end; }
 .loop-head-eyebrow {
   font-family:var(--ff-display); font-size:0.58rem; font-weight:850; letter-spacing:0.14em;
   text-transform:uppercase; color:var(--t3); line-height:1;
@@ -5441,15 +5445,8 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-pair-sup { color:var(--t1); }
 .loop-pair-arrow { color:var(--t3); margin:0 6px; font-weight:600; font-size:0.92em; }
 .loop-pair-bor { color:var(--red); }
-.loop-head-stats {
-  flex-shrink:0; display:flex; align-items:flex-end; gap:12px; min-width:0;
-}
-.loop-head-stat-divider {
-  width:1px; align-self:stretch; min-height:34px; margin:0 1px;
-  background:linear-gradient(180deg, transparent, rgba(148,163,184,0.22) 18%, rgba(148,163,184,0.22) 82%, transparent);
-}
 .loop-head-stat {
-  padding:0; background:none; text-align:right; min-width:0;
+  padding:0; background:none; text-align:right; min-width:0; flex-shrink:0;
 }
 .loop-head-stat-label {
   font-family:var(--ff-display); font-size:0.46rem; font-weight:850; letter-spacing:0.11em;
@@ -5458,18 +5455,12 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-head-stat-val {
   margin-top:5px; font-family:var(--ff-mono); font-size:0.98rem; font-weight:900; line-height:1; color:var(--t1);
 }
-.loop-head-stat-sub {
-  margin-top:3px; font-family:var(--ff-display); font-size:0.5rem; font-weight:800; color:var(--t3); line-height:1;
-}
 .loop-head-stat.apy .loop-head-stat-val { color:var(--green); }
 .loop-head-stat.apy.neg .loop-head-stat-val { color:var(--red); }
 .loop-head-stat.apy.neu .loop-head-stat-val { color:var(--t3); }
 .loop-head-stat.health.safe .loop-head-stat-val { color:var(--green); }
 .loop-head-stat.health.warn .loop-head-stat-val { color:var(--amber); }
 .loop-head-stat.health.danger .loop-head-stat-val { color:var(--red); }
-.loop-head-stat.health.safe .loop-head-stat-sub { color:var(--green); }
-.loop-head-stat.health.warn .loop-head-stat-sub { color:var(--amber); }
-.loop-head-stat.health.danger .loop-head-stat-sub { color:var(--red); }
 .loop-head-meta { display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-height:20px; }
 .loop-card-main { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(200px,0.84fr); gap:1px; background:rgba(148,163,184,0.10); }
 .loop-chart-pane, .loop-summary-pane { min-width:0; background:rgba(4,13,19,0.88); }
@@ -5574,8 +5565,9 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
   .loops-kpi { border-right:0; border-bottom:1px solid rgba(148,163,184,0.14); }
   .loops-kpi:last-child { border-bottom:0; }
   .loop-card-top { grid-template-columns:42px minmax(0,1fr); }
-  .loop-head-stats { width:100%; justify-content:flex-start; }
-  .loop-head-stat { text-align:left; }
+  .loop-head-top { grid-template-columns:minmax(0,1fr) auto auto; gap:10px 12px; }
+  .loop-head-stat.apy { justify-self:end; text-align:right; }
+  .loop-head-stat.health { justify-self:end; }
   .loop-health-box { grid-column:1 / -1; text-align:left; min-width:0; }
   .loop-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .loop-meter-wrap, .loop-positions { grid-template-columns:1fr; }
@@ -11135,18 +11127,17 @@ function loopPairTitleText(suppliedPositions, borrowedPositions) {
     return supplied || borrowed || '';
 }
 
-function loopHeadStatsHtml(apyText, apyCls, healthVal, healthCls, statusCls, statusLabel) {
-    return `<div class="loop-head-stats">
-        <div class="loop-head-stat apy ${apyCls}">
-            <div class="loop-head-stat-label">Net APY</div>
-            <div class="loop-head-stat-val">${apyText}</div>
-        </div>
-        <div class="loop-head-stat-divider" aria-hidden="true"></div>
-        <div class="loop-head-stat health ${statusCls}">
-            <div class="loop-head-stat-label">Health</div>
-            <div class="loop-head-stat-val">${healthVal}</div>
-            <div class="loop-head-stat-sub">${statusLabel}</div>
-        </div>
+function loopHeadApyHtml(apyText, apyCls) {
+    return `<div class="loop-head-stat apy ${apyCls}">
+        <div class="loop-head-stat-label">Net APY</div>
+        <div class="loop-head-stat-val">${apyText}</div>
+    </div>`;
+}
+
+function loopHeadHealthHtml(healthVal, statusCls) {
+    return `<div class="loop-head-stat health ${statusCls}">
+        <div class="loop-head-stat-label">Health</div>
+        <div class="loop-head-stat-val">${healthVal}</div>
     </div>`;
 }
 
@@ -13965,8 +13956,6 @@ function renderLoops() {
         if (cls) el.classList.add(cls);
     };
     const healthClass = health => !Number.isFinite(health) ? '' : health >= 1.5 ? 'safe' : health >= 1.1 ? 'warn' : 'danger';
-    const statusText = cls => cls === 'danger' ? 'Risk' : cls === 'warn' ? 'Watch' : 'Safe';
-
     const livePositions = Array.isArray(loopApiState.positions)
         ? loopApiState.positions.filter(p => Number(p.totalBorrowed || 0) > 0.01)
         : [];
@@ -14070,14 +14059,8 @@ function renderLoops() {
                             <div class="loop-head-eyebrow">${dashEsc(p.name)}</div>
                             <div class="loop-head-pair">${loopPairHtml(suppliedPositions, borrowedPositions)}</div>
                         </div>
-                        ${loopHeadStatsHtml(
-                            apyText,
-                            apyCls,
-                            Number.isFinite(h) ? h.toFixed(2) : '-',
-                            hCls,
-                            healthBadgeCls,
-                            Number.isFinite(h) ? statusText(hCls) : '-',
-                        )}
+                        ${loopHeadApyHtml(apyText, apyCls)}
+                        ${loopHeadHealthHtml(Number.isFinite(h) ? h.toFixed(2) : '-', healthBadgeCls)}
                     </div>
                     <div class="loop-head-meta">${networkChip}${walletChip}</div>
                 </div>
