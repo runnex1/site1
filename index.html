@@ -5480,6 +5480,7 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-realized-label { font-family:var(--ff-display); font-size:0.5rem; font-weight:850; letter-spacing:0.08em; text-transform:uppercase; color:var(--t3); }
 .loop-realized-val { margin-top:4px; font-family:var(--ff-mono); font-size:0.76rem; font-weight:800; color:var(--green); }
 .loop-realized-val.partial { color:var(--sky); }
+.loop-realized-val.neg { color:var(--red); }
 .loop-realized-val.neu { color:var(--t3); }
 .loop-card-top { display:grid; grid-template-columns:42px minmax(0,1fr) auto; gap:0.78rem; align-items:center; padding:0.86rem 0.94rem 0.72rem; border-bottom:1px solid rgba(148,163,184,0.10); }
 .loop-card-top .asset-logo, .loop-card-top img { width:38px; height:38px; border-radius:10px; }
@@ -11317,17 +11318,53 @@ function loopHistoryPeriodDelta(points) {
     return { pct, text: `${sign}${pct.toFixed(1)}% vs ${span}`, neg: pct < 0 };
 }
 
-function loopSnapshotApyLegHtml(targetDays, points, endValue, endTs) {
-    const result = loopSnapshotPeriodNetApy(points, targetDays, endTs);
+function loopSnapshotApyLegHtml(targetDays, points, endValue, endTs, mode) {
+    const chartMode = mode === 'apy' ? 'apy' : 'val';
+    const result = chartMode === 'apy'
+        ? loopSnapshotPeriodNetApy(points, targetDays, endTs)
+        : loopSnapshotRealizedApy(points, targetDays, endValue, endTs);
     if (!result || !Number.isFinite(result.apy)) {
         return `<div class="loop-realized-mini"><div class="loop-realized-label">${targetDays}d APY</div><div class="loop-realized-val neu">-</div></div>`;
     }
-    const cls = result.partial ? 'partial' : '';
+    const valCls = result.apy < 0 ? 'neg' : result.partial ? 'partial' : '';
     const star = result.partial ? '*' : '';
-    const title = result.partial
-        ? `Spot net APY average over ${result.periodDays.toFixed(1)}d since last deposit/withdraw`
-        : `Time-weighted spot net APY average over ${targetDays}d since last deposit/withdraw`;
-    return `<div class="loop-realized-mini"><div class="loop-realized-label" title="${dashEsc(title)}">${targetDays}d APY${star}</div><div class="loop-realized-val ${cls}" title="${dashEsc(title)}">${result.apy.toFixed(2)}%</div></div>`;
+    const title = chartMode === 'apy'
+        ? (result.partial
+            ? `Spot net APY average over ${result.periodDays.toFixed(1)}d since last deposit/withdraw`
+            : `Time-weighted spot net APY average over ${targetDays}d since last deposit/withdraw`)
+        : (result.partial
+            ? `Net value change annualized over ${result.periodDays.toFixed(1)}d since last deposit/withdraw`
+            : `Net value change annualized over ${targetDays}d since last deposit/withdraw`);
+    return `<div class="loop-realized-mini"><div class="loop-realized-label" title="${dashEsc(title)}">${targetDays}d APY${star}</div><div class="loop-realized-val ${valCls}" title="${dashEsc(title)}">${result.apy.toFixed(2)}%</div></div>`;
+}
+
+function loopSnapshotApyRowHtml(mode, points, endValue, endTs) {
+    return `<div class="loop-realized-row">${loopSnapshotApyLegHtml(7, points, endValue, endTs, mode)}${loopSnapshotApyLegHtml(30, points, endValue, endTs, mode)}</div>`;
+}
+
+function loopHistoryPointsFromChart(chartEl) {
+    if (!chartEl) return [];
+    const raw = chartEl.dataset.historyPoints;
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(decodeURIComponent(raw));
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function loopRefreshPeriodApyMetrics(chartEl) {
+    if (!chartEl) return;
+    const row = chartEl.closest('.loop-card-main')?.querySelector('.loop-realized-row');
+    if (!row) return;
+    const mode = chartEl.classList.contains('mode-apy') ? 'apy' : 'val';
+    const points = loopHistoryPointsFromChart(chartEl);
+    const endValueRaw = chartEl.dataset.endValue;
+    const endValue = endValueRaw !== '' && endValueRaw != null ? Number(endValueRaw) : null;
+    const endTs = Number(chartEl.dataset.endTs) || Date.now();
+    row.innerHTML = loopSnapshotApyLegHtml(7, points, endValue, endTs, mode)
+        + loopSnapshotApyLegHtml(30, points, endValue, endTs, mode);
 }
 
 function loopSnapshotApyMetricHtml(targetDays, points, endValue, endTs) {
@@ -11355,6 +11392,7 @@ function loopHistoryChartSetMode(btn) {
     });
     const title = chart.querySelector('.loop-history-title');
     if (title) title.textContent = mode === 'apy' ? 'APY' : 'Net value';
+    loopRefreshPeriodApyMetrics(chart);
     const svg = chart.querySelector('svg');
     if (svg) loopHistoryChartHoverEnd({ currentTarget: svg });
 }
@@ -11419,7 +11457,7 @@ function loopHistoryChartPath(points, valueAt, xAt, yAt, baseY) {
     return { line, area };
 }
 
-function loopHistoryChartHtml(points) {
+function loopHistoryChartHtml(points, opts = {}) {
     if (!points || !points.length) {
         return '<div class="loop-history-chart empty"><span>History builds every 3h — sync live or wait for the next server snapshot</span></div>';
     }
@@ -11459,11 +11497,20 @@ function loopHistoryChartHtml(points) {
         ya: Number.isFinite(p.netApy) ? +yApy(p.netApy).toFixed(2) : null,
     }));
     const pointsAttr = encodeURIComponent(JSON.stringify(chartPoints));
+    const historyAttr = encodeURIComponent(JSON.stringify(points.map(p => ({
+        ts: p.ts,
+        netValue: p.netValue,
+        netApy: p.netApy,
+        totalSupplied: p.totalSupplied,
+        totalBorrowed: p.totalBorrowed,
+    }))));
+    const endValue = opts.endValue;
+    const endTs = Number(opts.endTs) || Date.now();
     const gridLines = [0.25, 0.5, 0.75].map(frac => {
         const y = (pad.t + ih * (1 - frac)).toFixed(1);
         return `<line class="loop-history-grid" x1="${pad.l}" y1="${y}" x2="${w - pad.r}" y2="${y}"></line>`;
     }).join('');
-    return `<div class="loop-history-chart mode-${defaultMode}" data-points="${pointsAttr}" data-chart-w="${w}" data-chart-h="${h}">
+    return `<div class="loop-history-chart mode-${defaultMode}" data-points="${pointsAttr}" data-history-points="${historyAttr}" data-end-value="${endValue != null ? endValue : ''}" data-end-ts="${endTs}" data-chart-w="${w}" data-chart-h="${h}">
         <div class="loop-history-head">
             <span class="loop-history-title">${defaultMode === 'apy' ? 'APY' : 'Net value'}</span>
             <div class="loop-history-toggle">
@@ -14230,11 +14277,14 @@ function renderLoops() {
             ? `<span class="loop-tag">${dashEsc(loopApiShortWallet(loop.raw.wallet))}</span>`
             : '';
         const healthBadgeCls = statusCls || '';
+        const hasApyHistory = historyPoints.length >= 2
+            && historyPoints.every(p => Number.isFinite(Number(p.netApy)));
+        const chartMode = hasApyHistory ? 'apy' : 'val';
         const realizedHtml = loop.live && loop.raw
-            ? `<div class="loop-realized-row">${loopSnapshotApyLegHtml(7, historyPoints, liveEndValue, liveEndTs)}${loopSnapshotApyLegHtml(30, historyPoints, liveEndValue, liveEndTs)}</div>`
+            ? loopSnapshotApyRowHtml(chartMode, historyPoints, liveEndValue, liveEndTs)
             : '';
         const chartHtml = loop.live && loop.raw
-            ? loopHistoryChartHtml(historyPoints)
+            ? loopHistoryChartHtml(historyPoints, { endValue: liveEndValue, endTs: liveEndTs })
             : '<div class="loop-history-chart empty"><span>Sync live to build 3h snapshot history</span></div>';
         const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml);
 
