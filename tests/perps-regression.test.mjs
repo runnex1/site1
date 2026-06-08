@@ -720,9 +720,13 @@ assert.match(indexHtml, /loop-head-stats/, 'loop header must group net APY and h
 assert.match(indexHtml, /function loopHeadStatsHtml\(/, 'loop header must render net APY beside health');
 assert.match(indexHtml, /function loopEffectiveNetValue\(/, 'loops must use Merkl-inclusive economic net value for live positions');
 assert.match(indexHtml, /loopEffectiveNetValue\(loop\)/, 'loops KPIs and cards must rank and sum economic net value');
-assert.match(indexHtml, /function perpsPairPeriodPnl\(/, 'perps positions must compute range-scoped PnL from latest session');
-assert.match(indexHtml, /perpsFilterPairLatestSessionForRange\(p\.dailyPerformanceSeries/, 'perps pair PnL must filter latest session before applying stat range');
-assert.match(indexHtml, /Total PnL · \$\{dashEsc\(rangeLabel\)\}/, 'perps open positions must label total PnL with selected stat range');
+assert.match(indexHtml, /function perpsPairLatestSessionPnl\(/, 'perps positions must compute latest-session PnL for open rows');
+assert.match(indexHtml, /function perpsPairTotalPnlBreakdown\(/, 'perps total PnL must combine spread funding and fees');
+assert.match(indexHtml, /perpsFilterPairLatestSessionForRange\(p\.dailyPerformanceSeries \|\| \[\], null\)/, 'perps position PnL must use latest session without stat range');
+assert.doesNotMatch(indexHtml, /Total PnL · \$\{dashEsc\(rangeLabel\)\}/, 'perps open positions must not suffix total PnL with stat range');
+assert.match(indexHtml, /function perpsBuildTotalPnlTooltipHtml\(/, 'perps total PnL must expose spread + funding + fees tooltip');
+assert.match(indexHtml, /function perpsBuildFundingTooltipHtml\(/, 'perps funding must expose calculation tooltip');
+assert.match(indexHtml, /Spread \+ Funding \+ Trading fees/, 'total PnL tooltip must explain spread funding and fees formula');
 assert.doesNotMatch(indexHtml, /loop-head-stat-sub/, 'loop health must not show Risk/Watch/Safe sublabel');
 assert.match(indexHtml, /loop-head-eyebrow/, 'loop header must show protocol as eyebrow above pair');
 assert.match(indexHtml, /loop-history-chart/, 'loop cards must render snapshot history chart');
