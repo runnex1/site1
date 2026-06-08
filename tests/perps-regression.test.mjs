@@ -28,6 +28,10 @@ const {
   computeNadoLiquidationPx,
   liquidationPriceFrom,
   normalizeGrvtPositionRow,
+  parseHyperliquidTpslOrders,
+  parseGrvtTpslOrders,
+  classifyNadoTriggerSide,
+  perpsTpslMismatch,
 } = require('../lib/perps.js');
 const aaveProxyHandler = require('../api/aave-proxy.js');
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -1108,7 +1112,12 @@ assert.match(perpsJs, /nadoError: combineErrors\(nadoState, nadoFundingForAnalys
 assert.match(indexHtml, /perpsSideBadgeHtml\(legs\.a\.size\)/, 'paired table legs must include long/short badges');
 assert.match(indexHtml, /perpsVenueWithSideHtml\(u\.venue, u\.size\)/, 'unhedged exchange rows must include long/short badges');
 assert.match(indexHtml, /<div>Liq Price<\/div>/, 'open positions must show a liquidation-price-only column');
+assert.match(indexHtml, /<div>TP\/SL<\/div>/, 'open positions must show a TP/SL column after Liq Price');
+assert.doesNotMatch(indexHtml, /<div>Basis uPnL<\/div>/, 'open positions must not show Basis uPnL column');
 assert.match(indexHtml, /function perpsPositionLiqStackHtml\(p, displayLegs\)/, 'open positions must render only liquidation prices in the Liq Price column');
+assert.match(indexHtml, /function perpsPositionTpSlStackHtml\(p, displayLegs\)/, 'open positions must render stacked TP/SL per venue');
+assert.match(indexHtml, /function perpsPairTpSlMismatch\(displayLegs\)/, 'open positions must compare TP/SL across venues');
+assert.match(indexHtml, /diffPct\(tps\[0\], tps\[1\]\) > 0\.5/, 'TP/SL mismatch warning must use a 0.5% threshold');
 assert.match(indexHtml, /function perpsPositionMidPx\(p, displayLegs\)/, 'open positions must calculate a mid price from both exchange marks');
 assert.ok(indexHtml.includes('<span class="perps-pos-live-px">${perpsFmtPx(midPx)}</span>'), 'open positions must show live price next to OPEN without a mid pill');
 assert.doesNotMatch(indexHtml, /perps-pos-mid-pill/, 'open positions must not wrap live price in a mid pill');
@@ -1130,6 +1139,11 @@ assert.match(perpsJs, /function computeNadoLiquidationPx\(/, 'NADO liquidation m
 assert.match(perpsJs, /function normalizeGrvtPositionRow\(/, 'GRVT position mapping must normalize lite API aliases');
 assert.match(perpsJs, /liquidationPx: liquidationPriceFrom\(p, grvtPx\)/, 'GRVT position mapping must use API est_liquidation_price only');
 assert.match(perpsJs, /grvtTradesPost\('positions'/, 'GRVT state must fetch the dedicated positions endpoint for liquidation prices');
+assert.match(perpsJs, /type: 'frontendOpenOrders'/, 'Hyperliquid state must fetch position TP/SL from frontendOpenOrders');
+assert.match(perpsJs, /grvtTradesPost\('open_orders'/, 'GRVT state must fetch TP/SL trigger orders from open_orders');
+assert.match(perpsJs, /tpPx: tpslPxFrom\(p\.tpTriggerPrice\)/, 'Extended positions must map API tpTriggerPrice');
+assert.match(perpsJs, /slPx: tpslPxFrom\(p\.slTriggerPrice\)/, 'Extended positions must map API slTriggerPrice');
+assert.match(perpsJs, /fetchNadoTriggerOrders\(subaccount, positions\)/, 'NADO state must attempt trigger-service TP/SL lookup');
 assert.match(perpsJs, /hyperliquidMarkPx: hl\?\.markPx \?\? null/, 'rate spread rows must expose Hyperliquid mark price for position rows');
 assert.match(indexHtml, /perpsRateSpreadRow\(p\.symbol\)/, 'Current APR must fall back to the latest rate-spread row');
 assert.match(indexHtml, /rateA \?\? p\.fundingRate8hA/, 'live APR polling must preserve previous leg rates when a response is partial');
@@ -1242,6 +1256,43 @@ assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketI
 
   assert.equal(liquidationPriceFrom({ liquidationPx: '0.669877' }), 0.669877, 'Hyperliquid must use API liquidation when present');
   assert.equal(liquidationPriceFrom({ liquidationPx: null }), null, 'Hyperliquid must show no liquidation when API returns null');
+
+  const hlTpsl = parseHyperliquidTpslOrders([
+    { coin: 'BTC', isPositionTpsl: true, orderType: 'Take Profit Market', triggerPx: '70000' },
+    { coin: 'BTC', isPositionTpsl: true, orderType: 'Stop Market', triggerPx: '60000' },
+  ]);
+  assert.equal(hlTpsl.get('BTC')?.tpPx, 70000, 'Hyperliquid TP/SL parser must read position TP orders');
+  assert.equal(hlTpsl.get('BTC')?.slPx, 60000, 'Hyperliquid TP/SL parser must read position SL orders');
+
+  const grvtTpsl = parseGrvtTpslOrders({
+    result: [{
+      l: [{ i: 'BTC_USDT_Perp' }],
+      t: { tt: 'TAKE_PROFIT', t: { tp: '70000000000' } },
+    }, {
+      l: [{ i: 'BTC_USDT_Perp' }],
+      t: { tt: 'STOP_LOSS', t: { tp: '60000000000' } },
+    }],
+  });
+  assert.equal(grvtTpsl.get('BTC')?.tpPx, 70, 'GRVT TP/SL parser must decode trigger prices');
+  assert.equal(grvtTpsl.get('BTC')?.slPx, 60, 'GRVT TP/SL parser must decode stop-loss triggers');
+
+  const nadoTp = classifyNadoTriggerSide({
+    price_trigger: { price_requirement: { oracle_price_above: String(70_000 * 1e18) } },
+  }, 1);
+  assert.equal(nadoTp?.kind, 'tp', 'NADO trigger classifier must map above-oracle triggers to TP on longs');
+  const nadoSl = classifyNadoTriggerSide({
+    price_trigger: { price_requirement: { oracle_price_below: String(60_000 * 1e18) } },
+  }, 1);
+  assert.equal(nadoSl?.kind, 'sl', 'NADO trigger classifier must map below-oracle triggers to SL on longs');
+
+  assert.equal(perpsTpslMismatch([
+    { tpPx: 100, slPx: 90 },
+    { tpPx: 100.4, slPx: 90.2 },
+  ]), false, 'TP/SL mismatch must stay quiet within 0.5%');
+  assert.equal(perpsTpslMismatch([
+    { tpPx: 100, slPx: 90 },
+    { tpPx: 101, slPx: 90 },
+  ]), true, 'TP/SL mismatch must warn when TP differs by more than 0.5%');
 
   const grvtLiq = liquidationPriceFrom(normalizeGrvtPositionRow({
     i: 'IP_USDT_Perp',

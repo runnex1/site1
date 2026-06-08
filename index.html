@@ -854,6 +854,8 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-metric-val.neg { color:#ff5c7a; }
 .perps-pos-liq-stack { display:flex; flex-direction:column; gap:0.35rem; font-family:var(--ff-mono); min-width:0; }
 .perps-pos-liq-val { font-size:0.78rem; font-weight:800; color:#9dacbb; white-space:nowrap; line-height:1.2; }
+.perps-pos-tpsl-stack { position:relative; }
+.perps-pos-tpsl-warn { font-size:0.72rem; line-height:1; margin-bottom:0.1rem; }
 .perps-pos-apr-col { text-align:right; }
 .perps-pos-apr-val { font-family:var(--ff-mono); font-size:0.92rem; font-weight:900; white-space:nowrap; }
 .perps-pos-apr-val.pos { color:#55d66f; }
@@ -24922,9 +24924,9 @@ function perpsRenderPortfolioPositions(paired) {
         <div>Position</div>
         <div>Exchange</div>
         <div>Liq Price</div>
+        <div>TP/SL</div>
         <div>Total PnL</div>
         <div>Funding</div>
-        <div>Basis uPnL</div>
         <div>Current APR</div>
         <div class="perps-pos-spacer" aria-hidden="true"></div>
         <div>Margin</div>
@@ -24937,7 +24939,6 @@ function perpsRenderPortfolioPositions(paired) {
         const totalBreakdown = perpsPairTotalPnlBreakdown(p);
         const totalPnl = totalBreakdown.total;
         const sessionFunding = perpsPairLatestSessionPnl(p)?.funding ?? null;
-        const basisUpnl = p.combinedUpnl ?? 0;
         const currentApr = perpsPairLiveApy(p);
         const periodApr = perpsPairPeriodApr(p, _perpsStatRange);
         const margin = p.avgNotional ?? 0;
@@ -24961,9 +24962,9 @@ function perpsRenderPortfolioPositions(paired) {
                 ${displayLegs.map(entry => `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="perps-pos-metric-val ${perpsSignedCls(entry.leg.upnl ?? 0)}">${perpsFmtUsd(entry.leg.upnl ?? 0)}</span></div>`).join('')}
             </div>
             ${perpsPositionLiqStackHtml(p, displayLegs)}
+            ${perpsPositionTpSlStackHtml(p, displayLegs)}
             <div class="perps-pos-metric perps-pos-pnl-metric" onmouseenter="perpsShowPositionPnlTip(event, ${pairIdx}, 'total')" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Total PnL</div><div class="perps-pos-metric-val ${totalPnl != null ? perpsSignedCls(totalPnl) : ''}">${totalPnl != null ? perpsFmtUsd(totalPnl) : '—'}</div></div>
             <div class="perps-pos-metric perps-pos-pnl-metric" onmouseenter="perpsShowPositionPnlTip(event, ${pairIdx}, 'funding')" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${sessionFunding != null ? perpsSignedCls(sessionFunding) : ''}">${sessionFunding != null ? perpsFmtUsd(sessionFunding) : '—'}</div></div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Basis uPnL</div><div class="perps-pos-metric-val ${perpsSignedCls(basisUpnl)}">${perpsFmtUsd(basisUpnl)}</div></div>
             <div class="perps-pos-metric perps-pos-apr-metric" onmouseenter="perpsShowCurrentAprTip(event, ${pairIdx})" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Current APR</div><div class="perps-pos-metric-val ${perpsSignedCls(currentApr)}">${currentApr != null ? perpsFmtPct(currentApr) : '—'}</div></div>
             <div class="perps-pos-spacer" aria-hidden="true"></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Margin</div><div class="perps-pos-metric-val">${perpsFmtUsd(margin)}</div></div>
@@ -25050,8 +25051,8 @@ function perpsVenueShort(venue) {
 function perpsPairLegs(p) {
     if (p.pairType === 'hl_nado') {
         return {
-            a: { label: 'HL', venue: 'hyperliquid', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen, markPx: p.hl?.markPx, liquidationPx: p.hl?.liquidationPx },
-            b: { label: 'Nado', venue: 'nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen, markPx: p.nado?.markPx, liquidationPx: p.nado?.liquidationPx },
+            a: { label: 'HL', venue: 'hyperliquid', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen, markPx: p.hl?.markPx, liquidationPx: p.hl?.liquidationPx, tpPx: p.hl?.tpPx, slPx: p.hl?.slPx },
+            b: { label: 'Nado', venue: 'nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen, markPx: p.nado?.markPx, liquidationPx: p.nado?.liquidationPx, tpPx: p.nado?.tpPx, slPx: p.nado?.slPx },
         };
     }
     if (p.crossLegA && p.crossLegB) {
@@ -25065,6 +25066,8 @@ function perpsPairLegs(p) {
                 funding: p.legAFundingSinceOpen,
                 markPx: p.crossLegA.markPx,
                 liquidationPx: p.crossLegA.liquidationPx,
+                tpPx: p.crossLegA.tpPx,
+                slPx: p.crossLegA.slPx,
             },
             b: {
                 label: perpsVenueShort(p.crossLegB.venue),
@@ -25075,6 +25078,8 @@ function perpsPairLegs(p) {
                 funding: p.legBFundingSinceOpen,
                 markPx: p.crossLegB.markPx,
                 liquidationPx: p.crossLegB.liquidationPx,
+                tpPx: p.crossLegB.tpPx,
+                slPx: p.crossLegB.slPx,
             },
         };
     }
@@ -25124,6 +25129,36 @@ function perpsPositionLiqStackHtml(p, displayLegs) {
         const liquidationPx = perpsNumOrNull(entry.leg.liquidationPx);
         const liqStyle = perpsLiquidationRiskStyle(currentPx, liquidationPx);
         return `<div class="perps-pos-liq-val" ${liqStyle}>${perpsFmtPx(liquidationPx)}</div>`;
+    }).join('')}</div>`;
+}
+
+function perpsFmtTpSlLine(tpPx, slPx) {
+    const tp = perpsNumOrNull(tpPx);
+    const sl = perpsNumOrNull(slPx);
+    if (tp == null && sl == null) return '—';
+    const tpStr = tp != null ? perpsFmtPx(tp) : '—';
+    const slStr = sl != null ? perpsFmtPx(sl) : '—';
+    return `${tpStr} / ${slStr}`;
+}
+
+function perpsPairTpSlMismatch(displayLegs) {
+    const legs = (displayLegs || []).map(entry => entry.leg || entry);
+    const tps = legs.map(leg => perpsNumOrNull(leg.tpPx)).filter(v => v != null);
+    const sls = legs.map(leg => perpsNumOrNull(leg.slPx)).filter(v => v != null);
+    const diffPct = (a, b) => {
+        const avg = (a + b) / 2;
+        return avg > 0 ? (Math.abs(a - b) / avg) * 100 : null;
+    };
+    const tpMismatch = tps.length >= 2 && diffPct(tps[0], tps[1]) > 0.5;
+    const slMismatch = sls.length >= 2 && diffPct(sls[0], sls[1]) > 0.5;
+    return tpMismatch || slMismatch;
+}
+
+function perpsPositionTpSlStackHtml(p, displayLegs) {
+    const mismatch = perpsPairTpSlMismatch(displayLegs);
+    const warn = mismatch ? '<div class="perps-pos-tpsl-warn" title="TP/SL differ across venues by more than 0.5%">⚠️</div>' : '';
+    return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${warn}${displayLegs.map(entry => {
+        return `<div class="perps-pos-liq-val">${perpsFmtTpSlLine(entry.leg.tpPx, entry.leg.slPx)}</div>`;
     }).join('')}</div>`;
 }
 
