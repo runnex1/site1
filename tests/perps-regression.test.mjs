@@ -630,6 +630,15 @@ assert.match(indexHtml, /tickerAddSource/, 'market ticker add flow must let user
 assert.match(indexHtml, /function tkFetchCoingeckoLogo\(/, 'custom ticker logos must resolve from CoinGecko');
 assert.match(indexHtml, /vault_ticker_custom_v2/, 'custom ticker metadata must persist symbol and price source');
 assert.doesNotMatch(indexHtml, /ticker-source-badge/, 'custom ticker bar must not show price source labels like Auto');
+assert.match(indexHtml, /pmMinNoOdds/, 'opportunity monitors must persist customizable PM min NO odds');
+assert.match(indexHtml, /pmMinApy/, 'opportunity monitors must persist customizable PM min APY');
+assert.match(indexHtml, /oppPmMinNoOdds/, 'configure modal must expose PM min NO odds');
+assert.match(indexHtml, /oppPmMinApy/, 'configure modal must expose PM min APY');
+assert.match(indexHtml, />Configure<\/button>/, 'opportunities panel must use Configure button label');
+assert.match(indexHtml, /reappeared = !_lastOpportunityVisibleKeys\.has\(key\)/, 'new or reappearing opportunities must bubble to the top');
+assert.match(indexHtml, /PERPS_DAILY_FUND_CACHE_KEY/, 'perps daily funding must cache for dashboard PnL tracker');
+assert.match(indexHtml, /label:'Perps DEXs'/, 'PnL tracker must show Perps DEXs under DeFi Positions');
+assert.match(indexHtml, /dashboardPerpsPnlValue/, 'Perps DEXs PnL must come from daily funding chart totals');
 assert.match(indexHtml, /ticker-strip-viewport/, 'market ticker must use a scrolling viewport for overflow symbols');
 assert.match(indexHtml, /function syncTabRefreshTimers\(tab\)/, 'tab switches must start and stop feature refresh timers');
 const loopRatesJs = readFileSync(join(ROOT, 'lib', 'loop-rates.js'), 'utf8');
