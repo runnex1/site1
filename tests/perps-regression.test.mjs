@@ -718,6 +718,11 @@ assert.match(indexHtml, /loop-card-main/, 'loop cards must use chart + legs side
 assert.match(indexHtml, /loop-summary-row/, 'loop summary must place supply and borrow APY left of net value');
 assert.match(indexHtml, /loop-head-stats/, 'loop header must group net APY and health on the right');
 assert.match(indexHtml, /function loopHeadStatsHtml\(/, 'loop header must render net APY beside health');
+assert.match(indexHtml, /function loopEffectiveNetValue\(/, 'loops must use Merkl-inclusive economic net value for live positions');
+assert.match(indexHtml, /loopEffectiveNetValue\(loop\)/, 'loops KPIs and cards must rank and sum economic net value');
+assert.match(indexHtml, /function perpsPairPeriodPnl\(/, 'perps positions must compute range-scoped PnL from latest session');
+assert.match(indexHtml, /perpsFilterPairLatestSessionForRange\(p\.dailyPerformanceSeries/, 'perps pair PnL must filter latest session before applying stat range');
+assert.match(indexHtml, /Total PnL · \$\{dashEsc\(rangeLabel\)\}/, 'perps open positions must label total PnL with selected stat range');
 assert.doesNotMatch(indexHtml, /loop-head-stat-sub/, 'loop health must not show Risk/Watch/Safe sublabel');
 assert.match(indexHtml, /loop-head-eyebrow/, 'loop header must show protocol as eyebrow above pair');
 assert.match(indexHtml, /loop-history-chart/, 'loop cards must render snapshot history chart');
