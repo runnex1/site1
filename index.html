@@ -5450,12 +5450,26 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-meter-copy strong { color:var(--t1); font-weight:850; }
 .loop-meter { height:8px; margin-top:0.42rem; border-radius:999px; overflow:hidden; background:rgba(148,163,184,0.12); }
 .loop-meter-fill { height:100%; border-radius:999px; background:linear-gradient(90deg, var(--green), var(--teal)); }
-.loop-history-chart { padding:0.5rem 0.94rem 0.62rem; border-bottom:1px solid rgba(148,163,184,0.10); }
+.loop-history-chart { padding:0.55rem 0.94rem 0.72rem; border-bottom:1px solid rgba(148,163,184,0.10); }
 .loop-history-chart.empty { color:var(--t3); font-family:var(--ff-mono); font-size:0.62rem; font-weight:650; }
-.loop-history-chart svg { display:block; width:100%; height:52px; }
-.loop-history-val { stroke:rgba(45,212,191,0.9); }
-.loop-history-apy { stroke:rgba(251,191,36,0.88); }
-.loop-history-legend { margin-top:0.28rem; display:flex; justify-content:space-between; gap:0.5rem; font-family:var(--ff-mono); font-size:0.58rem; font-weight:700; color:var(--t3); }
+.loop-history-head { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; margin-bottom:0.42rem; }
+.loop-history-title { font-family:var(--ff-mono); font-size:0.58rem; font-weight:750; letter-spacing:0.06em; text-transform:uppercase; color:var(--t3); }
+.loop-history-toggle { display:inline-flex; border:1px solid rgba(148,163,184,0.18); border-radius:6px; overflow:hidden; flex-shrink:0; }
+.loop-history-mode-btn { border:0; background:transparent; color:var(--t3); padding:0.24rem 0.52rem; font-family:var(--ff-mono); font-size:0.56rem; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; cursor:pointer; }
+.loop-history-mode-btn:hover:not(:disabled) { color:var(--t1); background:rgba(255,255,255,0.04); }
+.loop-history-mode-btn.active { color:var(--teal); background:rgba(45,212,191,0.12); }
+.loop-history-chart.mode-apy .loop-history-mode-btn.active { color:var(--amber); background:rgba(251,191,36,0.12); }
+.loop-history-mode-btn:disabled { opacity:0.35; cursor:not-allowed; }
+.loop-history-chart svg { display:block; width:100%; height:120px; }
+.loop-history-val { stroke:rgba(45,212,191,0.95); }
+.loop-history-apy { stroke:rgba(251,191,36,0.92); }
+.loop-history-area-val { fill:rgba(45,212,191,0.10); stroke:none; }
+.loop-history-area-apy { fill:rgba(251,191,36,0.10); stroke:none; }
+.loop-history-chart.mode-val .loop-history-series-apy,
+.loop-history-chart.mode-val .loop-history-leg.apy { display:none; }
+.loop-history-chart.mode-apy .loop-history-series-val,
+.loop-history-chart.mode-apy .loop-history-leg.val { display:none; }
+.loop-history-legend { margin-top:0.35rem; font-family:var(--ff-mono); font-size:0.64rem; font-weight:750; color:var(--t3); }
 .loop-history-leg.val { color:var(--teal); }
 .loop-history-leg.apy { color:var(--amber); }
 .loop-status { padding:0.26rem 0.58rem; border-radius:5px; font-family:var(--ff-display); font-size:0.66rem; font-weight:850; line-height:1; border:1px solid rgba(34,197,94,0.22); background:rgba(34,197,94,0.08); color:var(--green); white-space:nowrap; }
@@ -11285,6 +11299,24 @@ function loopSnapshotApyMetricHtml(targetDays, points, endValue, endTs) {
     return `<div class="loop-metric"><div class="loop-metric-label" title="${dashEsc(title)}">${targetDays}d APY${star}</div><div class="loop-metric-value ${cls}" title="${dashEsc(title)}">${result.apy.toFixed(2)}%</div></div>`;
 }
 
+function loopHistoryChartSetMode(btn) {
+    if (!btn || btn.disabled) return;
+    const chart = btn.closest('.loop-history-chart');
+    if (!chart) return;
+    const mode = btn.dataset.mode === 'apy' ? 'apy' : 'val';
+    chart.classList.remove('mode-val', 'mode-apy');
+    chart.classList.add('mode-' + mode);
+    chart.querySelectorAll('.loop-history-mode-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === mode);
+    });
+}
+
+function loopHistoryChartPath(points, valueAt, xAt, yAt, baseY) {
+    const line = points.map((p, i) => `${i ? 'L' : 'M'}${xAt(i).toFixed(1)},${yAt(valueAt(p)).toFixed(1)}`).join(' ');
+    const area = `${line} L${xAt(points.length - 1).toFixed(1)},${baseY.toFixed(1)} L${xAt(0).toFixed(1)},${baseY.toFixed(1)} Z`;
+    return { line, area };
+}
+
 function loopHistoryChartHtml(points) {
     if (!points || !points.length) {
         return '<div class="loop-history-chart empty"><span>History builds every 3h — sync live or wait for the next server snapshot</span></div>';
@@ -11293,35 +11325,49 @@ function loopHistoryChartHtml(points) {
         return `<div class="loop-history-chart empty"><span>1 snapshot saved — chart appears after the next 3h bucket (sync live or wait for cron)</span></div>`;
     }
     const w = 320;
-    const h = 52;
-    const pad = { t: 4, r: 4, b: 4, l: 4 };
+    const h = 120;
+    const pad = { t: 10, r: 8, b: 12, l: 8 };
     const iw = w - pad.l - pad.r;
     const ih = h - pad.t - pad.b;
+    const baseY = pad.t + ih;
     const vals = points.map(p => p.netValue);
-    const apys = points.map(p => p.netApy).filter(Number.isFinite);
+    const apys = points.map(p => p.netApy);
     const vmin = Math.min(...vals);
     const vmax = Math.max(...vals);
-    const amin = apys.length ? Math.min(...apys) : 0;
-    const amax = apys.length ? Math.max(...apys) : 1;
+    const amin = Math.min(...apys.filter(Number.isFinite));
+    const amax = Math.max(...apys.filter(Number.isFinite));
+    const hasApy = apys.every(Number.isFinite) && Number.isFinite(amin) && Number.isFinite(amax);
     const vspan = Math.max(vmax - vmin, 1);
     const aspan = Math.max(amax - amin, 0.5);
     const xAt = i => pad.l + (i / (points.length - 1)) * iw;
     const yVal = v => pad.t + ih - ((v - vmin) / vspan) * ih;
     const yApy = a => pad.t + ih - ((a - amin) / aspan) * ih;
-    const valPath = points.map((p, i) => `${i ? 'L' : 'M'}${xAt(i).toFixed(1)},${yVal(p.netValue).toFixed(1)}`).join(' ');
-    const apyPath = apys.length === points.length
-        ? points.map((p, i) => `${i ? 'L' : 'M'}${xAt(i).toFixed(1)},${yApy(p.netApy).toFixed(1)}`).join(' ')
-        : '';
+    const valSeries = loopHistoryChartPath(points, p => p.netValue, xAt, yVal, baseY);
+    const apySeries = hasApy ? loopHistoryChartPath(points, p => p.netApy, xAt, yApy, baseY) : null;
     const last = points[points.length - 1];
     const fmtUsd = v => '$' + Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
-    return `<div class="loop-history-chart" title="3h snapshots: teal = net value, amber = net APY">
+    const apyBtnAttrs = hasApy ? '' : ' disabled';
+    return `<div class="loop-history-chart mode-val">
+        <div class="loop-history-head">
+            <span class="loop-history-title">3h snapshots</span>
+            <div class="loop-history-toggle">
+                <button type="button" class="loop-history-mode-btn active" data-mode="val" onclick="loopHistoryChartSetMode(this)">Net value</button>
+                <button type="button" class="loop-history-mode-btn" data-mode="apy" onclick="loopHistoryChartSetMode(this)"${apyBtnAttrs}>APY</button>
+            </div>
+        </div>
         <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
-            <path class="loop-history-val" d="${valPath}" fill="none" stroke-width="1.5"></path>
-            ${apyPath ? `<path class="loop-history-apy" d="${apyPath}" fill="none" stroke-width="1.5"></path>` : ''}
+            <g class="loop-history-series-val">
+                <path class="loop-history-area-val" d="${valSeries.area}"></path>
+                <path class="loop-history-val" d="${valSeries.line}" fill="none" stroke-width="2"></path>
+            </g>
+            ${apySeries ? `<g class="loop-history-series-apy">
+                <path class="loop-history-area-apy" d="${apySeries.area}"></path>
+                <path class="loop-history-apy" d="${apySeries.line}" fill="none" stroke-width="2"></path>
+            </g>` : ''}
         </svg>
         <div class="loop-history-legend">
             <span class="loop-history-leg val">Net ${fmtUsd(last.netValue)}</span>
-            <span class="loop-history-leg apy">${Number.isFinite(last.netApy) ? last.netApy.toFixed(2) + '% APY' : ''}</span>
+            <span class="loop-history-leg apy">${Number.isFinite(last.netApy) ? last.netApy.toFixed(2) + '% APY' : '-'}</span>
         </div>
     </div>`;
 }

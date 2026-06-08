@@ -679,6 +679,9 @@ assert.match(aaveProxyJs, /vault:loop_snapshots/, 'loop snapshots must persist i
 assert.match(syncJs, /loopSnapshots === '1'/, 'sync endpoint must hydrate loop snapshot history');
 assert.match(indexHtml, /loop-history-chart/, 'loop cards must render history below the supply/borrow meter');
 assert.match(indexHtml, /function loopHistoryChartHtml\(points\)/, 'loops tab must build per-position history charts from snapshots');
+assert.match(indexHtml, /function loopHistoryChartSetMode\(/, 'loop history chart must toggle between net value and APY');
+assert.match(indexHtml, /loop-history-mode-btn/, 'loop history chart must expose net value / APY toggle buttons');
+assert.match(indexHtml, /height:120px/, 'loop history chart must be tall enough to read trends');
 assert.match(indexHtml, /function loopSnapshotRealizedApy\(points, targetDays, endValue, endTs\)/, 'loops tab must compute realized APY from snapshots');
 assert.match(indexHtml, /7d APY/, 'loop cards must show 7d realized APY');
 assert.match(indexHtml, /30d APY/, 'loop cards must show 30d realized APY');
