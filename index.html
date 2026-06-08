@@ -7189,6 +7189,7 @@ const LogoEngine = (() => {
         'MKR':'maker','SUSHI':'sushiswap','1INCH':'1inch-network','DYDX':'dydx-v4',
         'OP':'optimism','ARB':'arbitrum','IMX':'immutable-x','STX':'stacks',
         'INJ':'injective','BLUR':'blur','RLP':'resolv','USR':'resolv',
+        'USDE':'ethena','SUSDE':'ethena','REUSD':'re','USDM':'m0',
     };
 
     function tokenSources(symbol) {
@@ -7259,11 +7260,13 @@ const LogoEngine = (() => {
         const persisted = freshLogoUrl(key);
         if (persisted) return (cache[key] = persisted);
         if (cache[key] && !isGeneratedFallbackLogo(cache[key])) return cache[key];
+        const peek = _peekTokenImage(symbol);
+        if (peek) return peek;
         if (inflight[key]) return inflight[key];
         inflight[key] = (async () => {
             const manual = MANUAL_LOGOS[String(symbol || '').toUpperCase()];
             const final = manual || makeSvgFallback(symbol.substring(0, 4).toUpperCase(), symbol);
-            setLogoCache(key, final);
+            if (!freshLogoUrl(key)) setLogoCache(key, final);
             delete inflight[key];
             return final;
         })();
@@ -11257,7 +11260,7 @@ function loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions) {
 
 function loopPairLegHtml(symbol, side, size = 32) {
     if (!symbol) return '';
-    return `<span class="loop-pair-leg ${side}">${makeLogo(symbol, false, size)}<span class="loop-pair-name">${dashEsc(symbol)}</span></span>`;
+    return `<span class="loop-pair-leg ${side}">${makeLoopLogo(symbol, false, size)}<span class="loop-pair-name">${dashEsc(symbol)}</span></span>`;
 }
 
 function loopPairHtml(suppliedPositions, borrowedPositions) {

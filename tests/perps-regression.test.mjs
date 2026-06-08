@@ -847,7 +847,13 @@ assert.match(indexHtml, /loopTrimHistoryToLatestSession\(loopHistoryPoints\(loop
 }
 
 {
-  const { collectLoopLogoTargets, tokenLogoKey, protocolLogoKey } = require('../lib/logo-resolver.js');
+  const {
+    collectLoopLogoTargets,
+    tokenLogoKey,
+    protocolLogoKey,
+    hasEmbeddedLogo,
+    GECKO_IDS,
+  } = require('../lib/logo-resolver.js');
   const targets = collectLoopLogoTargets([
     {
       protocol: 'Aave',
@@ -856,15 +862,29 @@ assert.match(indexHtml, /loopTrimHistoryToLatestSession\(loopHistoryPoints\(loop
     },
   ]);
   const keys = new Set(targets.map(t => t.key));
+  const usdeTarget = targets.find(t => t.key === tokenLogoKey('USDE'));
   assert.ok(keys.has(protocolLogoKey('Aave')), 'loop logo resolver must include Aave protocol logos');
   assert.ok(keys.has(protocolLogoKey('Morpho')), 'loop logo resolver must always include Morpho protocol logos');
   assert.ok(keys.has(tokenLogoKey('USDE')), 'loop logo resolver must include supplied token logos');
   assert.ok(keys.has(tokenLogoKey('USDM')), 'loop logo resolver must include borrowed token logos');
+  assert.equal(usdeTarget?.kind, 'token', 'loop token logos must resolve as token targets');
+  assert.equal(GECKO_IDS.USDE, 'ethena-usde', 'USDe must map to CoinGecko before DeFiLlama fallback');
+  assert.equal(GECKO_IDS.USDM, 'mountain-protocol-usdm', 'USDm must map to CoinGecko before DeFiLlama fallback');
+  assert.equal(GECKO_IDS.REUSD, 're-protocol-reusd', 'reUSD must map to CoinGecko before DeFiLlama fallback');
+  const cached = { [tokenLogoKey('USDE')]: { url: 'data:image/png;base64,abc', ts: 1, source: 'coingecko' } };
+  const legacy = { [tokenLogoKey('USDM')]: { url: 'data:image/png;base64,legacy', ts: 1 } };
+  assert.ok(hasEmbeddedLogo(cached, tokenLogoKey('USDE')), 'embedded server logos must skip re-fetch');
+  assert.ok(!hasEmbeddedLogo(legacy, tokenLogoKey('USDM')), 'legacy logos without source must refresh on next resolve');
 }
 
 assert.match(aaveProxyJs, /ensureLoopLogoCache/, 'loop rates cron must persist embedded logos server-side');
 assert.match(syncJs, /logoCache === '1'/, 'sync endpoint must expose server logo cache for loops hydration');
 assert.match(indexHtml, /function makeLoopLogo\(symbol, isProtocol/, 'loops tab must render logos from server cache only');
+assert.match(indexHtml, /makeLoopLogo\(symbol, false, size\)/, 'loop token logos must read server-cached images via makeLoopLogo');
+const logoResolverJs = readFileSync(join(ROOT, 'lib', 'logo-resolver.js'), 'utf8');
+assert.match(logoResolverJs, /async function coingeckoImageUrlForSymbol\(/, 'token logos must try CoinGecko first on the server');
+assert.match(logoResolverJs, /async function resolveTokenLogoDataUrl\(/, 'token logos must fall back to DeFiLlama after CoinGecko');
+assert.match(logoResolverJs, /if \(hasEmbeddedLogo\(next, target\.key\)\) continue;/, 'resolved token logos must persist server-side without re-fetching');
 assert.match(indexHtml, /logoCache=1/, 'loops tab must hydrate server logo cache');
 
 {
