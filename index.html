@@ -11107,6 +11107,54 @@ function loopsMergeSnapshotsFromServer(serverStore) {
     try { localStorage.setItem(LOOP_SNAPSHOTS_KEY, JSON.stringify(loopSnapshotsStore)); } catch (e) {}
 }
 
+function loopsSnapshotBucketKey(ms) {
+    const d = new Date(ms);
+    const h = Math.floor(d.getUTCHours() / 3) * 3;
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}T${String(h).padStart(2, '0')}`;
+}
+
+function loopsAppendSnapshotFromApiData(data) {
+    const fetchedAt = Number(data?.updatedAt) || Date.now();
+    const key = loopsSnapshotBucketKey(fetchedAt);
+    const positions = (data?.positions || [])
+        .filter(p => Number(p?.totalBorrowed) > 0.01)
+        .map(p => {
+            const netValue = Number(p.netValue || 0);
+            const merklRewardsUsd = Number(p.merklRewardsUsd || 0);
+            const economicNetValue = Number(p.economicNetValue ?? netValue + merklRewardsUsd);
+            return {
+                id: p.id,
+                protocol: p.protocol,
+                marketName: p.marketName,
+                wallet: p.wallet,
+                chainId: p.chainId,
+                netValue,
+                merklRewardsUsd: merklRewardsUsd > 0.01 ? merklRewardsUsd : 0,
+                economicNetValue,
+                totalSupplied: Number(p.totalSupplied || 0),
+                totalBorrowed: Number(p.totalBorrowed || 0),
+                supplyApy: p.supplyApy == null ? null : Number(p.supplyApy),
+                borrowApy: p.borrowApy == null ? null : Number(p.borrowApy),
+                netApy: p.netApy == null ? null : Number(p.netApy),
+                health: p.health == null ? null : Number(p.health),
+            };
+        });
+    if (!positions.length) return false;
+    if (loopSnapshotsStore[key]) return false;
+    loopSnapshotsStore[key] = {
+        bucket: key,
+        fetchedAt,
+        wallets: Array.isArray(data?.wallets) ? data.wallets : [],
+        positions,
+    };
+    const keys = Object.keys(loopSnapshotsStore).sort();
+    while (keys.length > 360) {
+        delete loopSnapshotsStore[keys.shift()];
+    }
+    try { localStorage.setItem(LOOP_SNAPSHOTS_KEY, JSON.stringify(loopSnapshotsStore)); } catch (e) {}
+    return true;
+}
+
 async function loopsEnsureSnapshotsHydrated() {
     if (_loopSnapshotsHydratePromise) return _loopSnapshotsHydratePromise;
     _loopSnapshotsHydratePromise = (async () => {
@@ -11209,8 +11257,11 @@ function loopSnapshotApyMetricHtml(targetDays, points, endValue, endTs) {
 }
 
 function loopHistoryChartHtml(points) {
-    if (!points || points.length < 2) {
-        return '<div class="loop-history-chart empty"><span>History builds every 3h after server snapshots</span></div>';
+    if (!points || !points.length) {
+        return '<div class="loop-history-chart empty"><span>History builds every 3h — sync live or wait for the next server snapshot</span></div>';
+    }
+    if (points.length === 1) {
+        return `<div class="loop-history-chart empty"><span>1 snapshot saved — chart appears after the next 3h bucket (sync live or wait for cron)</span></div>`;
     }
     const w = 320;
     const h = 52;
@@ -11370,6 +11421,7 @@ async function syncLoopApiPositions({ silent = false } = {}) {
         loopApiState.errors = Array.isArray(json.errors) ? json.errors : [];
         loopApiState.coverage = json.coverage || null;
         loopsPersistApiState();
+        loopsAppendSnapshotFromApiData(json);
     } catch (e) {
         loopApiState.errors = [{ provider: 'loops', message: e.message || 'Live loop sync failed' }];
         if (!silent) alert('Live loop sync failed: ' + (e.message || e));
