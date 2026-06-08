@@ -16338,7 +16338,7 @@ function dashboardPnlAttributionData() {
         return [
             { label:'Prediction Markets', pnl: aggregatePredictionPnl },
             { label:'DeFi Positions', pnl: defiYieldPnl },
-            { label:'Perps DEXs', pnl: perpsPnl, sub:true },
+            { label:'Perpetual DEXs', pnl: perpsPnl },
             { label:'Stocks / ETFs', pnl: aggregateEtfPnl },
             { label:'Tokens', pnl: current.Tokens - Number(base.totalTokens||0) },
         ];
@@ -16346,7 +16346,7 @@ function dashboardPnlAttributionData() {
     return [
         { label:'Prediction Markets', pnl: aggregatePredictionPnl },
         { label:'DeFi Positions', pnl: defiYieldPnl },
-        { label:'Perps DEXs', pnl: perpsPnl, sub:true },
+        { label:'Perpetual DEXs', pnl: perpsPnl },
         { label:'Stocks / ETFs', pnl: aggregateEtfPnl },
         { label:'Tokens', pnl: 0 },
     ];
