@@ -518,7 +518,7 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ ok: true, ...(await getSystemStatusText()) });
       }
       if (req.query?.eventLog === '1') {
-        const result = await collectEvents();
+        const result = await collectEvents({ force: req.query.force === '1' });
         return res.status(200).json({ ok: true, ...result });
       }
       if (req.query?.polymarketPnl === '1') {

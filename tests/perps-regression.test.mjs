@@ -639,6 +639,12 @@ assert.match(indexHtml, /reappeared = !_lastOpportunityVisibleKeys\.has\(key\)/,
 assert.match(indexHtml, /PERPS_DAILY_FUND_CACHE_KEY/, 'perps daily funding must cache for dashboard PnL tracker');
 assert.match(indexHtml, /label:'Perps DEXs'/, 'PnL tracker must show Perps DEXs under DeFi Positions');
 assert.match(indexHtml, /dashboardPerpsPnlValue/, 'Perps DEXs PnL must come from daily funding chart totals');
+assert.match(indexHtml, /EVENT_LOG_REFRESH_MS = 5 \* 60 \* 1000/, 'event log must refresh every 5 minutes on the dashboard');
+assert.match(indexHtml, /forceCollect: true/, 'dashboard event log polls must force fresh Kobeissi checks');
+assert.match(indexHtml, /eventLog=1&force=1/, 'dashboard must request forced event-log collection');
+const eventLogJs = readFileSync(join(ROOT, 'lib', 'event-log.js'), 'utf8');
+assert.match(eventLogJs, /fetchKobeissiPosts/, 'event log must scrape Kobeissi Letter Telegram headlines');
+assert.match(eventLogJs, /'Kobeissi Letter'/, 'event log must include non-breaking Kobeissi headlines');
 assert.match(indexHtml, /ticker-strip-viewport/, 'market ticker must use a scrolling viewport for overflow symbols');
 assert.match(indexHtml, /function syncTabRefreshTimers\(tab\)/, 'tab switches must start and stop feature refresh timers');
 const loopRatesJs = readFileSync(join(ROOT, 'lib', 'loop-rates.js'), 'utf8');
