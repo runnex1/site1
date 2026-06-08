@@ -682,8 +682,8 @@ assert.match(indexHtml, /page-content:has\(#loopsTab\.active\)[\s\S]{0,80}paddin
 assert.match(indexHtml, /loops-grid[\s\S]{0,120}grid-template-columns:repeat\(2, minmax\(0, 1fr\)\)/, 'loops grid must show two cards per row on desktop');
 assert.match(indexHtml, /loop-card-head/, 'loop cards must use stacked hero header row');
 assert.match(indexHtml, /loop-card-main/, 'loop cards must use chart + legs side-by-side layout');
-assert.match(indexHtml, /loop-summary-pane/, 'loop cards must show net value with supply and borrow APY');
-assert.match(indexHtml, /loop-head-stats/, 'loop header must show unified net APY and health stats');
+assert.match(indexHtml, /loop-summary-row/, 'loop summary must place supply and borrow APY left of net value');
+assert.match(indexHtml, /loop-head-stat-divider/, 'loop header must show net APY and health with divider, not boxed stats');
 assert.match(indexHtml, /function loopHeadStatsHtml\(/, 'loop header stats must render net APY beside health');
 assert.match(indexHtml, /loop-head-eyebrow/, 'loop header must show protocol as eyebrow above pair');
 assert.match(indexHtml, /loop-history-chart/, 'loop cards must render snapshot history chart');

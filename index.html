@@ -5442,12 +5442,14 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-pair-arrow { color:var(--t3); margin:0 6px; font-weight:600; font-size:0.92em; }
 .loop-pair-bor { color:var(--red); }
 .loop-head-stats {
-  flex-shrink:0; display:grid; grid-template-columns:1fr 1fr; gap:1px; min-width:148px;
-  border-radius:8px; overflow:hidden; border:1px solid rgba(148,163,184,0.14);
-  background:rgba(148,163,184,0.10);
+  flex-shrink:0; display:flex; align-items:flex-end; gap:12px; min-width:0;
+}
+.loop-head-stat-divider {
+  width:1px; align-self:stretch; min-height:34px; margin:0 1px;
+  background:linear-gradient(180deg, transparent, rgba(148,163,184,0.22) 18%, rgba(148,163,184,0.22) 82%, transparent);
 }
 .loop-head-stat {
-  padding:7px 10px 6px; background:rgba(4,13,19,0.82); text-align:right; min-width:0;
+  padding:0; background:none; text-align:right; min-width:0;
 }
 .loop-head-stat-label {
   font-family:var(--ff-display); font-size:0.46rem; font-weight:850; letter-spacing:0.11em;
@@ -5474,7 +5476,10 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-chart-pane { padding:0; }
 .loop-chart-pane .loop-history-chart { padding:12px 14px 14px; border-bottom:0; }
 .loop-chart-pane .loop-history-chart svg { height:148px; }
-.loop-summary-pane { padding:12px 14px; display:flex; flex-direction:column; gap:6px; justify-content:center; }
+.loop-summary-pane { padding:12px 14px; display:flex; flex-direction:column; gap:8px; justify-content:center; }
+.loop-summary-row { display:flex; align-items:center; gap:14px; min-width:0; }
+.loop-summary-legs { flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.loop-summary-core { flex-shrink:0; text-align:right; }
 .loop-summary-label { font-family:var(--ff-display); font-size:0.52rem; font-weight:850; letter-spacing:0.1em; text-transform:uppercase; color:var(--t3); }
 .loop-summary-val { font-family:var(--ff-mono); font-size:1.12rem; font-weight:900; line-height:1.1; color:var(--t1); }
 .loop-summary-apy { font-family:var(--ff-mono); font-size:0.62rem; font-weight:650; color:var(--t3); line-height:1.35; }
@@ -5497,12 +5502,6 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-health-value.safe, .loops-value.safe { color:var(--green); }
 .loop-health-value.warn, .loops-value.warn { color:var(--amber); }
 .loop-health-value.danger, .loops-value.danger { color:var(--red); }
-.loop-head-stats { justify-self:end; display:flex; align-items:center; justify-content:flex-end; gap:0.9rem; min-width:0; }
-.loop-apy-box { min-width:96px; text-align:right; }
-.loop-apy-label { color:var(--t3); font-family:var(--ff-display); font-size:0.6rem; line-height:1; font-weight:850; text-transform:uppercase; letter-spacing:0.12em; }
-.loop-apy-value { margin-top:0.16rem; font-family:var(--ff-mono); font-size:1.34rem; line-height:1; font-weight:900; color:var(--green); }
-.loop-apy-value.neg { color:var(--red); }
-.loop-apy-value.neu { color:var(--t3); }
 .loop-metrics { display:grid; grid-template-columns:repeat(8, minmax(0,1fr)); gap:1px; background:rgba(148,163,184,0.10); border-bottom:1px solid rgba(148,163,184,0.10); }
 .loop-metric { min-width:0; padding:0.74rem 0.76rem; background:rgba(4,13,19,0.92); }
 .loop-metric-label { color:var(--t3); font-family:var(--ff-display); font-size:0.58rem; line-height:1.15; font-weight:850; letter-spacing:0.1em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -5575,8 +5574,8 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
   .loops-kpi { border-right:0; border-bottom:1px solid rgba(148,163,184,0.14); }
   .loops-kpi:last-child { border-bottom:0; }
   .loop-card-top { grid-template-columns:42px minmax(0,1fr); }
-  .loop-head-stats { grid-column:1 / -1; justify-self:start; justify-content:flex-start; width:100%; }
-  .loop-apy-box { text-align:left; }
+  .loop-head-stats { width:100%; justify-content:flex-start; }
+  .loop-head-stat { text-align:left; }
   .loop-health-box { grid-column:1 / -1; text-align:left; min-width:0; }
   .loop-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .loop-meter-wrap, .loop-positions { grid-template-columns:1fr; }
@@ -11142,6 +11141,7 @@ function loopHeadStatsHtml(apyText, apyCls, healthVal, healthCls, statusCls, sta
             <div class="loop-head-stat-label">Net APY</div>
             <div class="loop-head-stat-val">${apyText}</div>
         </div>
+        <div class="loop-head-stat-divider" aria-hidden="true"></div>
         <div class="loop-head-stat health ${statusCls}">
             <div class="loop-head-stat-label">Health</div>
             <div class="loop-head-stat-val">${healthVal}</div>
@@ -11168,26 +11168,28 @@ function loopPairHtml(suppliedPositions, borrowedPositions) {
     return dashEsc(fallback);
 }
 
-function loopSupplyLegApyHtml(suppliedApr, suppliedPositions) {
-    const merkl = (suppliedPositions || []).reduce((m, p) => Math.max(m, Number(p.merklApy || 0)), 0);
-    const parts = [];
-    if (Number.isFinite(suppliedApr)) parts.push(`Supply <strong>${suppliedApr.toFixed(2)}%</strong>`);
-    if (merkl > 0) parts.push(`Merkl +<strong>${merkl.toFixed(1)}%</strong>`);
-    return parts.join(' · ');
+function loopSupplyLegApyHtml(suppliedApr) {
+    return Number.isFinite(suppliedApr) ? `Supply <strong>${suppliedApr.toFixed(2)}%</strong>` : '';
 }
 
 function loopBorrowLegApyHtml(borrowedApr) {
     return Number.isFinite(borrowedApr) ? `Borrow <strong>${borrowedApr.toFixed(2)}%</strong>` : '';
 }
 
-function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, suppliedPositions, realizedHtml) {
-    const supplyLine = loopSupplyLegApyHtml(suppliedApr, suppliedPositions);
+function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml) {
+    const supplyLine = loopSupplyLegApyHtml(suppliedApr);
     const borrowLine = loopBorrowLegApyHtml(borrowedApr);
     return `<div class="loop-summary-pane">
-        <div class="loop-summary-label">Net value</div>
-        <div class="loop-summary-val">${netValueFmt}</div>
-        ${supplyLine ? `<div class="loop-summary-apy">${supplyLine}</div>` : ''}
-        ${borrowLine ? `<div class="loop-summary-apy">${borrowLine}</div>` : ''}
+        <div class="loop-summary-row">
+            <div class="loop-summary-legs">
+                ${supplyLine ? `<div class="loop-summary-apy">${supplyLine}</div>` : ''}
+                ${borrowLine ? `<div class="loop-summary-apy">${borrowLine}</div>` : ''}
+            </div>
+            <div class="loop-summary-core">
+                <div class="loop-summary-label">Net value</div>
+                <div class="loop-summary-val">${netValueFmt}</div>
+            </div>
+        </div>
         ${realizedHtml || ''}
     </div>`;
 }
@@ -11288,7 +11290,7 @@ function loopHistoryChartHtml(points) {
     const deltaHtml = delta
         ? `<span class="delta${delta.neg ? ' neg' : ''}">${delta.text}</span>`
         : '';
-    const merklHint = points.length >= 2 ? '<span class="hint">3h buckets · Merkl incl.</span>' : '';
+    const snapshotHint = points.length >= 2 ? '<span class="hint">3h buckets</span>' : '';
     return `<div class="loop-history-chart mode-val">
         <div class="loop-history-head">
             <span class="loop-history-title">Net value · 3h snapshots${span ? ` (${span})` : ''}</span>
@@ -11311,7 +11313,7 @@ function loopHistoryChartHtml(points) {
             <span class="loop-history-leg val now">${fmtUsd(last.netValue)} now</span>
             <span class="loop-history-leg apy now">${Number.isFinite(last.netApy) ? last.netApy.toFixed(2) + '% APY' : '-'}</span>
             ${deltaHtml}
-            ${merklHint}
+            ${snapshotHint}
         </div>
     </div>`;
 }
@@ -14056,7 +14058,7 @@ function renderLoops() {
         const chartHtml = loop.live && loop.raw
             ? loopHistoryChartHtml(historyPoints)
             : '<div class="loop-history-chart empty"><span>Sync live to build 3h snapshot history</span></div>';
-        const summaryHtml = loopSummaryPaneHtml(fmtV(netValue), suppliedApr, borrowedApr, suppliedPositions, realizedHtml);
+        const summaryHtml = loopSummaryPaneHtml(fmtV(netValue), suppliedApr, borrowedApr, realizedHtml);
 
         return `
         <div class="loop-card">
