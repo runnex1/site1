@@ -700,6 +700,9 @@ assert.match(loopSolanaRatesJs, /api\.kamino\.finance/, 'Kamino integration must
 assert.match(loopSolanaRatesJs, /kamino-api/, 'Kamino positions must identify kamino-api source');
 assert.match(loopSolanaRatesJs, /api\.jup\.ag\/lend\/v1/, 'Jupiter Lend integration must use the public Jupiter REST API');
 assert.match(loopSolanaRatesJs, /jupiter-lend-api/, 'Jupiter Lend positions must identify jupiter-lend-api source');
+assert.match(loopSolanaRatesJs, /jupiter-portfolio-api/, 'Jupiter Lend must fall back to Portfolio API when borrow positions endpoint is empty');
+assert.match(loopSolanaRatesJs, /JUPITER_PORTFOLIO_API/, 'Jupiter Portfolio fallback must use the official portfolio API base');
+assert.match(loopSolanaRatesJs, /positions\/\$\{encodeURIComponent\(wallet\)\}/, 'Jupiter Portfolio fallback must fetch positions by wallet address');
 assert.match(loopRatesJs, /economicNetValue/, 'loop positions must include Merkl rewards in economic net value for snapshots');
 assert.match(indexHtml, /LOOP_API_STATE_KEY/, 'loops tab must cache last live API state across page refreshes');
 assert.match(indexHtml, /supplementalImported/, 'Loops must keep imported Fluid/Morpho positions when live API coverage is incomplete');
@@ -775,6 +778,7 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
   const {
     mapKaminoObligation,
     mapJupiterBorrowPosition,
+    mapJupiterPortfolioBorrowLend,
     kaminoMarketValueUsd,
   } = require('../lib/loop-solana-rates.js');
   const usd = kaminoMarketValueUsd('2644812517817138226881');
@@ -820,6 +824,42 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
   assert.equal(jupPos?.protocol, 'Jupiter', 'Jupiter mapper must tag protocol');
   assert.equal(jupPos?.marketName, 'SOL / USDC', 'Jupiter mapper must build pair label from vault tokens');
   assert.ok(jupPos?.netApy < 0, 'Jupiter loop net APY must subtract borrow cost from supply yield');
+
+  const portfolioPos = mapJupiterPortfolioBorrowLend(
+    'FuzwwLMkp8KU3NEGykHhKz56YR4u6SWghdAmB447hxA1',
+    {
+      type: 'borrowlend',
+      fetcherId: 'jupiter-exchange-borrow',
+      platformId: 'jupiter-exchange',
+      netApy: 0.12633709934154186,
+      value: 11846.98,
+      data: {
+        borrowedValue: 94496.35,
+        suppliedValue: 106343.33,
+        value: 11846.98,
+        healthRatio: 0.42,
+        link: 'https://jup.ag/lend/borrow/68/nfts/273',
+        suppliedAssets: [{
+          value: 106343.33,
+          data: { address: '7GxATsNMnaC88vdwd2t3mwrFuQwwGvmYPrUQ4D6FotXk', yields: [{ apy: 0.0487 }] },
+        }],
+        borrowedAssets: [{
+          value: 94496.35,
+          data: { address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
+        }],
+        borrowedYields: [[{ apy: -0.039 }]],
+      },
+    },
+    new Map([[68, {
+      id: 68,
+      supplyToken: { uiSymbol: 'JUICED', address: '7GxATsNMnaC88vdwd2t3mwrFuQwwGvmYPrUQ4D6FotXk' },
+      borrowToken: { uiSymbol: 'USDC', address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
+    }]]),
+    { '7GxATsNMnaC88vdwd2t3mwrFuQwwGvmYPrUQ4D6FotXk': { symbol: 'JUICED' }, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': { symbol: 'USDC' } },
+  );
+  assert.equal(portfolioPos?.marketName, 'JUICED / USDC', 'Portfolio fallback must map JUICED/USDC borrow loops');
+  assert.equal(portfolioPos?.source, 'jupiter-portfolio-api', 'Portfolio fallback must tag jupiter-portfolio-api source');
+  assert.ok(portfolioPos?.totalBorrowed > 90000, 'Portfolio fallback must keep borrowed USD');
 }
 
 {
