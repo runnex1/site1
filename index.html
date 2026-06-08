@@ -5398,8 +5398,12 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
   .pred-search { width:100%; }
 }
 /* Loops: Dashboard-aligned two-section layout */
-#loopsTab.active { display:flex; flex-direction:column; gap:0.75rem; }
-.loops-cockpit { display:flex; flex-direction:column; gap:0.75rem; width:100%; }
+#loopsTab.active { display:flex; flex-direction:column; gap:0.75rem; width:100%; }
+.loops-cockpit {
+  display:flex; flex-direction:column; gap:0.75rem;
+  width:100%; max-width:min(1180px, calc(100% - 2rem)); margin:0 auto;
+  padding:0 1.35rem 1.25rem;
+}
 .loops-kpi-strip { display:grid; grid-template-columns:1.25fr 1.05fr 1.05fr 1fr 1.28fr; min-height:58px; overflow:hidden; border:1px solid rgba(95,205,190,0.18); border-radius:7px; background:linear-gradient(180deg, rgba(7,18,26,.98), rgba(4,12,18,.99)); }
 .loops-kpi { min-width:0; padding:0.5rem 1.05rem; border-right:1px solid rgba(148,163,184,0.14); }
 .loops-kpi:last-child { border-right:0; }
@@ -5562,6 +5566,12 @@ body[data-active-tab="loops"] .market-ticker-strip,
 .page-content.tab-loops .market-ticker-strip,
 .page-content:has(#loopsTab.active) .market-ticker-strip {
   display:none !important;
+}
+body[data-active-tab="loops"] .page-content,
+.page-content.tab-loops,
+.page-content:has(#loopsTab.active) {
+  padding:10px 2.75rem;
+  overflow:auto;
 }
 @media (max-width:900px) {
   .loop-card-head { grid-template-columns:38px minmax(0,1fr); }
