@@ -5424,11 +5424,9 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-card { min-width:0; overflow:hidden; padding:0; border:1px solid rgba(110,231,216,0.15); border-radius:8px; background:linear-gradient(180deg, rgba(8,25,35,.98), rgba(5,16,23,.99)); }
 .loop-card:hover { border-color:rgba(110,231,216,0.26); background:linear-gradient(180deg, rgba(10,31,42,.98), rgba(5,16,23,.99)); }
 .loop-card-head {
-  display:grid; grid-template-columns:40px minmax(0,1fr); gap:12px; align-items:start;
   padding:12px 14px 11px; border-bottom:1px solid rgba(148,163,184,0.10);
 }
-.loop-card-head .asset-logo, .loop-card-head img { width:38px; height:38px; border-radius:10px; }
-.loop-head-body { min-width:0; display:flex; flex-direction:column; gap:10px; }
+.loop-head-body { min-width:0; display:flex; flex-direction:column; gap:8px; }
 .loop-head-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .loop-head-titles { min-width:0; }
 .loop-head-stats { flex-shrink:0; display:flex; align-items:flex-end; gap:12px; min-width:0; }
@@ -5436,33 +5434,17 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
   width:1px; align-self:stretch; min-height:34px; margin:0 1px;
   background:linear-gradient(180deg, transparent, rgba(148,163,184,0.22) 18%, rgba(148,163,184,0.22) 82%, transparent);
 }
-.loop-head-eyebrow {
-  margin-top:6px; font-family:var(--ff-display); font-size:0.54rem; font-weight:800; letter-spacing:0.12em;
-  text-transform:uppercase; color:rgba(236,238,248,0.55); line-height:1;
-}
 .loop-head-pair {
-  display:flex; align-items:center; gap:10px; min-width:0; flex-wrap:wrap;
-  font-family:var(--ff-display); font-size:1.04rem; font-weight:850;
-  letter-spacing:-0.01em; line-height:1.1; color:var(--t1);
+  display:flex; align-items:center; gap:10px 12px; min-width:0; flex-wrap:wrap;
+  font-family:var(--ff-display); font-size:1.14rem; font-weight:880;
+  letter-spacing:-0.02em; line-height:1.15; color:var(--t1);
 }
-.loop-pair-stack { display:flex; align-items:center; flex-shrink:0; }
-.loop-pair-stack .token-logo { flex-shrink:0; border-radius:50%; }
-.loop-pair-stack-sup { position:relative; z-index:1; }
-.loop-pair-stack-bor { margin-left:-9px; position:relative; z-index:2; }
-.loop-pair-stack-sup .token-logo { box-shadow:0 0 0 2px rgba(34,197,94,0.28); }
-.loop-pair-stack-bor .token-logo { box-shadow:0 0 0 2px rgba(5,16,23,0.98), 0 0 0 3px rgba(244,63,94,0.3); }
-.loop-pair-chips { display:flex; align-items:center; gap:5px; min-width:0; flex-wrap:wrap; }
-.loop-pair-chip {
-  display:inline-flex; align-items:center; padding:3px 8px; border-radius:6px;
-  font-family:var(--ff-mono); font-size:0.8rem; font-weight:800; line-height:1.1; white-space:nowrap;
-}
-.loop-pair-chip.supply {
-  color:var(--t1); background:rgba(34,197,94,0.07); border:1px solid rgba(34,197,94,0.2);
-}
-.loop-pair-chip.borrow {
-  color:#fda4af; background:rgba(244,63,94,0.08); border:1px solid rgba(244,63,94,0.22);
-}
-.loop-pair-sep { color:rgba(236,238,248,0.38); font-family:var(--ff-mono); font-size:0.78rem; font-weight:700; }
+.loop-pair-leg { display:inline-flex; align-items:center; gap:8px; min-width:0; }
+.loop-pair-leg .token-logo { flex-shrink:0; box-shadow:0 0 0 2px rgba(5,16,23,0.96); }
+.loop-pair-name { font-family:var(--ff-mono); font-size:0.94em; font-weight:800; white-space:nowrap; }
+.loop-pair-leg.supply .loop-pair-name { color:var(--t1); }
+.loop-pair-leg.borrow .loop-pair-name { color:#fda4af; }
+.loop-pair-sep { color:rgba(236,238,248,0.42); font-family:var(--ff-mono); font-size:0.88em; font-weight:700; }
 .loop-head-stat {
   padding:0; background:none; text-align:right; min-width:0; flex-shrink:0;
 }
@@ -11187,25 +11169,20 @@ function loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions) {
     return `<span class="loop-tag network">${dashEsc(chip)}</span>`;
 }
 
-function loopPairStackHtml(symbols, size = 26) {
-    const list = (symbols || []).filter(Boolean).slice(0, 2);
-    if (!list.length) return '';
-    const legs = list.map((sym, idx) => {
-        const cls = idx === 0 ? 'loop-pair-stack-sup' : 'loop-pair-stack-bor';
-        return `<span class="${cls}">${makeLogo(sym, false, size)}</span>`;
-    }).join('');
-    return `<div class="loop-pair-stack" aria-hidden="true">${legs}</div>`;
+function loopPairLegHtml(symbol, side, size = 32) {
+    if (!symbol) return '';
+    return `<span class="loop-pair-leg ${side}">${makeLogo(symbol, false, size)}<span class="loop-pair-name">${dashEsc(symbol)}</span></span>`;
 }
 
 function loopPairHtml(suppliedPositions, borrowedPositions) {
     const supplied = loopPositionAssetLabel(suppliedPositions[0]);
     const borrowed = loopPositionAssetLabel(borrowedPositions[0]);
     if (supplied && borrowed) {
-        return `${loopPairStackHtml([supplied, borrowed])}<div class="loop-pair-chips"><span class="loop-pair-chip supply">${dashEsc(supplied)}</span><span class="loop-pair-sep">/</span><span class="loop-pair-chip borrow">${dashEsc(borrowed)}</span></div>`;
+        return `${loopPairLegHtml(supplied, 'supply')}<span class="loop-pair-sep">/</span>${loopPairLegHtml(borrowed, 'borrow')}`;
     }
     const fallback = supplied || borrowed || 'Loop';
     if (fallback === 'Loop') return dashEsc(fallback);
-    return `${loopPairStackHtml([fallback])}<div class="loop-pair-chips"><span class="loop-pair-chip supply">${dashEsc(fallback)}</span></div>`;
+    return loopPairLegHtml(fallback, 'supply');
 }
 
 function loopSupplyLegApyHtml(suppliedApr) {
@@ -14168,12 +14145,10 @@ function renderLoops() {
         return `
         <div class="loop-card">
             <div class="loop-card-head">
-                ${makeLoopLogo(p.name, true, 38)}
                 <div class="loop-head-body">
                     <div class="loop-head-top">
                         <div class="loop-head-titles">
                             <div class="loop-head-pair">${loopPairHtml(suppliedPositions, borrowedPositions)}</div>
-                            <div class="loop-head-eyebrow">${dashEsc(p.name)}</div>
                         </div>
                         ${loopHeadStatsHtml(
                             apyText,

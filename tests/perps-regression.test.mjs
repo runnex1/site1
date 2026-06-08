@@ -718,10 +718,11 @@ assert.match(indexHtml, /loop-card-main/, 'loop cards must use chart + legs side
 assert.match(indexHtml, /loop-summary-row/, 'loop summary must place supply and borrow APY left of net value');
 assert.match(indexHtml, /loop-head-stats/, 'loop header must group net APY and health on the right');
 assert.match(indexHtml, /function loopHeadStatsHtml\(/, 'loop header must render net APY beside health');
-assert.match(indexHtml, /function loopPairStackHtml\(/, 'loop pair title must render overlapping token logo stack');
-assert.match(indexHtml, /loop-pair-chip supply/, 'loop pair title must show supply leg chip');
-assert.match(indexHtml, /loop-pair-chip borrow/, 'loop pair title must show borrow leg chip');
-assert.match(indexHtml, /loop-head-pair">\$\{loopPairHtml/, 'loop pair title must appear above protocol eyebrow');
+assert.match(indexHtml, /function loopPairLegHtml\(/, 'loop pair title must render token logo beside each leg symbol');
+assert.match(indexHtml, /loopPairLegHtml\(supplied, 'supply'\)/, 'loop pair title must show supply leg with logo');
+assert.match(indexHtml, /loopPairLegHtml\(borrowed, 'borrow'\)/, 'loop pair title must show borrow leg with logo');
+assert.doesNotMatch(indexHtml, /loop-head-eyebrow">\$\{dashEsc\(p\.name\)\}/, 'loop cards must not show protocol name in header');
+assert.doesNotMatch(indexHtml, /makeLoopLogo\(p\.name, true, 38\)/, 'loop cards must not show protocol logo in header');
 assert.match(indexHtml, /function loopEffectiveNetValue\(/, 'loops must use Merkl-inclusive economic net value for live positions');
 assert.match(indexHtml, /loopEffectiveNetValue\(loop\)/, 'loops KPIs and cards must rank and sum economic net value');
 assert.match(indexHtml, /function perpsPairLatestSessionPnl\(/, 'perps positions must compute latest-session PnL for open rows');
@@ -734,7 +735,7 @@ assert.match(indexHtml, /function perpsBuildTotalPnlTooltipHtml\(/, 'perps total
 assert.match(indexHtml, /function perpsBuildFundingTooltipHtml\(/, 'perps funding must expose calculation tooltip');
 assert.match(indexHtml, /Spread \+ Funding \+ Trading fees/, 'total PnL tooltip must explain spread funding and fees formula');
 assert.doesNotMatch(indexHtml, /loop-head-stat-sub/, 'loop health must not show Risk/Watch/Safe sublabel');
-assert.match(indexHtml, /loop-head-eyebrow/, 'loop header must show protocol as eyebrow above pair');
+assert.doesNotMatch(indexHtml, /\.loop-head-eyebrow/, 'loop header must not use protocol eyebrow styling');
 assert.match(indexHtml, /loop-history-chart/, 'loop cards must render snapshot history chart');
 assert.doesNotMatch(indexHtml, /loop-meter-wrap[\s\S]{0,1200}renderLoops/, 'loops render must not use LTV meter bar');
 assert.match(indexHtml, /function loopHistoryChartHtml\(points\)/, 'loops tab must build per-position history charts from snapshots');
