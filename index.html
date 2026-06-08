@@ -2310,8 +2310,7 @@ body::after {
 }
 #defiTab .protocols-header,
 #defiTab .protocols-row {
-  min-width:1240px;
-  grid-template-columns: 170px 95px 190px 120px 105px 105px 105px 85px 140px 28px;
+  min-width:1080px;
 }
 #defiTab .protocols-row.snapshot-row {
   min-width:760px;
@@ -2517,7 +2516,6 @@ body::after {
 #defiTab .protocols-header,
 #defiTab .protocols-row {
   min-width:0;
-  grid-template-columns: 1.15fr 0.62fr 1.1fr 0.82fr 0.72fr 0.72fr 0.72fr 0.62fr 0.78fr 34px;
 }
 #defiTab .token-info {
   gap:0.58rem;
@@ -2758,6 +2756,84 @@ body::after {
   background: rgba(0,212,170,0.04);
 }
 .defi-proto-note-input::placeholder { color: rgba(148,163,184,0.45); }
+
+/* ── Protocol Positions table polish ─────────────────────────────────────── */
+.protocol-positions-section .section-header.protocol-positions-header {
+  margin-bottom: 0;
+  padding: 0.85rem 1rem 0.75rem;
+  border-bottom: 1px solid rgba(148,163,184,0.12);
+  gap: 1rem;
+}
+.protocol-positions-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+.protocol-positions-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem 0.7rem;
+  border-bottom: 1px solid rgba(148,163,184,0.1);
+  background: rgba(4,14,20,0.35);
+}
+.protocol-positions-table .data-table { margin: 0; }
+.protocol-type-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+#defiTab .protocols-header,
+#defiTab .protocols-row {
+  gap: 0.65rem 0.85rem;
+  grid-template-columns: minmax(130px, 1.1fr) minmax(88px, 0.68fr) minmax(150px, 1.25fr) minmax(96px, 0.82fr) minmax(78px, 0.72fr) minmax(78px, 0.72fr) minmax(78px, 0.72fr) minmax(120px, 1fr) 34px;
+}
+#defiTab .protocols-header > div:nth-child(4),
+#defiTab .protocols-header > div:nth-child(5),
+#defiTab .protocols-header > div:nth-child(6),
+#defiTab .protocols-header > div:nth-child(7),
+#defiTab .protocols-row > div:nth-child(4),
+#defiTab .protocols-row > div:nth-child(5),
+#defiTab .protocols-row > div:nth-child(6),
+#defiTab .protocols-row > div:nth-child(7) {
+  text-align: right;
+  justify-self: end;
+  width: 100%;
+}
+#defiTab .protocols-row {
+  min-height: 54px;
+  padding: 0.72rem 1rem;
+  align-items: center;
+}
+#defiTab .protocols-header {
+  min-height: 40px;
+  padding: 0.62rem 1rem;
+  letter-spacing: 0.08em;
+}
+#defiTab .protocols-row .token-info { min-width: 0; }
+#defiTab .protocols-row .token-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#defiTab .protocol-positions-table .defi-edit-input {
+  width: 100%;
+  max-width: 108px;
+  margin-left: auto;
+  text-align: right;
+}
+#defiTab .protocols-row > div:nth-child(3) {
+  color: var(--t2);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ── DeFi → Dashboard style alignment ─────────────────────────────────────
    Remove hatch decorations, hide section dots, strip radial glows,
@@ -5957,14 +6033,14 @@ body[data-active-tab="loops"] .page-content,
           </div>
         </div>
 
-        <div class="section">
-          <div class="section-header">
+        <div class="section protocol-positions-section">
+          <div class="section-header protocol-positions-header">
             <div class="section-title">
               <div class="section-title-dot" style="background:var(--indigo)"></div>
               Protocol Positions
               <span id="totalDefiApr" style="display:none;margin-left:0.6rem;font-size:0.72rem;font-weight:700;font-family:var(--ff-mono);padding:2px 9px;border-radius:var(--r-xs);background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:var(--indigo);"></span>
             </div>
-            <div class="button-group">
+            <div class="button-group protocol-positions-actions">
               <button class="btn-base add-btn" onclick="openModal('protocol')">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Add Protocol
@@ -5986,7 +6062,7 @@ body[data-active-tab="loops"] .page-content,
             </div>
           </div>
           <!-- View toggle + snapshot picker -->
-          <div id="protocolPositionsToolbar" style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;margin:0 1rem 0.85rem;width:calc(100% - 2rem);">
+          <div id="protocolPositionsToolbar" class="protocol-positions-toolbar">
             <div id="protocolViewToggle" style="display:flex;align-items:center;gap:0;background:var(--surf-2);border:1px solid var(--border-mid);border-radius:8px;overflow:hidden;width:fit-content;">
               <button id="btnCurrentPositions" onclick="switchProtocolView('current')" title=""
                 style="padding:5px 14px;font-size:0.75rem;font-weight:700;cursor:pointer;border:none;border-right:1px solid var(--border-mid);transition:all 0.15s;background:var(--teal-10);color:var(--teal);font-family:var(--ff-body);">
@@ -6009,9 +6085,9 @@ body[data-active-tab="loops"] .page-content,
               </div>
             </div>
           </div>
-          <div class="data-table">
+          <div class="data-table protocol-positions-table">
             <div class="table-header protocols-header">
-              <div>Protocol</div><div>Type</div><div>Position</div><div>Net Value</div><div>Supply APY</div><div>Borrow APY</div><div>Total APY</div><div>Health</div><div>Unlock / Notes</div><div></div>
+              <div>Protocol</div><div>Type</div><div>Position</div><div>Net Value</div><div>Supply APY</div><div>Borrow APY</div><div>Total APY</div><div>Notes</div><div></div>
             </div>
             <div id="protocolsTable"></div>
           </div>
@@ -13894,14 +13970,6 @@ function renderProtocols() {
     }, { supply:0, supplyW:0, borrow:0, borrowW:0, total:0, totalW:0 });
     table.innerHTML = sortedProtocols.map((p) => {
         const i = data.protocols.indexOf(p);
-        let riskHtml = '';
-        if (p.chain?.includes('Health')) {
-            const rate = parseFloat(p.chain.match(/[\d.]+/)[0]);
-            riskHtml = rate < 1.1
-                ? `<span class="risk-alert">⚠️ Risk: Low Health (${rate})</span>`
-                : `<span style="font-size:.85rem;color:var(--green);display:block;margin-top:3px;">Health: ${rate}</span>`;
-        }
-
         const hasSections = p.sections && p.sections.some(s => s.positions && s.positions.length > 0);
 
         // Build drawer HTML
@@ -13968,11 +14036,8 @@ function renderProtocols() {
                     </div>`;
                 }).join('');
 
-                const healthTag = sec.health
-                    ? ` <span style="color:var(--green);font-weight:700;font-size:0.68rem">· Health ${sec.health}</span>`
-                    : '';
                 return `<div class="drawer-section">
-                    <div class="drawer-section-label">${sec.type}${healthTag}</div>
+                    <div class="drawer-section-label">${sec.type}</div>
                     ${lendingSummary}
                     ${posRows}
                 </div>`;
@@ -13988,7 +14053,6 @@ function renderProtocols() {
             : '';
         const typeKey = (p.type || 'yield').toLowerCase().split(' ')[0];
         const breakdown = protocolAprBreakdown(p) || {};
-        const health = protocolHealthSummary(p);
         const netValue = protocolNetValue(p);
 
         return `<div class="protocol-row-wrap">
@@ -13997,7 +14061,7 @@ function renderProtocols() {
                     ${makeLogo(p.name, true, 30)}
                     <div class="token-name">${p.name}</div>
                 </div>
-                <div style="display:flex;flex-direction:column;gap:0.3rem;align-items:flex-start">
+                <div class="protocol-type-cell">
                     <span class="badge badge-${typeKey}">${dashEsc(p.type || '-')}</span>
                     ${expandBtn}
                 </div>
@@ -14006,7 +14070,6 @@ function renderProtocols() {
                 <div>${dashAprHtml(breakdown.suppliedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.borrowedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.totalApr)}</div>
-                <div>${health.cls ? `<span class="defi-health ${health.cls}">${health.label}<small>${health.word}</small></span>` : '-'}</div>
                 <div class="defi-proto-unlock-note">
                   ${protocolUnlockSummary(p) ? `<span class="defi-unlock-text">${dashEsc(protocolUnlockSummary(p))}</span>` : ''}
                   <input class="defi-proto-note-input"
@@ -14421,11 +14484,8 @@ function renderProtocolsSnapshot() {
                     </div>`;
                 }).join('');
 
-                const healthTag = sec.health
-                    ? ` <span style="color:var(--green);font-weight:700;font-size:0.68rem">· Health ${sec.health}</span>`
-                    : '';
                 return `<div class="drawer-section">
-                    <div class="drawer-section-label">${sec.type}${healthTag}</div>
+                    <div class="drawer-section-label">${sec.type}</div>
                     ${lendingSummary}
                     ${posRows}
                 </div>`;
@@ -14448,7 +14508,6 @@ function renderProtocolsSnapshot() {
             : '';
 
         const typeKey = (p.type || 'yield').toLowerCase().split(' ')[0];
-        const health = protocolHealthSummary(p);
         const netValue = protocolNetValue(p);
         return `<div class="protocol-row-wrap">
             <div class="table-row protocols-row row-${typeKey}">
@@ -14456,7 +14515,7 @@ function renderProtocolsSnapshot() {
                     ${makeLogo(p.name, true, 30)}
                     <div class="token-name">${p.name}</div>
                 </div>
-                <div style="display:flex;flex-direction:column;gap:0.3rem;align-items:flex-start">
+                <div class="protocol-type-cell">
                     <span class="badge badge-${typeKey}">${dashEsc(p.type || '-')}</span>
                     ${expandBtn}
                 </div>
@@ -14465,7 +14524,6 @@ function renderProtocolsSnapshot() {
                 <div>${dashAprHtml(breakdown.suppliedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.borrowedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.totalApr)}</div>
-                <div>${health.cls ? `<span class="defi-health ${health.cls}">${health.label}<small>${health.word}</small></span>` : '-'}</div>
                 <div class="defi-proto-unlock-note"><span class="defi-unlock-text">${dashEsc(protocolUnlockSummary(p))}</span></div>
                 <div></div>
             </div>
