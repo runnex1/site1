@@ -5415,9 +5415,52 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loops-sync-btn.secondary { border-color:rgba(148,163,184,0.18); background:rgba(255,255,255,0.03); color:var(--t3); }
 .loops-sync-btn:disabled { opacity:0.55; cursor:wait; }
 .loops-updated { color:var(--t3); font-family:var(--ff-mono); font-size:0.68rem; font-weight:650; }
-.loops-grid { display:grid; grid-template-columns:1fr; gap:12px; padding:12px; }
-.loop-card { min-width:0; overflow:hidden; padding:0; border:1px solid rgba(110,231,216,0.15); border-radius:7px; background:linear-gradient(180deg, rgba(8,25,35,.98), rgba(5,16,23,.99)); }
+.loops-grid { display:grid; grid-template-columns:1fr; gap:10px; padding:12px; }
+.loop-card { min-width:0; overflow:hidden; padding:0; border:1px solid rgba(110,231,216,0.15); border-radius:8px; background:linear-gradient(180deg, rgba(8,25,35,.98), rgba(5,16,23,.99)); }
 .loop-card:hover { border-color:rgba(110,231,216,0.26); background:linear-gradient(180deg, rgba(10,31,42,.98), rgba(5,16,23,.99)); }
+.loop-card-head { display:grid; grid-template-columns:38px minmax(0,1fr) repeat(3, minmax(84px, auto)); gap:14px; align-items:center; padding:12px 14px 10px; border-bottom:1px solid rgba(148,163,184,0.10); }
+.loop-card-head .asset-logo, .loop-card-head img { width:36px; height:36px; border-radius:9px; }
+.loop-card-id { min-width:0; }
+.loop-card-protocol { font-size:0.9rem; font-weight:850; line-height:1.1; color:var(--t1); }
+.loop-card-pair { margin-top:4px; font-family:var(--ff-mono); font-size:0.95rem; font-weight:800; letter-spacing:-0.02em; line-height:1; }
+.loop-pair-sup { color:var(--t1); }
+.loop-pair-arrow { color:var(--t3); margin:0 5px; font-weight:600; }
+.loop-pair-bor { color:var(--red); }
+.loop-card-chips { margin-top:5px; display:flex; flex-wrap:wrap; gap:6px; }
+.loop-hero-stat { text-align:right; }
+.loop-hero-label { color:var(--t3); font-family:var(--ff-display); font-size:0.52rem; font-weight:850; letter-spacing:0.1em; text-transform:uppercase; }
+.loop-hero-val { margin-top:5px; font-family:var(--ff-mono); font-size:1.28rem; font-weight:900; line-height:1; color:var(--t1); }
+.loop-hero-val.apy { color:var(--green); }
+.loop-hero-val.apy.neg { color:var(--red); }
+.loop-hero-val.apy.neu { color:var(--t3); }
+.loop-hero-val.val { font-size:1.1rem; }
+.loop-hero-val.health.safe { color:var(--green); font-size:1.05rem; }
+.loop-hero-val.health.warn { color:var(--amber); font-size:1.05rem; }
+.loop-hero-val.health.danger { color:var(--red); font-size:1.05rem; }
+.loop-hero-tag { margin-top:4px; font-family:var(--ff-display); font-size:0.56rem; font-weight:850; }
+.loop-hero-tag.safe { color:var(--green); }
+.loop-hero-tag.warn { color:var(--amber); }
+.loop-hero-tag.danger { color:var(--red); }
+.loop-card-main { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(250px,0.84fr); gap:1px; background:rgba(148,163,184,0.10); }
+.loop-chart-pane, .loop-legs-pane { min-width:0; background:rgba(4,13,19,0.88); }
+.loop-chart-pane { padding:0; }
+.loop-chart-pane .loop-history-chart { padding:12px 14px 14px; border-bottom:0; }
+.loop-chart-pane .loop-history-chart svg { height:148px; }
+.loop-legs-pane { padding:12px 14px; display:flex; flex-direction:column; gap:8px; }
+.loop-leg-card { display:grid; grid-template-columns:1fr auto; gap:2px 10px; align-items:center; border:1px solid rgba(148,163,184,0.12); border-radius:6px; padding:9px 10px; background:rgba(6,16,22,0.75); }
+.loop-leg-side { font-family:var(--ff-display); font-size:0.52rem; font-weight:850; letter-spacing:0.1em; text-transform:uppercase; grid-column:1; }
+.loop-leg-side.sup { color:var(--teal); }
+.loop-leg-side.bor { color:var(--red); }
+.loop-leg-amt { font-family:var(--ff-mono); font-size:0.86rem; font-weight:800; text-align:right; grid-row:1 / span 2; }
+.loop-leg-token { font-family:var(--ff-mono); font-size:0.74rem; font-weight:800; color:var(--t2); grid-column:1; }
+.loop-leg-apy { grid-column:1 / -1; margin-top:3px; font-family:var(--ff-mono); font-size:0.58rem; font-weight:650; color:var(--t3); }
+.loop-leg-apy strong { color:var(--green); font-weight:800; }
+.loop-realized-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.loop-realized-mini { border:1px solid rgba(148,163,184,0.12); border-radius:6px; padding:7px 8px; background:rgba(4,13,19,0.55); }
+.loop-realized-label { font-family:var(--ff-display); font-size:0.5rem; font-weight:850; letter-spacing:0.08em; text-transform:uppercase; color:var(--t3); }
+.loop-realized-val { margin-top:4px; font-family:var(--ff-mono); font-size:0.76rem; font-weight:800; color:var(--green); }
+.loop-realized-val.partial { color:var(--amber); }
+.loop-realized-val.neu { color:var(--t3); }
 .loop-card-top { display:grid; grid-template-columns:42px minmax(0,1fr) auto; gap:0.78rem; align-items:center; padding:0.86rem 0.94rem 0.72rem; border-bottom:1px solid rgba(148,163,184,0.10); }
 .loop-card-top .asset-logo, .loop-card-top img { width:38px; height:38px; border-radius:10px; }
 .loop-card-name { min-width:0; color:var(--t1); font-size:0.98rem; line-height:1.12; font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -5466,9 +5509,16 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-history-area-val { fill:rgba(45,212,191,0.10); stroke:none; }
 .loop-history-area-apy { fill:rgba(251,191,36,0.10); stroke:none; }
 .loop-history-chart.mode-val .loop-history-series-apy,
-.loop-history-chart.mode-val .loop-history-leg.apy { display:none; }
+.loop-history-chart.mode-val .loop-history-leg.apy,
+.loop-history-chart.mode-val .loop-history-foot .loop-history-leg.apy { display:none; }
 .loop-history-chart.mode-apy .loop-history-series-val,
-.loop-history-chart.mode-apy .loop-history-leg.val { display:none; }
+.loop-history-chart.mode-apy .loop-history-leg.val,
+.loop-history-chart.mode-apy .loop-history-foot .loop-history-leg.val { display:none; }
+.loop-history-foot { margin-top:8px; display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; }
+.loop-history-foot .now { font-family:var(--ff-mono); font-size:0.74rem; font-weight:800; color:var(--teal); }
+.loop-history-foot .delta { font-family:var(--ff-mono); font-size:0.66rem; font-weight:800; color:var(--green); }
+.loop-history-foot .delta.neg { color:var(--red); }
+.loop-history-foot .hint { font-family:var(--ff-mono); font-size:0.56rem; font-weight:650; color:var(--t3); }
 .loop-history-legend { margin-top:0.35rem; font-family:var(--ff-mono); font-size:0.64rem; font-weight:750; color:var(--t3); }
 .loop-history-leg.val { color:var(--teal); }
 .loop-history-leg.apy { color:var(--amber); }
@@ -5513,266 +5563,13 @@ body[data-active-tab="loops"] .market-ticker-strip,
 .page-content:has(#loopsTab.active) .market-ticker-strip {
   display:none !important;
 }
-/* Loops compact card refinement: keep the card model, but make each position breathe. */
-body[data-active-tab="loops"] .loops-grid,
-.page-content.tab-loops .loops-grid,
-.page-content:has(#loopsTab.active) .loops-grid {
-  grid-template-columns:repeat(2, minmax(0, 1fr));
-  justify-content:start;
-  align-items:start;
-  gap:16px;
-  padding:14px 16px 16px;
+@media (max-width:900px) {
+  .loop-card-head { grid-template-columns:38px minmax(0,1fr); }
+  .loop-card-head .loop-hero-stat { grid-column:1 / -1; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; text-align:left; }
+  .loop-card-main { grid-template-columns:1fr; }
 }
-body[data-active-tab="loops"] .loop-card,
-.page-content.tab-loops .loop-card,
-.page-content:has(#loopsTab.active) .loop-card {
-  width:100%;
-}
-body[data-active-tab="loops"] .loop-card-top,
-.page-content.tab-loops .loop-card-top,
-.page-content:has(#loopsTab.active) .loop-card-top {
-  grid-template-columns:minmax(150px,1fr) minmax(220px,auto) minmax(150px,1fr);
-  gap:0.74rem;
-  padding:0.64rem 0.82rem 0.58rem;
-}
-body[data-active-tab="loops"] .loop-card-top .asset-logo,
-body[data-active-tab="loops"] .loop-card-top img,
-.page-content.tab-loops .loop-card-top .asset-logo,
-.page-content.tab-loops .loop-card-top img,
-.page-content:has(#loopsTab.active) .loop-card-top .asset-logo,
-.page-content:has(#loopsTab.active) .loop-card-top img {
-  width:30px;
-  height:30px;
-  border-radius:8px;
-}
-body[data-active-tab="loops"] .loop-card-name,
-.page-content.tab-loops .loop-card-name,
-.page-content:has(#loopsTab.active) .loop-card-name {
-  font-size:0.9rem;
-}
-body[data-active-tab="loops"] .loop-protocol-mark,
-.page-content.tab-loops .loop-protocol-mark,
-.page-content:has(#loopsTab.active) .loop-protocol-mark {
-  min-width:0;
-  display:flex;
-  align-items:center;
-  gap:0.46rem;
-  justify-self:start;
-}
-body[data-active-tab="loops"] .loop-protocol-name,
-.page-content.tab-loops .loop-protocol-name,
-.page-content:has(#loopsTab.active) .loop-protocol-name {
-  min-width:0;
-  color:var(--t2);
-  font-family:var(--ff-display);
-  font-size:0.72rem;
-  font-weight:820;
-  line-height:1;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
-body[data-active-tab="loops"] .loop-title-wrap,
-.page-content.tab-loops .loop-title-wrap,
-.page-content:has(#loopsTab.active) .loop-title-wrap {
-  min-width:0;
-  max-width:100%;
-  text-align:center;
-  justify-self:center;
-}
-body[data-active-tab="loops"] .loop-asset-title,
-.page-content.tab-loops .loop-asset-title,
-.page-content:has(#loopsTab.active) .loop-asset-title {
-  color:var(--t1);
-  font-family:var(--ff-display);
-  font-size:0.98rem;
-  font-weight:880;
-  line-height:1.08;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-}
-body[data-active-tab="loops"] .loop-token-logos,
-.page-content.tab-loops .loop-token-logos,
-.page-content:has(#loopsTab.active) .loop-token-logos {
-  margin-top:0.34rem;
-  display:flex;
-  justify-content:center;
-  align-items:center;
-  gap:0;
-}
-body[data-active-tab="loops"] .loop-token-logos .token-logo,
-.page-content.tab-loops .loop-token-logos .token-logo,
-.page-content:has(#loopsTab.active) .loop-token-logos .token-logo {
-  width:28px !important;
-  height:28px !important;
-  margin-left:-5px;
-  box-shadow:0 0 0 2px rgba(8,25,35,.98);
-}
-body[data-active-tab="loops"] .loop-token-logos .token-logo:first-child,
-.page-content.tab-loops .loop-token-logos .token-logo:first-child,
-.page-content:has(#loopsTab.active) .loop-token-logos .token-logo:first-child {
-  margin-left:0;
-}
-body[data-active-tab="loops"] .loop-card-sub,
-.page-content.tab-loops .loop-card-sub,
-.page-content:has(#loopsTab.active) .loop-card-sub {
-  margin-top:0.16rem;
-  gap:0.32rem;
-}
-body[data-active-tab="loops"] .loop-tag,
-.page-content.tab-loops .loop-tag,
-.page-content:has(#loopsTab.active) .loop-tag {
-  min-height:18px;
-  padding:0.08rem 0.36rem;
-  font-size:0.56rem;
-}
-body[data-active-tab="loops"] .loop-health-box,
-.page-content.tab-loops .loop-health-box,
-.page-content:has(#loopsTab.active) .loop-health-box {
-  min-width:82px;
-}
-body[data-active-tab="loops"] .loop-head-stats,
-.page-content.tab-loops .loop-head-stats,
-.page-content:has(#loopsTab.active) .loop-head-stats { justify-self:end; }
-body[data-active-tab="loops"] .loop-apy-box,
-.page-content.tab-loops .loop-apy-box,
-.page-content:has(#loopsTab.active) .loop-apy-box { min-width:90px; }
-body[data-active-tab="loops"] .loop-apy-label,
-.page-content.tab-loops .loop-apy-label,
-.page-content:has(#loopsTab.active) .loop-apy-label { font-size:0.52rem; }
-body[data-active-tab="loops"] .loop-apy-value,
-.page-content.tab-loops .loop-apy-value,
-.page-content:has(#loopsTab.active) .loop-apy-value { font-size:1.18rem; }
-body[data-active-tab="loops"] .loop-health-label,
-.page-content.tab-loops .loop-health-label,
-.page-content:has(#loopsTab.active) .loop-health-label {
-  font-size:0.52rem;
-}
-body[data-active-tab="loops"] .loop-health-value,
-.page-content.tab-loops .loop-health-value,
-.page-content:has(#loopsTab.active) .loop-health-value {
-  font-size:0.98rem;
-}
-body[data-active-tab="loops"] .loop-metric,
-.page-content.tab-loops .loop-metric,
-.page-content:has(#loopsTab.active) .loop-metric {
-  padding:0.46rem 0.58rem;
-}
-body[data-active-tab="loops"] .loop-metrics,
-.page-content.tab-loops .loop-metrics,
-.page-content:has(#loopsTab.active) .loop-metrics {
-  grid-template-columns:repeat(4, minmax(0,1fr));
-}
-body[data-active-tab="loops"] .loop-metric-label,
-.page-content.tab-loops .loop-metric-label,
-.page-content:has(#loopsTab.active) .loop-metric-label {
-  font-size:0.5rem;
-}
-body[data-active-tab="loops"] .loop-metric-value,
-.page-content.tab-loops .loop-metric-value,
-.page-content:has(#loopsTab.active) .loop-metric-value {
-  margin-top:0.18rem;
-  font-size:0.7rem;
-}
-body[data-active-tab="loops"] .loop-meter-wrap,
-.page-content.tab-loops .loop-meter-wrap,
-.page-content:has(#loopsTab.active) .loop-meter-wrap {
-  padding:0.45rem 0.78rem;
-  border-bottom:1px solid rgba(148,163,184,0.08);
-}
-body[data-active-tab="loops"] .loop-meter-copy,
-.page-content.tab-loops .loop-meter-copy,
-.page-content:has(#loopsTab.active) .loop-meter-copy {
-  font-size:0.62rem;
-}
-body[data-active-tab="loops"] .loop-meter,
-.page-content.tab-loops .loop-meter,
-.page-content:has(#loopsTab.active) .loop-meter {
-  height:4px;
-  margin-top:0.24rem;
-}
-body[data-active-tab="loops"] .loop-status,
-.page-content.tab-loops .loop-status,
-.page-content:has(#loopsTab.active) .loop-status {
-  padding:0.2rem 0.46rem;
-  font-size:0.58rem;
-}
-body[data-active-tab="loops"] .loop-positions,
-.page-content.tab-loops .loop-positions,
-.page-content:has(#loopsTab.active) .loop-positions {
-  display:flex;
-  flex-wrap:wrap;
-  gap:0.5rem;
-  padding:0.46rem 0.78rem 0.56rem;
-  background:transparent;
-}
-body[data-active-tab="loops"] .loop-pos-group,
-.page-content.tab-loops .loop-pos-group,
-.page-content:has(#loopsTab.active) .loop-pos-group {
-  flex:1;
-  min-width:210px;
-  display:flex;
-  align-items:center;
-  gap:0.55rem;
-  padding:0.38rem 0.55rem;
-  border:1px solid rgba(148,163,184,0.12);
-  border-radius:6px;
-  background:rgba(4,13,19,0.56);
-}
-body[data-active-tab="loops"] .loop-pos-group-label,
-.page-content.tab-loops .loop-pos-group-label,
-.page-content:has(#loopsTab.active) .loop-pos-group-label {
-  margin:0;
-  flex:0 0 auto;
-  font-size:0.54rem;
-}
-body[data-active-tab="loops"] .loop-pos-row,
-.page-content.tab-loops .loop-pos-row,
-.page-content:has(#loopsTab.active) .loop-pos-row {
-  flex:1;
-  min-width:0;
-  padding:0;
-  font-size:0.68rem;
-}
-body[data-active-tab="loops"] .loop-pos-val,
-.page-content.tab-loops .loop-pos-val,
-.page-content:has(#loopsTab.active) .loop-pos-val {
-  font-size:0.66rem;
-}
-@media (max-width:760px) {
-  body[data-active-tab="loops"] .loop-card-top,
-  .page-content.tab-loops .loop-card-top,
-  .page-content:has(#loopsTab.active) .loop-card-top {
-    grid-template-columns:1fr;
-  }
-  body[data-active-tab="loops"] .loop-protocol-mark,
-  .page-content.tab-loops .loop-protocol-mark,
-  .page-content:has(#loopsTab.active) .loop-protocol-mark,
-  body[data-active-tab="loops"] .loop-title-wrap,
-  .page-content.tab-loops .loop-title-wrap,
-  .page-content:has(#loopsTab.active) .loop-title-wrap,
-  body[data-active-tab="loops"] .loop-health-box,
-  .page-content.tab-loops .loop-health-box,
-  .page-content:has(#loopsTab.active) .loop-health-box {
-    text-align:left;
-    justify-content:flex-start;
-  }
-  body[data-active-tab="loops"] .loops-grid,
-  .page-content.tab-loops .loops-grid,
-  .page-content:has(#loopsTab.active) .loops-grid {
-    grid-template-columns:1fr;
-  }
-  body[data-active-tab="loops"] .loop-metrics,
-  .page-content.tab-loops .loop-metrics,
-  .page-content:has(#loopsTab.active) .loop-metrics {
-    grid-template-columns:repeat(2, minmax(0,1fr));
-  }
-  body[data-active-tab="loops"] .loop-pos-group,
-  .page-content.tab-loops .loop-pos-group,
-  .page-content:has(#loopsTab.active) .loop-pos-group {
-    min-width:100%;
-  }
+@media (max-width:560px) {
+  .loop-card-head .loop-hero-stat { grid-template-columns:1fr 1fr; }
 }
 </style>
 </head>
@@ -11286,6 +11083,85 @@ function loopSnapshotRealizedApy(points, targetDays, endValue, endTs) {
     };
 }
 
+function loopCleanAssetLabel(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    return raw.replace(/\s*\([^)]*\)\s*$/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function loopPositionAssetLabel(pos) {
+    for (const token of (pos?.tokens || [])) {
+        const parsed = protocolTokenAmountAndSymbol(token);
+        if (parsed?.symbol) return loopCleanAssetLabel(parsed.symbol);
+    }
+    const pool = loopCleanAssetLabel(pos?.pool);
+    if (pool && !/^(supplied|borrowed|deposit|debt)$/i.test(pool)) return loopCleanAssetLabel(pool.split('/')[0]);
+    return '';
+}
+
+function loopPairHtml(suppliedPositions, borrowedPositions) {
+    const supplied = loopPositionAssetLabel(suppliedPositions[0]);
+    const borrowed = loopPositionAssetLabel(borrowedPositions[0]);
+    if (supplied && borrowed) {
+        return `<span class="loop-pair-sup">${dashEsc(supplied)}</span><span class="loop-pair-arrow">→</span><span class="loop-pair-bor">${dashEsc(borrowed)}</span>`;
+    }
+    const fallback = supplied || borrowed || 'Loop';
+    return dashEsc(fallback);
+}
+
+function loopSupplyLegApyHtml(suppliedApr, suppliedPositions) {
+    const merkl = (suppliedPositions || []).reduce((m, p) => Math.max(m, Number(p.merklApy || 0)), 0);
+    const parts = [];
+    if (Number.isFinite(suppliedApr)) parts.push(`Supply <strong>${suppliedApr.toFixed(2)}%</strong>`);
+    if (merkl > 0) parts.push(`Merkl +<strong>${merkl.toFixed(1)}%</strong>`);
+    return parts.join(' · ');
+}
+
+function loopBorrowLegApyHtml(borrowedApr) {
+    return Number.isFinite(borrowedApr) ? `Borrow <strong>${borrowedApr.toFixed(2)}%</strong>` : '';
+}
+
+function loopLegCardHtml(side, token, amount, apyHtml) {
+    const sideCls = side === 'supply' ? 'sup' : 'bor';
+    const label = side === 'supply' ? 'Supplied' : 'Borrowed';
+    return `<div class="loop-leg-card">
+        <span class="loop-leg-side ${sideCls}">${label}</span>
+        <span class="loop-leg-amt">${amount}</span>
+        <span class="loop-leg-token">${dashEsc(token || '-')}</span>
+        ${apyHtml ? `<span class="loop-leg-apy">${apyHtml}</span>` : ''}
+    </div>`;
+}
+
+function loopHistorySpanLabel(points) {
+    if (!points || points.length < 2) return 'prior';
+    const hrs = Math.max(1, Math.round((points[points.length - 1].ts - points[0].ts) / 3600000));
+    return hrs < 48 ? `${hrs}h` : `${Math.round(hrs / 24)}d`;
+}
+
+function loopHistoryPeriodDelta(points) {
+    if (!points || points.length < 2) return null;
+    const first = Number(points[0].netValue);
+    const last = Number(points[points.length - 1].netValue);
+    if (!Number.isFinite(first) || !first) return null;
+    const pct = ((last - first) / Math.abs(first)) * 100;
+    const span = loopHistorySpanLabel(points);
+    const sign = pct >= 0 ? '+' : '';
+    return { pct, text: `${sign}${pct.toFixed(1)}% vs ${span}`, neg: pct < 0 };
+}
+
+function loopSnapshotApyLegHtml(targetDays, points, endValue, endTs) {
+    const result = loopSnapshotRealizedApy(points, targetDays, endValue, endTs);
+    if (!result || !Number.isFinite(result.apy)) {
+        return `<div class="loop-realized-mini"><div class="loop-realized-label">${targetDays}d APY</div><div class="loop-realized-val neu">-</div></div>`;
+    }
+    const cls = result.partial ? 'partial' : '';
+    const star = result.partial ? '*' : '';
+    const title = result.partial
+        ? `Realized ${result.periodDays.toFixed(1)}d (position shorter than ${targetDays}d)`
+        : `Realized ${targetDays}d from 3h snapshots`;
+    return `<div class="loop-realized-mini"><div class="loop-realized-label" title="${dashEsc(title)}">${targetDays}d APY${star}</div><div class="loop-realized-val ${cls}" title="${dashEsc(title)}">${result.apy.toFixed(2)}%</div></div>`;
+}
+
 function loopSnapshotApyMetricHtml(targetDays, points, endValue, endTs) {
     const result = loopSnapshotRealizedApy(points, targetDays, endValue, endTs);
     if (!result || !Number.isFinite(result.apy)) {
@@ -11324,8 +11200,8 @@ function loopHistoryChartHtml(points) {
     if (points.length === 1) {
         return `<div class="loop-history-chart empty"><span>1 snapshot saved — chart appears after the next 3h bucket (sync live or wait for cron)</span></div>`;
     }
-    const w = 320;
-    const h = 120;
+    const w = 520;
+    const h = 148;
     const pad = { t: 10, r: 8, b: 12, l: 8 };
     const iw = w - pad.l - pad.r;
     const ih = h - pad.t - pad.b;
@@ -11347,9 +11223,15 @@ function loopHistoryChartHtml(points) {
     const last = points[points.length - 1];
     const fmtUsd = v => '$' + Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
     const apyBtnAttrs = hasApy ? '' : ' disabled';
+    const delta = loopHistoryPeriodDelta(points);
+    const span = loopHistorySpanLabel(points);
+    const deltaHtml = delta
+        ? `<span class="delta${delta.neg ? ' neg' : ''}">${delta.text}</span>`
+        : '';
+    const merklHint = points.length >= 2 ? '<span class="hint">3h buckets · Merkl incl.</span>' : '';
     return `<div class="loop-history-chart mode-val">
         <div class="loop-history-head">
-            <span class="loop-history-title">3h snapshots</span>
+            <span class="loop-history-title">Net value · 3h snapshots${span ? ` (${span})` : ''}</span>
             <div class="loop-history-toggle">
                 <button type="button" class="loop-history-mode-btn active" data-mode="val" onclick="loopHistoryChartSetMode(this)">Net value</button>
                 <button type="button" class="loop-history-mode-btn" data-mode="apy" onclick="loopHistoryChartSetMode(this)"${apyBtnAttrs}>APY</button>
@@ -11358,16 +11240,18 @@ function loopHistoryChartHtml(points) {
         <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
             <g class="loop-history-series-val">
                 <path class="loop-history-area-val" d="${valSeries.area}"></path>
-                <path class="loop-history-val" d="${valSeries.line}" fill="none" stroke-width="2"></path>
+                <path class="loop-history-val" d="${valSeries.line}" fill="none" stroke-width="2.2"></path>
             </g>
             ${apySeries ? `<g class="loop-history-series-apy">
                 <path class="loop-history-area-apy" d="${apySeries.area}"></path>
-                <path class="loop-history-apy" d="${apySeries.line}" fill="none" stroke-width="2"></path>
+                <path class="loop-history-apy" d="${apySeries.line}" fill="none" stroke-width="2.2"></path>
             </g>` : ''}
         </svg>
-        <div class="loop-history-legend">
-            <span class="loop-history-leg val">Net ${fmtUsd(last.netValue)}</span>
-            <span class="loop-history-leg apy">${Number.isFinite(last.netApy) ? last.netApy.toFixed(2) + '% APY' : '-'}</span>
+        <div class="loop-history-foot">
+            <span class="loop-history-leg val now">${fmtUsd(last.netValue)} now</span>
+            <span class="loop-history-leg apy now">${Number.isFinite(last.netApy) ? last.netApy.toFixed(2) + '% APY' : '-'}</span>
+            ${deltaHtml}
+            ${merklHint}
         </div>
     </div>`;
 }
@@ -14085,96 +13969,14 @@ function renderLoops() {
     const bucketHint = bucketCount ? ` · ${bucketCount} snapshot bucket${bucketCount === 1 ? '' : 's'}` : '';
     setText('loopsUpdated', (usingLive ? `live ${liveStamp}` : 'import fallback') + bucketHint);
 
-    function posRows(positions, side) {
-        if (!positions.length) return '<div style="font-size:0.72rem;color:var(--t3);font-style:italic">-</div>';
-        return positions.map(pos => `
-            <div class="loop-pos-row">
-                <span class="loop-pos-pool" title="${dashEsc(pos.pool)}">${dashEsc(pos.pool)}</span>
-                <span class="loop-pos-val ${side}">${fmtV(protocolPositionValue(pos))}</span>
-            </div>`).join('');
-    }
-
-    const cleanLoopAsset = value => {
-        const raw = String(value || '').trim();
-        if (!raw) return '';
-        return raw
-            .replace(/\s*\([^)]*\)\s*$/g, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-    };
-    const positionAssetLabel = pos => {
-        for (const token of (pos?.tokens || [])) {
-            const parsed = protocolTokenAmountAndSymbol(token);
-            if (parsed?.symbol) return cleanLoopAsset(parsed.symbol);
-        }
-        const pool = cleanLoopAsset(pos?.pool);
-        if (pool && !/^(supplied|borrowed|deposit|debt)$/i.test(pool)) return cleanLoopAsset(pool.split('/')[0]);
-        return '';
-    };
-    const positionTokenSymbols = pos => {
-        const symbols = [];
-        for (const token of (pos?.tokens || [])) {
-            const parsed = protocolTokenAmountAndSymbol(token);
-            if (parsed?.symbol) symbols.push(cleanLoopAsset(parsed.symbol));
-        }
-        const pool = positionAssetLabel(pos);
-        if (pool && !pool.includes('/') && /^[A-Za-z0-9.+-]{2,16}$/.test(pool)) symbols.unshift(pool);
-        const rawPool = cleanLoopAsset(pos?.pool);
-        if (rawPool.includes('/')) {
-            rawPool.split('/').map(cleanLoopAsset).forEach(sym => {
-                if (/^[A-Za-z0-9.+-]{2,16}$/.test(sym)) symbols.push(sym);
-            });
-        }
-        return symbols.filter(Boolean);
-    };
-    const uniqueLoopSymbols = items => {
-        const seen = new Set();
-        return items.filter(sym => {
-            const key = String(sym || '').toUpperCase();
-            if (!key || seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-    };
-    const loopAssetTitle = (suppliedPositions, borrowedPositions) => {
-        const supplied = positionAssetLabel(suppliedPositions[0]);
-        const borrowed = positionAssetLabel(borrowedPositions[0]);
-        if (supplied && borrowed && supplied.toUpperCase() !== borrowed.toUpperCase()) return `${supplied} / ${borrowed}`;
-        return supplied || borrowed || 'Loop position';
-    };
-    const loopTokenLogos = (suppliedPositions, borrowedPositions) => {
-        const symbols = uniqueLoopSymbols([
-            ...suppliedPositions.flatMap(positionTokenSymbols),
-            ...borrowedPositions.flatMap(positionTokenSymbols),
-        ]).slice(0, 4);
-        if (!symbols.length) return '';
-        return `<div class="loop-token-logos">${symbols.map(sym => makeLoopLogo(sym, false, 28)).join('')}</div>`;
-    };
-
     grid.innerHTML = loops.map((loop) => {
-        const { p, sectionLabel, netValue, totalSupplied, totalBorrowed, suppliedPositions, borrowedPositions, health, apy, network } = loop;
-        const ltv = totalSupplied > 0 ? (totalBorrowed / totalSupplied) * 100 : 0;
-        const ltvColor = ltv < 65 ? 'var(--teal)' : ltv < 80 ? 'var(--amber)' : 'var(--red)';
-        const ltvCls = ltv < 65 ? 'good' : 'warn';
+        const { p, sectionLabel, netValue, totalSupplied, totalBorrowed, suppliedPositions, borrowedPositions, health, apy } = loop;
         const h = Number(health);
         const hCls = healthClass(h);
-        const healthHtml = Number.isFinite(h)
-            ? `<div class="loop-health-box"><div class="loop-health-label">Health Ratio</div><div class="loop-health-value ${hCls}">${h.toFixed(2)}</div></div>`
-            : `<div class="loop-health-box"><div class="loop-health-label">Health Ratio</div><div class="loop-health-value">-</div></div>`;
-        const statusCls = hCls === 'danger' ? 'danger' : hCls === 'warn' ? 'warn' : '';
+        const statusCls = Number.isFinite(h) ? (hCls === 'danger' ? 'danger' : hCls === 'warn' ? 'warn' : 'safe') : '';
         const totalApr = Number(apy?.totalApr);
         const suppliedApr = Number(apy?.suppliedApr);
         const borrowedApr = Number(apy?.borrowedApr);
-        const merklApr = suppliedPositions.reduce((max, pos) => Math.max(max, Number(pos.merklApy || 0)), 0);
-        const defillamaApr = suppliedPositions.reduce((max, pos) => Math.max(max, Number(pos.defillamaApy || 0)), 0);
-        const supplyApyTitle = (merklApr > 0 || defillamaApr > 0) && Number.isFinite(suppliedApr)
-            ? [
-                defillamaApr > 0 ? `DeFiLlama ${defillamaApr.toFixed(2)}%` : '',
-                merklApr > 0 ? `Merkl ${merklApr.toFixed(2)}%` : '',
-            ].filter(Boolean).join(' + ')
-            : '';
-        const liqBuffer = Number.isFinite(h) && h > 0 ? Math.max(0, (1 - (1 / h)) * 100) : null;
-        const networkTag = network && network !== '-' ? `<span class="loop-tag network">${dashEsc(network)}</span>` : '';
         const apyCls = Number.isFinite(totalApr) ? (totalApr > 0 ? '' : totalApr < 0 ? 'neg' : 'neu') : 'neu';
         const apyText = Number.isFinite(totalApr) ? totalApr.toFixed(2) + '%' : '-';
         const historyPoints = loop.live && loop.raw ? loopHistoryPoints(loop.raw) : [];
@@ -14182,56 +13984,51 @@ function renderLoops() {
             ? Number(loop.raw.economicNetValue ?? loop.raw.netValue ?? netValue)
             : null;
         const liveEndTs = loopApiState.updatedAt || Date.now();
-        const apy7dHtml = loop.live && loop.raw
-            ? loopSnapshotApyMetricHtml(7, historyPoints, liveEndValue, liveEndTs)
-            : '<div class="loop-metric"><div class="loop-metric-label">7d APY</div><div class="loop-metric-value neu">-</div></div>';
-        const apy30dHtml = loop.live && loop.raw
-            ? loopSnapshotApyMetricHtml(30, historyPoints, liveEndValue, liveEndTs)
-            : '<div class="loop-metric"><div class="loop-metric-label">30d APY</div><div class="loop-metric-value neu">-</div></div>';
+        const marketChip = loop.raw?.marketName || sectionLabel;
+        const networkChip = marketChip ? `<span class="loop-tag network">${dashEsc(marketChip)}</span>` : '';
+        const walletChip = loop.live && loop.raw?.wallet
+            ? `<span class="loop-tag">${dashEsc(loopApiShortWallet(loop.raw.wallet))}</span>`
+            : '';
+        const supplyToken = loopPositionAssetLabel(suppliedPositions[0]) || 'Asset';
+        const borrowToken = loopPositionAssetLabel(borrowedPositions[0]) || 'Debt';
+        const supplyLeg = loopLegCardHtml('supply', supplyToken, fmtV(totalSupplied), loopSupplyLegApyHtml(suppliedApr, suppliedPositions));
+        const borrowLeg = loopLegCardHtml('borrow', borrowToken, fmtV(totalBorrowed), loopBorrowLegApyHtml(borrowedApr));
+        const realizedHtml = loop.live && loop.raw
+            ? `<div class="loop-realized-row">${loopSnapshotApyLegHtml(7, historyPoints, liveEndValue, liveEndTs)}${loopSnapshotApyLegHtml(30, historyPoints, liveEndValue, liveEndTs)}</div>`
+            : '';
+        const chartHtml = loop.live && loop.raw
+            ? loopHistoryChartHtml(historyPoints)
+            : '<div class="loop-history-chart empty"><span>Sync live to build 3h snapshot history</span></div>';
 
         return `
         <div class="loop-card">
-            <div class="loop-card-top">
-                <div class="loop-protocol-mark">
-                    ${makeLoopLogo(p.name, true, 30)}
-                    <div class="loop-protocol-name">${dashEsc(p.name)}</div>
+            <div class="loop-card-head">
+                ${makeLoopLogo(p.name, true, 36)}
+                <div class="loop-card-id">
+                    <div class="loop-card-protocol">${dashEsc(p.name)}</div>
+                    <div class="loop-card-pair">${loopPairHtml(suppliedPositions, borrowedPositions)}</div>
+                    <div class="loop-card-chips">${networkChip}${walletChip}</div>
                 </div>
-                <div class="loop-title-wrap">
-                    <div class="loop-asset-title">${dashEsc(loopAssetTitle(suppliedPositions, borrowedPositions))}</div>
-                    ${loopTokenLogos(suppliedPositions, borrowedPositions)}
-                    ${networkTag ? `<div class="loop-card-sub">${networkTag}</div>` : ''}
+                <div class="loop-hero-stat">
+                    <div class="loop-hero-label">Net APY</div>
+                    <div class="loop-hero-val apy ${apyCls}">${apyText}</div>
                 </div>
-                <div class="loop-head-stats">
-                    <div class="loop-apy-box"><div class="loop-apy-label">Net APY</div><div class="loop-apy-value ${apyCls}">${apyText}</div></div>
-                    ${healthHtml}
+                <div class="loop-hero-stat">
+                    <div class="loop-hero-label">Net value</div>
+                    <div class="loop-hero-val val">${fmtV(netValue)}</div>
+                </div>
+                <div class="loop-hero-stat">
+                    <div class="loop-hero-label">Health</div>
+                    <div class="loop-hero-val health ${hCls || 'neu'}">${Number.isFinite(h) ? h.toFixed(2) : '-'}</div>
+                    <div class="loop-hero-tag ${statusCls}">${Number.isFinite(h) ? statusText(hCls) : '-'}</div>
                 </div>
             </div>
-            <div class="loop-metrics">
-                <div class="loop-metric"><div class="loop-metric-label">Net APY</div><div class="loop-metric-value ${Number.isFinite(totalApr) && totalApr >= 0 ? 'good' : ''}">${Number.isFinite(totalApr) ? totalApr.toFixed(2) + '%' : '-'}</div></div>
-                <div class="loop-metric"><div class="loop-metric-label">Net Value</div><div class="loop-metric-value">${fmtV(netValue)}</div></div>
-                <div class="loop-metric"><div class="loop-metric-label">LTV</div><div class="loop-metric-value ${ltvCls}">${ltv.toFixed(1)}%</div></div>
-                <div class="loop-metric"><div class="loop-metric-label">Liq. Buffer</div><div class="loop-metric-value ${liqBuffer !== null && liqBuffer < 8 ? 'warn' : 'good'}">${liqBuffer === null ? '-' : liqBuffer.toFixed(2) + '%'}</div></div>
-                <div class="loop-metric"><div class="loop-metric-label">Supply APY</div><div class="loop-metric-value good"${supplyApyTitle ? ` title="${dashEsc(supplyApyTitle)}"` : ''}>${Number.isFinite(suppliedApr) ? suppliedApr.toFixed(2) + '%' : '-'}${merklApr > 0 ? '<span style="font-size:0.68rem;color:var(--t3);margin-left:0.25rem">Merkl</span>' : ''}</div></div>
-                <div class="loop-metric"><div class="loop-metric-label">Borrow APY</div><div class="loop-metric-value borrow">${Number.isFinite(borrowedApr) ? borrowedApr.toFixed(2) + '%' : '-'}</div></div>
-                ${apy7dHtml}
-                ${apy30dHtml}
-            </div>
-            <div class="loop-meter-wrap">
-                <div class="loop-meter-copy">
-                    Borrowed <strong>${fmtV(totalBorrowed)}</strong> against <strong>${fmtV(totalSupplied)}</strong> supplied
-                    <div class="loop-meter"><div class="loop-meter-fill" style="width:${Math.min(ltv,100)}%;background:${ltvColor}"></div></div>
-                </div>
-                <div class="loop-status ${statusCls}">${statusText(hCls)}</div>
-            </div>
-            ${loop.live && loop.raw ? loopHistoryChartHtml(loopHistoryPoints(loop.raw)) : ''}
-            <div class="loop-positions">
-                <div class="loop-pos-group">
-                    <div class="loop-pos-group-label supply">Supplied</div>
-                    ${posRows(suppliedPositions, 'supply')}
-                </div>
-                <div class="loop-pos-group">
-                    <div class="loop-pos-group-label borrow">Borrowed</div>
-                    ${posRows(borrowedPositions, 'borrow')}
+            <div class="loop-card-main">
+                <div class="loop-chart-pane">${chartHtml}</div>
+                <div class="loop-legs-pane">
+                    ${supplyLeg}
+                    ${borrowLeg}
+                    ${realizedHtml}
                 </div>
             </div>
         </div>`;

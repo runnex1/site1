@@ -677,14 +677,18 @@ const loopsWorkflow = readFileSync(join(ROOT, '.github', 'workflows', 'loops-sna
 assert.match(loopsWorkflow, /aave-proxy\?loopCronSnapshot=1/, 'GitHub cron must hit loopCronSnapshot directly, not loop-rates rewrite');
 assert.match(aaveProxyJs, /vault:loop_snapshots/, 'loop snapshots must persist in KV');
 assert.match(syncJs, /loopSnapshots === '1'/, 'sync endpoint must hydrate loop snapshot history');
-assert.match(indexHtml, /loop-history-chart/, 'loop cards must render history below the supply/borrow meter');
+assert.match(indexHtml, /loop-card-head/, 'loop cards must use stacked hero header row');
+assert.match(indexHtml, /loop-card-main/, 'loop cards must use chart + legs side-by-side layout');
+assert.match(indexHtml, /loop-leg-card/, 'loop cards must show supplied/borrowed leg cards');
+assert.match(indexHtml, /loop-history-chart/, 'loop cards must render snapshot history chart');
+assert.doesNotMatch(indexHtml, /loop-meter-wrap[\s\S]{0,1200}renderLoops/, 'loops render must not use LTV meter bar');
 assert.match(indexHtml, /function loopHistoryChartHtml\(points\)/, 'loops tab must build per-position history charts from snapshots');
 assert.match(indexHtml, /function loopHistoryChartSetMode\(/, 'loop history chart must toggle between net value and APY');
 assert.match(indexHtml, /loop-history-mode-btn/, 'loop history chart must expose net value / APY toggle buttons');
-assert.match(indexHtml, /height:120px/, 'loop history chart must be tall enough to read trends');
+assert.match(indexHtml, /height:148px/, 'loop history chart must be tall enough to read trends');
 assert.match(indexHtml, /function loopSnapshotRealizedApy\(points, targetDays, endValue, endTs\)/, 'loops tab must compute realized APY from snapshots');
-assert.match(indexHtml, /7d APY/, 'loop cards must show 7d realized APY');
-assert.match(indexHtml, /30d APY/, 'loop cards must show 30d realized APY');
+assert.match(indexHtml, /function loopSnapshotApyLegHtml\(/, 'loop cards must show 7d/30d realized APY in leg pane');
+assert.match(indexHtml, /loop-realized-row/, 'loop cards must render realized APY mini metrics');
 
 {
   const { loopSnapshotRealizedApy, MS_PER_DAY } = require('../lib/loop-snapshot-apy.js');
