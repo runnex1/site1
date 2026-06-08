@@ -724,6 +724,8 @@ assert.match(indexHtml, /function perpsPairLatestSessionPnl\(/, 'perps positions
 assert.match(indexHtml, /function perpsPairTotalPnlBreakdown\(/, 'perps total PnL must combine spread funding and fees');
 assert.match(indexHtml, /perpsFilterPairLatestSessionForRange\(p\.dailyPerformanceSeries \|\| \[\], null\)/, 'perps position PnL must use latest session without stat range');
 assert.doesNotMatch(indexHtml, /Total PnL · \$\{dashEsc\(rangeLabel\)\}/, 'perps open positions must not suffix total PnL with stat range');
+assert.doesNotMatch(indexHtml, /Net APR · \$\{dashEsc\(perpsStatRangeLabel/, 'perps open positions must not suffix Net APR with stat range');
+assert.match(indexHtml, /perps-pos-metric-label">Net APR<\/div>/, 'perps open positions must label Net APR without time window');
 assert.match(indexHtml, /function perpsBuildTotalPnlTooltipHtml\(/, 'perps total PnL must expose spread + funding + fees tooltip');
 assert.match(indexHtml, /function perpsBuildFundingTooltipHtml\(/, 'perps funding must expose calculation tooltip');
 assert.match(indexHtml, /Spread \+ Funding \+ Trading fees/, 'total PnL tooltip must explain spread funding and fees formula');

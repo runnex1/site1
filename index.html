@@ -808,11 +808,11 @@ body[data-active-tab="perps"] .topbar,
 .perps-position-tabs { display:flex; align-items:center; gap:0.4rem; margin-left:auto; }
 .perps-position-tab { font-family:var(--ff-mono); font-size:0.62rem; font-weight:900; letter-spacing:0.07em; text-transform:uppercase; padding:0.32rem 0.7rem; border-radius:999px; border:1px solid rgba(134,159,179,0.18); background:rgba(255,255,255,0.03); color:#9dacbb; cursor:pointer; }
 .perps-position-tab.active { border-color:rgba(89,240,200,0.38); background:rgba(89,240,200,0.1); color:#59f0c8; }
-.perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 1rem 0.65rem; }
+.perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 0.85rem 0.65rem; min-width:0; overflow-x:auto; }
 .perps-pos-head, .perps-pos-row {
-  display:grid;
-  grid-template-columns:minmax(140px,1.1fr) minmax(190px,1.28fr) minmax(106px,0.72fr) minmax(88px,0.82fr) minmax(80px,0.74fr) minmax(76px,0.7fr) minmax(92px,0.82fr) minmax(10px,0.16fr) minmax(88px,0.78fr) minmax(80px,0.74fr) minmax(36px,0.32fr);
-  gap:0.65rem 1.15rem; align-items:center;
+  display:grid; width:100%; min-width:1040px;
+  grid-template-columns:minmax(124px,1.05fr) minmax(168px,1.2fr) minmax(84px,0.62fr) minmax(76px,0.68fr) minmax(68px,0.62fr) minmax(68px,0.62fr) minmax(72px,0.66fr) minmax(4px,0.05fr) minmax(68px,0.62fr) minmax(72px,0.68fr) 28px;
+  gap:0.45rem 0.65rem; align-items:center;
 }
 .perps-pos-chart-col { display:flex; justify-content:flex-end; align-items:center; }
 .perps-pos-legs { padding-right:0.5rem; }
@@ -847,14 +847,15 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-leg { display:flex; align-items:center; justify-content:space-between; font-family:var(--ff-mono); font-size:0.68rem; }
 .perps-pos-leg-venue { color:#9dacbb; text-transform:capitalize; }
 .perps-pos-metric { min-width:0; }
-.perps-pos-metric-label { font-family:var(--ff-mono); font-size:0.55rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#7f8f9f; }
+.perps-pos-metric-label { font-family:var(--ff-mono); font-size:0.52rem; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:#7f8f9f; white-space:nowrap; }
+.perps-pos-head > div { white-space:nowrap; }
 .perps-pos-metric-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:0.78rem; font-weight:800; color:var(--t1); }
 .perps-pos-metric-val.pos { color:#55d66f; }
 .perps-pos-metric-val.neg { color:#ff5c7a; }
 .perps-pos-liq-stack { display:flex; flex-direction:column; gap:0.35rem; font-family:var(--ff-mono); min-width:0; }
 .perps-pos-liq-val { font-size:0.78rem; font-weight:800; color:#9dacbb; white-space:nowrap; line-height:1.2; }
 .perps-pos-apr-col { text-align:right; }
-.perps-pos-apr-val { font-family:var(--ff-mono); font-size:1.05rem; font-weight:900; }
+.perps-pos-apr-val { font-family:var(--ff-mono); font-size:0.92rem; font-weight:900; white-space:nowrap; }
 .perps-pos-apr-val.pos { color:#55d66f; }
 .perps-pos-apr-val.neg { color:#ff5c7a; }
 .perps-pos-token-row { display:flex; align-items:center; gap:0.45rem; min-width:0; }
@@ -924,7 +925,7 @@ body[data-active-tab="perps"] .topbar,
 @media (max-width:1100px) {
   .perps-stats-bar { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .perps-pos-head { display:none; }
-  .perps-pos-row { grid-template-columns:1fr 1fr; gap:0.5rem; }
+  .perps-pos-row { min-width:0; grid-template-columns:1fr 1fr; gap:0.5rem; }
   .perps-pos-apr-col { grid-column:1 / -1; text-align:left; }
 }
 .perps-pnl-chart svg { width:100%; height:100%; display:block; }
@@ -24760,7 +24761,7 @@ function perpsRenderPortfolioPositions(paired) {
             <div class="perps-pos-metric perps-pos-apr-metric" onmouseenter="perpsShowCurrentAprTip(event, ${pairIdx})" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Current APR</div><div class="perps-pos-metric-val ${perpsSignedCls(currentApr)}">${currentApr != null ? perpsFmtPct(currentApr) : '—'}</div></div>
             <div class="perps-pos-spacer" aria-hidden="true"></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Margin</div><div class="perps-pos-metric-val">${perpsFmtUsd(margin)}</div></div>
-            <div class="perps-pos-apr-col"><div class="perps-pos-metric-label">Net APR · ${dashEsc(perpsStatRangeLabel(_perpsStatRange))}</div><div class="perps-pos-apr-val ${perpsSignedCls(periodApr)}">${periodApr != null ? perpsFmtPct(periodApr) : '—'}</div></div>
+            <div class="perps-pos-apr-col"><div class="perps-pos-metric-label">Net APR</div><div class="perps-pos-apr-val ${perpsSignedCls(periodApr)}">${periodApr != null ? perpsFmtPct(periodApr) : '—'}</div></div>
             <div class="perps-pos-chart-col"><button type="button" class="perps-pos-chart-btn" aria-label="Position performance chart" onclick="perpsOpenPositionChart(${pairIdx}); event.stopPropagation();">${perpsPositionChartIconSvg()}</button></div>
         </div></div>`;
     }).join('');
