@@ -679,6 +679,7 @@ assert.match(aaveProxyJs, /vault:loop_snapshots/, 'loop snapshots must persist i
 assert.match(syncJs, /loopSnapshots === '1'/, 'sync endpoint must hydrate loop snapshot history');
 assert.match(indexHtml, /loops-cockpit[\s\S]{0,180}max-width:min\(1180px/, 'loops tab must use centered max-width like perps');
 assert.match(indexHtml, /page-content:has\(#loopsTab\.active\)[\s\S]{0,80}padding:10px 2\.75rem/, 'loops tab must have horizontal page padding like perps');
+assert.match(indexHtml, /loops-grid[\s\S]{0,120}grid-template-columns:repeat\(2, minmax\(0, 1fr\)\)/, 'loops grid must show two cards per row on desktop');
 assert.match(indexHtml, /loop-card-head/, 'loop cards must use stacked hero header row');
 assert.match(indexHtml, /loop-card-main/, 'loop cards must use chart + legs side-by-side layout');
 assert.match(indexHtml, /loop-leg-card/, 'loop cards must show supplied/borrowed leg cards');
