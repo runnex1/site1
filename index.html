@@ -11072,7 +11072,9 @@ function loopHistoryPoints(positionOrId) {
             return {
                 ts: Number(snap.fetchedAt) || 0,
                 netValue: Number(pos.economicNetValue ?? pos.netValue),
-                netApy: Number(pos.netApy),
+                netApy: pos.netApy == null ? null : Number(pos.netApy),
+                totalSupplied: Number(pos.totalSupplied || 0),
+                totalBorrowed: Number(pos.totalBorrowed || 0),
             };
         })
         .filter(p => p && p.ts && Number.isFinite(p.netValue))
@@ -11080,17 +11082,56 @@ function loopHistoryPoints(positionOrId) {
 }
 
 const LOOP_SNAPSHOT_MS_PER_DAY = 86400000;
+const LOOP_CAPITAL_MIN_USD = 75;
+const LOOP_CAPITAL_MIN_REL = 0.025;
+const LOOP_CAPITAL_NET_JUMP_REL = 0.07;
+
+function loopHistoryGrossExposure(point) {
+    return Number(point?.totalSupplied || 0) + Number(point?.totalBorrowed || 0);
+}
+
+function loopHistoryCapitalEvent(prev, curr) {
+    if (!prev || !curr) return false;
+    const prevGross = loopHistoryGrossExposure(prev);
+    const currGross = loopHistoryGrossExposure(curr);
+    const grossDelta = Math.abs(currGross - prevGross);
+    if (grossDelta >= Math.max(LOOP_CAPITAL_MIN_USD, prevGross * LOOP_CAPITAL_MIN_REL)) return true;
+
+    const prevNet = Number(prev.netValue ?? (Number(prev.totalSupplied || 0) - Number(prev.totalBorrowed || 0)));
+    const currNet = Number(curr.netValue ?? (Number(curr.totalSupplied || 0) - Number(curr.totalBorrowed || 0)));
+    const dtDays = Math.max(Number(curr.ts || 0) - Number(prev.ts || 0), 0) / LOOP_SNAPSHOT_MS_PER_DAY;
+    if (dtDays <= 0 || prevNet <= 1) return false;
+
+    const impliedMove = Math.abs(Number(prev.netApy || 0)) / 100 * prevNet * (dtDays / 365);
+    const netDelta = Math.abs(currNet - prevNet);
+    return netDelta > Math.max(impliedMove * 5, prevNet * LOOP_CAPITAL_NET_JUMP_REL);
+}
+
+function loopTrimHistoryToLatestSession(points) {
+    const sorted = (points || [])
+        .filter(p => p && Number(p.ts) && Number.isFinite(Number(p.netValue)))
+        .map(p => ({
+            ts: Number(p.ts),
+            netValue: Number(p.netValue),
+            netApy: p.netApy == null ? null : Number(p.netApy),
+            totalSupplied: Number(p.totalSupplied || 0),
+            totalBorrowed: Number(p.totalBorrowed || 0),
+        }))
+        .sort((a, b) => a.ts - b.ts);
+    if (sorted.length < 2) return sorted;
+    let sessionStart = 0;
+    for (let i = 1; i < sorted.length; i++) {
+        if (loopHistoryCapitalEvent(sorted[i - 1], sorted[i])) sessionStart = i;
+    }
+    return sorted.slice(sessionStart);
+}
 
 function loopSnapshotRealizedApy(points, targetDays, endValue, endTs) {
     const end = Number(endTs);
     const endVal = Number(endValue);
     if (!end || !Number.isFinite(endVal)) return null;
 
-    const sorted = (points || [])
-        .filter(p => p && Number(p.ts) && Number.isFinite(Number(p.netValue)))
-        .map(p => ({ ts: Number(p.ts), netValue: Number(p.netValue) }))
-        .sort((a, b) => a.ts - b.ts);
-
+    const sorted = loopTrimHistoryToLatestSession(points);
     const target = Math.max(1, Number(targetDays) || 7);
     const windowStart = end - target * LOOP_SNAPSHOT_MS_PER_DAY;
     const firstTs = sorted.length ? sorted[0].ts : end;
@@ -11123,6 +11164,49 @@ function loopSnapshotRealizedApy(points, targetDays, endValue, endTs) {
         partial: periodDays < target - 0.01,
         baselineValue: baselineVal,
         endValue: endVal,
+    };
+}
+
+function loopSnapshotPeriodNetApy(points, targetDays, endTs) {
+    const end = Number(endTs);
+    if (!end) return null;
+
+    const session = loopTrimHistoryToLatestSession(points);
+    if (!session.length) return null;
+
+    const target = Math.max(1, Number(targetDays) || 7);
+    const windowStart = end - target * LOOP_SNAPSHOT_MS_PER_DAY;
+    const effectiveStart = Math.max(windowStart, session[0].ts);
+    const inWindow = session.filter(p => p.ts >= effectiveStart && p.ts <= end);
+    const apyPoints = inWindow.filter(p => Number.isFinite(Number(p.netApy)));
+    if (!apyPoints.length) return null;
+
+    let weighted = 0;
+    let weightSum = 0;
+    for (let i = 0; i < apyPoints.length; i++) {
+        const segStart = Math.max(apyPoints[i].ts, effectiveStart);
+        const segEnd = i + 1 < apyPoints.length ? apyPoints[i + 1].ts : end;
+        const weight = Math.max(segEnd - segStart, 0);
+        if (weight <= 0) continue;
+        weighted += Number(apyPoints[i].netApy) * weight;
+        weightSum += weight;
+    }
+
+    const apy = weightSum > 0
+        ? weighted / weightSum
+        : Number(apyPoints[apyPoints.length - 1].netApy);
+    if (!Number.isFinite(apy)) return null;
+
+    const periodDays = Math.max(end - effectiveStart, 0) / LOOP_SNAPSHOT_MS_PER_DAY;
+    if (periodDays < 1 / 24) return null;
+
+    return {
+        apy,
+        periodDays,
+        targetDays: target,
+        partial: periodDays < target - 0.01,
+        endTs: end,
+        sessionStartTs: session[0].ts,
     };
 }
 
@@ -11231,27 +11315,27 @@ function loopHistoryPeriodDelta(points) {
 }
 
 function loopSnapshotApyLegHtml(targetDays, points, endValue, endTs) {
-    const result = loopSnapshotRealizedApy(points, targetDays, endValue, endTs);
+    const result = loopSnapshotPeriodNetApy(points, targetDays, endTs);
     if (!result || !Number.isFinite(result.apy)) {
         return `<div class="loop-realized-mini"><div class="loop-realized-label">${targetDays}d APY</div><div class="loop-realized-val neu">-</div></div>`;
     }
     const cls = result.partial ? 'partial' : '';
     const star = result.partial ? '*' : '';
     const title = result.partial
-        ? `Realized ${result.periodDays.toFixed(1)}d (position shorter than ${targetDays}d)`
-        : `Realized ${targetDays}d from 3h snapshots`;
+        ? `Spot net APY average over ${result.periodDays.toFixed(1)}d since last deposit/withdraw`
+        : `Time-weighted spot net APY average over ${targetDays}d since last deposit/withdraw`;
     return `<div class="loop-realized-mini"><div class="loop-realized-label" title="${dashEsc(title)}">${targetDays}d APY${star}</div><div class="loop-realized-val ${cls}" title="${dashEsc(title)}">${result.apy.toFixed(2)}%</div></div>`;
 }
 
 function loopSnapshotApyMetricHtml(targetDays, points, endValue, endTs) {
-    const result = loopSnapshotRealizedApy(points, targetDays, endValue, endTs);
+    const result = loopSnapshotPeriodNetApy(points, targetDays, endTs);
     if (!result || !Number.isFinite(result.apy)) {
         return `<div class="loop-metric"><div class="loop-metric-label">${targetDays}d APY</div><div class="loop-metric-value neu">-</div></div>`;
     }
     const cls = result.apy > 0 ? 'good' : result.apy < 0 ? 'neg' : 'neu';
     const title = result.partial
-        ? `Realized ${result.periodDays.toFixed(1)}d (position shorter than ${targetDays}d)`
-        : `Realized ${targetDays}d from 3h snapshots`;
+        ? `Spot net APY average over ${result.periodDays.toFixed(1)}d since last deposit/withdraw`
+        : `Time-weighted spot net APY average over ${targetDays}d since last deposit/withdraw`;
     const star = result.partial ? '*' : '';
     return `<div class="loop-metric"><div class="loop-metric-label" title="${dashEsc(title)}">${targetDays}d APY${star}</div><div class="loop-metric-value ${cls}" title="${dashEsc(title)}">${result.apy.toFixed(2)}%</div></div>`;
 }
@@ -14131,7 +14215,9 @@ function renderLoops() {
         const borrowedApr = Number(apy?.borrowedApr);
         const apyCls = Number.isFinite(totalApr) ? (totalApr > 0 ? '' : totalApr < 0 ? 'neg' : 'neu') : 'neu';
         const apyText = Number.isFinite(totalApr) ? totalApr.toFixed(2) + '%' : '-';
-        const historyPoints = loop.live && loop.raw ? loopHistoryPoints(loop.raw) : [];
+        const historyPoints = loop.live && loop.raw
+            ? loopTrimHistoryToLatestSession(loopHistoryPoints(loop.raw))
+            : [];
         const displayNetValue = loopEffectiveNetValue(loop);
         const liveEndValue = loop.live && loop.raw ? displayNetValue : null;
         const liveEndTs = loopApiState.updatedAt || Date.now();

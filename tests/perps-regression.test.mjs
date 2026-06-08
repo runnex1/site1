@@ -749,9 +749,13 @@ assert.doesNotMatch(indexHtml, /loopHistoryChartHtml[\s\S]{0,2200}loopHistoryPer
 assert.doesNotMatch(indexHtml, /loop-history-foot[\s\S]{0,400}3h buckets/, 'loop history chart must not show 3h buckets hint');
 assert.match(indexHtml, /loop-history-mode-btn/, 'loop history chart must expose net value / APY toggle buttons');
 assert.match(indexHtml, /height:148px/, 'loop history chart must be tall enough to read trends');
-assert.match(indexHtml, /function loopSnapshotRealizedApy\(points, targetDays, endValue, endTs\)/, 'loops tab must compute realized APY from snapshots');
-assert.match(indexHtml, /function loopSnapshotApyLegHtml\(/, 'loop cards must show 7d/30d realized APY in leg pane');
+assert.match(indexHtml, /function loopSnapshotPeriodNetApy\(/, 'loops tab must compute period net APY from spot snapshot rates');
+assert.match(indexHtml, /function loopTrimHistoryToLatestSession\(/, 'loop history must reset after deposits and withdrawals');
+assert.match(indexHtml, /function loopHistoryCapitalEvent\(/, 'loop history must detect capital flow between snapshots');
+assert.match(indexHtml, /loopSnapshotPeriodNetApy\(points, targetDays, endTs\)/, 'loop cards must show 7d/30d spot net APY averages');
+assert.match(indexHtml, /function loopSnapshotApyLegHtml\(/, 'loop cards must show 7d/30d APY in leg pane');
 assert.match(indexHtml, /loop-realized-row/, 'loop cards must render realized APY mini metrics');
+assert.match(indexHtml, /loopTrimHistoryToLatestSession\(loopHistoryPoints\(loop\.raw\)\)/, 'loop charts must rebuild from latest session after capital flows');
 
 {
   const { loopSnapshotRealizedApy, MS_PER_DAY } = require('../lib/loop-snapshot-apy.js');
@@ -786,6 +790,43 @@ assert.match(indexHtml, /loop-realized-row/, 'loop cards must render realized AP
   );
   assert.ok(partial30?.partial, '10d history must mark 30d APY as partial');
   assert.ok(Math.abs(partial30.periodDays - 10) < 0.01, '30d APY must use full period when position is younger than 30d');
+}
+
+{
+  const {
+    loopSnapshotPeriodNetApy,
+    loopTrimHistoryToLatestSession,
+    loopHistoryCapitalEvent,
+    MS_PER_DAY,
+  } = require('../lib/loop-snapshot-apy.js');
+  const now = Date.UTC(2026, 5, 29, 12);
+  const before = {
+    ts: now - 10 * MS_PER_DAY,
+    netValue: 15000,
+    netApy: 12,
+    totalSupplied: 20000,
+    totalBorrowed: 5000,
+  };
+  const afterWithdraw = {
+    ts: now - 2 * MS_PER_DAY,
+    netValue: 800,
+    netApy: 15.9,
+    totalSupplied: 1200,
+    totalBorrowed: 400,
+  };
+  const later = {
+    ts: now - MS_PER_DAY,
+    netValue: 810,
+    netApy: 15.4,
+    totalSupplied: 1200,
+    totalBorrowed: 400,
+  };
+  assert.ok(loopHistoryCapitalEvent(before, afterWithdraw), 'large withdraw must count as capital event');
+  const trimmed = loopTrimHistoryToLatestSession([before, afterWithdraw, later]);
+  assert.equal(trimmed.length, 2, 'history must reset to latest session after withdraw');
+  const apy7 = loopSnapshotPeriodNetApy([before, afterWithdraw, later], 7, now);
+  assert.ok(apy7 && apy7.apy > 10 && apy7.apy < 20, '7d APY after withdraw must average spot net APY, not treat withdrawal as loss');
+  assert.ok(apy7.partial, '7d APY must be partial when latest session is shorter than 7d');
 }
 
 {
