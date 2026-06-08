@@ -682,7 +682,8 @@ assert.match(indexHtml, /page-content:has\(#loopsTab\.active\)[\s\S]{0,80}paddin
 assert.match(indexHtml, /loops-grid[\s\S]{0,120}grid-template-columns:repeat\(2, minmax\(0, 1fr\)\)/, 'loops grid must show two cards per row on desktop');
 assert.match(indexHtml, /loop-card-head/, 'loop cards must use stacked hero header row');
 assert.match(indexHtml, /loop-card-main/, 'loop cards must use chart + legs side-by-side layout');
-assert.match(indexHtml, /loop-leg-card/, 'loop cards must show supplied/borrowed leg cards');
+assert.match(indexHtml, /loop-summary-pane/, 'loop cards must show net value with supply and borrow APY');
+assert.match(indexHtml, /loop-health-corner/, 'loop health ratio must sit in the top-right corner');
 assert.match(indexHtml, /loop-history-chart/, 'loop cards must render snapshot history chart');
 assert.doesNotMatch(indexHtml, /loop-meter-wrap[\s\S]{0,1200}renderLoops/, 'loops render must not use LTV meter bar');
 assert.match(indexHtml, /function loopHistoryChartHtml\(points\)/, 'loops tab must build per-position history charts from snapshots');
