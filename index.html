@@ -5428,12 +5428,13 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 }
 .loop-card-head .asset-logo, .loop-card-head img { width:38px; height:38px; border-radius:10px; }
 .loop-head-body { min-width:0; display:flex; flex-direction:column; gap:10px; }
-.loop-head-top {
-  display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:end; gap:12px 16px;
+.loop-head-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.loop-head-titles { min-width:0; }
+.loop-head-stats { flex-shrink:0; display:flex; align-items:flex-end; gap:12px; min-width:0; }
+.loop-head-stat-divider {
+  width:1px; align-self:stretch; min-height:34px; margin:0 1px;
+  background:linear-gradient(180deg, transparent, rgba(148,163,184,0.22) 18%, rgba(148,163,184,0.22) 82%, transparent);
 }
-.loop-head-titles { min-width:0; justify-self:start; }
-.loop-head-stat.apy { justify-self:center; text-align:center; }
-.loop-head-stat.health { justify-self:end; }
 .loop-head-eyebrow {
   font-family:var(--ff-display); font-size:0.58rem; font-weight:850; letter-spacing:0.14em;
   text-transform:uppercase; color:var(--t3); line-height:1;
@@ -5517,7 +5518,21 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-history-mode-btn.active { color:var(--teal); background:rgba(45,212,191,0.12); }
 .loop-history-chart.mode-apy .loop-history-mode-btn.active { color:var(--amber); background:rgba(251,191,36,0.12); }
 .loop-history-mode-btn:disabled { opacity:0.35; cursor:not-allowed; }
-.loop-history-chart svg { display:block; width:100%; height:120px; }
+.loop-history-chart-wrap { position:relative; }
+.loop-history-chart svg { display:block; width:100%; height:120px; cursor:crosshair; }
+.loop-history-hover-line { stroke:rgba(148,163,184,0.38); stroke-width:1; stroke-dasharray:4 3; pointer-events:none; }
+.loop-history-hover-dot { fill:var(--amber); stroke:rgba(4,13,19,0.92); stroke-width:2; pointer-events:none; }
+.loop-history-chart.mode-val .loop-history-hover-dot { fill:var(--teal); }
+.loop-history-tooltip {
+  position:fixed; z-index:80; min-width:108px; pointer-events:none; transform:translate(-50%, -112%);
+  padding:0.38rem 0.48rem; border:1px solid rgba(251,191,36,0.28); border-radius:5px;
+  background:rgba(5,15,22,0.96); box-shadow:0 14px 30px rgba(0,0,0,0.28);
+  color:var(--t1); font-family:var(--ff-mono); font-size:0.72rem; font-weight:800; line-height:1.2;
+  white-space:nowrap; opacity:0; transition:opacity 120ms ease;
+}
+.loop-history-chart.mode-val .loop-history-tooltip { border-color:rgba(45,212,191,0.28); }
+.loop-history-tooltip.visible { opacity:1; }
+.loop-history-tooltip span { display:block; margin-top:0.12rem; color:var(--t3); font-size:0.58rem; font-weight:650; }
 .loop-history-val { stroke:rgba(45,212,191,0.95); }
 .loop-history-apy { stroke:rgba(251,191,36,0.92); }
 .loop-history-area-val { fill:rgba(45,212,191,0.10); stroke:none; }
@@ -5565,9 +5580,8 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
   .loops-kpi { border-right:0; border-bottom:1px solid rgba(148,163,184,0.14); }
   .loops-kpi:last-child { border-bottom:0; }
   .loop-card-top { grid-template-columns:42px minmax(0,1fr); }
-  .loop-head-top { grid-template-columns:minmax(0,1fr) auto auto; gap:10px 12px; }
-  .loop-head-stat.apy { justify-self:end; text-align:right; }
-  .loop-head-stat.health { justify-self:end; }
+  .loop-head-stats { width:100%; justify-content:flex-start; }
+  .loop-head-stat { text-align:left; }
   .loop-health-box { grid-column:1 / -1; text-align:left; min-width:0; }
   .loop-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .loop-meter-wrap, .loop-positions { grid-template-columns:1fr; }
@@ -11127,17 +11141,17 @@ function loopPairTitleText(suppliedPositions, borrowedPositions) {
     return supplied || borrowed || '';
 }
 
-function loopHeadApyHtml(apyText, apyCls) {
-    return `<div class="loop-head-stat apy ${apyCls}">
-        <div class="loop-head-stat-label">Net APY</div>
-        <div class="loop-head-stat-val">${apyText}</div>
-    </div>`;
-}
-
-function loopHeadHealthHtml(healthVal, statusCls) {
-    return `<div class="loop-head-stat health ${statusCls}">
-        <div class="loop-head-stat-label">Health</div>
-        <div class="loop-head-stat-val">${healthVal}</div>
+function loopHeadStatsHtml(apyText, apyCls, healthVal, statusCls) {
+    return `<div class="loop-head-stats">
+        <div class="loop-head-stat apy ${apyCls}">
+            <div class="loop-head-stat-label">Net APY</div>
+            <div class="loop-head-stat-val">${apyText}</div>
+        </div>
+        <div class="loop-head-stat-divider" aria-hidden="true"></div>
+        <div class="loop-head-stat health ${statusCls}">
+            <div class="loop-head-stat-label">Health</div>
+            <div class="loop-head-stat-val">${healthVal}</div>
+        </div>
     </div>`;
 }
 
@@ -11238,6 +11252,64 @@ function loopHistoryChartSetMode(btn) {
     chart.querySelectorAll('.loop-history-mode-btn').forEach(b => {
         b.classList.toggle('active', b.dataset.mode === mode);
     });
+    const title = chart.querySelector('.loop-history-title');
+    if (title) title.textContent = mode === 'apy' ? 'APY' : 'Net value';
+    const svg = chart.querySelector('svg');
+    if (svg) loopHistoryChartHoverEnd({ currentTarget: svg });
+}
+
+function loopHistoryChartFmtTs(ts) {
+    const d = new Date(Number(ts) || 0);
+    return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function loopHistoryChartHover(event) {
+    const svg = event.currentTarget;
+    const chart = svg?.closest('.loop-history-chart');
+    if (!chart) return;
+    let points;
+    try { points = JSON.parse(decodeURIComponent(chart.dataset.points || '%5B%5D')); } catch { return; }
+    if (!Array.isArray(points) || points.length < 2) return;
+    const w = Number(chart.dataset.chartW) || 520;
+    const rect = svg.getBoundingClientRect();
+    const svgX = ((event.clientX - rect.left) / Math.max(1, rect.width)) * w;
+    const point = points.reduce((best, p) => Math.abs(p.x - svgX) < Math.abs(best.x - svgX) ? p : best, points[0]);
+    const mode = chart.classList.contains('mode-apy') ? 'apy' : 'val';
+    const y = mode === 'apy' && Number.isFinite(point.ya) ? point.ya : point.yv;
+    const line = svg.querySelector('.loop-history-hover-line');
+    const dot = svg.querySelector('.loop-history-hover-dot');
+    const tooltip = chart.querySelector('.loop-history-tooltip');
+    if (line) {
+        line.setAttribute('x1', point.x);
+        line.setAttribute('x2', point.x);
+        line.style.display = 'block';
+    }
+    if (dot) {
+        dot.setAttribute('cx', point.x);
+        dot.setAttribute('cy', y);
+        dot.style.display = 'block';
+    }
+    if (tooltip) {
+        const main = mode === 'apy' && Number.isFinite(point.na)
+            ? `${Number(point.na).toFixed(2)}% APY`
+            : '$' + Number(point.nv || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
+        tooltip.innerHTML = `${main}<span>${loopHistoryChartFmtTs(point.ts)}</span>`;
+        tooltip.style.left = `${rect.left + (point.x / w) * rect.width}px`;
+        tooltip.style.top = `${rect.top + (y / (Number(chart.dataset.chartH) || 148)) * rect.height}px`;
+        tooltip.classList.add('visible');
+    }
+}
+
+function loopHistoryChartHoverEnd(event) {
+    const svg = event?.currentTarget;
+    if (!svg) return;
+    const chart = svg.closest('.loop-history-chart');
+    const line = svg.querySelector('.loop-history-hover-line');
+    const dot = svg.querySelector('.loop-history-hover-dot');
+    const tooltip = chart?.querySelector('.loop-history-tooltip');
+    if (line) line.style.display = 'none';
+    if (dot) dot.style.display = 'none';
+    if (tooltip) tooltip.classList.remove('visible');
 }
 
 function loopHistoryChartPath(points, valueAt, xAt, yAt, baseY) {
@@ -11276,35 +11348,42 @@ function loopHistoryChartHtml(points) {
     const last = points[points.length - 1];
     const fmtUsd = v => '$' + Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
     const apyBtnAttrs = hasApy ? '' : ' disabled';
-    const delta = loopHistoryPeriodDelta(points);
-    const span = loopHistorySpanLabel(points);
-    const deltaHtml = delta
-        ? `<span class="delta${delta.neg ? ' neg' : ''}">${delta.text}</span>`
-        : '';
-    const snapshotHint = points.length >= 2 ? '<span class="hint">3h buckets</span>' : '';
-    return `<div class="loop-history-chart mode-val">
+    const defaultMode = hasApy ? 'apy' : 'val';
+    const chartPoints = points.map((p, i) => ({
+        ts: p.ts,
+        nv: p.netValue,
+        na: p.netApy,
+        x: +xAt(i).toFixed(2),
+        yv: +yVal(p.netValue).toFixed(2),
+        ya: Number.isFinite(p.netApy) ? +yApy(p.netApy).toFixed(2) : null,
+    }));
+    const pointsAttr = encodeURIComponent(JSON.stringify(chartPoints));
+    return `<div class="loop-history-chart mode-${defaultMode}" data-points="${pointsAttr}" data-chart-w="${w}" data-chart-h="${h}">
         <div class="loop-history-head">
-            <span class="loop-history-title">Net value · 3h snapshots${span ? ` (${span})` : ''}</span>
+            <span class="loop-history-title">${defaultMode === 'apy' ? 'APY' : 'Net value'}</span>
             <div class="loop-history-toggle">
-                <button type="button" class="loop-history-mode-btn active" data-mode="val" onclick="loopHistoryChartSetMode(this)">Net value</button>
-                <button type="button" class="loop-history-mode-btn" data-mode="apy" onclick="loopHistoryChartSetMode(this)"${apyBtnAttrs}>APY</button>
+                <button type="button" class="loop-history-mode-btn${defaultMode === 'val' ? ' active' : ''}" data-mode="val" onclick="loopHistoryChartSetMode(this)">Net value</button>
+                <button type="button" class="loop-history-mode-btn${defaultMode === 'apy' ? ' active' : ''}" data-mode="apy" onclick="loopHistoryChartSetMode(this)"${apyBtnAttrs}>APY</button>
             </div>
         </div>
-        <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
-            <g class="loop-history-series-val">
-                <path class="loop-history-area-val" d="${valSeries.area}"></path>
-                <path class="loop-history-val" d="${valSeries.line}" fill="none" stroke-width="2.2"></path>
-            </g>
-            ${apySeries ? `<g class="loop-history-series-apy">
-                <path class="loop-history-area-apy" d="${apySeries.area}"></path>
-                <path class="loop-history-apy" d="${apySeries.line}" fill="none" stroke-width="2.2"></path>
-            </g>` : ''}
-        </svg>
+        <div class="loop-history-chart-wrap">
+            <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true" onmousemove="loopHistoryChartHover(event)" onmouseleave="loopHistoryChartHoverEnd(event)">
+                <g class="loop-history-series-val">
+                    <path class="loop-history-area-val" d="${valSeries.area}"></path>
+                    <path class="loop-history-val" d="${valSeries.line}" fill="none" stroke-width="2.2"></path>
+                </g>
+                ${apySeries ? `<g class="loop-history-series-apy">
+                    <path class="loop-history-area-apy" d="${apySeries.area}"></path>
+                    <path class="loop-history-apy" d="${apySeries.line}" fill="none" stroke-width="2.2"></path>
+                </g>` : ''}
+                <line class="loop-history-hover-line" x1="0" y1="${pad.t}" x2="0" y2="${baseY}" style="display:none"></line>
+                <circle class="loop-history-hover-dot" cx="0" cy="0" r="4" style="display:none"></circle>
+            </svg>
+            <div class="loop-history-tooltip"></div>
+        </div>
         <div class="loop-history-foot">
             <span class="loop-history-leg val now">${fmtUsd(last.netValue)} now</span>
             <span class="loop-history-leg apy now">${Number.isFinite(last.netApy) ? last.netApy.toFixed(2) + '% APY' : '-'}</span>
-            ${deltaHtml}
-            ${snapshotHint}
         </div>
     </div>`;
 }
@@ -14059,8 +14138,12 @@ function renderLoops() {
                             <div class="loop-head-eyebrow">${dashEsc(p.name)}</div>
                             <div class="loop-head-pair">${loopPairHtml(suppliedPositions, borrowedPositions)}</div>
                         </div>
-                        ${loopHeadApyHtml(apyText, apyCls)}
-                        ${loopHeadHealthHtml(Number.isFinite(h) ? h.toFixed(2) : '-', healthBadgeCls)}
+                        ${loopHeadStatsHtml(
+                            apyText,
+                            apyCls,
+                            Number.isFinite(h) ? h.toFixed(2) : '-',
+                            healthBadgeCls,
+                        )}
                     </div>
                     <div class="loop-head-meta">${networkChip}${walletChip}</div>
                 </div>
