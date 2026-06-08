@@ -25158,8 +25158,17 @@ function perpsFmtTpSlStackHtml(tpPx, slPx) {
     return `<div class="perps-pos-tpsl-pair">${rows.join('')}</div>`;
 }
 
+function perpsComparableTpSlLegs(displayLegs) {
+    return (displayLegs || []).filter(entry => {
+        const venue = String(entry.venue || entry.leg?.venue || '').toLowerCase();
+        return venue !== 'nado';
+    });
+}
+
 function perpsPairTpSlMismatch(displayLegs) {
-    const legs = (displayLegs || []).map(entry => entry.leg || entry);
+    const entries = perpsComparableTpSlLegs(displayLegs);
+    if (entries.length < 2) return false;
+    const legs = entries.map(entry => entry.leg || entry);
     const tps = legs.map(leg => perpsNumOrNull(leg.tpPx)).filter(v => v != null);
     const sls = legs.map(leg => perpsNumOrNull(leg.slPx)).filter(v => v != null);
     const tpMismatch = tps.length >= 2 && perpsTpSlDiffPct(tps[0], tps[1]) > 0.5;
@@ -25171,15 +25180,17 @@ function perpsPairTpSlMismatch(displayLegs) {
 
 function perpsPositionTpSlStackHtml(p, displayLegs) {
     const legs = (displayLegs || []).map(entry => entry.leg || entry);
+    const comparable = perpsComparableTpSlLegs(displayLegs);
     const mismatch = perpsPairTpSlMismatch(displayLegs);
     const warn = mismatch
         ? '<div class="perps-pos-tpsl-warn" title="TP/SL differ across venues or are missing on one leg">⚠ Mismatch</div>'
         : '';
     if (!mismatch) {
-        const leg = legs.find(l => perpsNumOrNull(l.tpPx) != null || perpsNumOrNull(l.slPx) != null) || legs[0];
+        const pool = comparable.length ? comparable.map(entry => entry.leg || entry) : legs;
+        const leg = pool.find(l => perpsNumOrNull(l.tpPx) != null || perpsNumOrNull(l.slPx) != null) || pool[0];
         return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${perpsFmtTpSlStackHtml(leg?.tpPx, leg?.slPx)}</div>`;
     }
-    return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${warn}${displayLegs.map(entry =>
+    return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${warn}${comparable.map(entry =>
         perpsFmtTpSlStackHtml(entry.leg.tpPx, entry.leg.slPx)
     ).join('')}</div>`;
 }

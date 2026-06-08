@@ -1117,7 +1117,8 @@ assert.doesNotMatch(indexHtml, /<div>Basis uPnL<\/div>/, 'open positions must no
 assert.match(indexHtml, /function perpsPositionLiqStackHtml\(p, displayLegs\)/, 'open positions must render only liquidation prices in the Liq Price column');
 assert.match(indexHtml, /function perpsFmtTpSlStackHtml\(tpPx, slPx\)/, 'open positions must render TP above SL vertically');
 assert.match(indexHtml, /function perpsPositionTpSlStackHtml\(p, displayLegs\)/, 'open positions must collapse common TP/SL across venues');
-assert.match(indexHtml, /function perpsPairTpSlMismatch\(displayLegs\)/, 'open positions must compare TP/SL across venues');
+assert.match(indexHtml, /function perpsComparableTpSlLegs\(displayLegs\)/, 'TP/SL mismatch must ignore Nado legs');
+assert.match(indexHtml, /venue !== 'nado'/, 'TP/SL mismatch must exclude Nado from cross-venue comparison');
 assert.match(indexHtml, /perps-pos-tpsl-warn.*Mismatch/, 'open positions must warn when TP/SL differ across venues');
 assert.match(indexHtml, /perpsTpSlDiffPct\(tps\[0\], tps\[1\]\) > 0\.5/, 'TP/SL mismatch warning must use a 0.5% threshold');
 assert.match(indexHtml, /function perpsPositionMidPx\(p, displayLegs\)/, 'open positions must calculate a mid price from both exchange marks');
