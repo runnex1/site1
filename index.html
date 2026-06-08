@@ -11546,7 +11546,7 @@ function loopYieldWalletAddresses() {
     return [...new Set(wallets
         .filter(w => (w.category || '').toLowerCase() === 'yield')
         .map(w => String(w.address || '').trim())
-        .filter(w => /^0x[a-fA-F0-9]{40}$/.test(w)))];
+        .filter(w => /^0x[a-fA-F0-9]{40}$/.test(w) || /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(w)))];
 }
 
 function loopApiShortWallet(address) {
@@ -17092,7 +17092,7 @@ function openWatcherWalletModal(category) {
     if (catEl) catEl.value = category;
     if (titleEl) titleEl.textContent = category === 'yield' ? '🌾 Add Yield Farming Wallet' : '🎯 Add Prediction Market Wallet';
     if (subEl)   subEl.textContent   = category === 'yield'
-        ? 'Track wallets active in DeFi protocols. DeBank link included.'
+        ? 'Track EVM (0x…) or Solana yield wallets — Aave, Morpho, Fluid, Kamino, Jupiter Lend, and more.'
         : 'Track wallets active on Polymarket or Opinion.trade.';
     if (addBtn) {
         addBtn.style.background = category === 'yield' ? 'var(--teal)' : 'var(--fuchsia)';

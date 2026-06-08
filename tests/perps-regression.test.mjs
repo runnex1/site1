@@ -694,11 +694,18 @@ assert.match(loopRatesJs, /fetchDefillamaYieldApyIndex/, 'yield-bearing collater
 assert.match(loopRatesJs, /function canonicalNativeYieldApy\(/, 'native yield tokens like reUSD must use a shared DeFiLlama APY across protocols');
 assert.match(loopRatesJs, /canonicalNativeYieldApy\(chainId, leg, index\)/, 'defillama leg lookup must prefer canonical native yield before address pools');
 assert.match(indexHtml, /function loopsAppendSnapshotFromApiData\(/, 'live loop sync must append local 3h snapshots for history charts');
+assert.match(loopRatesJs, /fetchSolanaLoopRates/, 'loop rates must fetch Kamino and Jupiter Lend for Solana yield wallets');
+const loopSolanaRatesJs = readFileSync(join(ROOT, 'lib', 'loop-solana-rates.js'), 'utf8');
+assert.match(loopSolanaRatesJs, /api\.kamino\.finance/, 'Kamino integration must use the public Kamino REST API');
+assert.match(loopSolanaRatesJs, /kamino-api/, 'Kamino positions must identify kamino-api source');
+assert.match(loopSolanaRatesJs, /api\.jup\.ag\/lend\/v1/, 'Jupiter Lend integration must use the public Jupiter REST API');
+assert.match(loopSolanaRatesJs, /jupiter-lend-api/, 'Jupiter Lend positions must identify jupiter-lend-api source');
 assert.match(loopRatesJs, /economicNetValue/, 'loop positions must include Merkl rewards in economic net value for snapshots');
 assert.match(indexHtml, /LOOP_API_STATE_KEY/, 'loops tab must cache last live API state across page refreshes');
 assert.match(indexHtml, /supplementalImported/, 'Loops must keep imported Fluid/Morpho positions when live API coverage is incomplete');
 const loopSnapshotsJs = readFileSync(join(ROOT, 'lib', 'loop-snapshots.js'), 'utf8');
 assert.match(loopSnapshotsJs, /economicNetValue/, 'loop snapshots must persist Merkl-inclusive economic net value');
+assert.match(loopSnapshotsJs, /isSolanaWallet/, 'loop snapshots must accept Solana yield wallets');
 assert.match(loopSnapshotsJs, /LOOP_SNAPSHOT_BUCKET_HOURS = 3/, 'loop snapshots must bucket history on 3h intervals');
 assert.match(loopSnapshotsJs, /function appendLoopSnapshotStore\(store, data/, 'loop snapshots must append server-side history');
 assert.match(loopSnapshotsJs, /function loopPositionHistoryKey\(/, 'loop snapshots must use stable history keys across Fluid NFT id changes');
@@ -761,6 +768,59 @@ assert.match(indexHtml, /function loopRefreshPeriodApyMetrics\(/, 'loop chart to
 assert.match(indexHtml, /loopRefreshPeriodApyMetrics\(chart\)/, 'loop chart mode switch must update period APY metrics');
 assert.match(indexHtml, /loop-realized-row/, 'loop cards must render realized APY mini metrics');
 assert.match(indexHtml, /loopTrimHistoryToLatestSession\(loopHistoryPoints\(loop\.raw\)\)/, 'loop charts must rebuild from latest session after capital flows');
+assert.match(indexHtml, /\[1-9A-HJ-NP-Za-km-z\]\{32,44\}/, 'loop yield wallets must accept Solana addresses');
+assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention Solana loop protocols');
+
+{
+  const {
+    mapKaminoObligation,
+    mapJupiterBorrowPosition,
+    kaminoMarketValueUsd,
+  } = require('../lib/loop-solana-rates.js');
+  const usd = kaminoMarketValueUsd('2644812517817138226881');
+  assert.ok(usd > 2000 && usd < 2500, 'Kamino marketValueSf must decode to USD');
+
+  const kaminoPos = mapKaminoObligation(
+    'AcNSmd5CxwLs21TYUmhWt7CW2v159TdYRkvQxb1iBYRj',
+    { name: 'Main Market', lendingMarket: '7u3HeHxYDLhnCoErrtycNokbQYbWGzLs6JSDqGAv5PfF' },
+    {
+      d4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q: { liquidityToken: 'SOL', supplyApy: 0.02, liquidityTokenMint: 'So111' },
+      ESCkPWKHmgNE7Msf77n9yzqJd5kQVWWGy3o5Mgxhvavp: { liquidityToken: 'USDG', borrowApy: 0.05, liquidityTokenMint: 'USDG' },
+    },
+    {
+      obligationAddress: 'HcrU9nyaBFmhNPrxnwXRjreVxdQTZdq2dpvktjsWiS4J',
+      refreshedStats: {
+        userTotalBorrow: 30711.47,
+        userTotalDeposit: 54354.56,
+        netAccountValue: 23643.09,
+        loanToValue: 0.565,
+        liquidationLtv: 0.798,
+      },
+      state: {
+        deposits: [{ depositReserve: 'd4A2prbA2whesmvHaL88BH6Ewn5N4bTSU2Ze8P6Bc4Q', depositedAmount: '1', marketValueSf: '2644812517817138226881' }],
+        borrows: [{ borrowReserve: 'ESCkPWKHmgNE7Msf77n9yzqJd5kQVWWGy3o5Mgxhvavp', borrowedAmountOutsideElevationGroups: '1', marketValueSf: '43678869538560795623741' }],
+      },
+    },
+  );
+  assert.equal(kaminoPos?.protocol, 'Kamino', 'Kamino mapper must tag protocol');
+  assert.ok(kaminoPos?.totalBorrowed > 30000, 'Kamino mapper must keep borrowed USD from refreshed stats');
+  assert.ok(kaminoPos?.health > 1.2 && kaminoPos?.health < 1.5, 'Kamino health must derive from liquidation LTV / loan LTV');
+
+  const jupPos = mapJupiterBorrowPosition(
+    'BQ72nSv9f3PRyRKCBnHLVrerrv37CYTHm5h3s9VSGQDV',
+    new Map([[1, {
+      id: 1,
+      supplyRate: 200,
+      borrowRate: 500,
+      supplyToken: { uiSymbol: 'SOL', symbol: 'WSOL', decimals: 9, price: 100 },
+      borrowToken: { uiSymbol: 'USDC', symbol: 'USDC', decimals: 6, price: 1 },
+    }]]),
+    { vaultId: 1, collateralUsd: 10000, debtUsd: 5000, healthRatio: 1.8 },
+  );
+  assert.equal(jupPos?.protocol, 'Jupiter', 'Jupiter mapper must tag protocol');
+  assert.equal(jupPos?.marketName, 'SOL / USDC', 'Jupiter mapper must build pair label from vault tokens');
+  assert.ok(jupPos?.netApy < 0, 'Jupiter loop net APY must subtract borrow cost from supply yield');
+}
 
 {
   const { loopSnapshotRealizedApy, MS_PER_DAY } = require('../lib/loop-snapshot-apy.js');
