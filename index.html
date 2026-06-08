@@ -5422,29 +5422,53 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loops-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; padding:12px; align-items:start; }
 .loop-card { min-width:0; overflow:hidden; padding:0; border:1px solid rgba(110,231,216,0.15); border-radius:8px; background:linear-gradient(180deg, rgba(8,25,35,.98), rgba(5,16,23,.99)); }
 .loop-card:hover { border-color:rgba(110,231,216,0.26); background:linear-gradient(180deg, rgba(10,31,42,.98), rgba(5,16,23,.99)); }
-.loop-card-head { display:grid; grid-template-columns:38px minmax(0,1fr) auto; gap:12px; align-items:start; padding:12px 14px 10px; border-bottom:1px solid rgba(148,163,184,0.10); }
-.loop-card-head .asset-logo, .loop-card-head img { width:36px; height:36px; border-radius:9px; }
-.loop-card-id { min-width:0; display:flex; flex-direction:column; gap:0; }
-.loop-card-protocol { font-size:0.9rem; font-weight:850; line-height:1.2; color:var(--t1); margin-bottom:10px; }
-.loop-card-pair { margin-top:0; margin-bottom:6px; font-family:var(--ff-mono); font-size:0.95rem; font-weight:800; letter-spacing:-0.02em; line-height:1.15; }
+.loop-card-head {
+  display:grid; grid-template-columns:40px minmax(0,1fr); gap:12px; align-items:start;
+  padding:12px 14px 11px; border-bottom:1px solid rgba(148,163,184,0.10);
+}
+.loop-card-head .asset-logo, .loop-card-head img { width:38px; height:38px; border-radius:10px; }
+.loop-head-body { min-width:0; display:flex; flex-direction:column; gap:10px; }
+.loop-head-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.loop-head-titles { min-width:0; }
+.loop-head-eyebrow {
+  font-family:var(--ff-display); font-size:0.58rem; font-weight:850; letter-spacing:0.14em;
+  text-transform:uppercase; color:var(--t3); line-height:1;
+}
+.loop-head-pair {
+  margin-top:8px; font-family:var(--ff-mono); font-size:1.02rem; font-weight:800;
+  letter-spacing:-0.02em; line-height:1.15; color:var(--t1);
+}
 .loop-pair-sup { color:var(--t1); }
-.loop-pair-arrow { color:var(--t3); margin:0 5px; font-weight:600; }
+.loop-pair-arrow { color:var(--t3); margin:0 6px; font-weight:600; font-size:0.92em; }
 .loop-pair-bor { color:var(--red); }
-.loop-card-chips { margin-top:0; margin-bottom:4px; display:flex; flex-wrap:wrap; gap:6px; }
-.loop-head-apy { margin-top:0; font-family:var(--ff-mono); font-size:0.62rem; font-weight:650; color:var(--t3); }
-.loop-head-apy span { font-weight:900; color:var(--green); }
-.loop-head-apy span.neg { color:var(--red); }
-.loop-head-apy span.neu { color:var(--t3); }
-.loop-health-corner { text-align:right; flex-shrink:0; min-width:72px; }
-.loop-health-label { color:var(--t3); font-family:var(--ff-display); font-size:0.52rem; font-weight:850; letter-spacing:0.1em; text-transform:uppercase; }
-.loop-health-val { margin-top:4px; font-family:var(--ff-mono); font-size:1.15rem; font-weight:900; line-height:1; color:var(--t1); }
-.loop-health-val.safe { color:var(--green); }
-.loop-health-val.warn { color:var(--amber); }
-.loop-health-val.danger { color:var(--red); }
-.loop-health-tag { margin-top:4px; font-family:var(--ff-display); font-size:0.56rem; font-weight:850; }
-.loop-health-tag.safe { color:var(--green); }
-.loop-health-tag.warn { color:var(--amber); }
-.loop-health-tag.danger { color:var(--red); }
+.loop-head-health {
+  flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:3px;
+  padding:6px 9px; border-radius:7px; border:1px solid rgba(148,163,184,0.16);
+  background:rgba(148,163,184,0.05); min-width:68px;
+}
+.loop-head-health.safe { border-color:rgba(34,197,94,0.28); background:rgba(34,197,94,0.07); }
+.loop-head-health.warn { border-color:rgba(245,158,11,0.28); background:rgba(245,158,11,0.07); }
+.loop-head-health.danger { border-color:rgba(244,63,94,0.30); background:rgba(244,63,94,0.08); }
+.loop-head-health-label { font-family:var(--ff-display); font-size:0.48rem; font-weight:850; letter-spacing:0.12em; text-transform:uppercase; color:var(--t3); }
+.loop-head-health-val { font-family:var(--ff-mono); font-size:1.08rem; font-weight:900; line-height:1; color:var(--t1); }
+.loop-head-health.safe .loop-head-health-val { color:var(--green); }
+.loop-head-health.warn .loop-head-health-val { color:var(--amber); }
+.loop-head-health.danger .loop-head-health-val { color:var(--red); }
+.loop-head-health-tag { font-family:var(--ff-display); font-size:0.54rem; font-weight:850; color:var(--t3); }
+.loop-head-health.safe .loop-head-health-tag { color:var(--green); }
+.loop-head-health.warn .loop-head-health-tag { color:var(--amber); }
+.loop-head-health.danger .loop-head-health-tag { color:var(--red); }
+.loop-head-meta { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.loop-head-apy-pill {
+  display:inline-flex; align-items:center; gap:5px; margin-left:auto;
+  padding:4px 9px; border-radius:6px; border:1px solid rgba(34,197,94,0.22);
+  background:rgba(34,197,94,0.08); font-family:var(--ff-mono); font-size:0.58rem; font-weight:700; color:var(--t3);
+}
+.loop-head-apy-pill span { font-weight:900; color:var(--green); }
+.loop-head-apy-pill.neg { border-color:rgba(244,63,94,0.24); background:rgba(244,63,94,0.08); }
+.loop-head-apy-pill.neg span { color:var(--red); }
+.loop-head-apy-pill.neu { border-color:rgba(148,163,184,0.18); background:rgba(148,163,184,0.06); }
+.loop-head-apy-pill.neu span { color:var(--t3); }
 .loop-card-main { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(200px,0.84fr); gap:1px; background:rgba(148,163,184,0.10); }
 .loop-chart-pane, .loop-summary-pane { min-width:0; background:rgba(4,13,19,0.88); }
 .loop-chart-pane { padding:0; }
@@ -11105,6 +11129,21 @@ function loopPositionAssetLabel(pos) {
     return '';
 }
 
+function loopPairTitleText(suppliedPositions, borrowedPositions) {
+    const supplied = loopPositionAssetLabel(suppliedPositions[0]);
+    const borrowed = loopPositionAssetLabel(borrowedPositions[0]);
+    if (supplied && borrowed) return `${supplied} / ${borrowed}`;
+    return supplied || borrowed || '';
+}
+
+function loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions) {
+    const chip = String(marketChip || '').trim();
+    if (!chip) return '';
+    const norm = v => String(v || '').toLowerCase().replace(/\s+/g, '');
+    if (norm(chip) === norm(loopPairTitleText(suppliedPositions, borrowedPositions))) return '';
+    return `<span class="loop-tag network">${dashEsc(chip)}</span>`;
+}
+
 function loopPairHtml(suppliedPositions, borrowedPositions) {
     const supplied = loopPositionAssetLabel(suppliedPositions[0]);
     const borrowed = loopPositionAssetLabel(borrowedPositions[0]);
@@ -13992,10 +14031,11 @@ function renderLoops() {
             : null;
         const liveEndTs = loopApiState.updatedAt || Date.now();
         const marketChip = loop.raw?.marketName || sectionLabel;
-        const networkChip = marketChip ? `<span class="loop-tag network">${dashEsc(marketChip)}</span>` : '';
+        const networkChip = loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions);
         const walletChip = loop.live && loop.raw?.wallet
             ? `<span class="loop-tag">${dashEsc(loopApiShortWallet(loop.raw.wallet))}</span>`
             : '';
+        const healthBadgeCls = statusCls || '';
         const realizedHtml = loop.live && loop.raw
             ? `<div class="loop-realized-row">${loopSnapshotApyLegHtml(7, historyPoints, liveEndValue, liveEndTs)}${loopSnapshotApyLegHtml(30, historyPoints, liveEndValue, liveEndTs)}</div>`
             : '';
@@ -14007,17 +14047,23 @@ function renderLoops() {
         return `
         <div class="loop-card">
             <div class="loop-card-head">
-                ${makeLoopLogo(p.name, true, 36)}
-                <div class="loop-card-id">
-                    <div class="loop-card-protocol">${dashEsc(p.name)}</div>
-                    <div class="loop-card-pair">${loopPairHtml(suppliedPositions, borrowedPositions)}</div>
-                    <div class="loop-card-chips">${networkChip}${walletChip}</div>
-                    <div class="loop-head-apy">Net APY <span class="${apyCls}">${apyText}</span></div>
-                </div>
-                <div class="loop-health-corner">
-                    <div class="loop-health-label">Health</div>
-                    <div class="loop-health-val ${hCls || ''}">${Number.isFinite(h) ? h.toFixed(2) : '-'}</div>
-                    <div class="loop-health-tag ${statusCls}">${Number.isFinite(h) ? statusText(hCls) : '-'}</div>
+                ${makeLoopLogo(p.name, true, 38)}
+                <div class="loop-head-body">
+                    <div class="loop-head-top">
+                        <div class="loop-head-titles">
+                            <div class="loop-head-eyebrow">${dashEsc(p.name)}</div>
+                            <div class="loop-head-pair">${loopPairHtml(suppliedPositions, borrowedPositions)}</div>
+                        </div>
+                        <div class="loop-head-health ${healthBadgeCls}">
+                            <div class="loop-head-health-label">Health</div>
+                            <div class="loop-head-health-val">${Number.isFinite(h) ? h.toFixed(2) : '-'}</div>
+                            <div class="loop-head-health-tag">${Number.isFinite(h) ? statusText(hCls) : '-'}</div>
+                        </div>
+                    </div>
+                    <div class="loop-head-meta">
+                        ${networkChip}${walletChip}
+                        <span class="loop-head-apy-pill ${apyCls}">Net APY <span>${apyText}</span></span>
+                    </div>
                 </div>
             </div>
             <div class="loop-card-main">
