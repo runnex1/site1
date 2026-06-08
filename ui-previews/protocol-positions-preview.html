@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protocol Positions UI — Upgraded Preview</title>
+  <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700,800,900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#05080d; --panel:#071218; --panel2:#091720; --elev:#0b1a24;
+      --line:rgba(110,231,216,.15); --line2:rgba(148,163,184,.12);
+      --text:#eef4fb; --soft:#c5d2db; --muted:#91a4b8; --faint:#647a8c;
+      --green:#22c55e; --red:#f43f5e; --teal:#00d4aa; --amber:#fbbf24;
+      --blue:#38bdf8; --violet:#a78bfa; --indigo:#818cf8;
+      --mono:"JetBrains Mono", monospace; --font:"Satoshi", system-ui, sans-serif;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100vh; color:var(--text); font-family:var(--font);
+      background:
+        radial-gradient(circle at 20% 0%, rgba(0,212,170,.08), transparent 28%),
+        radial-gradient(circle at 82% 18%, rgba(108,114,255,.08), transparent 30%),
+        var(--bg);
+      padding:18px 20px 32px;
+    }
+    .shell { max-width:1320px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
+    .preview-badge {
+      align-self:flex-start; padding:5px 10px; border-radius:6px;
+      border:1px dashed rgba(0,212,170,.32); background:rgba(0,212,170,.06);
+      color:var(--teal); font:700 .58rem/1 var(--mono); letter-spacing:.08em; text-transform:uppercase;
+    }
+    .note {
+      padding:11px 14px; border-radius:7px; border:1px solid rgba(0,212,170,.14);
+      background:rgba(0,212,170,.04); color:var(--soft); font:650 .72rem/1.45 var(--font);
+    }
+    .note strong { color:var(--teal); font-weight:800; }
+
+    /* ── Section shell (DeFi tab panel) ── */
+    .section {
+      border:1px solid var(--line); border-radius:6px; overflow:hidden;
+      background:linear-gradient(180deg, rgba(7,18,26,.96), rgba(4,12,18,.98));
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.035), 0 14px 38px rgba(0,0,0,.18);
+    }
+    .section-header {
+      display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;
+      padding:.85rem 1rem .75rem;
+      background:linear-gradient(180deg, rgba(7,18,26,.98), rgba(5,14,21,.99));
+      border-bottom:1px solid var(--line2);
+    }
+    .section-title {
+      font:850 .92rem/1 var(--font); letter-spacing:.1em; text-transform:uppercase;
+      display:flex; align-items:center; gap:10px;
+    }
+    .avg-apr {
+      font:800 .62rem/1 var(--mono); letter-spacing:.04em; text-transform:none;
+      padding:3px 9px; border-radius:4px;
+      color:var(--green); background:rgba(34,197,94,.08); border:1px solid rgba(34,197,94,.22);
+    }
+    .actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .btn {
+      display:inline-flex; align-items:center; gap:6px;
+      border-radius:6px; padding:6px 11px; cursor:pointer;
+      font:750 .68rem/1 var(--font); letter-spacing:.02em;
+      border:1px solid rgba(148,163,184,.22); background:rgba(255,255,255,.03); color:var(--soft);
+    }
+    .btn.add { color:var(--teal); border-color:rgba(0,212,170,.28); background:rgba(0,212,170,.08); }
+    .btn.import { color:var(--violet); border-color:rgba(167,139,250,.28); background:rgba(167,139,250,.08); }
+    .btn.danger { color:var(--red); border-color:rgba(244,63,94,.24); background:rgba(244,63,94,.07); }
+
+    .toolbar {
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      padding:.65rem 1rem .7rem; border-bottom:1px solid rgba(148,163,184,.1);
+      background:rgba(4,14,20,.35);
+    }
+    .view-toggle {
+      display:inline-flex; border:1px solid rgba(148,163,184,.2); border-radius:8px; overflow:hidden;
+    }
+    .view-toggle button {
+      border:0; background:transparent; color:var(--muted); padding:5px 14px;
+      font:750 .72rem/1 var(--font); cursor:pointer;
+    }
+    .view-toggle button.on { color:var(--teal); background:rgba(0,212,170,.1); }
+    .view-toggle button + button { border-left:1px solid rgba(148,163,184,.2); }
+
+    /* ── Table ── */
+    .data-table {
+      background:linear-gradient(180deg, rgba(5,15,22,.96), rgba(3,11,17,.98));
+    }
+    .table-header, .table-row {
+      display:grid;
+      grid-template-columns: minmax(130px,1.1fr) minmax(88px,.68fr) minmax(150px,1.25fr) minmax(96px,.82fr) minmax(78px,.72fr) minmax(78px,.72fr) minmax(78px,.72fr) minmax(120px,1fr) 34px;
+      gap:.65rem .85rem; align-items:center; padding:.62rem 1rem;
+    }
+    .table-header {
+      min-height:40px; letter-spacing:.08em;
+      background:rgba(8,21,29,.97); border-bottom:1px solid var(--line2);
+    }
+    .table-header > div {
+      font:700 .58rem/1 var(--mono); text-transform:uppercase; letter-spacing:.1em; color:var(--muted);
+    }
+    .table-header > div:nth-child(4),
+    .table-header > div:nth-child(5),
+    .table-header > div:nth-child(6),
+    .table-header > div:nth-child(7) { text-align:right; }
+    .table-row {
+      min-height:54px; background:rgba(5,15,22,.46);
+      border-bottom:1px solid rgba(148,163,184,.1);
+    }
+    .table-row:hover { background:rgba(0,212,170,.055); }
+    .table-row > div:nth-child(4),
+    .table-row > div:nth-child(5),
+    .table-row > div:nth-child(6),
+    .table-row > div:nth-child(7) { text-align:right; font-family:var(--mono); font-size:.8rem; }
+    .proto-cell { display:flex; align-items:center; gap:10px; min-width:0; }
+    .logo {
+      width:30px; height:30px; border-radius:50%; flex-shrink:0;
+      display:grid; place-items:center; font:900 .62rem/1 var(--font);
+      background:linear-gradient(135deg, #2563eb, #60a5fa); color:#fff;
+    }
+    .logo.pendle { background:linear-gradient(135deg, #059669, #34d399); }
+    .logo.aave { background:linear-gradient(135deg, #7c3aed, #a78bfa); }
+    .proto-name { font:800 .85rem/1.2 var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .type-cell { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .type-badge {
+      display:inline-flex; padding:2px 8px; border-radius:4px;
+      font:800 .62rem/1 var(--mono); letter-spacing:.04em; text-transform:uppercase;
+      color:var(--violet); background:rgba(168,85,247,.09); border:1px solid rgba(168,85,247,.24);
+    }
+    .type-badge.yield { color:var(--teal); background:rgba(0,212,170,.09); border-color:rgba(0,212,170,.24); }
+    .expand-btn {
+      width:22px; height:22px; border-radius:4px; border:1px solid rgba(148,163,184,.22);
+      background:rgba(255,255,255,.03); color:var(--muted); cursor:pointer; font-size:.62rem;
+    }
+    .expand-btn.open { color:var(--teal); border-color:rgba(0,212,170,.28); transform:rotate(180deg); }
+    .position-label { color:var(--soft); font:650 .78rem/1.35 var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .val-input {
+      width:100%; max-width:108px; margin-left:auto; text-align:right;
+      background:rgba(3,11,17,.82); border:1px solid rgba(148,163,184,.15); border-radius:6px;
+      color:var(--text); font:700 .8rem/1 var(--mono); padding:5px 8px;
+    }
+    .apr { display:inline-flex; padding:2px 7px; border-radius:4px; font:800 .72rem/1 var(--mono); }
+    .apr.pos { color:var(--green); background:rgba(34,197,94,.1); border:1px solid rgba(34,197,94,.22); }
+    .apr.neg { color:var(--red); background:rgba(244,63,94,.1); border:1px solid rgba(244,63,94,.22); }
+    .apr.total { color:var(--green); background:rgba(34,197,94,.12); border:1px solid rgba(34,197,94,.28); font-size:.74rem; }
+    .note-input {
+      width:100%; background:rgba(3,11,17,.82); border:1px solid rgba(148,163,184,.15);
+      border-radius:6px; color:var(--text); font:600 .72rem/1 var(--font); padding:6px 8px;
+    }
+    .note-input::placeholder { color:rgba(148,163,184,.45); }
+    .row-x { border:0; background:transparent; color:var(--muted); font-size:1rem; cursor:pointer; opacity:.55; }
+    .row-x:hover { color:var(--red); opacity:1; }
+
+    /* ── Expanded drawer — Dashboard theme ── */
+    .protocol-drawer {
+      border-top:1px solid rgba(110,231,216,.12);
+      background:linear-gradient(180deg, rgba(7,18,26,.95), rgba(5,13,19,.96));
+      padding:0;
+    }
+    .drawer-inner {
+      padding:.75rem 1rem .85rem;
+      background:
+        radial-gradient(circle at 72% 88%, rgba(0,212,170,.07), transparent 38%),
+        linear-gradient(180deg, rgba(7,18,26,.97), rgba(4,12,18,.99));
+      border-top:1px solid rgba(148,163,184,.1);
+    }
+    .drawer-head {
+      display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+      margin-bottom:.65rem;
+    }
+    .drawer-section-label {
+      font:800 .58rem/1 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted);
+      display:flex; align-items:center; gap:8px;
+    }
+    .drawer-section-label::before {
+      content:''; width:3px; height:10px; border-radius:2px; background:currentColor; opacity:.55;
+    }
+    .drawer-summary { display:flex; gap:8px; flex-wrap:wrap; }
+    .summary-pill {
+      display:inline-flex; align-items:center; gap:5px; border-radius:4px; padding:3px 9px;
+      font:800 .64rem/1 var(--mono);
+    }
+    .summary-pill.sup { color:var(--green); background:rgba(34,197,94,.08); border:1px solid rgba(34,197,94,.22); }
+    .summary-pill.bor { color:var(--red); background:rgba(244,63,94,.08); border:1px solid rgba(244,63,94,.22); }
+
+    /* Dashboard-style leg cards */
+    .legs-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    @media (max-width:760px) { .legs-grid { grid-template-columns:1fr; } }
+    .leg-block {
+      border:1px solid rgba(148,163,184,.13); border-radius:6px; overflow:hidden;
+      background:rgba(6,17,24,.72);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.03);
+    }
+    .leg-block.sup { border-top:2px solid rgba(34,197,94,.45); }
+    .leg-block.bor { border-top:2px solid rgba(244,63,94,.45); }
+    .leg-head {
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      padding:8px 10px; border-bottom:1px solid rgba(148,163,184,.1);
+      background:rgba(8,21,29,.55);
+    }
+    .leg-side {
+      font:800 .52rem/1 var(--font); letter-spacing:.1em; text-transform:uppercase;
+    }
+    .leg-side.s { color:var(--teal); }
+    .leg-side.b { color:var(--red); }
+    .leg-total { font:800 .78rem/1 var(--mono); color:var(--text); }
+    .leg-row {
+      display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:10px; align-items:center;
+      padding:9px 10px; border-bottom:1px solid rgba(148,163,184,.08);
+    }
+    .leg-row:last-child { border-bottom:0; }
+    .leg-pool { font:800 .78rem/1.2 var(--mono); color:var(--text); }
+    .leg-tokens { margin-top:4px; font:650 .64rem/1.35 var(--mono); color:var(--muted); }
+    .leg-tokens .fixed { color:var(--green); }
+    .leg-apr { font:800 .68rem/1 var(--mono); white-space:nowrap; }
+    .leg-apr.pos { color:var(--green); }
+    .leg-apr.neg { color:var(--red); }
+    .leg-val {
+      font:800 .78rem/1 var(--mono); color:var(--soft); text-align:right; min-width:72px;
+    }
+    .leg-val input {
+      width:78px; text-align:right; background:rgba(3,11,17,.82);
+      border:1px solid rgba(148,163,184,.15); border-radius:5px;
+      color:var(--text); font:700 .74rem/1 var(--mono); padding:4px 6px;
+    }
+
+    /* Secondary metrics strip — dashboard density */
+    .drawer-metrics {
+      display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; margin-top:10px;
+    }
+    .metric {
+      border:1px solid rgba(148,163,184,.12); border-radius:6px; padding:8px 10px;
+      background:rgba(4,13,20,.55);
+    }
+    .metric-k { font:800 .5rem/1 var(--font); letter-spacing:.08em; text-transform:uppercase; color:var(--faint); }
+    .metric-v { margin-top:5px; font:800 .82rem/1 var(--mono); }
+    .metric-v.good { color:var(--green); }
+    .metric-v.warn { color:var(--amber); }
+    .healthbar {
+      display:inline-block; width:56px; height:6px; border-radius:20px;
+      background:rgba(148,163,184,.18); overflow:hidden; vertical-align:middle; margin-right:6px;
+    }
+    .healthbar span { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg, var(--teal), #85f5d6); }
+
+    .table-footer {
+      display:flex; align-items:center; justify-content:flex-end; gap:1.2rem; flex-wrap:wrap;
+      padding:.7rem 1rem; border-top:1px solid rgba(148,163,184,.1);
+      background:rgba(6,17,24,.52); font:700 .72rem/1 var(--mono); color:var(--muted);
+    }
+    .table-footer strong { color:var(--text); font-size:.86rem; }
+
+    .compare-row { opacity:.72; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <span class="preview-badge">Protocol Positions · v2 preview</span>
+    <p class="note">
+      <strong>Expanded drawer = Dashboard theme.</strong>
+      When you open a position, the detail panel uses the same panel gradient, leg cards, pills, and mono density as the Dashboard protocol table — not the older flat <code>--surf-2</code> drawer.
+    </p>
+
+    <section class="section">
+      <div class="section-header">
+        <div class="section-title">
+          Protocol Positions
+          <span class="avg-apr">AVG APR +1.9% (since 24h)</span>
+        </div>
+        <div class="actions">
+          <button class="btn add" type="button">+ Add Protocol</button>
+          <button class="btn import" type="button">Import Text</button>
+          <button class="btn import" type="button">Jupiter</button>
+          <button class="btn danger" type="button">Clear</button>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="view-toggle">
+          <button class="on" type="button">Current</button>
+          <button type="button">📸 Snapshot</button>
+        </div>
+      </div>
+
+      <div class="data-table">
+        <div class="table-header">
+          <div>Protocol</div><div>Type</div><div>Position</div><div>Net Value</div>
+          <div>Supply APY</div><div>Borrow APY</div><div>Total APY</div><div>Notes</div><div></div>
+        </div>
+
+        <!-- Expanded row: Fluid -->
+        <div class="protocol-row-wrap">
+          <div class="table-row">
+            <div class="proto-cell">
+              <div class="logo">F</div>
+              <div class="proto-name">Fluid</div>
+            </div>
+            <div class="type-cell">
+              <span class="type-badge">Lending</span>
+              <button class="expand-btn open" type="button" aria-label="Collapse">▼</button>
+            </div>
+            <div class="position-label">reUSD/USDT loop</div>
+            <div><input class="val-input" value="45042.05" aria-label="Net value"></div>
+            <div><span class="apr pos">+1.0%</span></div>
+            <div><span class="apr neg">-0.5%</span></div>
+            <div><span class="apr total">+1.8%</span></div>
+            <div><input class="note-input" placeholder="Add note…" aria-label="Notes"></div>
+            <div><button class="row-x" type="button" aria-label="Remove">&times;</button></div>
+          </div>
+
+          <div class="protocol-drawer">
+            <div class="drawer-inner">
+              <div class="drawer-head">
+                <div class="drawer-section-label">Lending</div>
+                <div class="drawer-summary">
+                  <span class="summary-pill sup">Supplied $41,451.13</span>
+                  <span class="summary-pill bor">Borrowed $12,204.81</span>
+                </div>
+              </div>
+
+              <div class="legs-grid">
+                <div class="leg-block sup">
+                  <div class="leg-head">
+                    <span class="leg-side s">Supplied</span>
+                    <span class="leg-total">$41,451.13</span>
+                  </div>
+                  <div class="leg-row">
+                    <div>
+                      <div class="leg-pool">reUSD</div>
+                      <div class="leg-tokens">38,332.3617 r</div>
+                    </div>
+                    <span class="leg-apr pos">+1.0%</span>
+                    <div class="leg-val"><input value="41451.13" aria-label="Supplied value"></div>
+                  </div>
+                </div>
+
+                <div class="leg-block bor">
+                  <div class="leg-head">
+                    <span class="leg-side b">Borrowed</span>
+                    <span class="leg-total">$12,204.81</span>
+                  </div>
+                  <div class="leg-row">
+                    <div>
+                      <div class="leg-pool">USDT</div>
+                      <div class="leg-tokens">12,204.8096 L · <span class="fixed">$1.0000 fixed</span></div>
+                    </div>
+                    <span class="leg-apr neg">-0.5%</span>
+                    <div class="leg-val"><input value="12204.81" aria-label="Borrowed value"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="drawer-metrics">
+                <div class="metric">
+                  <div class="metric-k">Health</div>
+                  <div class="metric-v good"><span class="healthbar"><span style="width:78%"></span></span>1.42</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-k">LTV</div>
+                  <div class="metric-v warn">29.4%</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-k">Net carry</div>
+                  <div class="metric-v good">+$2.19/day</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-k">Allocation</div>
+                  <div class="metric-v">18.2%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Collapsed row: Aave -->
+        <div class="table-row compare-row">
+          <div class="proto-cell">
+            <div class="logo aave">A</div>
+            <div class="proto-name">Aave V3</div>
+          </div>
+          <div class="type-cell">
+            <span class="type-badge">Lending</span>
+            <button class="expand-btn" type="button" aria-label="Expand">▼</button>
+          </div>
+          <div class="position-label">USDe/USDm loop</div>
+          <div><input class="val-input" value="214560.00" aria-label="Net value"></div>
+          <div><span class="apr pos">+8.2%</span></div>
+          <div><span class="apr neg">-3.1%</span></div>
+          <div><span class="apr total">+8.7%</span></div>
+          <div><input class="note-input" value="Monitor borrow APY" aria-label="Notes"></div>
+          <div><button class="row-x" type="button" aria-label="Remove">&times;</button></div>
+        </div>
+
+        <!-- Collapsed row: Pendle -->
+        <div class="table-row compare-row">
+          <div class="proto-cell">
+            <div class="logo pendle">P</div>
+            <div class="proto-name">Pendle</div>
+          </div>
+          <div class="type-cell">
+            <span class="type-badge yield">Yield</span>
+            <button class="expand-btn" type="button" aria-label="Expand">▼</button>
+          </div>
+          <div class="position-label">USDe PT Jun 26</div>
+          <div><input class="val-input" value="112430.00" aria-label="Net value"></div>
+          <div><span class="apr pos">+11.4%</span></div>
+          <div><span class="apr neg">—</span></div>
+          <div><span class="apr total">+11.4%</span></div>
+          <div><input class="note-input" value="Unlocking on Jun 26" aria-label="Notes"></div>
+          <div><button class="row-x" type="button" aria-label="Remove">&times;</button></div>
+        </div>
+
+        <div class="table-footer">
+          <span>Total</span>
+          <strong>$372,032.05</strong>
+          <span>Supply <span class="apr pos">+6.8%</span></span>
+          <span>Borrow <span class="apr neg">-2.4%</span></span>
+          <span>Total <span class="apr total">+5.9%</span></span>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

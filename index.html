@@ -855,7 +855,15 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-liq-stack { display:flex; flex-direction:column; gap:0.35rem; font-family:var(--ff-mono); min-width:0; }
 .perps-pos-liq-val { font-size:0.78rem; font-weight:800; color:#9dacbb; white-space:nowrap; line-height:1.2; }
 .perps-pos-tpsl-stack { position:relative; }
-.perps-pos-tpsl-warn { font-size:0.72rem; line-height:1; margin-bottom:0.1rem; }
+.perps-pos-tpsl-pair { display:flex; flex-direction:column; gap:0.18rem; min-width:0; }
+.perps-pos-tpsl-row { font-family:var(--ff-mono); font-size:0.78rem; font-weight:800; line-height:1.2; white-space:nowrap; }
+.perps-pos-tpsl-row.tp { color:#55d66f; }
+.perps-pos-tpsl-row.sl { color:#ff8fa3; }
+.perps-pos-tpsl-warn {
+  display:inline-flex; align-items:center; gap:0.25rem; margin-bottom:0.28rem;
+  font-family:var(--ff-mono); font-size:0.58rem; font-weight:800; letter-spacing:0.04em;
+  text-transform:uppercase; color:#ffb347; line-height:1.2;
+}
 .perps-pos-apr-col { text-align:right; }
 .perps-pos-apr-val { font-family:var(--ff-mono); font-size:0.92rem; font-weight:900; white-space:nowrap; }
 .perps-pos-apr-val.pos { color:#55d66f; }
@@ -25132,34 +25140,48 @@ function perpsPositionLiqStackHtml(p, displayLegs) {
     }).join('')}</div>`;
 }
 
-function perpsFmtTpSlLine(tpPx, slPx) {
+function perpsTpSlDiffPct(a, b) {
+    const left = perpsNumOrNull(a);
+    const right = perpsNumOrNull(b);
+    if (left == null || right == null) return null;
+    const avg = (left + right) / 2;
+    return avg > 0 ? (Math.abs(left - right) / avg) * 100 : null;
+}
+
+function perpsFmtTpSlStackHtml(tpPx, slPx) {
     const tp = perpsNumOrNull(tpPx);
     const sl = perpsNumOrNull(slPx);
-    if (tp == null && sl == null) return '—';
-    const tpStr = tp != null ? perpsFmtPx(tp) : '—';
-    const slStr = sl != null ? perpsFmtPx(sl) : '—';
-    return `${tpStr} / ${slStr}`;
+    if (tp == null && sl == null) return '<div class="perps-pos-liq-val">—</div>';
+    const rows = [];
+    if (tp != null) rows.push(`<div class="perps-pos-tpsl-row tp">${perpsFmtPx(tp)}</div>`);
+    if (sl != null) rows.push(`<div class="perps-pos-tpsl-row sl">${perpsFmtPx(sl)}</div>`);
+    return `<div class="perps-pos-tpsl-pair">${rows.join('')}</div>`;
 }
 
 function perpsPairTpSlMismatch(displayLegs) {
     const legs = (displayLegs || []).map(entry => entry.leg || entry);
     const tps = legs.map(leg => perpsNumOrNull(leg.tpPx)).filter(v => v != null);
     const sls = legs.map(leg => perpsNumOrNull(leg.slPx)).filter(v => v != null);
-    const diffPct = (a, b) => {
-        const avg = (a + b) / 2;
-        return avg > 0 ? (Math.abs(a - b) / avg) * 100 : null;
-    };
-    const tpMismatch = tps.length >= 2 && diffPct(tps[0], tps[1]) > 0.5;
-    const slMismatch = sls.length >= 2 && diffPct(sls[0], sls[1]) > 0.5;
-    return tpMismatch || slMismatch;
+    const tpMismatch = tps.length >= 2 && perpsTpSlDiffPct(tps[0], tps[1]) > 0.5;
+    const slMismatch = sls.length >= 2 && perpsTpSlDiffPct(sls[0], sls[1]) > 0.5;
+    const tpMissing = tps.length > 0 && tps.length < legs.length;
+    const slMissing = sls.length > 0 && sls.length < legs.length;
+    return tpMismatch || slMismatch || tpMissing || slMissing;
 }
 
 function perpsPositionTpSlStackHtml(p, displayLegs) {
+    const legs = (displayLegs || []).map(entry => entry.leg || entry);
     const mismatch = perpsPairTpSlMismatch(displayLegs);
-    const warn = mismatch ? '<div class="perps-pos-tpsl-warn" title="TP/SL differ across venues by more than 0.5%">⚠️</div>' : '';
-    return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${warn}${displayLegs.map(entry => {
-        return `<div class="perps-pos-liq-val">${perpsFmtTpSlLine(entry.leg.tpPx, entry.leg.slPx)}</div>`;
-    }).join('')}</div>`;
+    const warn = mismatch
+        ? '<div class="perps-pos-tpsl-warn" title="TP/SL differ across venues or are missing on one leg">⚠ Mismatch</div>'
+        : '';
+    if (!mismatch) {
+        const leg = legs.find(l => perpsNumOrNull(l.tpPx) != null || perpsNumOrNull(l.slPx) != null) || legs[0];
+        return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${perpsFmtTpSlStackHtml(leg?.tpPx, leg?.slPx)}</div>`;
+    }
+    return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${warn}${displayLegs.map(entry =>
+        perpsFmtTpSlStackHtml(entry.leg.tpPx, entry.leg.slPx)
+    ).join('')}</div>`;
 }
 
 function perpsSideBadgeHtml(size) {
