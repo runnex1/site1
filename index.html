@@ -5443,9 +5443,12 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-head-pair {
   margin-top:8px; font-family:var(--ff-mono); font-size:1.02rem; font-weight:800;
   letter-spacing:-0.02em; line-height:1.15; color:var(--t1);
+  display:flex; align-items:center; flex-wrap:wrap; gap:0 4px;
 }
+.loop-pair-leg { display:inline-flex; align-items:center; gap:6px; min-width:0; }
+.loop-head-pair .token-logo { flex-shrink:0; box-shadow:0 0 0 1.5px rgba(4,13,19,0.95); }
 .loop-pair-sup { color:var(--t1); }
-.loop-pair-arrow { color:var(--t3); margin:0 6px; font-weight:600; font-size:0.92em; }
+.loop-pair-arrow { color:var(--t3); margin:0 4px; font-weight:600; font-size:0.92em; }
 .loop-pair-bor { color:var(--red); }
 .loop-head-stat {
   padding:0; background:none; text-align:right; min-width:0; flex-shrink:0;
@@ -11174,11 +11177,16 @@ function loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions) {
 function loopPairHtml(suppliedPositions, borrowedPositions) {
     const supplied = loopPositionAssetLabel(suppliedPositions[0]);
     const borrowed = loopPositionAssetLabel(borrowedPositions[0]);
+    const suppliedLogo = supplied ? makeLogo(supplied, false, 22) : '';
+    const borrowedLogo = borrowed ? makeLogo(borrowed, false, 22) : '';
     if (supplied && borrowed) {
-        return `<span class="loop-pair-sup">${dashEsc(supplied)}</span><span class="loop-pair-arrow">→</span><span class="loop-pair-bor">${dashEsc(borrowed)}</span>`;
+        return `<span class="loop-pair-leg"><span class="loop-pair-sup">${dashEsc(supplied)}</span>${suppliedLogo}</span><span class="loop-pair-arrow">→</span><span class="loop-pair-leg"><span class="loop-pair-bor">${dashEsc(borrowed)}</span>${borrowedLogo}</span>`;
     }
     const fallback = supplied || borrowed || 'Loop';
-    return dashEsc(fallback);
+    const fallbackLogo = fallback !== 'Loop' ? makeLogo(fallback, false, 22) : '';
+    return fallbackLogo
+        ? `<span class="loop-pair-leg"><span class="loop-pair-sup">${dashEsc(fallback)}</span>${fallbackLogo}</span>`
+        : dashEsc(fallback);
 }
 
 function loopSupplyLegApyHtml(suppliedApr) {

@@ -718,6 +718,9 @@ assert.match(indexHtml, /loop-card-main/, 'loop cards must use chart + legs side
 assert.match(indexHtml, /loop-summary-row/, 'loop summary must place supply and borrow APY left of net value');
 assert.match(indexHtml, /loop-head-stats/, 'loop header must group net APY and health on the right');
 assert.match(indexHtml, /function loopHeadStatsHtml\(/, 'loop header must render net APY beside health');
+assert.match(indexHtml, /makeLogo\(supplied, false, 22\)/, 'loop pair title must show supply token logo beside symbol');
+assert.match(indexHtml, /makeLogo\(borrowed, false, 22\)/, 'loop pair title must show borrow token logo beside symbol');
+assert.match(indexHtml, /\.loop-pair-leg/, 'loop pair title must group token symbol with logo');
 assert.match(indexHtml, /function loopEffectiveNetValue\(/, 'loops must use Merkl-inclusive economic net value for live positions');
 assert.match(indexHtml, /loopEffectiveNetValue\(loop\)/, 'loops KPIs and cards must rank and sum economic net value');
 assert.match(indexHtml, /function perpsPairLatestSessionPnl\(/, 'perps positions must compute latest-session PnL for open rows');
