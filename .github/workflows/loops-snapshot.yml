@@ -18,7 +18,7 @@ jobs:
           STATUS=$(curl -s -o /tmp/loops-cron.json -w "%{http_code}" \
             --max-time 180 \
             -H "x-sync-secret: ${SYNC_SECRET}" \
-            "https://testedefi.vercel.app/api/loop-rates?loopCronSnapshot=1")
+            "https://testedefi.vercel.app/api/aave-proxy?loopCronSnapshot=1")
           echo "Response status: $STATUS"
           cat /tmp/loops-cron.json || true
           if [ "$STATUS" != "200" ]; then

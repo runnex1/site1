@@ -668,7 +668,13 @@ const loopSnapshotsJs = readFileSync(join(ROOT, 'lib', 'loop-snapshots.js'), 'ut
 assert.match(loopSnapshotsJs, /economicNetValue/, 'loop snapshots must persist Merkl-inclusive economic net value');
 assert.match(loopSnapshotsJs, /LOOP_SNAPSHOT_BUCKET_HOURS = 3/, 'loop snapshots must bucket history on 3h intervals');
 assert.match(loopSnapshotsJs, /function appendLoopSnapshotStore\(store, data/, 'loop snapshots must append server-side history');
+assert.match(loopSnapshotsJs, /function loopPositionHistoryKey\(/, 'loop snapshots must use stable history keys across Fluid NFT id changes');
 assert.match(aaveProxyJs, /loopCronSnapshot/, 'loop cron snapshots must be exposed through aave-proxy');
+assert.match(indexHtml, /function loopHistoryPositionMatch\(/, 'loop history must match snapshots by stable history key');
+assert.match(indexHtml, /\/api\/loop-snapshots/, 'loops tab must hydrate snapshots from dedicated endpoint');
+assert.match(indexHtml, /watcherWallets: watcherWallets/, 'loop sync must POST yield wallets so cron can snapshot server-side');
+const loopsWorkflow = readFileSync(join(ROOT, '.github', 'workflows', 'loops-snapshot.yml'), 'utf8');
+assert.match(loopsWorkflow, /aave-proxy\?loopCronSnapshot=1/, 'GitHub cron must hit loopCronSnapshot directly, not loop-rates rewrite');
 assert.match(aaveProxyJs, /vault:loop_snapshots/, 'loop snapshots must persist in KV');
 assert.match(syncJs, /loopSnapshots === '1'/, 'sync endpoint must hydrate loop snapshot history');
 assert.match(indexHtml, /loop-history-chart/, 'loop cards must render history below the supply/borrow meter');
@@ -713,17 +719,18 @@ assert.match(indexHtml, /30d APY/, 'loop cards must show 30d realized APY');
 }
 
 {
-  const { appendLoopSnapshotStore, loopSnapshotBucketKey } = require('../lib/loop-snapshots.js');
+  const { appendLoopSnapshotStore, loopSnapshotBucketKey, loopPositionHistoryKey } = require('../lib/loop-snapshots.js');
   const ts = Date.UTC(2026, 5, 29, 13, 0);
   const data = {
     updatedAt: ts,
     wallets: ['0x07e6ae8F553DC77B8b372e4d20dAb797475E6119'],
-    positions: [{ id: 'aave:1', protocol: 'Aave', totalBorrowed: 100, netValue: 10, totalSupplied: 110, netApy: 5 }],
+    positions: [{ id: 'aave:1', protocol: 'Aave', marketName: 'USDe/USDm', wallet: '0xAbC', chainId: 1, totalBorrowed: 100, netValue: 10, totalSupplied: 110, netApy: 5 }],
   };
   const bucket = loopSnapshotBucketKey(ts);
   const store = appendLoopSnapshotStore({}, data);
   assert.equal(Object.keys(store).length, 1, 'first loop snapshot must be stored');
   assert.equal(store[bucket].positions[0].id, 'aave:1');
+  assert.equal(store[bucket].positions[0].historyKey, loopPositionHistoryKey(data.positions[0]));
   const store2 = appendLoopSnapshotStore(store, data);
   assert.equal(Object.keys(store2).length, 1, 'same 3h bucket must not duplicate loop snapshots');
 }

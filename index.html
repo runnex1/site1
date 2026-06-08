@@ -8677,7 +8677,7 @@ function switchTab(tab, opts = {}) {
     if (_pc) _pc.classList.toggle('tab-watcher', tab === 'watcher');
     if (_pc) _pc.classList.toggle('tab-perps', tab === 'perps');
     if (tab === 'terminal') { terminalRenderAlerts(); }
-    if (tab === 'loops') { loopsLoadSnapshotsLocal(); renderLoops(); maybeAutoSyncLoopPositions(); loopsEnsureSnapshotsHydrated(); }
+    if (tab === 'loops') { loopsLoadSnapshotsLocal(); renderLoops(); maybeAutoSyncLoopPositions(); loopsEnsureSnapshotsHydrated({ force: true }); }
     if (tab === 'prediction') {
         renderPredSubtabs();
         renderPredictionMarkets();
@@ -11124,6 +11124,7 @@ function loopsAppendSnapshotFromApiData(data) {
             const economicNetValue = Number(p.economicNetValue ?? netValue + merklRewardsUsd);
             return {
                 id: p.id,
+                historyKey: loopPositionHistoryKey(p),
                 protocol: p.protocol,
                 marketName: p.marketName,
                 wallet: p.wallet,
@@ -11155,36 +11156,64 @@ function loopsAppendSnapshotFromApiData(data) {
     return true;
 }
 
-async function loopsEnsureSnapshotsHydrated() {
+function loopsResetSnapshotHydrate() {
+    _loopSnapshotsHydratePromise = null;
+}
+
+function loopPositionHistoryKey(pos) {
+    const protocol = String(pos?.protocol || '').trim().toLowerCase();
+    const wallet = String(pos?.wallet || '').trim().toLowerCase();
+    const chainId = String(pos?.chainId ?? '');
+    const marketName = String(pos?.marketName || '').trim().toLowerCase();
+    if (!protocol || !wallet || chainId === '') return String(pos?.id || '');
+    return `${protocol}:${wallet}:${chainId}:${marketName}`;
+}
+
+function loopHistoryPositionMatch(live, stored) {
+    if (!live || !stored) return false;
+    if (live.id && stored.id && live.id === stored.id) return true;
+    const liveKey = loopPositionHistoryKey(live);
+    const storedKey = stored.historyKey || loopPositionHistoryKey(stored);
+    return !!(liveKey && storedKey && liveKey === storedKey);
+}
+
+function loopsSnapshotBucketCount() {
+    return Object.keys(loopSnapshotsStore || {}).length;
+}
+
+async function loopsEnsureSnapshotsHydrated({ force = false } = {}) {
+    if (force) loopsResetSnapshotHydrate();
     if (_loopSnapshotsHydratePromise) return _loopSnapshotsHydratePromise;
     _loopSnapshotsHydratePromise = (async () => {
         loopsLoadSnapshotsLocal();
         try {
-            const [snapRes, logoRes] = await Promise.all([
-                fetch('/api/sync?loopSnapshots=1', { cache: 'no-store', signal: AbortSignal.timeout(8000) }),
-                fetch('/api/sync?logoCache=1', { cache: 'no-store', signal: AbortSignal.timeout(8000) }),
-            ]);
+            const snapRes = await fetch('/api/loop-snapshots', { cache: 'no-store', signal: AbortSignal.timeout(20000) });
             const snapBody = await snapRes.json().catch(() => ({}));
-            const logoBody = await logoRes.json().catch(() => ({}));
-            let changed = false;
             if (snapRes.ok && snapBody?.loopSnapshots) {
                 loopsMergeSnapshotsFromServer(snapBody.loopSnapshots);
-                changed = true;
+                renderLoops();
             }
-            if (logoRes.ok && logoBody?.logoCache) {
-                try { LogoEngine.importCache(logoBody.logoCache); changed = true; } catch (e) {}
-            }
-            if (changed) renderLoops();
-        } catch (e) {}
+            try {
+                const logoRes = await fetch('/api/sync?logoCache=1', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+                const logoBody = await logoRes.json().catch(() => ({}));
+                if (logoRes.ok && logoBody?.logoCache) {
+                    LogoEngine.importCache(logoBody.logoCache);
+                    renderLoops();
+                }
+            } catch (e) {}
+        } catch (e) {
+            loopsResetSnapshotHydrate();
+        }
     })();
     return _loopSnapshotsHydratePromise;
 }
 
-function loopHistoryPoints(positionId) {
-    if (!positionId) return [];
+function loopHistoryPoints(positionOrId) {
+    const live = typeof positionOrId === 'object' ? positionOrId : { id: String(positionOrId || '') };
+    if (!live?.id && !live?.protocol) return [];
     return Object.values(loopSnapshotsStore || {})
         .map(snap => {
-            const pos = (snap.positions || []).find(p => p.id === positionId);
+            const pos = (snap.positions || []).find(p => loopHistoryPositionMatch(live, p));
             if (!pos) return null;
             return {
                 ts: Number(snap.fetchedAt) || 0,
@@ -11422,6 +11451,14 @@ async function syncLoopApiPositions({ silent = false } = {}) {
         loopApiState.coverage = json.coverage || null;
         loopsPersistApiState();
         loopsAppendSnapshotFromApiData(json);
+        try {
+            await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ watcherWallets: watcherWallets || [] }),
+                keepalive: true,
+            });
+        } catch (e) {}
     } catch (e) {
         loopApiState.errors = [{ provider: 'loops', message: e.message || 'Live loop sync failed' }];
         if (!silent) alert('Live loop sync failed: ' + (e.message || e));
@@ -13998,7 +14035,9 @@ function renderLoops() {
     setText('loopsKpiHealthSub', weakest ? `${weakest.p.name} - ${weakest.sectionLabel}` : 'No health ratio');
     setHealthClass(healthEl, weakestCls);
     const liveStamp = loopApiState.updatedAt ? new Date(loopApiState.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-    setText('loopsUpdated', usingLive ? `live ${liveStamp}` : 'import fallback');
+    const bucketCount = loopsSnapshotBucketCount();
+    const bucketHint = bucketCount ? ` · ${bucketCount} snapshot bucket${bucketCount === 1 ? '' : 's'}` : '';
+    setText('loopsUpdated', (usingLive ? `live ${liveStamp}` : 'import fallback') + bucketHint);
 
     function posRows(positions, side) {
         if (!positions.length) return '<div style="font-size:0.72rem;color:var(--t3);font-style:italic">-</div>';
@@ -14092,15 +14131,15 @@ function renderLoops() {
         const networkTag = network && network !== '-' ? `<span class="loop-tag network">${dashEsc(network)}</span>` : '';
         const apyCls = Number.isFinite(totalApr) ? (totalApr > 0 ? '' : totalApr < 0 ? 'neg' : 'neu') : 'neu';
         const apyText = Number.isFinite(totalApr) ? totalApr.toFixed(2) + '%' : '-';
-        const historyPoints = loop.live && loop.raw?.id ? loopHistoryPoints(loop.raw.id) : [];
+        const historyPoints = loop.live && loop.raw ? loopHistoryPoints(loop.raw) : [];
         const liveEndValue = loop.live && loop.raw
             ? Number(loop.raw.economicNetValue ?? loop.raw.netValue ?? netValue)
             : null;
         const liveEndTs = loopApiState.updatedAt || Date.now();
-        const apy7dHtml = loop.live && loop.raw?.id
+        const apy7dHtml = loop.live && loop.raw
             ? loopSnapshotApyMetricHtml(7, historyPoints, liveEndValue, liveEndTs)
             : '<div class="loop-metric"><div class="loop-metric-label">7d APY</div><div class="loop-metric-value neu">-</div></div>';
-        const apy30dHtml = loop.live && loop.raw?.id
+        const apy30dHtml = loop.live && loop.raw
             ? loopSnapshotApyMetricHtml(30, historyPoints, liveEndValue, liveEndTs)
             : '<div class="loop-metric"><div class="loop-metric-label">30d APY</div><div class="loop-metric-value neu">-</div></div>';
 
@@ -14138,7 +14177,7 @@ function renderLoops() {
                 </div>
                 <div class="loop-status ${statusCls}">${statusText(hCls)}</div>
             </div>
-            ${loop.live && loop.raw?.id ? loopHistoryChartHtml(loopHistoryPoints(loop.raw.id)) : ''}
+            ${loop.live && loop.raw ? loopHistoryChartHtml(loopHistoryPoints(loop.raw)) : ''}
             <div class="loop-positions">
                 <div class="loop-pos-group">
                     <div class="loop-pos-group-label supply">Supplied</div>
