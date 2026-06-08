@@ -23,6 +23,8 @@ const {
   filterFullyClosedPairs,
   mergeNadoMatches,
   pairOpenedAtMs,
+  sumPairFundingPaymentsSince,
+  applyPairFundingSinceOpen,
   computeNadoLiquidationPx,
   liquidationPriceFrom,
   normalizeGrvtPositionRow,
@@ -610,6 +612,37 @@ assert.match(indexHtml, /perpsRenderAlerts\(data\.paired \|\| \[\], data\.unhedg
 assert.doesNotMatch(perpsJs, /positions\.reduce\(\(s, p\) => s \+ \(p\.notional \|\| 0\), 0\)/, 'Extended notional must not be used as equity');
 assert.match(perpsJs, /funding: extendedFundingWindow,/, 'Extended response must expose selected-window funding');
 assert.match(perpsJs, /fundingSinceOpen: extendedFundingSinceOpen,/, 'Extended response must preserve since-open funding separately');
+assert.match(perpsJs, /function applyPairFundingSinceOpen\(/, 'paired funding since open must use payment history');
+assert.match(perpsJs, /applyPairFundingSinceOpen\(pair, base, venueA, venueB, paymentSources, sinceMs\)/, 'pair funding meta must override venue cumFunding with payment sums');
+
+{
+  const openMs = 1768953600006;
+  const paymentSources = {
+    hyperliquid: [
+      { symbol: 'IP', time: openMs + 1000, usdc: -10 },
+      { symbol: 'IP', time: openMs - 1000, usdc: -999 },
+    ],
+    grvt: [
+      { symbol: 'IP', time: openMs + 2000, usdc: 50 },
+      { symbol: 'IP', time: openMs + 3000, usdc: 25 },
+    ],
+  };
+  const total = sumPairFundingPaymentsSince('IP', 'hyperliquid', 'grvt', paymentSources, openMs);
+  assert.equal(total, 65, 'funding since open must sum signed payment usdc after pair open, not position cumFunding');
+  const pair = {
+    pairType: 'hl_grvt',
+    combinedUpnl: 30,
+    realized: 0,
+    fees: 5,
+    fundingSinceOpen: -45,
+    netArbPnl: -20,
+  };
+  applyPairFundingSinceOpen(pair, 'IP', 'hyperliquid', 'grvt', paymentSources, openMs);
+  assert.equal(pair.fundingSinceOpen, 65, 'applyPairFundingSinceOpen must replace stale cumFunding totals');
+  assert.equal(pair.hlFundingSinceOpen, -10, 'HL leg funding since open must come from payment history');
+  assert.equal(pair.legBFundingSinceOpen, 75, 'GRVT leg funding since open must come from payment history');
+  assert.equal(pair.netArbPnl, 90, 'net arb PnL must refresh after funding since open correction');
+}
 assert.match(perpsJs, /stats\.funding_rate/, 'Extended rates must tolerate snake_case funding-rate fields');
 assert.match(perpsJs, /function enrichClosedPairsSessionPnl\(closedPairs, dailySeriesInputs/, 'closed positions must enrich funding and fees from the latest performance session');
 assert.match(perpsJs, /enrichClosedPairsSessionPnl\(freshClosedPairs/, 'dashboard closed pairs must use session-aligned PnL');
