@@ -26172,16 +26172,32 @@ function perpsLegCurrentPx(symbol, venue, leg) {
     return key ? perpsNumOrNull(row?.[key]) : null;
 }
 
-function perpsLiquidationRiskStyle(currentPx, liquidationPx) {
+const PERPS_RISK_FULL_PCT = 20;
+const PERPS_RISK_START_PCT_UP = 58.3;
+const PERPS_RISK_START_PCT_DOWN = 50;
+
+function perpsPriceRiskLevel(currentPx, levelPx) {
     const current = perpsNumOrNull(currentPx);
-    const liq = perpsNumOrNull(liquidationPx);
-    if (current == null || liq == null) return '';
-    const distancePct = Math.abs(current - liq) / current * 100;
-    const risk = distancePct <= 20 ? 1 : Math.max(0, Math.min(1, (50 - distancePct) / 30));
+    const level = perpsNumOrNull(levelPx);
+    if (current == null || level == null) return 0;
+    const distancePct = Math.abs(current - level) / current * 100;
+    const goingUp = level > current;
+    const startPct = goingUp ? PERPS_RISK_START_PCT_UP : PERPS_RISK_START_PCT_DOWN;
+    const span = startPct - PERPS_RISK_FULL_PCT;
+    if (distancePct <= PERPS_RISK_FULL_PCT) return 1;
+    return Math.max(0, Math.min(1, (startPct - distancePct) / span));
+}
+
+function perpsPriceRiskStyle(currentPx, levelPx) {
+    const risk = perpsPriceRiskLevel(currentPx, levelPx);
     if (risk <= 0) return '';
     const green = Math.round(156 - risk * 64);
     const blue = Math.round(187 - risk * 65);
     return `style="color:rgb(255,${green},${blue});text-shadow:0 0 ${Math.round(6 + risk * 8)}px rgba(255,92,122,${(0.18 + risk * 0.36).toFixed(2)})"`;
+}
+
+function perpsLiquidationRiskStyle(currentPx, liquidationPx) {
+    return perpsPriceRiskStyle(currentPx, liquidationPx);
 }
 
 function perpsPositionMidPx(p, displayLegs) {
@@ -26210,13 +26226,13 @@ function perpsTpSlDiffPct(a, b) {
     return avg > 0 ? (Math.abs(left - right) / avg) * 100 : null;
 }
 
-function perpsFmtTpSlStackHtml(tpPx, slPx) {
+function perpsFmtTpSlStackHtml(tpPx, slPx, currentPx) {
     const tp = perpsNumOrNull(tpPx);
     const sl = perpsNumOrNull(slPx);
     if (tp == null && sl == null) return '<div class="perps-pos-liq-val">—</div>';
     const rows = [];
-    if (tp != null) rows.push(`<div class="perps-pos-liq-val">${perpsFmtPx(tp)}</div>`);
-    if (sl != null) rows.push(`<div class="perps-pos-liq-val">${perpsFmtPx(sl)}</div>`);
+    if (tp != null) rows.push(`<div class="perps-pos-liq-val" ${perpsPriceRiskStyle(currentPx, tp)}>${perpsFmtPx(tp)}</div>`);
+    if (sl != null) rows.push(`<div class="perps-pos-liq-val" ${perpsPriceRiskStyle(currentPx, sl)}>${perpsFmtPx(sl)}</div>`);
     return `<div class="perps-pos-tpsl-pair">${rows.join('')}</div>`;
 }
 
@@ -26247,13 +26263,22 @@ function perpsPositionTpSlStackHtml(p, displayLegs) {
     const warn = mismatch
         ? '<div class="perps-pos-tpsl-warn" title="TP/SL differ across venues or are missing on one leg">⚠ Mismatch</div>'
         : '';
+    const tpSlEntry = (entry) => {
+        const leg = entry?.leg || entry;
+        const venue = entry?.venue || leg?.venue;
+        const currentPx = perpsLegCurrentPx(p.symbol, venue, leg);
+        return perpsFmtTpSlStackHtml(leg?.tpPx, leg?.slPx, currentPx);
+    };
     if (!mismatch) {
-        const pool = comparable.length ? comparable.map(entry => entry.leg || entry) : legs;
-        const leg = pool.find(l => perpsNumOrNull(l.tpPx) != null || perpsNumOrNull(l.slPx) != null) || pool[0];
-        return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${perpsFmtTpSlStackHtml(leg?.tpPx, leg?.slPx)}</div>`;
+        const pool = comparable.length ? comparable : (displayLegs || []);
+        const entry = pool.find(e => {
+            const leg = e?.leg || e;
+            return perpsNumOrNull(leg?.tpPx) != null || perpsNumOrNull(leg?.slPx) != null;
+        }) || pool[0];
+        return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${tpSlEntry(entry)}</div>`;
     }
     return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${warn}${comparable.map(entry =>
-        perpsFmtTpSlStackHtml(entry.leg.tpPx, entry.leg.slPx)
+        tpSlEntry(entry)
     ).join('')}</div>`;
 }
 

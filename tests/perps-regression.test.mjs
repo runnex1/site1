@@ -1108,7 +1108,7 @@ assert.match(logoResolverJs, /async function coingeckoImageUrlForSymbol\(/, 'tok
 assert.match(logoResolverJs, /async function resolveTokenLogoDataUrl\(/, 'token logos must fall back to DeFiLlama after CoinGecko');
 assert.match(logoResolverJs, /readLocalLoopLogoDataUrl/, 'loop logos must support pinned USDm and JUICED assets');
 assert.match(indexHtml, /LOOP_TOKEN_LOGO_URLS/, 'loops tab must prefer pinned USDm and JUICED logos');
-assert.match(indexHtml, /perps-pos-liq-val">\$\{perpsFmtPx\(tp\)\}/, 'TP rows must use the same default liq price styling');
+assert.match(indexHtml, /perpsPriceRiskStyle\(currentPx, tp\)/, 'TP rows must use distance-based risk color like liq price');
 assert.match(logoResolverJs, /hasEmbeddedLogo\(next, target\.key\)/, 'resolved token logos must persist server-side without re-fetching');
 assert.match(logoResolverJs, /isLoopPinnedTokenLogo\(target\.symbol\)/, 'pinned loop token logos must refresh even when cached');
 assert.match(indexHtml, /logoCache=1/, 'loops tab must hydrate server logo cache');
@@ -1232,7 +1232,9 @@ assert.match(indexHtml, /<div>Liq Price<\/div>/, 'open positions must show a liq
 assert.match(indexHtml, /<div>TP\/SL<\/div>/, 'open positions must show a TP/SL column after Liq Price');
 assert.doesNotMatch(indexHtml, /<div>Basis uPnL<\/div>/, 'open positions must not show Basis uPnL column');
 assert.match(indexHtml, /function perpsPositionLiqStackHtml\(p, displayLegs\)/, 'open positions must render only liquidation prices in the Liq Price column');
-assert.match(indexHtml, /function perpsFmtTpSlStackHtml\(tpPx, slPx\)/, 'open positions must render TP above SL vertically');
+assert.match(indexHtml, /function perpsFmtTpSlStackHtml\(tpPx, slPx, currentPx\)/, 'open positions must render TP above SL vertically');
+assert.match(indexHtml, /perpsPriceRiskStyle\(currentPx, tp\)/, 'TP rows must use the same distance-based risk color as liq price');
+assert.match(indexHtml, /perpsPriceRiskStyle\(currentPx, sl\)/, 'SL rows must use the same distance-based risk color as liq price');
 assert.match(indexHtml, /function perpsPositionTpSlStackHtml\(p, displayLegs\)/, 'open positions must collapse common TP/SL across venues');
 assert.match(indexHtml, /function perpsComparableTpSlLegs\(displayLegs\)/, 'TP/SL mismatch must ignore Nado legs');
 assert.match(indexHtml, /venue !== 'nado'/, 'TP/SL mismatch must exclude Nado from cross-venue comparison');
@@ -1243,8 +1245,13 @@ assert.ok(indexHtml.includes('<span class="perps-pos-live-px">${perpsFmtPx(midPx
 assert.doesNotMatch(indexHtml, /perps-pos-mid-pill/, 'open positions must not wrap live price in a mid pill');
 assert.doesNotMatch(indexHtml, /<div>Price \/ Liq<\/div>/, 'old Price / Liq header must be removed');
 assert.doesNotMatch(indexHtml, /perps-pos-price-label">Px/, 'Liq Price column must not show current price labels');
-assert.match(indexHtml, /function perpsLiquidationRiskStyle\(currentPx, liquidationPx\)/, 'liquidation prices must be colored by distance to current price');
-assert.match(indexHtml, /distancePct <= 20 \? 1/, 'liquidation color must reach max red at 20 percent from liquidation');
+assert.match(indexHtml, /function perpsLiquidationRiskStyle\(currentPx, liquidationPx\)/, 'liquidation prices must use shared perpsPriceRiskStyle');
+assert.match(indexHtml, /function perpsPriceRiskStyle\(currentPx, levelPx\)/, 'liq and TP/SL must share asymmetric distance-based risk coloring');
+assert.match(indexHtml, /PERPS_RISK_START_PCT_UP = 58\.3/, 'upside risk tint must start within 58.3 percent of mark');
+assert.match(indexHtml, /PERPS_RISK_START_PCT_DOWN = 50/, 'downside risk tint must start within 50 percent of mark');
+assert.match(indexHtml, /if \(distancePct <= PERPS_RISK_FULL_PCT\) return 1/, 'risk color must reach max red at 20 percent from mark');
+assert.match(perpsJs, /function perpsPriceRiskLevel\(/, 'perps risk coloring must be shared in lib/perps.js');
+assert.match(perpsJs, /PERPS_RISK_START_PCT_UP = 58\.3/, 'shared perps risk module must use 58.3 percent upside threshold');
 assert.match(indexHtml, /hyperliquidMarkPx/, 'Hyperliquid current price must fall back to rate-spread mark price');
 assert.match(perpsJs, /function liquidationPriceFrom\(obj, pxFn = v => firstNumber\(v\)\)/, 'position mapping must use a tolerant liquidation price extractor');
 assert.match(perpsJs, /estimatedLiquidationPrice/, 'liquidation price extraction must check common estimated liquidation aliases');
@@ -1420,6 +1427,20 @@ assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketI
   }), v => (Number(v) >= 1e6 ? Number(v) / 1e9 : Number(v)));
   assert.ok(grvtLiq > 0 && grvtLiq < 0.5, 'GRVT must use API est_liquidation_price when provided');
   assert.equal(liquidationPriceFrom(normalizeGrvtPositionRow({ i: 'IP_USDT_Perp', s: '44000' })), null, 'GRVT must show no liquidation when API omits el');
+}
+
+{
+  const { perpsPriceRiskLevel, perpsPriceRiskStyle } = require('../lib/perps.js');
+  const mark = 0.36;
+
+  assert.equal(perpsPriceRiskLevel(mark, 0.57), 0, 'ONDO short SL at 0.57 must stay neutral at 58.3% upside distance');
+  assert.ok(perpsPriceRiskLevel(mark, 0.569) > 0, 'upside levels just inside 58.3% must start tinting red');
+  assert.equal(perpsPriceRiskLevel(mark, 0.432), 1, 'upside levels at 20% distance must be full red');
+  assert.equal(perpsPriceRiskLevel(mark, 0.18), 0, 'downside levels at 50% distance must stay neutral');
+  assert.ok(perpsPriceRiskLevel(mark, 0.20) > 0, 'downside levels inside 50% must start tinting red');
+  assert.ok(perpsPriceRiskLevel(mark, 0.287) >= 0.99, 'downside levels at 20% distance must be full red');
+  assert.equal(perpsPriceRiskStyle(mark, 0.57), '', 'neutral upside levels must not emit inline style');
+  assert.match(perpsPriceRiskStyle(mark, 0.40), /color:rgb\(255,/, 'warned upside levels must emit red-tint inline style');
 }
 
 {
