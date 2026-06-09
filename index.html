@@ -2778,8 +2778,66 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 0.55rem;
+  flex-wrap: nowrap;
+  margin-left: auto;
+}
+.protocol-positions-actions-main {
+  display: flex;
+  align-items: center;
   gap: 0.45rem;
   flex-wrap: wrap;
+}
+.protocol-positions-clear-btn { margin-right: 0.15rem; }
+.protocol-positions-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid rgba(0,212,170,0.28);
+  background: rgba(0,212,170,0.08);
+  color: var(--teal);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.protocol-positions-expand-btn:hover {
+  background: rgba(0,212,170,0.14);
+  border-color: rgba(0,212,170,0.42);
+  color: #8ff5dc;
+}
+.protocol-positions-expand-btn .icon-collapse { display: none; }
+.protocol-positions-expand-btn.active {
+  background: rgba(0,212,170,0.16);
+  border-color: rgba(0,212,170,0.45);
+  color: #b8fff0;
+}
+.protocol-positions-expand-btn.active .icon-expand { display: none; }
+.protocol-positions-expand-btn.active .icon-collapse { display: block; }
+
+#defiTab > .section.wallet-tokens-section > .data-table { max-height: 390px; }
+#defiTab > .section.protocol-positions-section > .data-table { max-height: 470px; }
+#defiTab.protocol-positions-focus > .section.wallet-tokens-section > .data-table {
+  max-height: 195px;
+  transition: max-height 0.25s ease;
+}
+#defiTab.protocol-positions-focus > .section.protocol-positions-section > .data-table {
+  max-height: min(calc(100vh - 240px), 803px);
+  transition: max-height 0.25s ease;
+}
+#defiTab.protocol-positions-focus .defi-side-stack {
+  max-height: calc(0.8 * (100vh - 210px));
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+#defiTab.protocol-positions-focus .defi-side-panel .defi-panel-body {
+  max-height: 184px;
+}
+#defiTab.protocol-positions-focus .defi-side-panel .defi-scroll.defi-panel-body {
+  max-height: 184px;
 }
 .protocol-positions-toolbar {
   display: flex;
@@ -6001,7 +6059,7 @@ body[data-active-tab="loops"] .page-content,
           <div class="defi-kpi-card"><div class="defi-kpi-label">Stablecoin Exposure</div><div class="defi-kpi-value" id="defiKpiStableExposure">$0</div><div class="defi-kpi-sub" id="defiKpiStableExposureSub">0.0% of DeFi value</div><div class="defi-mini-spark purple"></div></div>
           <div class="defi-system-status" id="defiSystemStatus" data-status-tip="System status loading..." onmouseenter="refreshDashboardSystemStatus()"><span></span>All operational</div>
         </div>
-        <div class="section">
+        <div class="section wallet-tokens-section">
           <div class="section-header">
             <div class="section-title">
               <div class="section-title-dot" style="background:var(--sky)"></div>
@@ -6051,23 +6109,23 @@ body[data-active-tab="loops"] .page-content,
               <span id="totalDefiApr" style="display:none;margin-left:0.6rem;font-size:0.72rem;font-weight:700;font-family:var(--ff-mono);padding:2px 9px;border-radius:var(--r-xs);background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:var(--indigo);"></span>
             </div>
             <div class="button-group protocol-positions-actions">
-              <button class="btn-base add-btn" onclick="openModal('protocol')">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add Protocol
-              </button>
-              <button class="btn-base import-btn" onclick="openModal('importProtocols')">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
-                Import Text
-              </button>
-              <button class="btn-base" onclick="openModal('jupiterPortfolio')"
-                style="background:rgba(155,93,255,0.12);color:#9b5dff;border-color:rgba(155,93,255,0.3);"
-                title="Fetch positions from Jupiter Portfolio API">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
-                Jupiter
-              </button>
-              <button class="btn-base danger-btn" onclick="deleteAllData('protocols')">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-                Clear
+              <div class="protocol-positions-actions-main">
+                <button class="btn-base add-btn" onclick="openModal('protocol')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Add Protocol
+                </button>
+                <button class="btn-base import-btn" onclick="openModal('importProtocols')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+                  Import Text
+                </button>
+                <button class="btn-base danger-btn protocol-positions-clear-btn" onclick="deleteAllData('protocols')">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                  Clear
+                </button>
+              </div>
+              <button type="button" class="protocol-positions-expand-btn" id="protocolPositionsExpandBtn" onclick="toggleProtocolPositionsFocus()" title="Expand protocol positions" aria-pressed="false" aria-label="Expand protocol positions">
+                <svg class="icon-expand" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M8 3H3v5"/><path d="M16 3h5v5"/><path d="M21 16v5h-5"/><path d="M8 21H3v-5"/></svg>
+                <svg class="icon-collapse" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>
               </button>
             </div>
           </div>
@@ -8654,6 +8712,7 @@ function switchTab(tab, opts = {}) {
     }
     if (tab === 'defi') {
         try { renderDefiCockpit(); } catch (e) { console.error('[DeFi cockpit]', e); }
+        restoreProtocolPositionsFocus();
     }
     if (tab === 'etf' && typeof refreshEtfLivePrices === 'function') {
         refreshEtfLivePrices();
@@ -13856,6 +13915,31 @@ function toggleProtocolDrawer(idx) {
     const open = drawer.classList.toggle('open');
     btn.classList.toggle('open', open);
     btn.querySelector('.chevron').textContent = open ? '▲' : '▼';
+}
+
+function toggleProtocolPositionsFocus() {
+    const tab = document.getElementById('defiTab');
+    const btn = document.getElementById('protocolPositionsExpandBtn');
+    if (!tab || !btn) return;
+    const on = tab.classList.toggle('protocol-positions-focus');
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.title = on ? 'Collapse protocol positions' : 'Expand protocol positions';
+    btn.setAttribute('aria-label', btn.title);
+    try { localStorage.setItem('vault-protocol-positions-focus', on ? '1' : '0'); } catch (e) {}
+}
+
+function restoreProtocolPositionsFocus() {
+    const tab = document.getElementById('defiTab');
+    const btn = document.getElementById('protocolPositionsExpandBtn');
+    if (!tab || !btn) return;
+    let on = false;
+    try { on = localStorage.getItem('vault-protocol-positions-focus') === '1'; } catch (e) {}
+    tab.classList.toggle('protocol-positions-focus', on);
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.title = on ? 'Collapse protocol positions' : 'Expand protocol positions';
+    btn.setAttribute('aria-label', btn.title);
 }
 
 function protocolNetworkLabel(p) {
@@ -21964,6 +22048,7 @@ function xHandleRemove(handle) {
 }
 // Allow pressing Enter in the X handle input
 document.addEventListener('DOMContentLoaded', () => {
+    restoreProtocolPositionsFocus();
     const inp = document.getElementById('xHandleInput');
     if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') xHandleAdd(); });
     xHandleRender();
