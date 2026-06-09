@@ -2891,16 +2891,6 @@ body::after {
 
 #defiTab > .section.wallet-tokens-section > .data-table { max-height: 390px; }
 #defiTab > .section.protocol-positions-section > .data-table { max-height: 560px; }
-#defiTab.protocol-positions-focus {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.55rem;
-}
-#defiTab.protocol-positions-focus > .defi-kpi-grid {
-  display: none;
-}
-#defiTab.protocol-positions-focus .defi-side-stack {
-  display: none;
-}
 #defiTab.protocol-positions-focus > .section.wallet-tokens-section > .section-header,
 #defiTab.protocol-positions-focus > .section.wallet-tokens-section > .pm-search-wrap,
 #defiTab.protocol-positions-focus > .section.wallet-tokens-section > .data-table {
@@ -2909,9 +2899,6 @@ body::after {
 #defiTab.protocol-positions-focus > .section.wallet-tokens-section > .wallet-focus-strip {
   display: flex;
 }
-#defiTab.protocol-positions-focus > .section.protocol-positions-section {
-  grid-column: 1 / -1;
-}
 #defiTab.protocol-positions-focus > .section.protocol-positions-section .protocol-positions-header {
   padding: 0.55rem 1rem 0.48rem;
 }
@@ -2919,8 +2906,8 @@ body::after {
   padding: 0.42rem 1rem 0.48rem;
 }
 #defiTab.protocol-positions-focus > .section.protocol-positions-section > .data-table {
-  max-height: calc(100vh - 86px);
-  min-height: calc(100vh - 86px);
+  max-height: calc(100vh - 320px);
+  min-height: 560px;
   margin-bottom: 0.35rem;
   transition: max-height 0.25s ease, min-height 0.25s ease;
 }
@@ -6217,7 +6204,7 @@ body[data-active-tab="loops"] .page-content,
                   Clear
                 </button>
               </div>
-              <button type="button" class="protocol-positions-expand-btn" id="protocolPositionsExpandBtn" onclick="toggleProtocolPositionsFocus()" title="Expand protocol positions (E)" aria-pressed="false" aria-label="Expand protocol positions (E)">
+              <button type="button" class="protocol-positions-expand-btn" id="protocolPositionsExpandBtn" onclick="toggleProtocolPositionsFocus()" title="Expand protocol positions — hides wallet (E)" aria-pressed="false" aria-label="Expand protocol positions — hides wallet (E)">
                 <svg class="icon-expand" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M8 3H3v5"/><path d="M16 3h5v5"/><path d="M21 16v5h-5"/><path d="M8 21H3v-5"/></svg>
                 <svg class="icon-collapse" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>
               </button>
@@ -14022,7 +14009,7 @@ function toggleProtocolPositionsFocus() {
     const on = tab.classList.toggle('protocol-positions-focus');
     btn.classList.toggle('active', on);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    btn.title = on ? 'Collapse protocol positions (E)' : 'Expand protocol positions (E)';
+    btn.title = on ? 'Collapse protocol positions (E)' : 'Expand protocol positions — hides wallet (E)';
     btn.setAttribute('aria-label', btn.title);
     if (strip) strip.setAttribute('aria-hidden', on ? 'false' : 'true');
     syncWalletFocusStrip();
@@ -14040,7 +14027,7 @@ function restoreProtocolPositionsFocus() {
     tab.classList.toggle('protocol-positions-focus', on);
     btn.classList.toggle('active', on);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    btn.title = on ? 'Collapse protocol positions (E)' : 'Expand protocol positions (E)';
+    btn.title = on ? 'Collapse protocol positions (E)' : 'Expand protocol positions — hides wallet (E)';
     btn.setAttribute('aria-label', btn.title);
     if (strip) strip.setAttribute('aria-hidden', on ? 'false' : 'true');
     syncWalletFocusStrip();
