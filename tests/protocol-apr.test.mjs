@@ -10,6 +10,8 @@ assert.match(indexHtml, /function collectDeFiPriceSymbols\(\)/, 'DeFi price fetc
 assert.match(indexHtml, /function protocolPositionUnitPrice\(pos\)/, 'protocol unit price must prefer CoinGecko');
 assert.match(indexHtml, /AUSD:'agora-dollar'/, 'AUSD stablecoin must map to agora-dollar');
 assert.match(indexHtml, /async function resolveGeckoIdByMarketCap\(symbol\)/, 'ambiguous tickers must resolve by market cap');
+assert.match(indexHtml, /function sectionHasLendingLoop\(sec\)/, 'lending loop sections must be detectable');
+assert.match(indexHtml, /function wrapDrawerLendingLoop\(bodyHtml, breakdown\)/, 'expanded loops must show total APY between supplied and borrowed');
 
 const PROTO_STABLE_PEG_MIN = 0.998;
 const PROTO_STABLE_PEG_MAX = 1.004;
