@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vault — Portfolio Intelligence</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="lib/defi-pnl.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -2967,6 +2968,87 @@ body::after {
   font-family: var(--ff-mono);
   font-size: 0.78rem;
   color: var(--t2);
+}
+
+.defi-pnl-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+.defi-pnl-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  background: rgba(4,14,20,0.55);
+  border: 1px solid rgba(148,163,184,0.16);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.defi-pnl-toggle-btn {
+  border: none;
+  background: transparent;
+  color: var(--t3);
+  font-family: var(--ff-body);
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 0.35rem 0.55rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.defi-pnl-toggle-btn + .defi-pnl-toggle-btn {
+  border-left: 1px solid rgba(148,163,184,0.14);
+}
+.defi-pnl-toggle-btn.active {
+  background: rgba(0,212,170,0.12);
+  color: var(--teal);
+}
+.defi-pnl-toggle-btn:hover:not(.active) {
+  color: var(--t2);
+  background: rgba(148,163,184,0.06);
+}
+#defiTab .defi-pnl-panel .defi-panel-body {
+  max-height: min(520px, calc(100vh - 300px));
+  min-height: 360px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.defi-pnl-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.55rem;
+}
+.defi-pnl-summary-label {
+  font-family: var(--ff-display);
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.defi-pnl-summary-value {
+  font-family: var(--ff-mono);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--t1);
+}
+.defi-pnl-summary-value.good { color: var(--green); }
+.defi-pnl-summary-value.bad { color: var(--red); }
+.defi-pnl-chart-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 220px;
+}
+.defi-pnl-empty {
+  display: none;
+  margin-top: 0.75rem;
+  font-size: 0.74rem;
+  color: var(--t3);
+  line-height: 1.45;
 }
 .protocol-positions-toolbar {
   display: flex;
@@ -6301,18 +6383,24 @@ body[data-active-tab="loops"] .page-content,
         </div>
 
         <div class="defi-side-stack">
-          <div class="defi-panel defi-side-panel">
-            <div class="section-header">
-              <div class="section-title"><div class="section-title-dot" style="background:var(--red)"></div>Risk &amp; Health</div>
+          <div class="defi-panel defi-side-panel defi-pnl-panel">
+            <div class="section-header defi-pnl-panel-header">
+              <div class="section-title"><div class="section-title-dot" style="background:var(--teal)"></div>PNL</div>
+              <div class="defi-pnl-toggle" role="tablist" aria-label="PNL view">
+                <button type="button" class="defi-pnl-toggle-btn active" data-view="wallet" onclick="switchDefiPnlView('wallet', this)">Wallet Tokens</button>
+                <button type="button" class="defi-pnl-toggle-btn" data-view="protocol" onclick="switchDefiPnlView('protocol', this)">Protocol Positions</button>
+              </div>
             </div>
-            <div class="defi-panel-body" id="defiRiskHealthPanel"></div>
-          </div>
-          <div class="defi-panel defi-side-panel">
-            <div class="section-header">
-              <div class="section-title"><div class="section-title-dot" style="background:var(--sky)"></div>Yield Breakdown</div>
-              <button class="defi-link-btn" type="button" onclick="defiScrollToProtocols()">View details</button>
+            <div class="defi-panel-body defi-pnl-body">
+              <div class="defi-pnl-summary">
+                <span class="defi-pnl-summary-label">Total PNL</span>
+                <span class="defi-pnl-summary-value" id="defiPnlTotal">$0</span>
+              </div>
+              <div class="defi-pnl-chart-wrap">
+                <canvas id="defiPnlChart"></canvas>
+              </div>
+              <div class="defi-pnl-empty" id="defiPnlEmpty">Add wallet tokens or import protocol positions to start tracking cost-basis PNL.</div>
             </div>
-            <div class="defi-panel-body" id="defiYieldBreakdownPanel"></div>
           </div>
           <div class="defi-panel defi-side-panel">
             <div class="section-header">
@@ -8311,6 +8399,7 @@ function maybeSaveSnapshot() {
             pmPositionCount: (data.predictionMarkets||[]).length,
         };
         localStorage.setItem('portfolio-snapshots', JSON.stringify(snapshots));
+        appendDefiPnlWalletSnapshot();
     } catch(e) { console.warn('Snapshot save failed:', e); }
 }
 
@@ -9912,6 +10001,7 @@ function mergeToken(symbol, amount, value) {
     const existing = data.tokens.find(t => t.symbol.toUpperCase() === symbol.toUpperCase());
     if (existing) { existing.amount += amount; existing.value += value; }
     else { data.tokens.push({ symbol, amount, value }); }
+    scheduleDefiPnlWalletSnapshot();
 }
 
 function parseAndAddTokens(text) {
@@ -10434,6 +10524,7 @@ function setTokenMinFilter(value) {
 function deleteToken(index) {
     if (confirm('Delete this token?')) {
         data.tokens.splice(index, 1);
+        appendDefiPnlWalletSnapshot();
         saveData();
         updateUI();
     }
@@ -10850,6 +10941,186 @@ function defiAddPanelNote() {
         }
     });
 }
+// =============================================================================
+// DeFi PNL chart (wallet tokens + protocol positions, FIFO cost basis)
+// =============================================================================
+const DEFI_PNL_WALLET_LOG_KEY = 'vault-defi-pnl-wallet-log';
+let _defiPnlView = 'wallet';
+let _defiPnlChart = null;
+let _defiPnlWalletSnapTimer = null;
+
+function restoreDefiPnlView() {
+    try {
+        const saved = localStorage.getItem('vault-defi-pnl-view');
+        if (saved === 'protocol' || saved === 'wallet') _defiPnlView = saved;
+    } catch (e) {}
+    document.querySelectorAll('.defi-pnl-toggle-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.view === _defiPnlView);
+    });
+}
+
+function switchDefiPnlView(view, btn) {
+    _defiPnlView = view === 'protocol' ? 'protocol' : 'wallet';
+    document.querySelectorAll('.defi-pnl-toggle-btn').forEach(b => {
+        b.classList.toggle('active', b === btn || b.dataset.view === _defiPnlView);
+    });
+    try { localStorage.setItem('vault-defi-pnl-view', _defiPnlView); } catch (e) {}
+    renderDefiPnlPanel();
+}
+
+function appendDefiPnlWalletSnapshot() {
+    if (!window.DefiPnl || !Array.isArray(data.tokens)) return;
+    try {
+        const entry = { ts: Date.now(), tokens: DefiPnl.normalizeTokensForPnl(data.tokens) };
+        const log = JSON.parse(localStorage.getItem(DEFI_PNL_WALLET_LOG_KEY) || '[]');
+        const fp = JSON.stringify(entry.tokens);
+        const last = log[log.length - 1];
+        if (last && JSON.stringify(last.tokens) === fp) return;
+        log.push(entry);
+        if (log.length > 400) log.splice(0, log.length - 400);
+        localStorage.setItem(DEFI_PNL_WALLET_LOG_KEY, JSON.stringify(log));
+    } catch (e) { console.warn('[DeFi PNL wallet log]', e); }
+}
+
+function scheduleDefiPnlWalletSnapshot() {
+    clearTimeout(_defiPnlWalletSnapTimer);
+    _defiPnlWalletSnapTimer = setTimeout(appendDefiPnlWalletSnapshot, 500);
+}
+
+function collectWalletPnlSnapshots() {
+    if (!window.DefiPnl) return [];
+    const raw = [];
+    try {
+        JSON.parse(localStorage.getItem(DEFI_PNL_WALLET_LOG_KEY) || '[]').forEach(e => {
+            raw.push({ ts: Number(e.ts), tokens: e.tokens || [] });
+        });
+    } catch (e) {}
+    try {
+        const weekly = JSON.parse(localStorage.getItem('portfolio-snapshots') || '{}');
+        Object.values(weekly).forEach(snap => {
+            if (!Array.isArray(snap?.tokens)) return;
+            const ts = Date.parse(snap.date) || Date.now();
+            raw.push({ ts, tokens: snap.tokens });
+        });
+    } catch (e) {}
+    if (Array.isArray(data.tokens) && data.tokens.length) {
+        raw.push({ ts: Date.now(), tokens: DefiPnl.normalizeTokensForPnl(data.tokens) });
+    }
+    return DefiPnl.dedupePnlSnapshots(raw);
+}
+
+function collectProtocolPnlSnapshots() {
+    if (!window.DefiPnl) return [];
+    const raw = [];
+    try {
+        getProtocolRegularImports().forEach(e => {
+            raw.push({ ts: Number(e.ts), positions: e.positions || {} });
+        });
+        getProtocolSnapshots().forEach(e => {
+            raw.push({
+                ts: Number(e.ts),
+                positions: e.positions || buildPositionMap(e.protocols || []),
+            });
+        });
+    } catch (e) {}
+    if (Array.isArray(data.protocols) && data.protocols.length) {
+        raw.push({ ts: Date.now(), positions: buildPositionMap(data.protocols) });
+    }
+    return DefiPnl.dedupePnlSnapshots(raw);
+}
+
+function renderDefiPnlPanel() {
+    if (!window.DefiPnl) return;
+    restoreDefiPnlView();
+    const totalEl = document.getElementById('defiPnlTotal');
+    const emptyEl = document.getElementById('defiPnlEmpty');
+    const chartWrap = document.querySelector('.defi-pnl-chart-wrap');
+    const canvas = document.getElementById('defiPnlChart');
+    if (!totalEl || !canvas) return;
+
+    const series = _defiPnlView === 'protocol'
+        ? DefiPnl.computeProtocolPnlSeries(collectProtocolPnlSnapshots())
+        : DefiPnl.computeWalletPnlSeries(collectWalletPnlSnapshots());
+    const points = series.points || [];
+
+    if (points.length < 2) {
+        if (emptyEl) emptyEl.style.display = 'block';
+        if (chartWrap) chartWrap.style.display = 'none';
+        totalEl.textContent = dashSignedUsd(series.total || 0);
+        totalEl.classList.remove('good', 'bad');
+        if (_defiPnlChart) { _defiPnlChart.destroy(); _defiPnlChart = null; }
+        return;
+    }
+
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (chartWrap) chartWrap.style.display = 'block';
+
+    const total = Number(series.total || 0);
+    totalEl.textContent = dashSignedUsd(total);
+    totalEl.classList.toggle('good', total >= 0);
+    totalEl.classList.toggle('bad', total < 0);
+
+    const labels = points.map(p => p.label || '');
+    const values = points.map(p => p.totalPnl);
+    const color = total >= 0 ? '#35E27A' : '#FF5757';
+    const fill = total >= 0 ? 'rgba(53,226,122,0.14)' : 'rgba(255,87,87,0.14)';
+
+    if (_defiPnlChart) {
+        _defiPnlChart.data.labels = labels;
+        _defiPnlChart.data.datasets[0].data = values;
+        _defiPnlChart.data.datasets[0].borderColor = color;
+        _defiPnlChart.data.datasets[0].backgroundColor = fill;
+        _defiPnlChart.options.scales.y.ticks.callback = v => dashSignedUsd(v);
+        _defiPnlChart.update('none');
+        return;
+    }
+
+    _defiPnlChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Total PNL',
+                data: values,
+                borderColor: color,
+                backgroundColor: fill,
+                fill: true,
+                pointRadius: 0,
+                tension: 0.35,
+                borderWidth: 2,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label(ctx) { return `Total PNL: ${dashSignedUsd(ctx.raw)}`; },
+                    },
+                },
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: 'rgba(226,232,240,0.62)', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 4 },
+                },
+                y: {
+                    grid: { color: 'rgba(148,163,184,0.095)' },
+                    ticks: {
+                        color: 'rgba(226,232,240,0.62)',
+                        font: { family: 'JetBrains Mono', size: 10 },
+                        maxTicksLimit: 4,
+                        callback(v) { return dashSignedUsd(v); },
+                    },
+                },
+            },
+        },
+    });
+}
+
 function renderDefiYieldPanel(avg) {
     const yieldPanel = document.getElementById('defiYieldBreakdownPanel');
     if (!yieldPanel) return;
@@ -10992,15 +11263,8 @@ function renderDefiCockpit() {
     setText('defiKpiStableExposureSub', `${totalWallet + totalProtos ? ((stableExposure / (totalWallet + totalProtos)) * 100).toFixed(1) : '0.0'}% of DeFi value`);
     setText('defiKpiAlerts', `${stats.critical} / ${stats.warning}`);
 
-    try { renderDefiRiskPanel(totalWallet, totalProtos); } catch (e) {
-        console.error('[DeFi risk panel]', e);
-        const risk = document.getElementById('defiRiskHealthPanel');
-        if (risk) risk.innerHTML = '<div class="dash-empty">Could not load risk summary.</div>';
-    }
-    try { renderDefiYieldPanel(avg); } catch (e) {
-        console.error('[DeFi yield panel]', e);
-        const el = document.getElementById('defiYieldBreakdownPanel');
-        if (el) el.innerHTML = '<div class="dash-empty">Could not load yield breakdown.</div>';
+    try { renderDefiPnlPanel(); } catch (e) {
+        console.error('[DeFi PNL panel]', e);
     }
     try { renderDefiStablecoinPanel(stableRows); } catch (e) {
         console.error('[DeFi stablecoin panel]', e);
@@ -13796,6 +14060,7 @@ function updateTokenEditable(index, field, value) {
         return;
     }
     token[field] = parsed;
+    scheduleDefiPnlWalletSnapshot();
     saveData();
     updateUI();
 }
