@@ -103,4 +103,30 @@ const {
   assert.equal(Object.keys(wallet.points[0]).sort().join(','), 'label,totalPnl,ts');
 }
 
+// Leveraged loop: net-equity key tracks yield; gross supplied+borrowed legs over-count debt growth
+{
+  const netKey = 'Morpho|||__pnl__';
+  const suppliedKey = 'Morpho|||Lending:supplied:USDe';
+  const borrowedKey = 'Morpho|||Lending:borrowed:USDC';
+  const days = 16;
+  const perLeg = computeProtocolPnlSeries([
+    { ts: 0, positions: {
+      [suppliedKey]: { value: 106000, qty: null },
+      [borrowedKey]: { value: 94000, qty: null },
+    } },
+    { ts: days * 86400000, positions: {
+      [suppliedKey]: { value: 106000 + 106000 * 0.05 * days / 365, qty: null },
+      [borrowedKey]: { value: 94000 + 94000 * 0.04 * days / 365, qty: null },
+    } },
+  ]);
+  const netStart = 106000 - 94000;
+  const netEnd = (106000 + 106000 * 0.05 * days / 365) - (94000 + 94000 * 0.04 * days / 365);
+  const netSeries = computeProtocolPnlSeries([
+    { ts: 0, positions: { [netKey]: { value: netStart, qty: null } } },
+    { ts: days * 86400000, positions: { [netKey]: { value: netEnd, qty: null } } },
+  ]);
+  assert.ok(perLeg.total > netSeries.total * 2, 'gross legs must over-state leveraged loop PNL');
+  assert.ok(Math.abs(netSeries.total - (netEnd - netStart)) < 1, 'net protocol key must match equity change');
+}
+
 console.log('PASS: defi-pnl cost-basis tests');

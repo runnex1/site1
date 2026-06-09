@@ -8464,35 +8464,30 @@ function protocolPositionTokenQty(pos) {
 function buildPositionPnlMap(protocols) {
     const positions = {};
     for (const p of protocols || []) {
-        if (!p?.sections?.length) {
-            const key = `${p.name}|||Yield::${p.name}`;
-            positions[key] = { value: protocolDisplayValue(p), qty: null };
-            continue;
-        }
-        const secTypeCounts = {};
-        for (const sec of p.sections) {
-            if (!sec.positions) continue;
-            const st = sec.type || 'Yield';
-            secTypeCounts[st] = (secTypeCounts[st] || 0) + 1;
-            const secIdx = secTypeCounts[st] > 1 ? `[${secTypeCounts[st]}]` : '';
-            for (const pos of sec.positions) {
-                const key = `${p.name}|||${st}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
-                const value = protocolPositionValue(pos);
-                const prev = positions[key];
-                if (prev) {
-                    positions[key] = {
-                        value: Number(prev.value || 0) + value,
-                        qty: prev.qty != null && protocolPositionTokenQty(pos) != null
-                            ? Number(prev.qty) + protocolPositionTokenQty(pos)
-                            : (prev.qty ?? protocolPositionTokenQty(pos)),
-                    };
-                } else {
-                    positions[key] = { value, qty: protocolPositionTokenQty(pos) };
-                }
-            }
-        }
+        positions[`${p.name}|||__pnl__`] = {
+            value: protocolNetValue(p),
+            qty: null,
+        };
     }
     return positions;
+}
+
+function aggregateImportPositionsToNet(positions) {
+    const byProtocol = {};
+    for (const [key, raw] of Object.entries(positions || {})) {
+        if (String(key).includes('__net__') || String(key).includes('__total__')) continue;
+        const protocol = String(key.split('|||')[0] || '').trim();
+        if (!protocol) continue;
+        const val = typeof raw === 'number' ? Number(raw) || 0 : Number(raw?.value) || 0;
+        if (!val) continue;
+        if (String(key).includes(':borrowed:')) byProtocol[protocol] = (byProtocol[protocol] || 0) - val;
+        else byProtocol[protocol] = (byProtocol[protocol] || 0) + val;
+    }
+    const out = {};
+    for (const [name, value] of Object.entries(byProtocol)) {
+        out[`${name}|||__pnl__`] = { value, qty: null };
+    }
+    return out;
 }
 function normalizeProtocolPositionsForPnl(positions) {
     if (!positions || typeof positions !== 'object') return {};
@@ -11081,7 +11076,9 @@ function collectProtocolPnlSnapshots() {
         getProtocolRegularImports().forEach(e => {
             raw.push({
                 ts: Number(e.ts),
-                positions: normalizeProtocolPositionsForPnl(e.positions || {}),
+                positions: e.protocols?.length
+                    ? buildPositionPnlMap(e.protocols)
+                    : aggregateImportPositionsToNet(e.positions || {}),
             });
         });
         getProtocolSnapshots().forEach(e => {
@@ -11089,7 +11086,7 @@ function collectProtocolPnlSnapshots() {
                 ts: Number(e.ts),
                 positions: e.protocols?.length
                     ? buildPositionPnlMap(e.protocols)
-                    : normalizeProtocolPositionsForPnl(e.positions || {}),
+                    : aggregateImportPositionsToNet(e.positions || {}),
             });
         });
     } catch (e) {}
