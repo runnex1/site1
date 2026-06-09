@@ -11057,41 +11057,43 @@ function collectWalletPnlSnapshots() {
     return DefiPnl.dedupePnlSnapshots(raw);
 }
 
-function collectProtocolPnlSnapshots() {
-    if (!window.DefiPnl) return [];
-    const raw = [];
-    try {
-        getProtocolRegularImports().forEach(e => {
-            raw.push({
-                ts: Number(e.ts),
-                positions: e.protocols?.length
-                    ? buildPositionPnlMap(e.protocols)
-                    : aggregateImportPositionsToNet(e.positions || {}),
-            });
-        });
-        getProtocolSnapshots().forEach(e => {
-            raw.push({
-                ts: Number(e.ts),
-                positions: e.protocols?.length
-                    ? buildPositionPnlMap(e.protocols)
-                    : aggregateImportPositionsToNet(e.positions || {}),
-            });
-        });
-    } catch (e) {}
-    try {
-        const weekly = JSON.parse(localStorage.getItem('portfolio-snapshots') || '{}');
-        for (const [key, snap] of Object.entries(weekly)) {
-            if (!Array.isArray(snap?.protocols) || !snap.protocols.length) continue;
-            const ts = snapshotTimestamp(key, snap) || Date.parse(snap.date) || Date.now();
-            raw.push({ ts, positions: buildPositionPnlMap(snap.protocols) });
-        }
-    } catch (e) {}
-    if (Array.isArray(data.protocols) && data.protocols.length) {
-        raw.push({ ts: Date.now(), positions: buildPositionPnlMap(data.protocols) });
+const PROTOCOL_PNL_MAX_MOVE_PCT = 1.2;
+
+function findProtocolInSnapshot(protocol, snapshotProtocols) {
+    const name = String(protocol?.name || '').trim();
+    if (!name || !Array.isArray(snapshotProtocols)) return null;
+    const exact = snapshotProtocols.find(p => String(p?.name || '').trim() === name);
+    if (exact) return exact;
+    const low = name.toLowerCase();
+    return snapshotProtocols.find(p => String(p?.name || '').trim().toLowerCase() === low) || null;
+}
+
+function computeProtocolPnlFromLatestSnapshot() {
+    if (!window.DefiPnl) return { points: [], total: 0, snapshotTs: null };
+    const snapshot = getProtocolSnapshots()[0] || null;
+    const snapshotProtocols = snapshot?.protocols;
+    const currentProtocols = Array.isArray(data.protocols) ? data.protocols : [];
+    if (!snapshot || !Array.isArray(snapshotProtocols) || !snapshotProtocols.length || !currentProtocols.length) {
+        return { points: [], total: 0, snapshotTs: null };
     }
-    return DefiPnl.dedupeProtocolPnlTimeline
-        ? DefiPnl.dedupeProtocolPnlTimeline(raw)
-        : DefiPnl.dedupePnlSnapshots(raw);
+    const pairs = [];
+    for (const p of currentProtocols) {
+        const baseline = findProtocolInSnapshot(p, snapshotProtocols);
+        if (!baseline) continue;
+        const { apr } = protocolAprStats(p);
+        pairs.push({
+            name: p.name,
+            currentNet: protocolNetValue(p),
+            snapshotNet: protocolNetValue(baseline),
+            apy: apr,
+        });
+    }
+    const { total } = DefiPnl.computeProtocolSnapshotDeltaPnl(pairs, {
+        maxMovePct: PROTOCOL_PNL_MAX_MOVE_PCT,
+    });
+    const snapshotTs = Number(snapshot.ts) || Date.now();
+    const built = DefiPnl.buildProtocolSnapshotPnlSeries(snapshotTs, total);
+    return { ...built, snapshotTs };
 }
 
 function renderDefiPnlPanel() {
@@ -11104,12 +11106,17 @@ function renderDefiPnlPanel() {
     if (!totalEl || !canvas) return;
 
     const series = _defiPnlView === 'protocol'
-        ? DefiPnl.computeProtocolPnlSeries(collectProtocolPnlSnapshots())
+        ? computeProtocolPnlFromLatestSnapshot()
         : DefiPnl.computeWalletPnlSeries(collectWalletPnlSnapshots());
     const points = series.points || [];
 
     if (points.length < 2) {
-        if (emptyEl) emptyEl.style.display = 'block';
+        if (emptyEl) {
+            emptyEl.style.display = 'block';
+            emptyEl.textContent = _defiPnlView === 'protocol'
+                ? 'Protocol PNL needs a saved snapshot and matching live positions with APR. Import twice or wait for the next snapshot baseline — moves above 1.2% are treated as deposits/withdrawals and excluded.'
+                : 'Add wallet tokens or import protocol positions to start tracking cost-basis PNL.';
+        }
         if (chartWrap) chartWrap.style.display = 'none';
         totalEl.textContent = dashSignedUsd(series.total || 0);
         totalEl.classList.remove('good', 'bad');

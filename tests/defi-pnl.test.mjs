@@ -10,6 +10,9 @@ const {
   processUsdTransition,
   aggregateProtocolImportPositionsToNet,
   dedupeProtocolPnlTimeline,
+  computeProtocolSnapshotDeltaPnl,
+  buildProtocolSnapshotPnlSeries,
+  PROTOCOL_PNL_MAX_MOVE_PCT,
 } = DefiPnl;
 
 // Partial BTC sell: 0.5 -> 0.4, price rises 40k -> 50k
@@ -149,6 +152,31 @@ const {
   ]);
   assert.equal(bucket.length, 2, 'protocol PNL timeline must collapse same-bucket duplicates');
   assert.equal(bucket[0].positions['A|||__pnl__'].value, 12000, 'later same-bucket snapshot must win');
+}
+
+{
+  const yieldOnly = computeProtocolSnapshotDeltaPnl([
+    { currentNet: 10050, snapshotNet: 10000, apy: 8.5 },
+  ]);
+  assert.ok(Math.abs(yieldOnly.total - 50) < 0.01, 'small net move with APY must count as PNL');
+  assert.equal(yieldOnly.count, 1);
+
+  const deposit = computeProtocolSnapshotDeltaPnl([
+    { currentNet: 15000, snapshotNet: 10000, apy: 8.5 },
+  ], { maxMovePct: PROTOCOL_PNL_MAX_MOVE_PCT });
+  assert.equal(deposit.total, 0, 'large net move must be excluded as capital flow');
+  assert.equal(deposit.count, 0);
+
+  const noApy = computeProtocolSnapshotDeltaPnl([
+    { currentNet: 10050, snapshotNet: 10000, apy: null },
+  ]);
+  assert.equal(noApy.total, 0, 'positions without APY must be excluded');
+
+  const end = Date.UTC(2026, 5, 29, 12);
+  const chart = buildProtocolSnapshotPnlSeries(Date.UTC(2026, 5, 21, 12), 120, end);
+  assert.equal(chart.points.length, 2);
+  assert.equal(chart.points[0].totalPnl, 0);
+  assert.ok(Math.abs(chart.total - 120) < 0.01);
 }
 
 console.log('PASS: defi-pnl cost-basis tests');
