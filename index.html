@@ -7793,6 +7793,13 @@ function normalizePortfolioData() {
     if (!Array.isArray(data.polymarketWallets)) data.polymarketWallets = [];
     if (!Array.isArray(data.defiPanelNotes)) data.defiPanelNotes = [];
     if (!Number.isFinite(Number(data.etfRealizedPnl))) data.etfRealizedPnl = 0;
+    for (const protocol of data.protocols) {
+        for (const sec of protocol.sections || []) {
+            for (const pos of sec.positions || []) {
+                if (pos.manualValue && !pos.manualUsd) delete pos.manualValue;
+            }
+        }
+    }
 }
 function etfMergeKey(position) {
     const ticker = String(position?.ticker || '').trim().toUpperCase();
@@ -11468,7 +11475,6 @@ function stableUnitPriceInPegBand(unit) {
     return rounded >= PROTO_STABLE_PEG_MIN && rounded <= PROTO_STABLE_PEG_MAX;
 }
 function protocolPositionSingleToken(pos) {
-    if (pos?.manualValue) return null;
     const tokens = Array.isArray(pos?.tokens) ? pos.tokens : [];
     if (tokens.length !== 1) return null;
     const parsed = protocolTokenAmountAndSymbol(tokens[0]);
@@ -11539,7 +11545,7 @@ function protocolImportPositionMap(entry) {
     return entry.positions || null;
 }
 function protocolPositionValue(pos) {
-    if (pos?.manualValue) return Number(pos?.value || 0);
+    if (pos?.manualUsd) return Number(pos?.value || 0);
     const pegged = fixedStablePositionValue(pos);
     if (pegged !== null) return pegged;
     const parsed = protocolPositionSingleToken(pos);
@@ -14373,7 +14379,6 @@ function updateProtocolPositionToken(protocolIndex, sectionIndex, positionIndex,
         if (sym) next = `${raw} ${sym}`;
     }
     pos.tokens[tokenIndex] = next;
-    pos.manualValue = true;
     saveData();
     updateUI();
 }
@@ -14387,6 +14392,7 @@ function updateProtocolPositionUsd(protocolIndex, sectionIndex, positionIndex, v
         return;
     }
     pos.value = parsed;
+    pos.manualUsd = true;
     pos.manualValue = true;
     saveData();
     updateUI();

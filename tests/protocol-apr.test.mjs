@@ -24,7 +24,6 @@ function stableUnitPriceInPegBand(unit) {
   return rounded >= PROTO_STABLE_PEG_MIN && rounded <= PROTO_STABLE_PEG_MAX;
 }
 function protocolPositionSingleToken(pos) {
-  if (pos?.manualValue) return null;
   const tokens = Array.isArray(pos?.tokens) ? pos.tokens : [];
   if (tokens.length !== 1) return null;
   const parsed = protocolTokenAmountAndSymbol(tokens[0]);
@@ -58,7 +57,7 @@ function fixedStablePositionValue(pos) {
   return parsed.amount;
 }
 function protocolPositionValue(pos) {
-  if (pos?.manualValue) return Number(pos?.value || 0);
+  if (pos?.manualUsd) return Number(pos?.value || 0);
   const pegged = fixedStablePositionValue(pos);
   if (pegged !== null) return pegged;
   const parsed = protocolPositionSingleToken(pos);
@@ -90,5 +89,12 @@ assert.equal(protocolPositionValue(usdm), 165448.146, 'USDm uses CoinGecko unit 
 
 livePrices.GHO = 0.995;
 assert.equal(protocolPositionValue(gho), 30104.6862 * 0.995, 'GHO outside peg band uses amount * CoinGecko');
+
+const ghoStaleManual = { ...gho, manualValue: true };
+livePrices.GHO = 0.9992;
+assert.equal(protocolPositionValue(ghoStaleManual), 30104.6862, 'stale manualValue from token edit must not block CoinGecko peg');
+
+const ghoManualUsd = { ...gho, manualUsd: true };
+assert.equal(protocolPositionValue(ghoManualUsd), 29924.06, 'explicit USD override keeps import value');
 
 console.log('PASS: protocol APR stable $1 peg tests');
