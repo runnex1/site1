@@ -13,7 +13,7 @@
  */
 
 const { kvGet, kvSet } = require('../lib/kv');
-const { mergeLoopSnapshotStores } = require('../lib/loop-snapshots');
+const { mergeLoopSnapshotStores, ensureUsdeUsdmSnapshotsPurged } = require('../lib/loop-snapshots');
 const { collectEvents } = require('../lib/event-log');
 const https = require('https');
 
@@ -556,6 +556,7 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ ok: true, perpsSnapshots });
       }
       if (req.query?.loopSnapshots === '1') {
+        await ensureUsdeUsdmSnapshotsPurged({ kvGet, kvSet, parseJson });
         const loopSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
         return res.status(200).json({ ok: true, loopSnapshots });
       }
@@ -781,6 +782,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (body.loopSnapshots && typeof body.loopSnapshots === 'object') {
+      await ensureUsdeUsdmSnapshotsPurged({ kvGet, kvSet, parseJson });
       const existing = parseJson(await kvGet('vault:loop_snapshots'), {});
       const merged = mergeLoopSnapshotStores(existing, body.loopSnapshots);
       await kvSet('vault:loop_snapshots', JSON.stringify(merged));

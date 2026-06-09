@@ -16,6 +16,7 @@ const {
   appendLoopSnapshotStore,
   buildLoopSnapshotFromRates,
   loopYieldWalletsFromWatcherList,
+  ensureUsdeUsdmSnapshotsPurged,
 } = require('../lib/loop-snapshots');
 const { ensureLoopLogoCache } = require('../lib/logo-resolver');
 
@@ -292,6 +293,7 @@ async function handleLoopSnapshots(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
+    await ensureUsdeUsdmSnapshotsPurged({ kvGet, kvSet, parseJson });
     const loopSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
     return res.status(200).json({ ok: true, loopSnapshots });
   } catch (e) {

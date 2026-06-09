@@ -11851,6 +11851,7 @@ let loopApiState = {
     coverage: null,
 };
 const LOOP_SNAPSHOTS_KEY = 'vault-loop-snapshots';
+const LOOP_USDE_USDM_PURGE_KEY = 'vault-loop-snapshots-usde-usdm-purged';
 const LOOP_API_STATE_KEY = 'vault-loop-api-state';
 let loopSnapshotsStore = {};
 let _loopSnapshotsHydratePromise = null;
@@ -11885,6 +11886,44 @@ function loopsLoadSnapshotsLocal() {
     } catch (e) {
         loopSnapshotsStore = {};
     }
+    loopsPurgeUsdeUsdmSnapshotHistory();
+}
+
+function loopNormMarketName(name) {
+    return String(name || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function loopIsUsdeUsdmSnapshotPosition(pos) {
+    const protocol = String(pos?.protocol || '').trim().toLowerCase();
+    const market = loopNormMarketName(pos?.marketName);
+    const chainId = String(pos?.chainId ?? '');
+    if (protocol !== 'aave') return false;
+    if (chainId === '4326' && market === 'aavev3megaeth') return true;
+    return market.includes('usde') && market.includes('usdm');
+}
+
+function loopsPurgeUsdeUsdmSnapshotHistory() {
+    if (localStorage.getItem(LOOP_USDE_USDM_PURGE_KEY)) return 0;
+    const next = {};
+    let removed = 0;
+    for (const [key, rec] of Object.entries(loopSnapshotsStore || {})) {
+        if (!rec || typeof rec !== 'object') continue;
+        const positions = (rec.positions || []).filter((pos) => {
+            if (loopIsUsdeUsdmSnapshotPosition(pos)) {
+                removed += 1;
+                return false;
+            }
+            return true;
+        });
+        if (positions.length) next[key] = { ...rec, positions };
+    }
+    loopSnapshotsStore = next;
+    try {
+        localStorage.setItem(LOOP_SNAPSHOTS_KEY, JSON.stringify(loopSnapshotsStore));
+        localStorage.setItem(LOOP_USDE_USDM_PURGE_KEY, '1');
+    } catch (e) {}
+    if (removed) loopsUploadSnapshotsToServer();
+    return removed;
 }
 
 function loopsMergeSnapshotsFromServer(serverStore) {
@@ -17196,7 +17235,7 @@ function etfPnlHoverEnd() {
 function renderEtfActivity(rows) {
     const root = document.getElementById('etfActivityRows');
     const updated = document.getElementById('etfActivityUpdated');
-    if (updated) updated.textContent = 'updated now';
+    if (updated) updated.textContent = 'last 3 days';
     if (!root) return;
 
     if (!rows.length) {

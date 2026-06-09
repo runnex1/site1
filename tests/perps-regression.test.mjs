@@ -722,7 +722,10 @@ assert.match(indexHtml, /LOOP_API_STATE_KEY/, 'loops tab must cache last live AP
 assert.match(indexHtml, /supplementalImported/, 'Loops must keep imported Fluid/Morpho positions when live API coverage is incomplete');
 const loopSnapshotsJs = readFileSync(join(ROOT, 'lib', 'loop-snapshots.js'), 'utf8');
 assert.match(loopSnapshotsJs, /economicNetValue/, 'loop snapshots must persist Merkl-inclusive economic net value');
+assert.match(loopSnapshotsJs, /isUsdeUsdmLoopSnapshotPosition/, 'loop snapshots must identify USDe/USDm Aave MegaETH history');
+assert.match(loopSnapshotsJs, /ensureUsdeUsdmSnapshotsPurged/, 'loop snapshots must one-time purge inflated USDe/USDm buckets');
 assert.match(loopSnapshotsJs, /isSolanaWallet/, 'loop snapshots must accept Solana yield wallets');
+assert.match(indexHtml, /loopsPurgeUsdeUsdmSnapshotHistory/, 'loops tab must purge inflated USDe/USDm history from local snapshots');
 assert.match(loopSnapshotsJs, /LOOP_SNAPSHOT_BUCKET_HOURS = 2/, 'loop snapshots must bucket history on 2h intervals');
 assert.match(loopSnapshotsJs, /function appendLoopSnapshotStore\(store, data/, 'loop snapshots must append server-side history');
 assert.match(loopSnapshotsJs, /function loopPositionHistoryKey\(/, 'loop snapshots must use stable history keys across Fluid NFT id changes');
@@ -979,6 +982,70 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
   assert.equal(Object.keys(store2).length, 1, 'same 2h bucket must not duplicate loop snapshots');
   const merged = mergeLoopSnapshotStores({ '2026-06-01T00': { fetchedAt: 1, positions: [] } }, store2);
   assert.ok(Object.keys(merged).length >= 2, 'server merge must keep existing buckets and add new ones');
+}
+
+{
+  const {
+    purgeLoopSnapshotPositions,
+    isUsdeUsdmLoopSnapshotPosition,
+    ensureUsdeUsdmSnapshotsPurged,
+  } = require('../lib/loop-snapshots.js');
+  const store = {
+    '2026-06-09T00': {
+      fetchedAt: 1,
+      positions: [
+        { protocol: 'Aave', marketName: 'AaveV3MegaETH', chainId: 4326, netValue: 14800, economicNetValue: 15465, merklRewardsUsd: 665 },
+        { protocol: 'Jupiter', marketName: 'JUICED / USDC', chainId: 'solana', netValue: 11800, economicNetValue: 11800 },
+      ],
+    },
+    '2026-06-09T02': {
+      fetchedAt: 2,
+      positions: [
+        { protocol: 'Aave', marketName: 'USDe/USDm', chainId: 4326, netValue: 14810, economicNetValue: 15470, merklRewardsUsd: 660 },
+      ],
+    },
+  };
+  const { store: cleaned, removedPositions, bucketsAffected } = purgeLoopSnapshotPositions(
+    store,
+    isUsdeUsdmLoopSnapshotPosition,
+  );
+  assert.equal(removedPositions, 2, 'USDe/USDm purge must remove inflated Aave MegaETH history');
+  assert.equal(bucketsAffected, 2, 'USDe/USDm purge must touch every bucket with that loop');
+  assert.equal(cleaned['2026-06-09T00'].positions.length, 1, 'other loop positions must remain in shared buckets');
+  assert.equal(cleaned['2026-06-09T00'].positions[0].protocol, 'Jupiter');
+  assert.equal(cleaned['2026-06-09T02'], undefined, 'USDe-only buckets must be deleted entirely');
+
+  let flag = '';
+  const kv = {
+    async get(key) {
+      if (key === 'vault:loop_snapshots_usde_usdm_purged') return flag;
+      if (key === 'vault:loop_snapshots') return JSON.stringify(store);
+      return null;
+    },
+    async set(key, value) {
+      if (key === 'vault:loop_snapshots_usde_usdm_purged') flag = value;
+      if (key === 'vault:loop_snapshots') kv.saved = value;
+    },
+    saved: null,
+  };
+  const first = await ensureUsdeUsdmSnapshotsPurged({
+    kvGet: kv.get,
+    kvSet: kv.set,
+    parseJson: (raw, fallback) => {
+      try { return JSON.parse(raw); } catch { return fallback; }
+    },
+  });
+  assert.equal(first.purged, true);
+  assert.equal(first.removedPositions, 2);
+  assert.ok(kv.saved, 'one-time purge must rewrite loop snapshot store');
+  const second = await ensureUsdeUsdmSnapshotsPurged({
+    kvGet: kv.get,
+    kvSet: kv.set,
+    parseJson: (raw, fallback) => {
+      try { return JSON.parse(raw); } catch { return fallback; }
+    },
+  });
+  assert.equal(second.purged, false, 'USDe/USDm purge must run only once server-side');
 }
 
 {
