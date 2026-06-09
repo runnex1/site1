@@ -1089,6 +1089,16 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
   assert.ok(!hasEmbeddedLogo(legacy, tokenLogoKey('USDM')), 'legacy logos without source must refresh on next resolve');
 }
 
+{
+  const { readLocalLoopLogoDataUrl, isLoopPinnedTokenLogo } = require('../lib/logo-resolver.js');
+  assert.equal(isLoopPinnedTokenLogo('USDm'), true, 'USDm must use the pinned loop logo');
+  assert.equal(isLoopPinnedTokenLogo('JUICED'), true, 'JUICED must use the pinned loop logo');
+  const usdm = readLocalLoopLogoDataUrl('USDM');
+  const juiced = readLocalLoopLogoDataUrl('JUICED');
+  assert.ok(usdm?.startsWith('data:image/png;base64,'), 'USDm pinned logo must embed as PNG data URL');
+  assert.ok(juiced?.startsWith('data:image/png;base64,'), 'JUICED pinned logo must embed as PNG data URL');
+}
+
 assert.match(aaveProxyJs, /ensureLoopLogoCache/, 'loop rates cron must persist embedded logos server-side');
 assert.match(syncJs, /logoCache === '1'/, 'sync endpoint must expose server logo cache for loops hydration');
 assert.match(indexHtml, /function makeLoopLogo\(symbol, isProtocol/, 'loops tab must render logos from server cache only');
@@ -1096,7 +1106,11 @@ assert.match(indexHtml, /makeLoopLogo\(symbol, false, size\)/, 'loop token logos
 const logoResolverJs = readFileSync(join(ROOT, 'lib', 'logo-resolver.js'), 'utf8');
 assert.match(logoResolverJs, /async function coingeckoImageUrlForSymbol\(/, 'token logos must try CoinGecko first on the server');
 assert.match(logoResolverJs, /async function resolveTokenLogoDataUrl\(/, 'token logos must fall back to DeFiLlama after CoinGecko');
-assert.match(logoResolverJs, /if \(hasEmbeddedLogo\(next, target\.key\)\) continue;/, 'resolved token logos must persist server-side without re-fetching');
+assert.match(logoResolverJs, /readLocalLoopLogoDataUrl/, 'loop logos must support pinned USDm and JUICED assets');
+assert.match(indexHtml, /LOOP_TOKEN_LOGO_URLS/, 'loops tab must prefer pinned USDm and JUICED logos');
+assert.match(indexHtml, /perps-pos-liq-val">\$\{perpsFmtPx\(tp\)\}/, 'TP rows must use the same default liq price styling');
+assert.match(logoResolverJs, /hasEmbeddedLogo\(next, target\.key\)/, 'resolved token logos must persist server-side without re-fetching');
+assert.match(logoResolverJs, /isLoopPinnedTokenLogo\(target\.symbol\)/, 'pinned loop token logos must refresh even when cached');
 assert.match(indexHtml, /logoCache=1/, 'loops tab must hydrate server logo cache');
 
 {

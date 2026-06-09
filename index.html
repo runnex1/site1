@@ -7771,11 +7771,18 @@ function makeLogo(symbol, isProtocol = false, size = 40) {
     </div>`;
 }
 
+const LOOP_TOKEN_LOGO_URLS = {
+    USDM: '/loop-logos/usdm.png',
+    JUICED: '/loop-logos/juiced.png',
+};
+
 function makeLoopLogo(symbol, isProtocol = false, size = 40) {
-    const cached = isProtocol
-        ? LogoEngine._peekProtocolImage(symbol)
-        : LogoEngine._peekTokenImage(symbol);
-    const src = cached || LogoEngine.makeSvgFallback(
+    const sym = String(symbol || '').toUpperCase();
+    const pinned = !isProtocol ? LOOP_TOKEN_LOGO_URLS[sym] : null;
+    const cached = pinned
+        ? null
+        : (isProtocol ? LogoEngine._peekProtocolImage(symbol) : LogoEngine._peekTokenImage(symbol));
+    const src = pinned || cached || LogoEngine.makeSvgFallback(
         isProtocol ? symbol.charAt(0).toUpperCase() : symbol.substring(0, 4).toUpperCase(),
         symbol
     );
@@ -26208,8 +26215,8 @@ function perpsFmtTpSlStackHtml(tpPx, slPx) {
     const sl = perpsNumOrNull(slPx);
     if (tp == null && sl == null) return '<div class="perps-pos-liq-val">—</div>';
     const rows = [];
-    if (tp != null) rows.push(`<div class="perps-pos-tpsl-row tp">${perpsFmtPx(tp)}</div>`);
-    if (sl != null) rows.push(`<div class="perps-pos-tpsl-row sl">${perpsFmtPx(sl)}</div>`);
+    if (tp != null) rows.push(`<div class="perps-pos-liq-val">${perpsFmtPx(tp)}</div>`);
+    if (sl != null) rows.push(`<div class="perps-pos-liq-val">${perpsFmtPx(sl)}</div>`);
     return `<div class="perps-pos-tpsl-pair">${rows.join('')}</div>`;
 }
 
