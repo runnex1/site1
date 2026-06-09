@@ -695,6 +695,9 @@ assert.match(loopRatesJs, /fluidPositionSource: 'fluid-official-api'/, 'Fluid po
 assert.doesNotMatch(loopRatesJs, /DEFINITIV_API_KEY/, 'Fluid loops must not require a Definitiv API key');
 assert.match(loopRatesJs, /api\.merkl\.xyz/, 'Loop APR must include Merkl reward campaigns');
 assert.match(loopRatesJs, /rewards\/active-opportunities/, 'Merkl enrichment must use active opportunities for live reward APR');
+assert.match(loopRatesJs, /\/v4\/users\/\$\{wallet\}\/rewards\?chainId=/, 'Merkl net value must use user rewards endpoint for unclaimed balance');
+assert.match(loopRatesJs, /merklUnclaimedUsdFromBreakdown/, 'Merkl rewards must subtract claimed from amount per breakdown');
+assert.match(loopRatesJs, /merkl-user-rewards-unclaimed/, 'loop coverage must report unclaimed Merkl reward source');
 assert.match(loopRatesJs, /fetchDefillamaYieldApyIndex/, 'yield-bearing collateral must use DeFiLlama APY when protocol supply APY is zero');
 assert.match(loopRatesJs, /function canonicalNativeYieldApy\(/, 'native yield tokens like reUSD must use a shared DeFiLlama APY across protocols');
 assert.match(loopRatesJs, /canonicalNativeYieldApy\(chainId, leg, index\)/, 'defillama leg lookup must prefer canonical native yield before address pools');
@@ -976,6 +979,16 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
   assert.equal(Object.keys(store2).length, 1, 'same 2h bucket must not duplicate loop snapshots');
   const merged = mergeLoopSnapshotStores({ '2026-06-01T00': { fetchedAt: 1, positions: [] } }, store2);
   assert.ok(Object.keys(merged).length >= 2, 'server merge must keep existing buckets and add new ones');
+}
+
+{
+  const { merklUnclaimedUsdFromBreakdown } = require('../lib/loop-rates.js');
+  const reward = { token: { decimals: 18, price: 1 } };
+  const usd = merklUnclaimedUsdFromBreakdown(reward, {
+    amount: '101861990922438054284',
+    claimed: '30644948421875334404',
+  });
+  assert.ok(usd > 70 && usd < 72, 'Merkl unclaimed must use amount minus claimed, not gross earned');
 }
 
 {
