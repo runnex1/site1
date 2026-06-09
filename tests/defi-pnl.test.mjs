@@ -57,8 +57,8 @@ const {
 {
   const key = 'Aave|||Lending:supplied:USDe';
   const series = computeProtocolPnlSeries([
-    { ts: 1, positions: { [key]: 1000 } },
-    { ts: 2, positions: { [key]: 800 } },
+    { ts: 1, positions: { [key]: { value: 1000, qty: null } } },
+    { ts: 2, positions: { [key]: { value: 800, qty: null } } },
   ]);
   assert.equal(series.points.length, 2);
 }
@@ -67,20 +67,30 @@ const {
 {
   const key = 'Aave|||Lending:supplied:USDe';
   const series = computeProtocolPnlSeries([
-    { ts: 1, positions: { [key]: 1000 } },
-    { ts: 2, positions: { [key]: 1200 } },
+    { ts: 1, positions: { [key]: { value: 1000, qty: null } } },
+    { ts: 2, positions: { [key]: { value: 1018, qty: null } } },
     { ts: 3, positions: {} },
   ]);
   assert.ok(Number.isFinite(series.points[2].totalPnl));
-  assert.equal(series.points[2].totalPnl, 0);
+  assert.equal(series.points[2].totalPnl, 18);
 }
 
-// Protocol increase adds new lot (cost basis follows additions)
+// Protocol increase adds new lot only when token qty grows (capital deposit)
 {
   const ledger = new FifoUsdLedger();
-  processUsdTransition(ledger, 0, 1000);
-  processUsdTransition(ledger, 1000, 1300);
+  processUsdTransition(ledger, { value: 0, qty: null }, { value: 1000, qty: 100 });
+  processUsdTransition(ledger, { value: 1000, qty: 100 }, { value: 1300, qty: 130 });
   assert.ok(Math.abs(ledger.totalPnl(1300) - 0) < 0.01);
+}
+
+// Yield between snapshots accrues as unrealized PNL (same token qty, higher value)
+{
+  const key = 'Yearn|||Yield::vbUSDC';
+  const series = computeProtocolPnlSeries([
+    { ts: 1, positions: { [key]: { value: 22000, qty: 22000 } } },
+    { ts: 2, positions: { [key]: { value: 22312, qty: 22000 } } },
+  ]);
+  assert.ok(Math.abs(series.points[1].totalPnl - 312) < 0.01, 'APY yield in total PNL');
 }
 
 // Chart series is single total metric

@@ -8443,6 +8443,65 @@ function buildPositionMap(protocols) {
     }
     return positions;
 }
+function protocolPositionTokenQty(pos) {
+    if (!pos?.tokens?.length) return null;
+    let sum = 0;
+    let any = false;
+    for (const t of pos.tokens) {
+        const m = String(t || '').trim().match(/^([\d,]+(?:\.\d+)?)/);
+        if (!m) continue;
+        sum += Number(m[1].replace(/,/g, ''));
+        any = true;
+    }
+    return any && sum > 0 ? sum : null;
+}
+function buildPositionPnlMap(protocols) {
+    const positions = {};
+    for (const p of protocols || []) {
+        if (!p?.sections?.length) {
+            const key = `${p.name}|||Yield::${p.name}`;
+            positions[key] = { value: protocolDisplayValue(p), qty: null };
+            continue;
+        }
+        const secTypeCounts = {};
+        for (const sec of p.sections) {
+            if (!sec.positions) continue;
+            const st = sec.type || 'Yield';
+            secTypeCounts[st] = (secTypeCounts[st] || 0) + 1;
+            const secIdx = secTypeCounts[st] > 1 ? `[${secTypeCounts[st]}]` : '';
+            for (const pos of sec.positions) {
+                const key = `${p.name}|||${st}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+                const value = protocolPositionValue(pos);
+                const prev = positions[key];
+                if (prev) {
+                    positions[key] = {
+                        value: Number(prev.value || 0) + value,
+                        qty: prev.qty != null && protocolPositionTokenQty(pos) != null
+                            ? Number(prev.qty) + protocolPositionTokenQty(pos)
+                            : (prev.qty ?? protocolPositionTokenQty(pos)),
+                    };
+                } else {
+                    positions[key] = { value, qty: protocolPositionTokenQty(pos) };
+                }
+            }
+        }
+    }
+    return positions;
+}
+function normalizeProtocolPositionsForPnl(positions) {
+    if (!positions || typeof positions !== 'object') return {};
+    if (window.DefiPnl?.normalizeProtocolPositionMap) {
+        return DefiPnl.normalizeProtocolPositionMap(positions);
+    }
+    const out = {};
+    for (const [key, raw] of Object.entries(positions)) {
+        if (String(key).includes('__net__') || String(key).includes('__total__')) continue;
+        out[key] = typeof raw === 'number'
+            ? { value: Number(raw) || 0, qty: null }
+            : { value: Number(raw?.value) || 0, qty: raw?.qty ?? null };
+    }
+    return out;
+}
 function normalizeProtocolPositionKey(key) {
     const [protocol, rest=''] = String(key || '').split('|||');
     const parts = rest.split(':');
@@ -11014,17 +11073,30 @@ function collectProtocolPnlSnapshots() {
     const raw = [];
     try {
         getProtocolRegularImports().forEach(e => {
-            raw.push({ ts: Number(e.ts), positions: e.positions || {} });
+            raw.push({
+                ts: Number(e.ts),
+                positions: normalizeProtocolPositionsForPnl(e.positions || {}),
+            });
         });
         getProtocolSnapshots().forEach(e => {
             raw.push({
                 ts: Number(e.ts),
-                positions: e.positions || buildPositionMap(e.protocols || []),
+                positions: e.protocols?.length
+                    ? buildPositionPnlMap(e.protocols)
+                    : normalizeProtocolPositionsForPnl(e.positions || {}),
             });
         });
     } catch (e) {}
+    try {
+        const weekly = JSON.parse(localStorage.getItem('portfolio-snapshots') || '{}');
+        for (const [key, snap] of Object.entries(weekly)) {
+            if (!Array.isArray(snap?.protocols) || !snap.protocols.length) continue;
+            const ts = snapshotTimestamp(key, snap) || Date.parse(snap.date) || Date.now();
+            raw.push({ ts, positions: buildPositionPnlMap(snap.protocols) });
+        }
+    } catch (e) {}
     if (Array.isArray(data.protocols) && data.protocols.length) {
-        raw.push({ ts: Date.now(), positions: buildPositionMap(data.protocols) });
+        raw.push({ ts: Date.now(), positions: buildPositionPnlMap(data.protocols) });
     }
     return DefiPnl.dedupePnlSnapshots(raw);
 }
