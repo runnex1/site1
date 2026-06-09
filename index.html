@@ -3010,8 +3010,8 @@ body::after {
   background: rgba(148,163,184,0.06);
 }
 #defiTab .defi-pnl-panel .defi-panel-body {
-  max-height: min(520px, calc(100vh - 300px));
-  min-height: 360px;
+  max-height: min(380px, calc(100vh - 320px));
+  min-height: 250px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -3021,7 +3021,7 @@ body::after {
   align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 0.55rem;
+  margin-bottom: 0.4rem;
 }
 .defi-pnl-summary-label {
   font-family: var(--ff-display);
@@ -3040,8 +3040,14 @@ body::after {
 .defi-pnl-summary-value.bad { color: var(--red); }
 .defi-pnl-chart-wrap {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 220px;
+  flex: 0 0 auto;
+  height: 150px;
+  min-height: 150px;
+  max-height: 150px;
+}
+#defiTab .defi-stablecoin-panel .defi-panel-body {
+  max-height: min(340px, calc(100vh - 420px));
+  min-height: 280px;
 }
 .defi-pnl-empty {
   display: none;
@@ -6402,7 +6408,7 @@ body[data-active-tab="loops"] .page-content,
               <div class="defi-pnl-empty" id="defiPnlEmpty">Add wallet tokens or import protocol positions to start tracking cost-basis PNL.</div>
             </div>
           </div>
-          <div class="defi-panel defi-side-panel">
+          <div class="defi-panel defi-side-panel defi-stablecoin-panel">
             <div class="section-header">
               <div class="section-title"><div class="section-title-dot" style="background:var(--teal)"></div>Stablecoin Monitor</div>
             </div>
@@ -11612,13 +11618,22 @@ function loopsAppendSnapshotFromApiData(data) {
             };
         });
     if (!positions.length) return false;
-    if (loopSnapshotsStore[key]) return false;
-    loopSnapshotsStore[key] = {
-        bucket: key,
-        fetchedAt,
-        wallets: Array.isArray(data?.wallets) ? data.wallets : [],
-        positions,
-    };
+    if (loopSnapshotsStore[key]) {
+        loopSnapshotsStore[key] = {
+            ...loopSnapshotsStore[key],
+            bucket: key,
+            fetchedAt,
+            wallets: Array.isArray(data?.wallets) ? data.wallets : [],
+            positions,
+        };
+    } else {
+        loopSnapshotsStore[key] = {
+            bucket: key,
+            fetchedAt,
+            wallets: Array.isArray(data?.wallets) ? data.wallets : [],
+            positions,
+        };
+    }
     const keys = Object.keys(loopSnapshotsStore).sort();
     while (keys.length > 360) {
         delete loopSnapshotsStore[keys.shift()];
@@ -11645,7 +11660,37 @@ function loopHistoryPositionMatch(live, stored) {
     if (live.id && stored.id && live.id === stored.id) return true;
     const liveKey = loopPositionHistoryKey(live);
     const storedKey = stored.historyKey || loopPositionHistoryKey(stored);
-    return !!(liveKey && storedKey && liveKey === storedKey);
+    if (liveKey && storedKey && liveKey === storedKey) return true;
+    const normMarket = v => String(v || '').toLowerCase().replace(/\s+/g, ' ').replace(/\s*\/\s*/g, ' / ').trim();
+    const lp = String(live.protocol || '').trim().toLowerCase();
+    const sp = String(stored.protocol || '').trim().toLowerCase();
+    const lw = String(live.wallet || '').trim().toLowerCase();
+    const sw = String(stored.wallet || '').trim().toLowerCase();
+    const lc = String(live.chainId ?? '');
+    const sc = String(stored.chainId ?? '');
+    const lm = normMarket(live.marketName);
+    const sm = normMarket(stored.marketName);
+    return !!(lp && sp && lp === sp && lw && sw && lw === sw && lc === sc && lm && sm && lm === sm);
+}
+
+function loopBuildChartHistoryPoints(rawPoints, rawPos, endValue, endTs) {
+    const points = (rawPoints || []).slice().sort((a, b) => a.ts - b.ts);
+    if (!rawPos || endValue == null) return points;
+    const ts = Number(endTs) || Date.now();
+    const end = {
+        ts,
+        netValue: Number(endValue),
+        netApy: rawPos.netApy == null ? null : Number(rawPos.netApy),
+        totalSupplied: Number(rawPos.totalSupplied || 0),
+        totalBorrowed: Number(rawPos.totalBorrowed || 0),
+    };
+    const last = points[points.length - 1];
+    if (!last) return [end];
+    const sameTs = Math.abs(last.ts - ts) < 60000;
+    const sameVal = Math.abs(last.netValue - end.netValue) < 0.5;
+    if (sameTs && sameVal) return points;
+    if (ts >= last.ts) points.push(end);
+    return points;
 }
 
 function loopsSnapshotBucketCount() {
@@ -14932,12 +14977,16 @@ function renderLoops() {
         const borrowedApr = Number(apy?.borrowedApr);
         const apyCls = Number.isFinite(totalApr) ? (totalApr > 0 ? '' : totalApr < 0 ? 'neg' : 'neu') : 'neu';
         const apyText = Number.isFinite(totalApr) ? totalApr.toFixed(2) + '%' : '-';
-        const historyPoints = loop.live && loop.raw
-            ? loopTrimHistoryToLatestSession(loopHistoryPoints(loop.raw))
-            : [];
+        const rawHistoryPoints = loop.live && loop.raw ? loopHistoryPoints(loop.raw) : [];
         const displayNetValue = loopEffectiveNetValue(loop);
         const liveEndValue = loop.live && loop.raw ? displayNetValue : null;
         const liveEndTs = loopApiState.updatedAt || Date.now();
+        const historyPoints = loop.live && loop.raw
+            ? loopTrimHistoryToLatestSession(rawHistoryPoints)
+            : [];
+        const chartPoints = loop.live && loop.raw
+            ? loopBuildChartHistoryPoints(rawHistoryPoints, loop.raw, liveEndValue, liveEndTs)
+            : [];
         const marketChip = loop.raw?.marketName || sectionLabel;
         const networkChip = loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions);
         const walletChip = loop.live && loop.raw?.wallet
@@ -14951,7 +15000,7 @@ function renderLoops() {
             ? loopSnapshotApyRowHtml(chartMode, historyPoints, liveEndValue, liveEndTs)
             : '';
         const chartHtml = loop.live && loop.raw
-            ? loopHistoryChartHtml(historyPoints, { endValue: liveEndValue, endTs: liveEndTs })
+            ? loopHistoryChartHtml(chartPoints, { endValue: liveEndValue, endTs: liveEndTs })
             : '<div class="loop-history-chart empty"><span>Sync live to build 3h snapshot history</span></div>';
         const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml);
 

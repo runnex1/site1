@@ -774,7 +774,8 @@ assert.match(indexHtml, /function loopSnapshotApyRowHtml\(/, 'loop cards must re
 assert.match(indexHtml, /function loopRefreshPeriodApyMetrics\(/, 'loop chart toggle must refresh 7d/30d APY metrics');
 assert.match(indexHtml, /loopRefreshPeriodApyMetrics\(chart\)/, 'loop chart mode switch must update period APY metrics');
 assert.match(indexHtml, /loop-realized-row/, 'loop cards must render realized APY mini metrics');
-assert.match(indexHtml, /loopTrimHistoryToLatestSession\(loopHistoryPoints\(loop\.raw\)\)/, 'loop charts must rebuild from latest session after capital flows');
+assert.match(indexHtml, /loopBuildChartHistoryPoints\(rawHistoryPoints, loop\.raw, liveEndValue, liveEndTs\)/, 'loop charts must use full history plus live point, not session-trimmed series');
+assert.match(indexHtml, /loopTrimHistoryToLatestSession\(rawHistoryPoints\)/, 'loop APY metrics must still reset after capital flows');
 assert.match(indexHtml, /\[1-9A-HJ-NP-Za-km-z\]\{32,44\}/, 'loop yield wallets must accept Solana addresses');
 assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention Solana loop protocols');
 
