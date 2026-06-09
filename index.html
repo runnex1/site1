@@ -8424,6 +8424,26 @@ const PROTO_APR_MAX_ABS = 80;
 const PROTO_VALUE_CHANGE_MAX = 700;
 const PROTO_STABLE_PEG_MIN = 0.998;
 const PROTO_STABLE_PEG_MAX = 1.004;
+const GECKO_SYMBOL_IDS = {
+    BTC:'bitcoin', ETH:'ethereum', SOL:'solana', BNB:'binancecoin',
+    AVAX:'avalanche-2', MATIC:'matic-network', POL:'matic-network',
+    ARB:'arbitrum', OP:'optimism', LINK:'chainlink', UNI:'uniswap',
+    AAVE:'aave', MKR:'maker', SNX:'synthetix-network-token', CRV:'curve-dao-token',
+    LDO:'lido-dao', GMX:'gmx', GRT:'the-graph', PENDLE:'pendle',
+    ENA:'ethena', MORPHO:'morpho', INJ:'injective-protocol',
+    SUI:'sui', APT:'aptos', SEI:'sei-network', TIA:'celestia',
+    DOGE:'dogecoin', SHIB:'shiba-inu', PEPE:'pepe', WIF:'dogwifcoin',
+    XRP:'ripple', ADA:'cardano', DOT:'polkadot', ATOM:'cosmos',
+    NEAR:'near', FTM:'fantom', ALGO:'algorand', FLOW:'flow',
+    SAND:'the-sandbox', MANA:'decentraland', AXS:'axie-infinity',
+    USDC:'usd-coin', USDT:'tether', DAI:'dai', GHO:'gho', USDM:'usd-m',
+    USDE:'ethena-usde', SUSDE:'ethena-staked-usde', FRAX:'frax', LUSD:'liquity-usd',
+    PYUSD:'paypal-usd', EURC:'euro-coin', FDUSD:'first-digital-usd',
+};
+function geckoIdForSymbol(symbol) {
+    const sym = String(symbol || '').trim().toUpperCase();
+    return GECKO_SYMBOL_IDS[sym] || sym.toLowerCase();
+}
 let _protocolSelectedSnapshotTs = null; // null = latest snapshot baseline for APR
 let _protocolSnapshotPickerOpen = false;
 
@@ -10282,6 +10302,7 @@ function processProtocolsImport() {
     saveProtocolImportHistory(data.protocols);
     saveData();
     updateUI();
+    fetchLiveTokenPrices();
     closeModal('importProtocols');
     document.getElementById('importProtocolsText').value = '';
     if (imported > 0) alert(`✅ Imported ${imported} protocol positions`);
@@ -11424,6 +11445,48 @@ function stableUnitPriceInPegBand(unit) {
     const rounded = Math.round(unit * 10000) / 10000;
     return rounded >= PROTO_STABLE_PEG_MIN && rounded <= PROTO_STABLE_PEG_MAX;
 }
+function protocolPositionSingleToken(pos) {
+    if (pos?.manualValue) return null;
+    const tokens = Array.isArray(pos?.tokens) ? pos.tokens : [];
+    if (tokens.length !== 1) return null;
+    const parsed = protocolTokenAmountAndSymbol(tokens[0]);
+    if (!parsed || !parsed.amount || !Number.isFinite(parsed.amount)) return null;
+    if (/^(PT|YT)-/.test(parsed.symbol.toUpperCase())) return null;
+    return parsed;
+}
+function protocolTokenCoingeckoUnitPrice(pos) {
+    const parsed = protocolPositionSingleToken(pos);
+    if (!parsed) return null;
+    const usd = livePrices[parsed.symbol.toUpperCase()];
+    return Number.isFinite(usd) && usd > 0 ? usd : null;
+}
+function protocolPositionImportUnitPrice(pos) {
+    const parsed = protocolPositionSingleToken(pos);
+    if (!parsed) return null;
+    const rawValue = Number(pos.value || 0);
+    if (!rawValue) return null;
+    return rawValue / parsed.amount;
+}
+function protocolPositionUnitPrice(pos) {
+    const cgUnit = protocolTokenCoingeckoUnitPrice(pos);
+    if (cgUnit !== null) return cgUnit;
+    return protocolPositionImportUnitPrice(pos);
+}
+function protocolStablePriceTagHtml(pos, tokenText) {
+    const parsed = protocolTokenAmountAndSymbol(tokenText);
+    if (!parsed || !parsed.amount || !Number.isFinite(parsed.amount)) return '';
+    if (/^(PT|YT)-/.test(parsed.symbol.toUpperCase())) return '';
+    if ((pos.tokens || []).length !== 1) return '';
+    const unit = protocolPositionUnitPrice(pos);
+    if (unit === null) return '';
+    if (stableUnitPriceInPegBand(unit)) {
+        return ` <span style="color:var(--green);font-size:0.68rem;font-family:var(--ff-mono)">$1.0000 fixed</span>`;
+    }
+    if (protocolTokenCoingeckoUnitPrice(pos) !== null) {
+        return ` <span style="color:var(--t3);font-size:0.68rem;font-family:var(--ff-mono)">$${unit.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4})} CG</span>`;
+    }
+    return '';
+}
 function protocolTokenDisplayText(pos, tokenText) {
     const parsed = protocolTokenAmountAndSymbol(tokenText);
     if (!parsed) return tokenText;
@@ -11440,15 +11503,11 @@ function protocolTokenDisplayText(pos, tokenText) {
     return tokenText;
 }
 function fixedStablePositionValue(pos) {
-    if (pos?.manualValue) return null;
-    const tokens = Array.isArray(pos?.tokens) ? pos.tokens : [];
-    if (tokens.length !== 1) return null;
-    const parsed = protocolTokenAmountAndSymbol(tokens[0]);
-    if (!parsed || !parsed.amount || !Number.isFinite(parsed.amount)) return null;
-    if (/^(PT|YT)-/.test(parsed.symbol.toUpperCase())) return null;
-    const rawValue = Number(pos.value || 0);
-    const unit = rawValue / parsed.amount;
-    return stableUnitPriceInPegBand(unit) ? parsed.amount : null;
+    const parsed = protocolPositionSingleToken(pos);
+    if (!parsed) return null;
+    const unit = protocolPositionUnitPrice(pos);
+    if (unit === null || !stableUnitPriceInPegBand(unit)) return null;
+    return parsed.amount;
 }
 function protocolImportPositionMap(entry) {
     if (!entry) return null;
@@ -11458,8 +11517,15 @@ function protocolImportPositionMap(entry) {
     return entry.positions || null;
 }
 function protocolPositionValue(pos) {
-    const fixed = fixedStablePositionValue(pos);
-    return fixed !== null ? fixed : Number(pos?.value || 0);
+    if (pos?.manualValue) return Number(pos?.value || 0);
+    const pegged = fixedStablePositionValue(pos);
+    if (pegged !== null) return pegged;
+    const parsed = protocolPositionSingleToken(pos);
+    if (parsed) {
+        const cgUnit = protocolTokenCoingeckoUnitPrice(pos);
+        if (cgUnit !== null) return parsed.amount * cgUnit;
+    }
+    return Number(pos?.value || 0);
 }
 function protocolDisplayValue(p) {
     if (p?.manualValue) return Number(p?.value || 0);
@@ -14354,11 +14420,35 @@ function renderTokens() {
 // LIVE TOKEN PRICES  (CoinGecko simple/price, refreshes every 60s)
 // =============================================================================
 let _tokenPriceTimer = null;
-let livePrices = {}; // symbol.toUpperCase() → USD price
+let livePrices = {}; // symbol.toUpperCase() → USD price (CoinGecko)
+
+function collectDeFiPriceSymbols() {
+    const syms = new Set();
+    for (const t of data.tokens || []) {
+        if (t?.symbol) syms.add(String(t.symbol).toUpperCase());
+    }
+    for (const p of data.protocols || []) {
+        for (const sec of p.sections || []) {
+            for (const pos of sec.positions || []) {
+                const parsed = protocolPositionSingleToken(pos);
+                if (parsed) {
+                    syms.add(parsed.symbol.toUpperCase());
+                    continue;
+                }
+                for (const raw of pos.tokens || []) {
+                    const token = protocolTokenAmountAndSymbol(raw);
+                    if (token) syms.add(token.symbol.toUpperCase());
+                }
+            }
+        }
+    }
+    return [...syms];
+}
 
 async function fetchLiveTokenPrices() {
     if (document.body.dataset.activeTab !== 'defi' || document.hidden) return;
-    if (!data.tokens.length) return;
+    const symbols = collectDeFiPriceSymbols();
+    if (!symbols.length) return;
 
     const pulse  = document.getElementById('tokenPricePulse');
     const status = document.getElementById('tokenPriceStatus');
@@ -14366,12 +14456,7 @@ async function fetchLiveTokenPrices() {
     if (dot)   dot.style.display = 'flex';
     if (pulse) pulse.style.background = 'var(--amber)';
 
-    // Build list of gecko IDs for each token
-    const geckoIds = data.tokens.map(t => {
-        const sym = t.symbol.toUpperCase();
-        return CRYPTO_GECKO_IDS[sym] || sym.toLowerCase();
-    });
-    const uniqueIds = [...new Set(geckoIds)];
+    const uniqueIds = [...new Set(symbols.map(geckoIdForSymbol))];
 
     try {
         const url = `/api/prices?ids=${uniqueIds.join(',')}`;
@@ -14379,20 +14464,28 @@ async function fetchLiveTokenPrices() {
         if (!res.ok) throw new Error('Price API ' + res.status);
         const prices = await res.json();
 
-        let anyUpdated = false;
+        let walletUpdated = false;
+        let pricesUpdated = false;
+        for (const sym of symbols) {
+            const usd = prices[geckoIdForSymbol(sym)]?.usd;
+            if (!Number.isFinite(usd) || usd <= 0) continue;
+            if (livePrices[sym] !== usd) pricesUpdated = true;
+            livePrices[sym] = usd;
+        }
         data.tokens.forEach(t => {
-            const geckoId = CRYPTO_GECKO_IDS[t.symbol.toUpperCase()] || t.symbol.toLowerCase();
-            const usd = prices[geckoId]?.usd;
-            if (usd) {
-                livePrices[t.symbol.toUpperCase()] = usd;
-                if (t.amount > 0) { t.value = t.amount * usd; anyUpdated = true; }
+            const sym = t.symbol.toUpperCase();
+            const usd = livePrices[sym];
+            if (usd && t.amount > 0) {
+                const nextVal = t.amount * usd;
+                if (t.value !== nextVal) {
+                    t.value = nextVal;
+                    walletUpdated = true;
+                }
             }
         });
 
-        if (anyUpdated) {
-            saveData();
-            updateUI();
-        }
+        if (walletUpdated) saveData();
+        if (walletUpdated || pricesUpdated) updateUI();
 
         if (pulse) pulse.style.background = 'var(--green)';
         if (status) {
@@ -14632,16 +14725,7 @@ function renderProtocols() {
         return { amount: Number(m[1].replace(/,/g, '')), symbol: m[2].trim() };
     }
     function stableUnitPriceTag(pos, tokenText) {
-        const parsed = tokenAmountAndSymbol(tokenText);
-        if (!parsed || !parsed.amount || !Number.isFinite(parsed.amount)) return '';
-        const sym = parsed.symbol.toUpperCase();
-        if (/^(PT|YT)-/.test(sym)) return '';
-        if ((pos.tokens || []).length !== 1) return '';
-        const unit = Number(pos.value || 0) / parsed.amount;
-        if (stableUnitPriceInPegBand(unit)) {
-            return ` <span style="color:var(--green);font-size:0.68rem;font-family:var(--ff-mono)">$1.0000 fixed</span>`;
-        }
-        return '';
+        return protocolStablePriceTagHtml(pos, tokenText);
     }
 
     function aprBadgeHtml(posKey, sub) {
@@ -14745,12 +14829,7 @@ function renderProtocols() {
                     }
                     const tokensHtml = pos.tokens.length
                         ? pos.tokens.map((t, tokenIndex) => {
-                            const sym = t.trim().toUpperCase();
-                            const price = livePrices[sym];
-                            const fixedTag = stableUnitPriceTag(pos, t);
-                            const priceTag = fixedTag || (price
-                                ? ` <span style="color:var(--t3);font-size:0.68rem;font-family:var(--ff-mono)">$${price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4})}</span>`
-                                : '');
+                            const priceTag = protocolStablePriceTagHtml(pos, t);
                             return `<div class="drawer-position-token-input"><input class="defi-edit-input" value="${dashEsc(protocolTokenDisplayText(pos, t))}" aria-label="Edit token amount" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionToken(${i},${sectionIndex},${positionIndex},${tokenIndex},this.value)" onblur="updateProtocolPositionToken(${i},${sectionIndex},${positionIndex},${tokenIndex},this.value)">${priceTag}</div>`;
                         }).join('')
                         : '<div style="color:var(--t3);font-style:italic">—</div>';
@@ -21169,23 +21248,10 @@ async function terminalFetchPrice(alert) {
     return null;
 }
 
-const CRYPTO_GECKO_IDS = {
-    BTC:'bitcoin', ETH:'ethereum', SOL:'solana', BNB:'binancecoin',
-    AVAX:'avalanche-2', MATIC:'matic-network', POL:'matic-network',
-    ARB:'arbitrum', OP:'optimism', LINK:'chainlink', UNI:'uniswap',
-    AAVE:'aave', MKR:'maker', SNX:'synthetix-network-token', CRV:'curve-dao-token',
-    LDO:'lido-dao', GMX:'gmx', GRT:'the-graph', PENDLE:'pendle',
-    ENA:'ethena', MORPHO:'morpho', INJ:'injective-protocol',
-    SUI:'sui', APT:'aptos', SEI:'sei-network', TIA:'celestia',
-    DOGE:'dogecoin', SHIB:'shiba-inu', PEPE:'pepe', WIF:'dogwifcoin',
-    XRP:'ripple', ADA:'cardano', DOT:'polkadot', ATOM:'cosmos',
-    NEAR:'near', FTM:'fantom', ALGO:'algorand', FLOW:'flow',
-    SAND:'the-sandbox', MANA:'decentraland', AXS:'axie-infinity',
-    USDC:'usd-coin', USDT:'tether', DAI:'dai',
-};
+const CRYPTO_GECKO_IDS = GECKO_SYMBOL_IDS;
 
 function terminalCryptoToGeckoId(symbol) {
-    return CRYPTO_GECKO_IDS[symbol.toUpperCase()] || symbol.toLowerCase();
+    return geckoIdForSymbol(symbol);
 }
 
 
