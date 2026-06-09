@@ -1,5 +1,9 @@
-# Records loop position net value and APY every 2 hours for the Loops history chart.
-name: Loops Snapshot
+# Backup cron — fires every 2 hours from GitHub's infrastructure.
+# Primary cron is cron-job.org (every 2h at :05 UTC). Configure:
+#   URL:    https://testedefi.vercel.app/api/loop-cron-snapshot
+#   Header: x-sync-secret: <SYNC_SECRET from Vercel env>
+#   Schedule: 5 */2 * * * (or "every 2 hours" in cron-job.org UI)
+name: Loops Snapshot (backup)
 
 on:
   schedule:
@@ -18,7 +22,7 @@ jobs:
           STATUS=$(curl -s -o /tmp/loops-cron.json -w "%{http_code}" \
             --max-time 180 \
             -H "x-sync-secret: ${SYNC_SECRET}" \
-            "https://testedefi.vercel.app/api/aave-proxy?loopCronSnapshot=1")
+            "https://testedefi.vercel.app/api/loop-cron-snapshot")
           echo "Response status: $STATUS"
           cat /tmp/loops-cron.json || true
           if [ "$STATUS" != "200" ]; then

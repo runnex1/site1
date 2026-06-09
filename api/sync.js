@@ -504,13 +504,19 @@ async function getPolymarketPnlSeries(query) {
   };
 }
 
+const runCheckAlerts = require('../lib/check-alerts-run');
+
 module.exports = async function handler(req, res) {
   // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-sync-secret');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-sync-secret, x-cron-secret, authorization');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  if (req.query?.checkAlerts === '1') {
+    return runCheckAlerts(req, res);
+  }
 
   // ── GET — load all vault data back to the browser ─────────────────────────
   if (req.method === 'GET') {

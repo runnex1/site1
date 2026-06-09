@@ -39,6 +39,7 @@ const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const perpsJs = readFileSync(join(ROOT, 'lib', 'perps.js'), 'utf8');
 const aaveProxyJs = readFileSync(join(ROOT, 'api', 'aave-proxy.js'), 'utf8');
 const syncJs = readFileSync(join(ROOT, 'api', 'sync.js'), 'utf8');
+const vercelJson = readFileSync(join(ROOT, 'vercel.json'), 'utf8');
 const now = Date.now();
 
 function payment(usdc, time = now) {
@@ -728,7 +729,11 @@ assert.match(indexHtml, /\/api\/loop-snapshots/, 'loops tab must hydrate snapsho
 assert.match(indexHtml, /watcherWallets: watcherWallets/, 'loop sync must POST yield wallets so cron can snapshot server-side');
 const loopsWorkflow = readFileSync(join(ROOT, '.github', 'workflows', 'loops-snapshot.yml'), 'utf8');
 assert.match(loopsWorkflow, /5 \*\/2 \* \* \*/, 'GitHub cron must run every 2 hours');
-assert.match(loopsWorkflow, /aave-proxy\?loopCronSnapshot=1/, 'GitHub cron must hit loopCronSnapshot directly, not loop-rates rewrite');
+assert.match(loopsWorkflow, /loop-cron-snapshot/, 'loop cron backup must use vercel rewrite to loopCronSnapshot');
+assert.match(vercelJson, /"source": "\/api\/check-alerts"/, 'check-alerts must rewrite to sync handler');
+assert.match(vercelJson, /"source": "\/api\/loop-cron-snapshot"/, 'loop cron must expose friendly rewrite path');
+assert.match(syncJs, /checkAlerts === '1'/, 'sync must route check-alerts cron through shared handler');
+assert.match(syncJs, /check-alerts-run/, 'check-alerts logic must live in lib to stay within function limit');
 assert.match(aaveProxyJs, /vault:loop_snapshots/, 'loop snapshots must persist in KV');
 assert.match(syncJs, /loopSnapshots === '1'/, 'sync endpoint must hydrate loop snapshot history');
 assert.match(indexHtml, /loops-cockpit[\s\S]{0,180}max-width:min\(1180px/, 'loops tab must use centered max-width like perps');

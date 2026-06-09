@@ -1,13 +1,14 @@
 # Backup cron — fires every 5 minutes from GitHub's infrastructure.
-# Primary cron is cron-job.org (every 1 min). This is a safety net: if
-# cron-job.org goes down, gets disabled, or misses a run, GitHub Actions
-# ensures alerts still fire within 5 minutes.
+# Primary cron is cron-job.org (every 1 min). Configure:
+#   URL:    https://testedefi.vercel.app/api/check-alerts
+#   Header: x-cron-secret: <CRON_SECRET from Vercel env, if set>
+#   Schedule: every 1 minute
 name: Alert Check (backup)
 
 on:
   schedule:
-    - cron: '*/5 * * * *'   # every 5 minutes
-  workflow_dispatch:          # manual trigger from GitHub UI
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 jobs:
   check:
