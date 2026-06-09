@@ -6,6 +6,7 @@
 <title>Vault — Portfolio Intelligence</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="lib/defi-pnl.js"></script>
+<script src="lib/etf-dca.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -7848,6 +7849,7 @@ function mergeEtfPositions(localEtfs = [], incomingEtfs = []) {
             merged.push(local);
             continue;
         }
+        const incomingDcaNewer = String(incoming.lastDcaDate || '') > String(local.lastDcaDate || '');
         merged.push({
             ...incoming,
             ...local,
@@ -7855,7 +7857,16 @@ function mergeEtfPositions(localEtfs = [], incomingEtfs = []) {
             longName: incoming.longName || local.longName,
             shortName: incoming.shortName || local.shortName,
             instrumentType: incoming.instrumentType || local.instrumentType,
-            logoSymbol: etfLogoSymbolFor(local.ticker, incoming) || etfLogoSymbolFor(local.ticker, local) || local.logoSymbol || incoming.logoSymbol || local.ticker
+            logoSymbol: etfLogoSymbolFor(local.ticker, incoming) || etfLogoSymbolFor(local.ticker, local) || local.logoSymbol || incoming.logoSymbol || local.ticker,
+            ...(incomingDcaNewer ? {
+                shares: incoming.shares,
+                avgPrice: incoming.avgPrice,
+                lastDcaDate: incoming.lastDcaDate,
+                lastDcaEventAt: incoming.lastDcaEventAt,
+                lastDcaAmount: incoming.lastDcaAmount,
+                lastDcaShares: incoming.lastDcaShares,
+                lastDcaDaysAccrued: incoming.lastDcaDaysAccrued,
+            } : {}),
         });
     }
     for (const incoming of Array.isArray(incomingEtfs) ? incomingEtfs : []) {
@@ -10678,6 +10689,8 @@ async function addETF() {
             match.shortName = quote?.shortName || match.shortName || '';
             match.instrumentType = quote?.instrumentType || match.instrumentType || '';
             match.dcaDailyAmount = Number(match.dcaDailyAmount || 0) + newDcaAmount;
+            if (newHasDca && !EtfDca.noteHasDca(match.note)) match.note = 'DCA';
+            if (newHasDca && !match.dcaAccrualFrom) match.dcaAccrualFrom = romanianDcaDateKey();
             match.logoSymbol = etfLogoSymbolFor(ticker, match) || match.logoSymbol || ticker;
             match.updatedAt = Date.now();
         } else {
@@ -10688,11 +10701,8 @@ async function addETF() {
                 currentPrice: livePrice,
                 dcaDailyAmount: newDcaAmount,
                 lastDcaDate: '',
-                longName: quote?.longName || '',
-                shortName: quote?.shortName || '',
-                instrumentType: quote?.instrumentType || '',
-                logoSymbol: etfLogoSymbolFor(ticker, quote) || ticker,
-                note: '',
+                dcaAccrualFrom: newHasDca ? romanianDcaDateKey() : '',
+                note: newHasDca ? 'DCA' : '',
                 addedAt: Date.now(),
                 updatedAt: Date.now(),
             });
@@ -10743,26 +10753,15 @@ function etfLogoSymbolFor(ticker, meta = {}) {
 }
 async function applyEtfDcaSchedules() {
     if (!data.etfs?.length || romanianHour() < 12) return;
-    const today = romanianDcaDateKey();
     let changed = false;
     for (const e of data.etfs) {
+        EtfDca.ensureDcaNote(e);
         const amount = Number(e.dcaDailyAmount || 0);
-        if (!amount || e.lastDcaDate === today) continue;
+        if (!amount || !EtfDca.noteHasDca(e.note)) continue;
         const quote = await fetchYahoo(encodeURIComponent(String(e.ticker || '').toUpperCase()));
         const price = Number(quote?.price || e.currentPrice || 0);
         if (!price) continue;
-        const oldShares = Number(e.shares || 0);
-        const oldCost = oldShares * Number(e.avgPrice || price);
-        const addedShares = amount / price;
-        e.shares = oldShares + addedShares;
-        e.avgPrice = e.shares ? (oldCost + amount) / e.shares : price;
-        e.currentPrice = price;
-        e.lastDcaDate = today;
-        e.lastDcaEventAt = Date.now();
-        e.lastDcaAmount = amount;
-        e.lastDcaShares = addedShares;
-        e.updatedAt = Date.now();
-        changed = true;
+        if (EtfDca.applyDcaToPosition(e, price)) changed = true;
     }
     if (changed) { saveData(); updateUI(); }
 }
@@ -16876,12 +16875,14 @@ function renderOpinionMarkets() {
 
 function etfPositionRows() {
     return (data.etfs || []).map((e, i) => {
+        EtfDca.ensureDcaNote(e);
         const shares = Number(e.shares || 0);
         const currentPrice = Number(e.currentPrice || 0);
         const avgPrice = Number(e.avgPrice || 0);
         const value = shares * currentPrice;
         const cost = shares * avgPrice;
-        return { e, i, shares, currentPrice, avgPrice, value, cost, pnl: value - cost, dca: Number(e.dcaDailyAmount || 0) };
+        const dcaActive = EtfDca.noteHasDca(e.note) && Number(e.dcaDailyAmount || 0) > 0;
+        return { e, i, shares, currentPrice, avgPrice, value, cost, pnl: value - cost, dca: Number(e.dcaDailyAmount || 0), dcaActive };
     });
 }
 
@@ -17031,8 +17032,8 @@ function updateEtfKpis(rows) {
     const totalCost = rows.reduce((sum, row) => sum + row.cost, 0);
     const totalPnl = totalValue - totalCost;
     const pnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
-    const totalDca = rows.reduce((sum, row) => sum + row.dca, 0);
-    const dcaCount = rows.filter(row => row.dca > 0).length;
+    const totalDca = rows.filter(row => EtfDca.noteHasDca(row.e.note)).reduce((sum, row) => sum + row.dca, 0);
+    const dcaCount = rows.filter(row => EtfDca.noteHasDca(row.e.note) && row.dca > 0).length;
     const largest = rows.slice().sort((a,b) => b.value - a.value)[0];
 
     const valueEl = document.getElementById('etfKpiValue');
@@ -17204,7 +17205,7 @@ function renderEtfActivity(rows) {
     const best = rows.slice().sort((a,b) => b.pnl - a.pnl)[0];
     const worst = rows.slice().sort((a,b) => a.pnl - b.pnl)[0];
     const largest = rows.slice().sort((a,b) => b.value - a.value)[0];
-    const dcaPlans = rows.filter(row => row.dca > 0).sort((a,b) => b.dca - a.dca);
+    const dcaPlans = rows.filter(row => row.dcaActive || (EtfDca.noteHasDca(row.e.note) && row.dca > 0)).sort((a,b) => b.dca - a.dca);
     const snapshots = etfSnapshotSeries(totalValue).filter(point => point.label !== 'Current');
     const latestSnapshot = snapshots[snapshots.length - 1];
 
@@ -17227,11 +17228,15 @@ function renderEtfActivity(rows) {
       .sort((a,b) => Number(b.e.lastDcaEventAt || 0) - Number(a.e.lastDcaEventAt || 0))
       .slice(0, 2)
       .forEach(row => {
+        const days = Number(row.e.lastDcaDaysAccrued || 0);
+        const daily = Number(row.dca || 0);
         events.push({
             tone: 'good',
             icon: 'BUY',
             title: `${String(row.e.ticker || '').toUpperCase()} DCA order filled`,
-            meta: `${Number(row.e.lastDcaShares || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })} shares added`,
+            meta: days > 1
+                ? `${days} days × ${fmtEtfUsd(daily, 0)}/day`
+                : `${Number(row.e.lastDcaShares || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })} shares added`,
             money: fmtEtfUsd(Number(row.e.lastDcaAmount || row.dca || 0), 0)
         });
       });
@@ -17287,13 +17292,39 @@ function renderEtfActivity(rows) {
 
 function updateEtfEditable(index, field, value) {
     const item = data.etfs?.[index];
-    if (!item || !['shares', 'avgPrice', 'currentPrice', 'note'].includes(field)) return;
+    if (!item) return;
     if (field === 'note') {
+        const previousNote = item.note;
         item.note = String(value || '').slice(0, 80);
+        EtfDca.syncDcaNoteState(item, previousNote, romanianDcaDateKey());
         item.updatedAt = Date.now();
         saveData();
+        updateUI();
         return;
     }
+    if (field === 'dcaDailyAmount') {
+        if (!EtfDca.noteHasDca(item.note)) {
+            updateUI();
+            return;
+        }
+        const parsed = Number(String(value || '').replace(/,/g, ''));
+        if (!Number.isFinite(parsed) || parsed < 0) {
+            updateUI();
+            return;
+        }
+        item.dcaDailyAmount = parsed;
+        if (parsed > 0) {
+            if (!item.dcaAccrualFrom) item.dcaAccrualFrom = romanianDcaDateKey();
+        } else {
+            item.lastDcaDate = '';
+            item.dcaAccrualFrom = '';
+        }
+        item.updatedAt = Date.now();
+        saveData();
+        updateUI();
+        return;
+    }
+    if (!['shares', 'avgPrice', 'currentPrice'].includes(field)) return;
     const parsed = Number(String(value || '').replace(/,/g, ''));
     if (!Number.isFinite(parsed) || parsed < 0) {
         updateUI();
@@ -17341,8 +17372,10 @@ function renderETFs() {
             <div><input class="etf-edit-input" type="number" min="0" step="0.0001" value="${row.currentPrice.toFixed(4)}" aria-label="Edit ${e.ticker} price" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="etfEditKeydown(event)" onchange="updateEtfEditable(${row.i},'currentPrice',this.value)" onblur="updateEtfEditable(${row.i},'currentPrice',this.value)"></div>
             <div class="value">$${row.value.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
             <div class="value ${row.pnl>=0?'positive':'negative'}">${fmtEtfSignedUsd(row.pnl)}</div>
-            <div class="token-amount">${row.dca ? '$' + row.dca.toLocaleString('en-US',{maximumFractionDigits:0}) + ' / day' : '-'}</div>
-            <div><input class="etf-note-input" type="text" maxlength="80" value="${dashEsc(e.note || '')}" placeholder="${row.dca ? 'DCA' : 'Note'}" aria-label="Edit ${e.ticker} note" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="etfEditKeydown(event)" onchange="updateEtfEditable(${row.i},'note',this.value)" onblur="updateEtfEditable(${row.i},'note',this.value)"></div>
+            ${EtfDca.noteHasDca(e.note)
+                ? `<div><input class="etf-edit-input" type="number" min="0" step="1" value="${row.dca > 0 ? row.dca : ''}" placeholder="USD/day" aria-label="Edit ${e.ticker} daily DCA" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="etfEditKeydown(event)" onchange="updateEtfEditable(${row.i},'dcaDailyAmount',this.value)" onblur="updateEtfEditable(${row.i},'dcaDailyAmount',this.value)"></div>`
+                : `<div class="token-amount">-</div>`}
+            <div><input class="etf-note-input" type="text" maxlength="80" value="${dashEsc(e.note || '')}" placeholder="${EtfDca.noteHasDca(e.note) ? 'DCA' : 'Note'}" aria-label="Edit ${e.ticker} note" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="etfEditKeydown(event)" onchange="updateEtfEditable(${row.i},'note',this.value)" onblur="updateEtfEditable(${row.i},'note',this.value)"></div>
             <div><button class="row-x-btn" onclick="event.stopPropagation();deleteEtfPosition(${row.i}, this)" title="Close or delete ETF / stock">&times;</button></div>
         </div>`;
     }).join('');

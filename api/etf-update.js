@@ -1,12 +1,8 @@
 const { kvGet, kvSet } = require('../lib/kv');
+const EtfDca = require('../lib/etf-dca');
 
 function todayRomaniaKey(date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Bucharest',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date);
+  return EtfDca.dcaDateKey(date);
 }
 
 function romaniaHour(date = new Date()) {
@@ -68,6 +64,7 @@ module.exports = async function handler(req, res) {
     let dcaApplied = 0;
 
     for (const e of portfolio.etfs) {
+      EtfDca.ensureDcaNote(e);
       const ticker = String(e.ticker || '').trim().toUpperCase();
       if (!ticker) continue;
       let quote = null;
@@ -83,14 +80,7 @@ module.exports = async function handler(req, res) {
       e.instrumentType = quote?.instrumentType || e.instrumentType || '';
       e.logoSymbol = etfLogoSymbolFor(ticker, e) || e.logoSymbol || ticker;
 
-      const dcaAmount = Number(e.dcaDailyAmount || 0);
-      if (canDca && dcaAmount > 0 && e.lastDcaDate !== today) {
-        const oldShares = Number(e.shares || 0);
-        const oldCost = oldShares * Number(e.avgPrice || price);
-        const addedShares = dcaAmount / price;
-        e.shares = oldShares + addedShares;
-        e.avgPrice = e.shares ? (oldCost + dcaAmount) / e.shares : price;
-        e.lastDcaDate = today;
+      if (canDca && EtfDca.applyDcaToPosition(e, price)) {
         dcaApplied++;
       }
     }
