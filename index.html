@@ -8646,7 +8646,7 @@ function calcPositionAPR(posKey) {
     if (daysDiff === null) return { apr: null };
 
     const newerVal = getPositionMapValue(newerPositions, posKey);
-    const olderVal = getPositionMapValue(baseline.positions, posKey);
+    const olderVal = getPositionMapValue(protocolImportPositionMap(baseline), posKey);
     if (!olderVal || newerVal === null) return { apr: null };
 
     if (Math.abs(newerVal - olderVal) > PROTO_VALUE_CHANGE_MAX) return { apr: null };
@@ -8669,8 +8669,8 @@ function calcSnapshotPositionAPR(posKey, newerSnap, olderSnap) {
     if (!newerSnap || !olderSnap) return { apr: null };
     const daysDiff = protocolAprDaysDiff(olderSnap.ts, newerSnap.ts);
     if (daysDiff === null) return { apr: null };
-    const newerVal = getPositionMapValue(newerSnap.positions, posKey);
-    const olderVal = getPositionMapValue(olderSnap.positions, posKey);
+    const newerVal = getPositionMapValue(protocolImportPositionMap(newerSnap), posKey);
+    const olderVal = getPositionMapValue(protocolImportPositionMap(olderSnap), posKey);
     if (!olderVal || newerVal === null) return { apr: null };
     if (Math.abs(newerVal - olderVal) > PROTO_VALUE_CHANGE_MAX) return { apr: null };
     const apr = ((newerVal - olderVal) / olderVal) * (365 / daysDiff) * 100;
@@ -8779,7 +8779,7 @@ function calcDefi24hYield() {
             const secIdx = sectionCounts[secType] > 1 ? `[${sectionCounts[secType]}]` : '';
             for (const pos of sec.positions) {
                 const key = `${p.name}|||${secType}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
-                const olderVal = getPositionMapValue(baseline.positions, key);
+                const olderVal = getPositionMapValue(protocolImportPositionMap(baseline), key);
                 const newerVal = getPositionMapValue(currentPositions, key);
                 if (olderVal === null || newerVal === null) continue;
                 const aprCheck = calcPositionAPR(key);
@@ -8817,7 +8817,7 @@ function calcDefiSnapshotYieldPnl() {
             for (const pos of sec.positions || []) {
                 const key = `${p.name}|||${secType}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
                 const aprCheck = calcPositionAPR(key);
-                const olderVal = getPositionMapValue(baseline.positions, key);
+                const olderVal = getPositionMapValue(protocolImportPositionMap(baseline), key);
                 const newerVal = getPositionMapValue(currentPositions, key);
                 if (aprCheck.apr === null || olderVal === null || newerVal === null) continue;
                 let delta = newerVal - olderVal;
@@ -11417,17 +11417,30 @@ function protocolTokenAmountAndSymbol(raw) {
     if (!m) return null;
     return { amount: Number(m[1].replace(/,/g, '')), symbol: m[2].trim() };
 }
+function isUsdPegStableSymbol(sym) {
+    const s = String(sym || '').trim().toUpperCase();
+    if (!s || /^(PT|YT)-/.test(s)) return false;
+    return /(USD|DAI|FRAX|LUSD|GHO|SUSDE|USDE|USDS|USDM|EURC|FDUSD|PYUSD|USD0|USDT0|USDC)/i.test(s);
+}
 function fixedStablePositionValue(pos) {
     if (pos?.manualValue) return null;
     const tokens = Array.isArray(pos?.tokens) ? pos.tokens : [];
     if (tokens.length !== 1) return null;
     const parsed = protocolTokenAmountAndSymbol(tokens[0]);
     if (!parsed || !parsed.amount || !Number.isFinite(parsed.amount)) return null;
-    const sym = parsed.symbol.toUpperCase();
-    if (/^(PT|YT)-/.test(sym)) return null;
+    if (/^(PT|YT)-/.test(parsed.symbol.toUpperCase())) return null;
+    // Known USD-pegged stables: always $1 per token for net value and APR (both snapshots and current).
+    if (isUsdPegStableSymbol(parsed.symbol)) return parsed.amount;
     const rawValue = Number(pos.value || 0);
     const unit = rawValue / parsed.amount;
     return unit >= 0.998 && unit <= 1.004 ? parsed.amount : null;
+}
+function protocolImportPositionMap(entry) {
+    if (!entry) return null;
+    if (Array.isArray(entry.protocols) && entry.protocols.length) {
+        return buildPositionMap(entry.protocols);
+    }
+    return entry.positions || null;
 }
 function protocolPositionValue(pos) {
     const fixed = fixedStablePositionValue(pos);
@@ -14602,7 +14615,7 @@ function renderProtocols() {
         if (/^(PT|YT)-/.test(sym)) return '';
         if ((pos.tokens || []).length !== 1) return '';
         const unit = Number(pos.value || 0) / parsed.amount;
-        if (unit >= 0.998 && unit <= 1.004) {
+        if (isUsdPegStableSymbol(sym) || (unit >= 0.998 && unit <= 1.004)) {
             return ` <span style="color:var(--green);font-size:0.68rem;font-family:var(--ff-mono)">$1.0000 fixed</span>`;
         }
         return '';
