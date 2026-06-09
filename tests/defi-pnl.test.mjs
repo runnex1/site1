@@ -8,6 +8,8 @@ const {
   computeProtocolPnlSeries,
   processQtyTransition,
   processUsdTransition,
+  aggregateProtocolImportPositionsToNet,
+  dedupeProtocolPnlTimeline,
 } = DefiPnl;
 
 // Partial BTC sell: 0.5 -> 0.4, price rises 40k -> 50k
@@ -127,6 +129,26 @@ const {
   ]);
   assert.ok(perLeg.total > netSeries.total * 2, 'gross legs must over-state leveraged loop PNL');
   assert.ok(Math.abs(netSeries.total - (netEnd - netStart)) < 1, 'net protocol key must match equity change');
+}
+
+{
+  const legs = {
+    'Morpho|||Lending:supplied:USDe': 106000,
+    'Morpho|||Lending:Borrowed:USDC': 94000,
+  };
+  const net = aggregateProtocolImportPositionsToNet(legs);
+  assert.ok(Math.abs(net['Morpho|||__pnl__'].value - 12000) < 0.01, 'Borrowed leg keys must subtract case-insensitively');
+}
+
+{
+  const ts = Date.UTC(2026, 5, 21, 12);
+  const bucket = dedupeProtocolPnlTimeline([
+    { ts, positions: { 'A|||__pnl__': { value: 200000, qty: null } } },
+    { ts: ts + 1000, positions: { 'A|||__pnl__': { value: 12000, qty: null } } },
+    { ts: ts + 7 * 3600000, positions: { 'A|||__pnl__': { value: 12100, qty: null } } },
+  ]);
+  assert.equal(bucket.length, 2, 'protocol PNL timeline must collapse same-bucket duplicates');
+  assert.equal(bucket[0].positions['A|||__pnl__'].value, 12000, 'later same-bucket snapshot must win');
 }
 
 console.log('PASS: defi-pnl cost-basis tests');

@@ -775,8 +775,8 @@ assert.match(indexHtml, /function loopRefreshPeriodApyMetrics\(/, 'loop chart to
 assert.match(indexHtml, /loopRefreshPeriodApyMetrics\(chart\)/, 'loop chart mode switch must update period APY metrics');
 assert.match(indexHtml, /loop-realized-row/, 'loop cards must render realized APY mini metrics');
 assert.match(indexHtml, /loopBuildChartHistoryPoints\(historyPoints, loop\.raw, liveEndValue, liveEndTs\)/, 'loop charts must reset net value history after deposits and withdrawals');
-assert.match(indexHtml, /function aggregateImportPositionsToNet\(/, 'protocol PNL must aggregate legacy import legs to net equity');
-assert.match(indexHtml, /protocolNetValue\(p\)/, 'protocol PNL snapshots must track net equity per protocol');
+assert.match(indexHtml, /dedupeProtocolPnlTimeline\(raw\)/, 'protocol PNL must collapse duplicate import/snapshot entries per 6h bucket');
+assert.match(indexHtml, /aggregateProtocolImportPositionsToNet/, 'protocol PNL must aggregate legacy import legs via shared engine');
 assert.match(indexHtml, /\[1-9A-HJ-NP-Za-km-z\]\{32,44\}/, 'loop yield wallets must accept Solana addresses');
 assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention Solana loop protocols');
 

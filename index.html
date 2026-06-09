@@ -8473,21 +8473,9 @@ function buildPositionPnlMap(protocols) {
 }
 
 function aggregateImportPositionsToNet(positions) {
-    const byProtocol = {};
-    for (const [key, raw] of Object.entries(positions || {})) {
-        if (String(key).includes('__net__') || String(key).includes('__total__')) continue;
-        const protocol = String(key.split('|||')[0] || '').trim();
-        if (!protocol) continue;
-        const val = typeof raw === 'number' ? Number(raw) || 0 : Number(raw?.value) || 0;
-        if (!val) continue;
-        if (String(key).includes(':borrowed:')) byProtocol[protocol] = (byProtocol[protocol] || 0) - val;
-        else byProtocol[protocol] = (byProtocol[protocol] || 0) + val;
-    }
-    const out = {};
-    for (const [name, value] of Object.entries(byProtocol)) {
-        out[`${name}|||__pnl__`] = { value, qty: null };
-    }
-    return out;
+    return window.DefiPnl?.aggregateProtocolImportPositionsToNet
+        ? DefiPnl.aggregateProtocolImportPositionsToNet(positions)
+        : {};
 }
 function normalizeProtocolPositionsForPnl(positions) {
     if (!positions || typeof positions !== 'object') return {};
@@ -11101,7 +11089,9 @@ function collectProtocolPnlSnapshots() {
     if (Array.isArray(data.protocols) && data.protocols.length) {
         raw.push({ ts: Date.now(), positions: buildPositionPnlMap(data.protocols) });
     }
-    return DefiPnl.dedupePnlSnapshots(raw);
+    return DefiPnl.dedupeProtocolPnlTimeline
+        ? DefiPnl.dedupeProtocolPnlTimeline(raw)
+        : DefiPnl.dedupePnlSnapshots(raw);
 }
 
 function renderDefiPnlPanel() {
