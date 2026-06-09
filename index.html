@@ -8448,11 +8448,61 @@ const GECKO_SYMBOL_IDS = {
     SAND:'the-sandbox', MANA:'decentraland', AXS:'axie-infinity',
     USDC:'usd-coin', USDT:'tether', DAI:'dai', GHO:'gho', USDM:'usd-m',
     USDE:'ethena-usde', SUSDE:'ethena-staked-usde', FRAX:'frax', LUSD:'liquity-usd',
-    PYUSD:'paypal-usd', EURC:'euro-coin', FDUSD:'first-digital-usd',
+    PYUSD:'paypal-usd', EURC:'euro-coin', FDUSD:'first-digital-usd', AUSD:'agora-dollar',
 };
+const _geckoSymbolIdCache = {};
 function geckoIdForSymbol(symbol) {
     const sym = String(symbol || '').trim().toUpperCase();
-    return GECKO_SYMBOL_IDS[sym] || sym.toLowerCase();
+    return GECKO_SYMBOL_IDS[sym] || _geckoSymbolIdCache[sym] || null;
+}
+async function resolveGeckoIdByMarketCap(symbol) {
+    const sym = String(symbol || '').trim().toUpperCase();
+    if (!sym) return null;
+    const known = GECKO_SYMBOL_IDS[sym] || _geckoSymbolIdCache[sym];
+    if (known) return known;
+    try {
+        const searchRes = await fetch(`/api/prices?cgPath=/search&query=${encodeURIComponent(sym)}`, { signal: AbortSignal.timeout(10000) });
+        if (!searchRes.ok) return null;
+        const search = await searchRes.json();
+        const coins = (search?.coins || [])
+            .filter(c => c?.id && String(c.symbol || '').toUpperCase() === sym)
+            .slice(0, 12);
+        if (!coins.length) return null;
+        if (coins.length === 1) return coins[0].id;
+        const ids = coins.map(c => c.id).join(',');
+        const mktRes = await fetch(
+            `/api/prices?cgPath=/coins/markets&vs_currency=usd&ids=${encodeURIComponent(ids)}&order=market_cap_desc&per_page=12&page=1&sparkline=false`,
+            { signal: AbortSignal.timeout(10000) }
+        );
+        if (!mktRes.ok) return coins[0].id;
+        const markets = await mktRes.json();
+        if (!Array.isArray(markets) || !markets.length) return coins[0].id;
+        markets.sort((a, b) =>
+            (Number(a.market_cap_rank || 999999) - Number(b.market_cap_rank || 999999))
+            || (Number(b.market_cap || 0) - Number(a.market_cap || 0))
+        );
+        return markets[0].id || coins[0].id;
+    } catch (e) {
+        console.warn('[Gecko resolve]', sym, e.message || e);
+        return null;
+    }
+}
+async function resolveGeckoIdsForSymbols(symbols) {
+    const idBySym = {};
+    const pending = [];
+    for (const sym of symbols) {
+        const direct = geckoIdForSymbol(sym);
+        if (direct) idBySym[sym] = direct;
+        else pending.push(sym);
+    }
+    await Promise.all(pending.map(async (sym) => {
+        const id = await resolveGeckoIdByMarketCap(sym);
+        if (id) {
+            _geckoSymbolIdCache[sym] = id;
+            idBySym[sym] = id;
+        }
+    }));
+    return idBySym;
 }
 let livePrices = {}; // symbol.toUpperCase() → USD (CoinGecko via /api/prices)
 const LIVE_PRICES_CACHE_KEY = 'vault-live-prices-v1';
@@ -14484,7 +14534,9 @@ async function fetchLiveTokenPrices(opts = {}) {
     if (dot)   dot.style.display = 'flex';
     if (pulse) pulse.style.background = 'var(--amber)';
 
-    const uniqueIds = [...new Set(symbols.map(geckoIdForSymbol))];
+    const idBySym = await resolveGeckoIdsForSymbols(symbols);
+    const uniqueIds = [...new Set(Object.values(idBySym).filter(Boolean))];
+    if (!uniqueIds.length) return false;
 
     try {
         const url = `/api/prices?ids=${uniqueIds.join(',')}`;
@@ -14495,7 +14547,9 @@ async function fetchLiveTokenPrices(opts = {}) {
         let walletUpdated = false;
         let pricesUpdated = false;
         for (const sym of symbols) {
-            const usd = prices[geckoIdForSymbol(sym)]?.usd;
+            const geckoId = idBySym[sym];
+            if (!geckoId) continue;
+            const usd = prices[geckoId]?.usd;
             if (!Number.isFinite(usd) || usd <= 0) continue;
             if (livePrices[sym] !== usd) pricesUpdated = true;
             livePrices[sym] = usd;
