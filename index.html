@@ -8423,7 +8423,7 @@ const PROTO_APR_FLOOR_DAYS = PROTO_APR_FLOOR_HOURS / 24;
 const PROTO_APR_MAX_ABS = 80;
 const PROTO_VALUE_CHANGE_MAX = 700;
 const PROTO_STABLE_PEG_MIN = 0.998;
-const PROTO_STABLE_PEG_MAX = 1.0032;
+const PROTO_STABLE_PEG_MAX = 1.004;
 let _protocolSelectedSnapshotTs = null; // null = latest snapshot baseline for APR
 let _protocolSnapshotPickerOpen = false;
 
@@ -11420,7 +11420,24 @@ function protocolTokenAmountAndSymbol(raw) {
     return { amount: Number(m[1].replace(/,/g, '')), symbol: m[2].trim() };
 }
 function stableUnitPriceInPegBand(unit) {
-    return Number.isFinite(unit) && unit >= PROTO_STABLE_PEG_MIN && unit <= PROTO_STABLE_PEG_MAX;
+    if (!Number.isFinite(unit)) return false;
+    const rounded = Math.round(unit * 10000) / 10000;
+    return rounded >= PROTO_STABLE_PEG_MIN && rounded <= PROTO_STABLE_PEG_MAX;
+}
+function protocolTokenDisplayText(pos, tokenText) {
+    const parsed = protocolTokenAmountAndSymbol(tokenText);
+    if (!parsed) return tokenText;
+    const amountMatch = String(tokenText || '').trim().match(/^([\d,]+(?:\.\d+)?)/);
+    const amountStr = amountMatch
+        ? amountMatch[1]
+        : parsed.amount.toLocaleString('en-US', { maximumFractionDigits: 10 });
+    if (fixedStablePositionValue(pos) !== null) return amountStr;
+    const poolSym = String(pos?.pool || '').trim().toUpperCase();
+    const tokenSym = parsed.symbol.toUpperCase();
+    if (poolSym && (poolSym === tokenSym || poolSym.startsWith(tokenSym) || tokenSym.startsWith(poolSym))) {
+        return amountStr;
+    }
+    return tokenText;
 }
 function fixedStablePositionValue(pos) {
     if (pos?.manualValue) return null;
@@ -14259,7 +14276,15 @@ function updateProtocolEditable(index, value) {
 function updateProtocolPositionToken(protocolIndex, sectionIndex, positionIndex, tokenIndex, value) {
     const pos = data.protocols?.[protocolIndex]?.sections?.[sectionIndex]?.positions?.[positionIndex];
     if (!pos || !Array.isArray(pos.tokens)) return;
-    pos.tokens[tokenIndex] = String(value || '').trim();
+    const raw = String(value || '').trim();
+    const prev = pos.tokens[tokenIndex];
+    const parsed = protocolTokenAmountAndSymbol(prev);
+    let next = raw;
+    if (/^[\d,]+(?:\.\d+)?$/.test(raw)) {
+        const sym = parsed?.symbol || String(pos.pool || '').trim();
+        if (sym) next = `${raw} ${sym}`;
+    }
+    pos.tokens[tokenIndex] = next;
     pos.manualValue = true;
     saveData();
     updateUI();
@@ -14726,7 +14751,7 @@ function renderProtocols() {
                             const priceTag = fixedTag || (price
                                 ? ` <span style="color:var(--t3);font-size:0.68rem;font-family:var(--ff-mono)">$${price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4})}</span>`
                                 : '');
-                            return `<div class="drawer-position-token-input"><input class="defi-edit-input" value="${dashEsc(t)}" aria-label="Edit token amount" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionToken(${i},${sectionIndex},${positionIndex},${tokenIndex},this.value)" onblur="updateProtocolPositionToken(${i},${sectionIndex},${positionIndex},${tokenIndex},this.value)">${priceTag}</div>`;
+                            return `<div class="drawer-position-token-input"><input class="defi-edit-input" value="${dashEsc(protocolTokenDisplayText(pos, t))}" aria-label="Edit token amount" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionToken(${i},${sectionIndex},${positionIndex},${tokenIndex},this.value)" onblur="updateProtocolPositionToken(${i},${sectionIndex},${positionIndex},${tokenIndex},this.value)">${priceTag}</div>`;
                         }).join('')
                         : '<div style="color:var(--t3);font-style:italic">—</div>';
                     const posKey = `${p.name}|||${_secType}${_secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
@@ -15183,17 +15208,18 @@ function renderProtocolsSnapshot() {
                         }
                     }
                     const tokensHtml = (pos.tokens || []).length
-                        ? pos.tokens.map(t => `<div>${t}</div>`).join('')
+                        ? pos.tokens.map(t => `<div>${dashEsc(protocolTokenDisplayText(pos, t))}</div>`).join('')
                         : '<div style="color:var(--t3);font-style:italic">—</div>';
                     const posKey = `${p.name}|||${_secType}${_secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
                     const aprHtml = snapshotAprBadgeHtml(posKey, pos.sub, aprPair.newer, aprPair.older);
+                    const snapVal = protocolPositionValue(pos);
                     return `${subHeader}<div class="drawer-position">
                         <div>
                             <div class="drawer-position-name">${pos.pool}</div>
                             <div class="drawer-position-tokens">${tokensHtml}</div>
                         </div>
                         <div class="drawer-position-apr">${aprHtml}</div>
-                        <div class="drawer-position-value">${isLendingSection && ['supplied','borrowed'].includes((pos.sub || '').toLowerCase()) ? '' : fmtV(pos.value)}</div>
+                        <div class="drawer-position-value">${isLendingSection && ['supplied','borrowed'].includes((pos.sub || '').toLowerCase()) ? fmtV(snapVal) : fmtV(pos.value)}</div>
                     </div>`;
                 }).join('');
 

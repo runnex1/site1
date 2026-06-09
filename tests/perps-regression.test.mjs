@@ -1338,7 +1338,8 @@ assert.doesNotMatch(indexHtml, /📸 First Snapshot/, 'protocol snapshot tab mus
 assert.match(indexHtml, /<div>Protocol<\/div><div>Type<\/div><div>Position<\/div>/, 'protocol positions table must drop the Network column');
 assert.match(indexHtml, /periodYield \+= delta;/, '24h yield must use raw period deltas instead of dividing by elapsed time');
 assert.match(indexHtml, /const PROTO_STABLE_PEG_MIN = 0\.998;/, 'stable $1 peg must start at 0.998 unit price');
-assert.match(indexHtml, /const PROTO_STABLE_PEG_MAX = 1\.0032;/, 'stable $1 peg must end at 1.0032 unit price');
+assert.match(indexHtml, /const PROTO_STABLE_PEG_MAX = 1\.004;/, 'stable $1 peg must end at 1.004 unit price');
+assert.match(indexHtml, /function protocolTokenDisplayText\(pos, tokenText\)/, 'pegged tokens must display amount without symbol');
 assert.match(indexHtml, /function protocolImportPositionMap\(entry\)/, 'protocol APR must rebuild snapshot position maps from stored protocols');
 assert.match(indexHtml, /function stableUnitPriceInPegBand\(unit\)/, 'stable peg must use unit-price band only');
 
