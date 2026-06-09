@@ -2189,6 +2189,11 @@ body::after {
   padding: 0.75rem 1.5rem 0.9rem 1.5rem;
 }
 .protocol-drawer.open { display: block; }
+#defiTab.protocol-positions-focus .protocol-drawer.open {
+  max-height: min(520px, 52vh);
+  overflow-y: auto;
+  padding: 0.85rem 1.75rem 1rem;
+}
 
 .drawer-section { margin-bottom: 0.75rem; }
 .drawer-section:last-child { margin-bottom: 0; }
@@ -2310,7 +2315,7 @@ body::after {
 #defiTab > .section > #protocolViewToggle,
 #defiTab > .section > .pm-search-wrap { margin-left:1rem; margin-right:1rem; }
 #defiTab > .section > .data-table { margin-bottom:1rem; max-height:390px; overflow:auto; }
-#defiTab > .section:nth-of-type(3) > .data-table { max-height:470px; }
+#defiTab > .section:nth-of-type(3) > .data-table { max-height:560px; }
 #defiTab > .section > .pm-search-wrap { display:none; }
 #defiTab .defi-side-stack { grid-column:2; grid-row:2 / span 2; }
 #defiTab .tokens-header,
@@ -2818,26 +2823,106 @@ body::after {
 .protocol-positions-expand-btn.active .icon-expand { display: none; }
 .protocol-positions-expand-btn.active .icon-collapse { display: block; }
 
-#defiTab > .section.wallet-tokens-section > .data-table { max-height: 390px; }
-#defiTab > .section.protocol-positions-section > .data-table { max-height: 470px; }
-#defiTab.protocol-positions-focus > .section.wallet-tokens-section > .data-table {
-  max-height: 195px;
-  transition: max-height 0.25s ease;
+.wallet-focus-strip {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.42rem 1rem;
+  border-bottom: 1px solid rgba(148,163,184,0.1);
+  background: rgba(4,14,20,0.4);
+  font-size: 0.76rem;
+  color: var(--t2);
 }
-#defiTab.protocol-positions-focus > .section.protocol-positions-section > .data-table {
-  max-height: min(calc(100vh - 240px), 803px);
-  transition: max-height 0.25s ease;
+.wallet-focus-strip-main {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+.wallet-focus-strip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sky);
+  flex-shrink: 0;
+}
+.wallet-focus-strip-label {
+  font-family: var(--ff-display);
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.wallet-focus-strip-meta {
+  font-family: var(--ff-mono);
+  font-weight: 700;
+  color: var(--t1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wallet-focus-strip-btn {
+  border: 1px solid rgba(56,189,248,0.22);
+  background: rgba(56,189,248,0.08);
+  color: var(--sky);
+  border-radius: 6px;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-family: var(--ff-body);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+.wallet-focus-strip-btn:hover {
+  background: rgba(56,189,248,0.14);
+  border-color: rgba(56,189,248,0.35);
+}
+.protocol-positions-focus-meta {
+  display: none;
+  margin-left: 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  font-family: var(--ff-mono);
+  color: var(--t3);
+}
+#defiTab.protocol-positions-focus .protocol-positions-focus-meta { display: inline; }
+
+#defiTab > .section.wallet-tokens-section > .data-table { max-height: 390px; }
+#defiTab > .section.protocol-positions-section > .data-table { max-height: 560px; }
+#defiTab.protocol-positions-focus {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.55rem;
+}
+#defiTab.protocol-positions-focus > .defi-kpi-grid {
+  display: none;
 }
 #defiTab.protocol-positions-focus .defi-side-stack {
-  max-height: calc(0.8 * (100vh - 210px));
-  overflow: hidden;
-  transition: max-height 0.25s ease;
+  display: none;
 }
-#defiTab.protocol-positions-focus .defi-side-panel .defi-panel-body {
-  max-height: 184px;
+#defiTab.protocol-positions-focus > .section.wallet-tokens-section > .section-header,
+#defiTab.protocol-positions-focus > .section.wallet-tokens-section > .pm-search-wrap,
+#defiTab.protocol-positions-focus > .section.wallet-tokens-section > .data-table {
+  display: none;
 }
-#defiTab.protocol-positions-focus .defi-side-panel .defi-scroll.defi-panel-body {
-  max-height: 184px;
+#defiTab.protocol-positions-focus > .section.wallet-tokens-section > .wallet-focus-strip {
+  display: flex;
+}
+#defiTab.protocol-positions-focus > .section.protocol-positions-section {
+  grid-column: 1 / -1;
+}
+#defiTab.protocol-positions-focus > .section.protocol-positions-section .protocol-positions-header {
+  padding: 0.55rem 1rem 0.48rem;
+}
+#defiTab.protocol-positions-focus .protocol-positions-toolbar {
+  padding: 0.42rem 1rem 0.48rem;
+}
+#defiTab.protocol-positions-focus > .section.protocol-positions-section > .data-table {
+  max-height: calc(100vh - 86px);
+  min-height: calc(100vh - 86px);
+  margin-bottom: 0.35rem;
+  transition: max-height 0.25s ease, min-height 0.25s ease;
 }
 .protocol-positions-toolbar {
   display: flex;
@@ -6089,6 +6174,14 @@ body[data-active-tab="loops"] .page-content,
               </span>
             </div>
           </div>
+          <div class="wallet-focus-strip" id="walletFocusStrip" aria-hidden="true">
+            <div class="wallet-focus-strip-main">
+              <span class="wallet-focus-strip-dot"></span>
+              <span class="wallet-focus-strip-label">Wallet</span>
+              <span class="wallet-focus-strip-meta" id="walletFocusStripMeta">0 tokens · $0</span>
+            </div>
+            <button type="button" class="wallet-focus-strip-btn" onclick="toggleProtocolPositionsFocus()" title="Restore wallet table (E)">Show wallet</button>
+          </div>
           <div class="pm-search-wrap">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
             <input id="pmPositionSearch" type="search" placeholder="Search Polymarket positions..." oninput="renderPredictionMarkets()">
@@ -6106,6 +6199,7 @@ body[data-active-tab="loops"] .page-content,
             <div class="section-title">
               <div class="section-title-dot" style="background:var(--indigo)"></div>
               Protocol Positions
+              <span class="protocol-positions-focus-meta" id="protocolPositionsFocusMeta"></span>
               <span id="totalDefiApr" style="display:none;margin-left:0.6rem;font-size:0.72rem;font-weight:700;font-family:var(--ff-mono);padding:2px 9px;border-radius:var(--r-xs);background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.25);color:var(--indigo);"></span>
             </div>
             <div class="button-group protocol-positions-actions">
@@ -6123,7 +6217,7 @@ body[data-active-tab="loops"] .page-content,
                   Clear
                 </button>
               </div>
-              <button type="button" class="protocol-positions-expand-btn" id="protocolPositionsExpandBtn" onclick="toggleProtocolPositionsFocus()" title="Expand protocol positions" aria-pressed="false" aria-label="Expand protocol positions">
+              <button type="button" class="protocol-positions-expand-btn" id="protocolPositionsExpandBtn" onclick="toggleProtocolPositionsFocus()" title="Expand protocol positions (E)" aria-pressed="false" aria-label="Expand protocol positions (E)">
                 <svg class="icon-expand" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M8 3H3v5"/><path d="M16 3h5v5"/><path d="M21 16v5h-5"/><path d="M8 21H3v-5"/></svg>
                 <svg class="icon-collapse" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>
               </button>
@@ -13704,6 +13798,7 @@ function renderTokens() {
     if (minInput && String(minInput.value || '') !== String(tokenMinFilter || '')) minInput.value = tokenMinFilter ? String(tokenMinFilter) : '';
     if (!data.tokens.length) {
         table.innerHTML = '<div class="empty-state"><div class="empty-icon">$</div><div>No tokens added yet</div></div>';
+        syncWalletFocusStrip();
         return;
     }
     const total = data.tokens.reduce((sum,t)=>sum + Number(t.value || 0), 0);
@@ -13713,6 +13808,7 @@ function renderTokens() {
         .sort((a,b)=>Number(b.t.value||0)-Number(a.t.value||0));
     if (!rows.length) {
         table.innerHTML = '<div class="empty-state"><div class="empty-icon">?</div><div>No tokens above this filter.</div></div>';
+        syncWalletFocusStrip();
         return;
     }
     table.innerHTML = rows.map(({t,i}) => {
@@ -13739,6 +13835,7 @@ function renderTokens() {
             <div><button class="row-x-btn" onclick="event.stopPropagation();deleteToken(${i})" title="Remove token">&times;</button></div>
         </div>`;
     }).join('') + `<div class="defi-table-footer"><span>Showing ${rows.length} token${rows.length === 1 ? '' : 's'}</span><span>Wallet Total</span><strong>${dashUsd(total)}</strong></div>`;
+    syncWalletFocusStrip();
 }
 
 // =============================================================================
@@ -13920,26 +14017,62 @@ function toggleProtocolDrawer(idx) {
 function toggleProtocolPositionsFocus() {
     const tab = document.getElementById('defiTab');
     const btn = document.getElementById('protocolPositionsExpandBtn');
+    const strip = document.getElementById('walletFocusStrip');
     if (!tab || !btn) return;
     const on = tab.classList.toggle('protocol-positions-focus');
     btn.classList.toggle('active', on);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    btn.title = on ? 'Collapse protocol positions' : 'Expand protocol positions';
+    btn.title = on ? 'Collapse protocol positions (E)' : 'Expand protocol positions (E)';
     btn.setAttribute('aria-label', btn.title);
+    if (strip) strip.setAttribute('aria-hidden', on ? 'false' : 'true');
+    syncWalletFocusStrip();
+    syncProtocolFocusMeta();
     try { localStorage.setItem('vault-protocol-positions-focus', on ? '1' : '0'); } catch (e) {}
 }
 
 function restoreProtocolPositionsFocus() {
     const tab = document.getElementById('defiTab');
     const btn = document.getElementById('protocolPositionsExpandBtn');
+    const strip = document.getElementById('walletFocusStrip');
     if (!tab || !btn) return;
     let on = false;
     try { on = localStorage.getItem('vault-protocol-positions-focus') === '1'; } catch (e) {}
     tab.classList.toggle('protocol-positions-focus', on);
     btn.classList.toggle('active', on);
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    btn.title = on ? 'Collapse protocol positions' : 'Expand protocol positions';
+    btn.title = on ? 'Collapse protocol positions (E)' : 'Expand protocol positions (E)';
     btn.setAttribute('aria-label', btn.title);
+    if (strip) strip.setAttribute('aria-hidden', on ? 'false' : 'true');
+    syncWalletFocusStrip();
+    syncProtocolFocusMeta();
+}
+
+function syncWalletFocusStrip() {
+    const meta = document.getElementById('walletFocusStripMeta');
+    if (!meta) return;
+    const total = (data.tokens || []).reduce((sum, t) => sum + Number(t.value || 0), 0);
+    const n = (data.tokens || []).filter(t => Number(t.value || 0) >= tokenMinFilter).length;
+    meta.textContent = `${n} token${n === 1 ? '' : 's'} · ${dashUsd(total)}`;
+}
+
+function syncProtocolFocusMeta() {
+    const meta = document.getElementById('protocolPositionsFocusMeta');
+    if (!meta) return;
+    const protos = data.protocols || [];
+    const total = protos.reduce((sum, p) => sum + protocolNetValue(p), 0);
+    meta.textContent = protos.length ? `· ${protos.length} protocol${protos.length === 1 ? '' : 's'} · ${dashUsd(total)}` : '';
+}
+
+function protocolPositionsFocusKeydown(e) {
+    if (document.body.dataset.activeTab !== 'defi') return;
+    if (e.key !== 'e' && e.key !== 'E') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const el = e.target;
+    const tag = el && el.tagName ? el.tagName.toUpperCase() : '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (el && el.isContentEditable) return;
+    e.preventDefault();
+    toggleProtocolPositionsFocus();
 }
 
 function protocolNetworkLabel(p) {
@@ -13986,6 +14119,7 @@ function renderProtocols() {
     if (!table) return;
     if (!data.protocols.length) {
         table.innerHTML = '<div class="empty-state"><div class="empty-icon">🏦</div><div>No protocols added yet</div></div>';
+        syncProtocolFocusMeta();
         return;
     }
 
@@ -14186,6 +14320,7 @@ function renderProtocols() {
     </div>`;
     updateProtocolTabTitles();
     renderProtocolSnapshotPicker();
+    syncProtocolFocusMeta();
 }
 
 // =============================================================================
@@ -22049,6 +22184,7 @@ function xHandleRemove(handle) {
 // Allow pressing Enter in the X handle input
 document.addEventListener('DOMContentLoaded', () => {
     restoreProtocolPositionsFocus();
+    document.addEventListener('keydown', protocolPositionsFocusKeydown);
     const inp = document.getElementById('xHandleInput');
     if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') xHandleAdd(); });
     xHandleRender();
