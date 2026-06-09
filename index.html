@@ -11057,8 +11057,6 @@ function collectWalletPnlSnapshots() {
     return DefiPnl.dedupePnlSnapshots(raw);
 }
 
-const PROTOCOL_PNL_MAX_MOVE_PCT = 1.2;
-
 function normalizePnlMatchKey(key) {
     const [protocol, rest = ''] = String(key || '').split('|||');
     const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -11139,7 +11137,7 @@ function computeProtocolPnlFromLatestSnapshot() {
         });
     }
     const { total } = DefiPnl.computeProtocolSnapshotDeltaPnl(pairs, {
-        maxMovePct: PROTOCOL_PNL_MAX_MOVE_PCT,
+        maxMovePct: DefiPnl.PROTOCOL_PNL_MAX_MOVE_PCT,
     });
     const snapshotTs = Number(snapshot.ts) || Date.now();
     const built = DefiPnl.buildProtocolSnapshotPnlSeries(snapshotTs, total);

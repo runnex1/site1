@@ -778,7 +778,7 @@ assert.match(indexHtml, /loopBuildChartHistoryPoints\(historyPoints, loop\.raw, 
 assert.match(indexHtml, /buildProtocolPnlPositionRows\(currentProtocols\)/, 'protocol PNL must match exact positions in current data and latest snapshot');
 assert.match(indexHtml, /normalizePnlMatchKey\(cur\.key\)/, 'protocol PNL must match position keys between snapshot and live data');
 assert.match(indexHtml, /computeProtocolSnapshotDeltaPnl\(pairs/, 'protocol PNL must filter by APY and 1\\.2% max net move');
-assert.match(indexHtml, /PROTOCOL_PNL_MAX_MOVE_PCT\s*=\s*1\.2/, 'protocol PNL max move threshold must be 1.2%');
+assert.match(indexHtml, /DefiPnl\.PROTOCOL_PNL_MAX_MOVE_PCT/, 'protocol PNL max move threshold must use shared defi-pnl constant');
 assert.match(indexHtml, /\[1-9A-HJ-NP-Za-km-z\]\{32,44\}/, 'loop yield wallets must accept Solana addresses');
 assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention Solana loop protocols');
 
