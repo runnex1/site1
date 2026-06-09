@@ -697,7 +697,13 @@ assert.match(loopRatesJs, /rewards\/active-opportunities/, 'Merkl enrichment mus
 assert.match(loopRatesJs, /fetchDefillamaYieldApyIndex/, 'yield-bearing collateral must use DeFiLlama APY when protocol supply APY is zero');
 assert.match(loopRatesJs, /function canonicalNativeYieldApy\(/, 'native yield tokens like reUSD must use a shared DeFiLlama APY across protocols');
 assert.match(loopRatesJs, /canonicalNativeYieldApy\(chainId, leg, index\)/, 'defillama leg lookup must prefer canonical native yield before address pools');
-assert.match(indexHtml, /function loopsAppendSnapshotFromApiData\(/, 'live loop sync must append local 3h snapshots for history charts');
+assert.match(indexHtml, /function loopsAppendSnapshotFromApiData\(/, 'live loop sync must append local 2h snapshots for history charts');
+assert.match(indexHtml, /function loopsUploadSnapshotsToServer\(/, 'loop snapshots must upload to server after local append');
+assert.match(indexHtml, /function startLoopSnapshotScheduler\(/, 'loops tab must schedule 2h snapshot sync while open');
+assert.match(indexHtml, /LOOP_SNAPSHOT_INTERVAL_MS = 2 \* 60 \* 60 \* 1000/, 'loop snapshot scheduler must run every 2 hours');
+assert.match(indexHtml, /2h snapshot history/, 'loop history empty state must mention 2h snapshots');
+assert.match(aaveProxyJs, /persistLoopSnapshotsFromRates/, 'loop-rates fetch must persist snapshots to KV');
+assert.match(syncJs, /body\.loopSnapshots/, 'sync POST must merge client loop snapshots into KV');
 assert.match(loopRatesJs, /fetchSolanaLoopRates/, 'loop rates must fetch Kamino and Jupiter Lend for Solana yield wallets');
 const loopSolanaRatesJs = readFileSync(join(ROOT, 'lib', 'loop-solana-rates.js'), 'utf8');
 assert.match(loopSolanaRatesJs, /api\.kamino\.finance/, 'Kamino integration must use the public Kamino REST API');
@@ -713,7 +719,7 @@ assert.match(indexHtml, /supplementalImported/, 'Loops must keep imported Fluid/
 const loopSnapshotsJs = readFileSync(join(ROOT, 'lib', 'loop-snapshots.js'), 'utf8');
 assert.match(loopSnapshotsJs, /economicNetValue/, 'loop snapshots must persist Merkl-inclusive economic net value');
 assert.match(loopSnapshotsJs, /isSolanaWallet/, 'loop snapshots must accept Solana yield wallets');
-assert.match(loopSnapshotsJs, /LOOP_SNAPSHOT_BUCKET_HOURS = 3/, 'loop snapshots must bucket history on 3h intervals');
+assert.match(loopSnapshotsJs, /LOOP_SNAPSHOT_BUCKET_HOURS = 2/, 'loop snapshots must bucket history on 2h intervals');
 assert.match(loopSnapshotsJs, /function appendLoopSnapshotStore\(store, data/, 'loop snapshots must append server-side history');
 assert.match(loopSnapshotsJs, /function loopPositionHistoryKey\(/, 'loop snapshots must use stable history keys across Fluid NFT id changes');
 assert.match(aaveProxyJs, /loopCronSnapshot/, 'loop cron snapshots must be exposed through aave-proxy');
@@ -721,6 +727,7 @@ assert.match(indexHtml, /function loopHistoryPositionMatch\(/, 'loop history mus
 assert.match(indexHtml, /\/api\/loop-snapshots/, 'loops tab must hydrate snapshots from dedicated endpoint');
 assert.match(indexHtml, /watcherWallets: watcherWallets/, 'loop sync must POST yield wallets so cron can snapshot server-side');
 const loopsWorkflow = readFileSync(join(ROOT, '.github', 'workflows', 'loops-snapshot.yml'), 'utf8');
+assert.match(loopsWorkflow, /5 \*\/2 \* \* \*/, 'GitHub cron must run every 2 hours');
 assert.match(loopsWorkflow, /aave-proxy\?loopCronSnapshot=1/, 'GitHub cron must hit loopCronSnapshot directly, not loop-rates rewrite');
 assert.match(aaveProxyJs, /vault:loop_snapshots/, 'loop snapshots must persist in KV');
 assert.match(syncJs, /loopSnapshots === '1'/, 'sync endpoint must hydrate loop snapshot history');
@@ -946,20 +953,24 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
 }
 
 {
-  const { appendLoopSnapshotStore, loopSnapshotBucketKey, loopPositionHistoryKey } = require('../lib/loop-snapshots.js');
+  const { appendLoopSnapshotStore, loopSnapshotBucketKey, loopPositionHistoryKey, mergeLoopSnapshotStores } = require('../lib/loop-snapshots.js');
   const ts = Date.UTC(2026, 5, 29, 13, 0);
   const data = {
     updatedAt: ts,
     wallets: ['0x07e6ae8F553DC77B8b372e4d20dAb797475E6119'],
     positions: [{ id: 'aave:1', protocol: 'Aave', marketName: 'USDe/USDm', wallet: '0xAbC', chainId: 1, totalBorrowed: 100, netValue: 10, totalSupplied: 110, netApy: 5 }],
   };
-  const bucket = loopSnapshotBucketKey(ts);
+  assert.equal(loopSnapshotBucketKey(Date.UTC(2026, 5, 29, 15, 0)), '2026-06-29T14', '2h buckets must floor UTC hours to even boundaries');
   const store = appendLoopSnapshotStore({}, data);
   assert.equal(Object.keys(store).length, 1, 'first loop snapshot must be stored');
+  const bucket = Object.keys(store)[0];
+  assert.equal(bucket, loopSnapshotBucketKey(Date.now()), 'append must bucket by recording time, not cached updatedAt');
   assert.equal(store[bucket].positions[0].id, 'aave:1');
   assert.equal(store[bucket].positions[0].historyKey, loopPositionHistoryKey(data.positions[0]));
   const store2 = appendLoopSnapshotStore(store, data);
-  assert.equal(Object.keys(store2).length, 1, 'same 3h bucket must not duplicate loop snapshots');
+  assert.equal(Object.keys(store2).length, 1, 'same 2h bucket must not duplicate loop snapshots');
+  const merged = mergeLoopSnapshotStores({ '2026-06-01T00': { fetchedAt: 1, positions: [] } }, store2);
+  assert.ok(Object.keys(merged).length >= 2, 'server merge must keep existing buckets and add new ones');
 }
 
 {

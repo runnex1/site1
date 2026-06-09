@@ -11892,12 +11892,24 @@ function loopsMergeSnapshotsFromServer(serverStore) {
 
 function loopsSnapshotBucketKey(ms) {
     const d = new Date(ms);
-    const h = Math.floor(d.getUTCHours() / 3) * 3;
+    const h = Math.floor(d.getUTCHours() / 2) * 2;
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}T${String(h).padStart(2, '0')}`;
 }
 
+function loopsUploadSnapshotsToServer() {
+    if (location.protocol === 'file:') return;
+    try {
+        fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ loopSnapshots: loopSnapshotsStore }),
+            keepalive: true,
+        }).catch(() => {});
+    } catch (e) {}
+}
+
 function loopsAppendSnapshotFromApiData(data) {
-    const fetchedAt = Number(data?.updatedAt) || Date.now();
+    const fetchedAt = Date.now();
     const key = loopsSnapshotBucketKey(fetchedAt);
     const positions = (data?.positions || [])
         .filter(p => Number(p?.totalBorrowed) > 0.01)
@@ -11945,6 +11957,7 @@ function loopsAppendSnapshotFromApiData(data) {
         delete loopSnapshotsStore[keys.shift()];
     }
     try { localStorage.setItem(LOOP_SNAPSHOTS_KEY, JSON.stringify(loopSnapshotsStore)); } catch (e) {}
+    loopsUploadSnapshotsToServer();
     return true;
 }
 
@@ -12676,10 +12689,22 @@ async function syncLoopApiPositions({ silent = false } = {}) {
     }
 }
 
+const LOOP_SNAPSHOT_INTERVAL_MS = 2 * 60 * 60 * 1000;
+let _loopSnapshotTimer = null;
+
+function startLoopSnapshotScheduler() {
+    if (_loopSnapshotTimer || location.protocol === 'file:') return;
+    _loopSnapshotTimer = setInterval(() => {
+        if (!loopYieldWalletAddresses().length || loopApiState.loading) return;
+        syncLoopApiPositions({ silent: true });
+    }, LOOP_SNAPSHOT_INTERVAL_MS);
+}
+
 function maybeAutoSyncLoopPositions() {
     if (loopApiState.triedAuto || loopApiState.loading) return;
     if (!loopYieldWalletAddresses().length) return;
     loopApiState.triedAuto = true;
+    startLoopSnapshotScheduler();
     syncLoopApiPositions({ silent: true });
 }
 
@@ -15359,7 +15384,7 @@ function renderLoops() {
             : '';
         const chartHtml = loop.live && loop.raw
             ? loopHistoryChartHtml(chartPoints, { endValue: liveEndValue, endTs: liveEndTs })
-            : '<div class="loop-history-chart empty"><span>Sync live to build 3h snapshot history</span></div>';
+            : '<div class="loop-history-chart empty"><span>Sync live to build 2h snapshot history</span></div>';
         const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml);
 
         return `

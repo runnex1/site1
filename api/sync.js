@@ -13,6 +13,7 @@
  */
 
 const { kvGet, kvSet } = require('../lib/kv');
+const { mergeLoopSnapshotStores } = require('../lib/loop-snapshots');
 const { collectEvents } = require('../lib/event-log');
 const https = require('https');
 
@@ -771,6 +772,13 @@ module.exports = async function handler(req, res) {
     if (body.perpsSnapshots) {
       await kvSet('vault:perps_snapshots', JSON.stringify(body.perpsSnapshots));
       saved.perpsSnapshots = true;
+    }
+
+    if (body.loopSnapshots && typeof body.loopSnapshots === 'object') {
+      const existing = parseJson(await kvGet('vault:loop_snapshots'), {});
+      const merged = mergeLoopSnapshotStores(existing, body.loopSnapshots);
+      await kvSet('vault:loop_snapshots', JSON.stringify(merged));
+      saved.loopSnapshots = true;
     }
 
     // Timestamp of last sync

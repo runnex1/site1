@@ -300,6 +300,16 @@ async function handleLoopSnapshots(req, res) {
   }
 }
 
+async function persistLoopSnapshotsFromRates(data) {
+  try {
+    const savedSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
+    const store = appendLoopSnapshotStore(savedSnapshots, data);
+    await kvSet('vault:loop_snapshots', JSON.stringify(store));
+  } catch (e) {
+    console.warn('[loop-snapshots-persist]', e.message || e);
+  }
+}
+
 async function handleLoopRates(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -320,6 +330,7 @@ async function handleLoopRates(req, res) {
       'Loop rates',
       () => fetchLoopRates({ wallets }),
     );
+    await persistLoopSnapshotsFromRates(data);
     await persistLoopLogoCache(data.positions);
     return res.status(200).json(data);
   } catch (e) {
