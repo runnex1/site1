@@ -8422,6 +8422,8 @@ const PROTO_APR_FLOOR_HOURS = 24;     // below 8h gap, assume a full 24h for APR
 const PROTO_APR_FLOOR_DAYS = PROTO_APR_FLOOR_HOURS / 24;
 const PROTO_APR_MAX_ABS = 80;
 const PROTO_VALUE_CHANGE_MAX = 700;
+const PROTO_STABLE_PEG_MIN = 0.998;
+const PROTO_STABLE_PEG_MAX = 1.0032;
 let _protocolSelectedSnapshotTs = null; // null = latest snapshot baseline for APR
 let _protocolSnapshotPickerOpen = false;
 
@@ -11417,10 +11419,8 @@ function protocolTokenAmountAndSymbol(raw) {
     if (!m) return null;
     return { amount: Number(m[1].replace(/,/g, '')), symbol: m[2].trim() };
 }
-function isUsdPegStableSymbol(sym) {
-    const s = String(sym || '').trim().toUpperCase();
-    if (!s || /^(PT|YT)-/.test(s)) return false;
-    return /(USD|DAI|FRAX|LUSD|GHO|SUSDE|USDE|USDS|USDM|EURC|FDUSD|PYUSD|USD0|USDT0|USDC)/i.test(s);
+function stableUnitPriceInPegBand(unit) {
+    return Number.isFinite(unit) && unit >= PROTO_STABLE_PEG_MIN && unit <= PROTO_STABLE_PEG_MAX;
 }
 function fixedStablePositionValue(pos) {
     if (pos?.manualValue) return null;
@@ -11429,11 +11429,9 @@ function fixedStablePositionValue(pos) {
     const parsed = protocolTokenAmountAndSymbol(tokens[0]);
     if (!parsed || !parsed.amount || !Number.isFinite(parsed.amount)) return null;
     if (/^(PT|YT)-/.test(parsed.symbol.toUpperCase())) return null;
-    // Known USD-pegged stables: always $1 per token for net value and APR (both snapshots and current).
-    if (isUsdPegStableSymbol(parsed.symbol)) return parsed.amount;
     const rawValue = Number(pos.value || 0);
     const unit = rawValue / parsed.amount;
-    return unit >= 0.998 && unit <= 1.004 ? parsed.amount : null;
+    return stableUnitPriceInPegBand(unit) ? parsed.amount : null;
 }
 function protocolImportPositionMap(entry) {
     if (!entry) return null;
@@ -14615,7 +14613,7 @@ function renderProtocols() {
         if (/^(PT|YT)-/.test(sym)) return '';
         if ((pos.tokens || []).length !== 1) return '';
         const unit = Number(pos.value || 0) / parsed.amount;
-        if (isUsdPegStableSymbol(sym) || (unit >= 0.998 && unit <= 1.004)) {
+        if (stableUnitPriceInPegBand(unit)) {
             return ` <span style="color:var(--green);font-size:0.68rem;font-family:var(--ff-mono)">$1.0000 fixed</span>`;
         }
         return '';

@@ -1337,8 +1337,9 @@ assert.match(indexHtml, /📸 Snapshot/, 'protocol snapshot tab must be renamed 
 assert.doesNotMatch(indexHtml, /📸 First Snapshot/, 'protocol snapshot tab must not keep the First Snapshot label');
 assert.match(indexHtml, /<div>Protocol<\/div><div>Type<\/div><div>Position<\/div>/, 'protocol positions table must drop the Network column');
 assert.match(indexHtml, /periodYield \+= delta;/, '24h yield must use raw period deltas instead of dividing by elapsed time');
-assert.match(indexHtml, /function isUsdPegStableSymbol\(sym\)/, 'USD-pegged stables must use $1 rule for protocol position value');
+assert.match(indexHtml, /const PROTO_STABLE_PEG_MIN = 0\.998;/, 'stable $1 peg must start at 0.998 unit price');
+assert.match(indexHtml, /const PROTO_STABLE_PEG_MAX = 1\.0032;/, 'stable $1 peg must end at 1.0032 unit price');
 assert.match(indexHtml, /function protocolImportPositionMap\(entry\)/, 'protocol APR must rebuild snapshot position maps from stored protocols');
-assert.match(indexHtml, /if \(isUsdPegStableSymbol\(parsed\.symbol\)\) return parsed\.amount;/, 'known stables like GHO must peg at $1 on snapshots and current');
+assert.match(indexHtml, /function stableUnitPriceInPegBand\(unit\)/, 'stable peg must use unit-price band only');
 
 console.log('PASS: perps accounting and dashboard regression checks');
