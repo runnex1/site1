@@ -5,7 +5,7 @@ const indexHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8'
 
 assert.match(indexHtml, /AUSD:'agora-dollar'/, 'AUSD must map to Agora stablecoin');
 assert.match(indexHtml, /async function resolveGeckoIdByMarketCap\(symbol\)/, 'market-cap resolver must exist');
-assert.match(indexHtml, /async function resolveGeckoIdsForSymbols\(symbols\)/, 'batch resolver must exist');
+assert.match(indexHtml, /async function resolveGeckoIdsForSymbols\(symbols, \{ concurrency = 3 \} = \{\}\)/, 'batch resolver must exist');
 assert.doesNotMatch(indexHtml, /return GECKO_SYMBOL_IDS\[sym\] \|\| sym\.toLowerCase\(\)/, 'must not fallback to lowercase id');
 
 async function pickGeckoIdByMarketCap(sym) {

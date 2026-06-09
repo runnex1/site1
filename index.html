@@ -8127,7 +8127,7 @@ async function loadData() {
     document.body.dataset.activeTab = initialTab;
     switchTab(initialTab, { persist: false });
     if (location.protocol !== 'file:' && (data.protocols?.length || data.tokens?.length)) {
-        try { await fetchLiveTokenPrices({ force: true }); } catch (e) { /* non-fatal */ }
+        fetchLiveTokenPrices({ force: true }).catch(() => {});
     }
     updateUI();
     updateLogoStatus('ready', 'Ready');
@@ -8451,6 +8451,19 @@ const GECKO_SYMBOL_IDS = {
     PYUSD:'paypal-usd', EURC:'euro-coin', FDUSD:'first-digital-usd', AUSD:'agora-dollar',
 };
 const _geckoSymbolIdCache = {};
+const GECKO_ID_CACHE_KEY = 'vault-gecko-ids-v1';
+function hydrateGeckoIdCache() {
+    try {
+        const raw = JSON.parse(sessionStorage.getItem(GECKO_ID_CACHE_KEY) || 'null');
+        if (raw?.ids && typeof raw.ids === 'object') Object.assign(_geckoSymbolIdCache, raw.ids);
+    } catch (e) { /* ignore */ }
+}
+function persistGeckoIdCache() {
+    try {
+        sessionStorage.setItem(GECKO_ID_CACHE_KEY, JSON.stringify({ ts: Date.now(), ids: _geckoSymbolIdCache }));
+    } catch (e) { /* ignore */ }
+}
+hydrateGeckoIdCache();
 function geckoIdForSymbol(symbol) {
     const sym = String(symbol || '').trim().toUpperCase();
     return GECKO_SYMBOL_IDS[sym] || _geckoSymbolIdCache[sym] || null;
@@ -8487,7 +8500,7 @@ async function resolveGeckoIdByMarketCap(symbol) {
         return null;
     }
 }
-async function resolveGeckoIdsForSymbols(symbols) {
+async function resolveGeckoIdsForSymbols(symbols, { concurrency = 3 } = {}) {
     const idBySym = {};
     const pending = [];
     for (const sym of symbols) {
@@ -8495,15 +8508,20 @@ async function resolveGeckoIdsForSymbols(symbols) {
         if (direct) idBySym[sym] = direct;
         else pending.push(sym);
     }
-    await Promise.all(pending.map(async (sym) => {
-        const id = await resolveGeckoIdByMarketCap(sym);
-        if (id) {
-            _geckoSymbolIdCache[sym] = id;
-            idBySym[sym] = id;
-        }
-    }));
+    for (let i = 0; i < pending.length; i += concurrency) {
+        const batch = pending.slice(i, i + concurrency);
+        await Promise.all(batch.map(async (sym) => {
+            const id = await resolveGeckoIdByMarketCap(sym);
+            if (id) {
+                _geckoSymbolIdCache[sym] = id;
+                idBySym[sym] = id;
+            }
+        }));
+    }
+    if (pending.length) persistGeckoIdCache();
     return idBySym;
 }
+let _fetchLiveTokenPricesPromise = null;
 let livePrices = {}; // symbol.toUpperCase() → USD (CoinGecko via /api/prices)
 const LIVE_PRICES_CACHE_KEY = 'vault-live-prices-v1';
 const LIVE_PRICES_CACHE_MS = 5 * 60 * 1000;
@@ -14523,6 +14541,13 @@ function collectDeFiPriceSymbols() {
 }
 
 async function fetchLiveTokenPrices(opts = {}) {
+    if (_fetchLiveTokenPricesPromise) return _fetchLiveTokenPricesPromise;
+    _fetchLiveTokenPricesPromise = fetchLiveTokenPricesInner(opts).finally(() => {
+        _fetchLiveTokenPricesPromise = null;
+    });
+    return _fetchLiveTokenPricesPromise;
+}
+async function fetchLiveTokenPricesInner(opts = {}) {
     const force = !!opts.force;
     if (!force && (document.body.dataset.activeTab !== 'defi' || document.hidden)) return false;
     const symbols = collectDeFiPriceSymbols();
@@ -14534,11 +14559,15 @@ async function fetchLiveTokenPrices(opts = {}) {
     if (dot)   dot.style.display = 'flex';
     if (pulse) pulse.style.background = 'var(--amber)';
 
-    const idBySym = await resolveGeckoIdsForSymbols(symbols);
-    const uniqueIds = [...new Set(Object.values(idBySym).filter(Boolean))];
-    if (!uniqueIds.length) return false;
-
     try {
+        const idBySym = await resolveGeckoIdsForSymbols(symbols);
+        const uniqueIds = [...new Set(Object.values(idBySym).filter(Boolean))];
+        if (!uniqueIds.length) {
+            if (pulse) pulse.style.background = 'var(--t3)';
+            if (status) status.textContent = 'prices unavailable';
+            return false;
+        }
+
         const url = `/api/prices?ids=${uniqueIds.join(',')}`;
         const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
         if (!res.ok) throw new Error('Price API ' + res.status);
