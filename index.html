@@ -2927,9 +2927,46 @@ body::after {
 }
 #defiTab.protocol-positions-focus > .section.protocol-positions-section > .data-table {
   max-height: calc(100vh - 320px);
-  min-height: 560px;
+  min-height: 0;
+  height: auto;
   margin-bottom: 0.35rem;
-  transition: max-height 0.25s ease, min-height 0.25s ease;
+  transition: max-height 0.25s ease;
+}
+#defiTab .protocols-footer {
+  display: grid;
+  gap: 0.65rem 0.85rem;
+  grid-template-columns: minmax(130px, 1.1fr) minmax(88px, 0.68fr) minmax(150px, 1.25fr) minmax(96px, 0.82fr) minmax(78px, 0.72fr) minmax(78px, 0.72fr) minmax(78px, 0.72fr) minmax(120px, 1fr) 34px;
+  min-width: 0;
+  padding: 0.62rem 1rem;
+  align-items: center;
+  justify-content: initial;
+  flex-wrap: nowrap;
+}
+#defiTab .protocols-footer > div:nth-child(4),
+#defiTab .protocols-footer > div:nth-child(5),
+#defiTab .protocols-footer > div:nth-child(6),
+#defiTab .protocols-footer > div:nth-child(7) {
+  text-align: right;
+  justify-self: end;
+  width: 100%;
+}
+#defiTab .protocols-footer-label {
+  font-family: var(--ff-display);
+  font-weight: 700;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.72rem;
+}
+#defiTab .protocols-footer-value strong {
+  color: var(--t1);
+  font-family: var(--ff-mono);
+  font-size: 0.82rem;
+}
+#defiTab .protocols-footer-apr {
+  font-family: var(--ff-mono);
+  font-size: 0.78rem;
+  color: var(--t2);
 }
 .protocol-positions-toolbar {
   display: flex;
@@ -14309,12 +14346,16 @@ function renderProtocols() {
             </div>
             ${drawerHtml}
         </div>`;
-    }).join('') + `<div class="defi-table-footer">
-        <span>Total</span>
-        <strong>${dashUsd(protocolTotal)}</strong>
-        <span>Supply ${dashAprHtml(totalBreakdown.supplyW ? totalBreakdown.supply / totalBreakdown.supplyW : null, { plain: true })}</span>
-        <span>Borrow ${dashAprHtml(totalBreakdown.borrowW ? totalBreakdown.borrow / totalBreakdown.borrowW : null, { plain: true })}</span>
-        <span>Total ${dashAprHtml(totalBreakdown.totalW ? totalBreakdown.total / totalBreakdown.totalW : null)}</span>
+    }).join('') + `<div class="defi-table-footer protocols-footer">
+        <div class="protocols-footer-label">Total</div>
+        <div></div>
+        <div></div>
+        <div class="protocols-footer-value"><strong>${dashUsd(protocolTotal)}</strong></div>
+        <div class="protocols-footer-apr">Supply ${dashAprHtml(totalBreakdown.supplyW ? totalBreakdown.supply / totalBreakdown.supplyW : null, { plain: true })}</div>
+        <div class="protocols-footer-apr">Borrow ${dashAprHtml(totalBreakdown.borrowW ? totalBreakdown.borrow / totalBreakdown.borrowW : null, { plain: true })}</div>
+        <div class="protocols-footer-apr">Total ${dashAprHtml(totalBreakdown.totalW ? totalBreakdown.total / totalBreakdown.totalW : null)}</div>
+        <div></div>
+        <div></div>
     </div>`;
     updateProtocolTabTitles();
     renderProtocolSnapshotPicker();
