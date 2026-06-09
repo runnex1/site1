@@ -1091,10 +1091,13 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
 
 {
   const { readLocalLoopLogoDataUrl, isLoopPinnedTokenLogo } = require('../lib/logo-resolver.js');
+  const { loopTokenLogoDataUrl } = require('../lib/loop-token-logos.js');
   assert.equal(isLoopPinnedTokenLogo('USDm'), true, 'USDm must use the pinned loop logo');
   assert.equal(isLoopPinnedTokenLogo('JUICED'), true, 'JUICED must use the pinned loop logo');
   const usdm = readLocalLoopLogoDataUrl('USDM');
   const juiced = readLocalLoopLogoDataUrl('JUICED');
+  assert.equal(usdm, loopTokenLogoDataUrl('USDM'), 'logo resolver must read embedded USDm PNG');
+  assert.equal(juiced, loopTokenLogoDataUrl('JUICED'), 'logo resolver must read embedded JUICED PNG');
   assert.ok(usdm?.startsWith('data:image/png;base64,'), 'USDm pinned logo must embed as PNG data URL');
   assert.ok(juiced?.startsWith('data:image/png;base64,'), 'JUICED pinned logo must embed as PNG data URL');
 }
@@ -1107,7 +1110,8 @@ const logoResolverJs = readFileSync(join(ROOT, 'lib', 'logo-resolver.js'), 'utf8
 assert.match(logoResolverJs, /async function coingeckoImageUrlForSymbol\(/, 'token logos must try CoinGecko first on the server');
 assert.match(logoResolverJs, /async function resolveTokenLogoDataUrl\(/, 'token logos must fall back to DeFiLlama after CoinGecko');
 assert.match(logoResolverJs, /readLocalLoopLogoDataUrl/, 'loop logos must support pinned USDm and JUICED assets');
-assert.match(indexHtml, /LOOP_TOKEN_LOGO_URLS/, 'loops tab must prefer pinned USDm and JUICED logos');
+assert.match(indexHtml, /lib\/loop-token-logos\.js/, 'loops tab must load embedded USDm and JUICED logo data URLs');
+assert.match(indexHtml, /loopTokenLogoDataUrl\(sym\)/, 'loops tab must prefer pinned USDm and JUICED logos');
 assert.match(indexHtml, /perpsPriceRiskStyle\(currentPx, tp\)/, 'TP rows must use distance-based risk color like liq price');
 assert.match(logoResolverJs, /hasEmbeddedLogo\(next, target\.key\)/, 'resolved token logos must persist server-side without re-fetching');
 assert.match(logoResolverJs, /isLoopPinnedTokenLogo\(target\.symbol\)/, 'pinned loop token logos must refresh even when cached');

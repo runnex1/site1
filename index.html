@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="lib/defi-pnl.js"></script>
 <script src="lib/etf-dca.js"></script>
+<script src="lib/loop-token-logos.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -7771,14 +7772,11 @@ function makeLogo(symbol, isProtocol = false, size = 40) {
     </div>`;
 }
 
-const LOOP_TOKEN_LOGO_URLS = {
-    USDM: '/loop-logos/usdm.png',
-    JUICED: '/loop-logos/juiced.png',
-};
-
 function makeLoopLogo(symbol, isProtocol = false, size = 40) {
     const sym = String(symbol || '').toUpperCase();
-    const pinned = !isProtocol ? LOOP_TOKEN_LOGO_URLS[sym] : null;
+    const pinned = !isProtocol && typeof loopTokenLogoDataUrl === 'function'
+        ? loopTokenLogoDataUrl(sym)
+        : null;
     const cached = pinned
         ? null
         : (isProtocol ? LogoEngine._peekProtocolImage(symbol) : LogoEngine._peekTokenImage(symbol));
