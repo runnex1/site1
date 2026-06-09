@@ -774,7 +774,7 @@ assert.match(indexHtml, /function loopSnapshotApyRowHtml\(/, 'loop cards must re
 assert.match(indexHtml, /function loopRefreshPeriodApyMetrics\(/, 'loop chart toggle must refresh 7d/30d APY metrics');
 assert.match(indexHtml, /loopRefreshPeriodApyMetrics\(chart\)/, 'loop chart mode switch must update period APY metrics');
 assert.match(indexHtml, /loop-realized-row/, 'loop cards must render realized APY mini metrics');
-assert.match(indexHtml, /loopBuildChartHistoryPoints\(rawHistoryPoints, loop\.raw, liveEndValue, liveEndTs\)/, 'loop charts must use full history plus live point, not session-trimmed series');
+assert.match(indexHtml, /loopBuildChartHistoryPoints\(historyPoints, loop\.raw, liveEndValue, liveEndTs\)/, 'loop charts must reset net value history after deposits and withdrawals');
 assert.match(indexHtml, /loopTrimHistoryToLatestSession\(rawHistoryPoints\)/, 'loop APY metrics must still reset after capital flows');
 assert.match(indexHtml, /\[1-9A-HJ-NP-Za-km-z\]\{32,44\}/, 'loop yield wallets must accept Solana addresses');
 assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention Solana loop protocols');
@@ -784,6 +784,7 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
     mapKaminoObligation,
     mapJupiterBorrowPosition,
     mapJupiterPortfolioBorrowLend,
+    jupiterHealthFactor,
     kaminoMarketValueUsd,
   } = require('../lib/loop-solana-rates.js');
   const usd = kaminoMarketValueUsd('2644812517817138226881');
@@ -865,6 +866,8 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
   assert.equal(portfolioPos?.marketName, 'JUICED / USDC', 'Portfolio fallback must map JUICED/USDC borrow loops');
   assert.equal(portfolioPos?.source, 'jupiter-portfolio-api', 'Portfolio fallback must tag jupiter-portfolio-api source');
   assert.ok(portfolioPos?.totalBorrowed > 90000, 'Portfolio fallback must keep borrowed USD');
+  assert.ok(Math.abs(jupiterHealthFactor(0.024) - 1.024) < 0.0001, 'Jupiter buffer health must display as 1 + ratio');
+  assert.ok(Math.abs(portfolioPos?.health - 1.42) < 0.01, 'Jupiter portfolio health must convert buffer ratio to health factor scale');
 }
 
 {

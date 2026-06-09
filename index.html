@@ -12219,6 +12219,13 @@ function loopApiShortWallet(address) {
     return a.length > 12 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a;
 }
 
+function loopNormalizeHealth(pos) {
+    const h = Number(pos?.health);
+    if (!Number.isFinite(h)) return null;
+    if (String(pos?.protocol || '').toLowerCase() === 'jupiter' && h > 0 && h < 1) return 1 + h;
+    return h;
+}
+
 function loopApiToDisplayPosition(pos) {
     const supplied = Array.isArray(pos.supplied) ? pos.supplied : [];
     const borrowed = Array.isArray(pos.borrowed) ? pos.borrowed : [];
@@ -12253,7 +12260,7 @@ function loopApiToDisplayPosition(pos) {
         totalBorrowed: Number(pos.totalBorrowed || 0),
         suppliedPositions,
         borrowedPositions,
-        health: pos.health,
+        health: loopNormalizeHealth(pos),
         apy: {
             totalApr: Number.isFinite(totalApr) ? totalApr : null,
             suppliedApr: Number.isFinite(suppliedApr) ? suppliedApr : null,
@@ -14985,7 +14992,7 @@ function renderLoops() {
             ? loopTrimHistoryToLatestSession(rawHistoryPoints)
             : [];
         const chartPoints = loop.live && loop.raw
-            ? loopBuildChartHistoryPoints(rawHistoryPoints, loop.raw, liveEndValue, liveEndTs)
+            ? loopBuildChartHistoryPoints(historyPoints, loop.raw, liveEndValue, liveEndTs)
             : [];
         const marketChip = loop.raw?.marketName || sectionLabel;
         const networkChip = loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions);
