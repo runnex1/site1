@@ -9,6 +9,7 @@ const {
   applyDcaToPosition,
   syncDcaNoteState,
   isTradingDay,
+  dcaFillHistoryForPosition,
 } = require('../lib/etf-dca.js');
 
 {
@@ -86,7 +87,24 @@ const {
   assert.equal(applyDcaToPosition(etf, 500, monday), true);
   assert.equal(etf.lastDcaAmount, 744);
   assert.equal(etf.lastDcaDaysAccrued, 3);
+  assert.equal(etf.lastDcaPrice, 500);
+  assert.equal(etf.dcaFillHistory.length, 1);
+  assert.equal(etf.dcaFillHistory[0].price, 500);
   assert.ok(etf.shares > 10);
+}
+
+{
+  const legacy = {
+    ticker: 'SPY',
+    lastDcaEventAt: Date.now() - 86400000,
+    lastDcaAmount: 100,
+    lastDcaShares: 0.5,
+    lastDcaPrice: 200,
+    lastDcaDaysAccrued: 1,
+  };
+  const history = dcaFillHistoryForPosition(legacy);
+  assert.equal(history.length, 1);
+  assert.equal(history[0].price, 200);
 }
 
 console.log('PASS: etf-dca tests');
