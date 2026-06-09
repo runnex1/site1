@@ -2184,14 +2184,89 @@ body::after {
 
 .protocol-drawer {
   display: none;
-  background: var(--surf-2);
-  border-top: 1px solid var(--border);
-  padding: 0.75rem 1.5rem 0.9rem 1.5rem;
+  border-top: 1px solid rgba(110,231,216,0.12);
+  background: linear-gradient(180deg, rgba(7,18,26,0.95), rgba(5,13,19,0.96));
+  padding: 0;
 }
 .protocol-drawer.open { display: block; }
-
-.drawer-section { margin-bottom: 0.75rem; }
+.protocol-drawer .drawer-inner {
+  padding: 0.75rem 1rem 0.85rem;
+  background:
+    radial-gradient(circle at 72% 88%, rgba(0,212,170,0.07), transparent 38%),
+    linear-gradient(180deg, rgba(7,18,26,0.97), rgba(4,12,18,0.99));
+  border-top: 1px solid rgba(148,163,184,0.1);
+}
+.drawer-section { margin-bottom: 0.85rem; }
 .drawer-section:last-child { margin-bottom: 0; }
+.drawer-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
+  flex-wrap: wrap; margin-bottom: 0.65rem;
+}
+.drawer-summary { display: flex; gap: 0.45rem; flex-wrap: wrap; }
+.drawer-summary-pill {
+  display: inline-flex; align-items: center; border-radius: 4px; padding: 3px 9px;
+  font-family: var(--ff-mono); font-size: 0.64rem; font-weight: 800;
+}
+.drawer-summary-pill.sup { color: var(--green); background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.22); }
+.drawer-summary-pill.bor { color: var(--red); background: rgba(244,63,94,0.08); border: 1px solid rgba(244,63,94,0.22); }
+.drawer-legs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.65rem; }
+@media (max-width: 760px) { .drawer-legs-grid { grid-template-columns: 1fr; } }
+.drawer-leg-block {
+  border: 1px solid rgba(148,163,184,0.13); border-radius: 6px; overflow: hidden;
+  background: rgba(6,17,24,0.72); box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+.drawer-leg-block.sup { border-top: 2px solid rgba(34,197,94,0.45); }
+.drawer-leg-block.bor { border-top: 2px solid rgba(244,63,94,0.45); }
+.drawer-leg-block.neu { border-top: 2px solid rgba(148,163,184,0.25); }
+.drawer-leg-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.5rem 0.65rem; border-bottom: 1px solid rgba(148,163,184,0.1);
+  background: rgba(8,21,29,0.55);
+}
+.drawer-leg-side {
+  font-family: var(--ff-display); font-size: 0.52rem; font-weight: 800;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.drawer-leg-side.sup { color: var(--teal); }
+.drawer-leg-side.bor { color: var(--red); }
+.drawer-leg-total { font-family: var(--ff-mono); font-size: 0.78rem; font-weight: 800; color: var(--t1); }
+.drawer-leg-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 0.65rem;
+  align-items: center; padding: 0.55rem 0.65rem; border-bottom: 1px solid rgba(148,163,184,0.08);
+}
+.drawer-leg-row:last-child { border-bottom: 0; }
+.drawer-leg-pool { font-family: var(--ff-mono); font-size: 0.78rem; font-weight: 800; color: var(--t1); }
+.drawer-leg-tokens {
+  margin-top: 0.15rem; font-family: var(--ff-mono); font-size: 0.64rem; font-weight: 600;
+  color: var(--t3); line-height: 1.35;
+}
+.drawer-leg-tokens .fixed { color: var(--green); }
+.drawer-leg-apr { font-family: var(--ff-mono); font-size: 0.68rem; font-weight: 800; white-space: nowrap; }
+.drawer-leg-val {
+  font-family: var(--ff-mono); font-size: 0.78rem; font-weight: 800; color: var(--t2); text-align: right; min-width: 72px;
+}
+.drawer-leg-val .defi-edit-input { width: 78px; text-align: right; margin-left: auto; }
+.drawer-metrics {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.5rem; margin-top: 0.65rem;
+}
+.drawer-metric {
+  border: 1px solid rgba(148,163,184,0.12); border-radius: 6px; padding: 0.5rem 0.65rem;
+  background: rgba(4,13,20,0.55);
+}
+.drawer-metric-k {
+  font-family: var(--ff-display); font-size: 0.5rem; font-weight: 800; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--t3);
+}
+.drawer-metric-v { margin-top: 0.25rem; font-family: var(--ff-mono); font-size: 0.82rem; font-weight: 800; color: var(--t1); }
+.drawer-metric-v.good { color: var(--green); }
+.drawer-metric-v.warn { color: var(--amber); }
+.drawer-metric-v.bad { color: var(--red); }
+.drawer-healthbar {
+  display: inline-block; width: 56px; height: 6px; border-radius: 20px;
+  background: rgba(148,163,184,0.18); overflow: hidden; vertical-align: middle; margin-right: 0.35rem;
+}
+.drawer-healthbar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--teal), #85f5d6); }
+
 .drawer-section-label {
   font-size: 0.6rem; font-weight: 700; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--t3);
@@ -13897,6 +13972,93 @@ function protocolUnlockSummary(p) {
     return p?.dashboardNote || p?.notes || '-';
 }
 
+function protocolDrawerLendingTotals(sec, valueFn) {
+    return (sec.positions || []).reduce((acc, pos) => {
+        const sub = String(pos.sub || '').toLowerCase();
+        const val = valueFn(pos);
+        if (sub === 'supplied') acc.supplied += val;
+        else if (sub === 'borrowed') acc.borrowed += val;
+        return acc;
+    }, { supplied: 0, borrowed: 0 });
+}
+
+function protocolDrawerMetricsHtml(sec, lendingTotals, fmtV) {
+    const metrics = [];
+    const health = Number(sec.health);
+    if (Number.isFinite(health)) {
+        const cls = health < 1.01 ? 'bad' : health <= 1.02 ? 'warn' : 'good';
+        const barW = Math.max(8, Math.min(100, (health / 2) * 100));
+        metrics.push(`<div class="drawer-metric"><div class="drawer-metric-k">Health</div><div class="drawer-metric-v ${cls}"><span class="drawer-healthbar"><span style="width:${barW.toFixed(0)}%"></span></span>${health.toFixed(2)}</div></div>`);
+    }
+    if (lendingTotals && lendingTotals.supplied > 0) {
+        const ltv = (lendingTotals.borrowed / lendingTotals.supplied) * 100;
+        const cls = ltv >= 80 ? 'bad' : ltv >= 65 ? 'warn' : 'good';
+        metrics.push(`<div class="drawer-metric"><div class="drawer-metric-k">LTV</div><div class="drawer-metric-v ${cls}">${ltv.toFixed(1)}%</div></div>`);
+        metrics.push(`<div class="drawer-metric"><div class="drawer-metric-k">Net</div><div class="drawer-metric-v">${fmtV(lendingTotals.supplied - lendingTotals.borrowed)}</div></div>`);
+    }
+    if (!metrics.length) return '';
+    return `<div class="drawer-metrics">${metrics.join('')}</div>`;
+}
+
+function protocolDrawerLegRowHtml(pos, opts) {
+    const { fmtV, aprHtml, valueHtml, tokensHtml } = opts;
+    return `<div class="drawer-leg-row">
+        <div>
+            <div class="drawer-leg-pool">${dashEsc(pos.pool || '—')}</div>
+            <div class="drawer-leg-tokens">${tokensHtml}</div>
+        </div>
+        <div class="drawer-leg-apr">${aprHtml || ''}</div>
+        <div class="drawer-leg-val">${valueHtml != null ? valueHtml : fmtV(Number(pos.value || 0))}</div>
+    </div>`;
+}
+
+function protocolDrawerLegBlockHtml(side, positions, total, rowBuilder) {
+    if (!positions.length) return '';
+    const sideCls = side === 'supplied' ? 'sup' : side === 'borrowed' ? 'bor' : 'neu';
+    const label = side === 'supplied' ? 'Supplied' : side === 'borrowed' ? 'Borrowed' : 'Positions';
+    return `<div class="drawer-leg-block ${sideCls}">
+        <div class="drawer-leg-head">
+            <span class="drawer-leg-side ${sideCls === 'neu' ? '' : sideCls}">${label}</span>
+            <span class="drawer-leg-total">${total}</span>
+        </div>
+        ${positions.map(rowBuilder).join('')}
+    </div>`;
+}
+
+function protocolDrawerSectionHtml(sec, opts) {
+    const {
+        fmtV, secType, secIdx, isLendingSection, lendingTotals, summaryHtml,
+        rowBuilder, positions,
+    } = opts;
+    const head = `<div class="drawer-head">
+        <div class="drawer-section-label">${dashEsc(sec.type || secType || 'Yield')}${secIdx || ''}</div>
+        ${summaryHtml || ''}
+    </div>`;
+
+    if (isLendingSection) {
+        const supplied = positions.filter(p => String(p.sub || '').toLowerCase() === 'supplied');
+        const borrowed = positions.filter(p => String(p.sub || '').toLowerCase() === 'borrowed');
+        const other = positions.filter(p => !['supplied', 'borrowed'].includes(String(p.sub || '').toLowerCase()));
+        const legs = [
+            protocolDrawerLegBlockHtml('supplied', supplied, fmtV(lendingTotals?.supplied || 0), rowBuilder),
+            protocolDrawerLegBlockHtml('borrowed', borrowed, fmtV(lendingTotals?.borrowed || 0), rowBuilder),
+        ].filter(Boolean).join('');
+        const otherBlock = other.length
+            ? protocolDrawerLegBlockHtml('other', other, fmtV(other.reduce((s, p) => s + Number(p.value || 0), 0)), rowBuilder)
+            : '';
+        return `<div class="drawer-section">${head}<div class="drawer-legs-grid">${legs}${otherBlock ? `<div style="grid-column:1/-1">${otherBlock}</div>` : ''}</div>${protocolDrawerMetricsHtml(sec, lendingTotals, fmtV)}</div>`;
+    }
+
+    const total = fmtV(positions.reduce((s, p) => s + Number(p.value || 0), 0));
+    return `<div class="drawer-section">${head}${protocolDrawerLegBlockHtml('other', positions, total, rowBuilder)}</div>`;
+}
+
+function buildProtocolDrawerHtml(sections, drawerId, sectionBuilder) {
+    const sectionHtmls = (sections || []).filter(s => s.positions && s.positions.length).map(sectionBuilder).join('');
+    if (!sectionHtmls) return '';
+    return `<div class="protocol-drawer" id="${drawerId}"><div class="drawer-inner">${sectionHtmls}</div></div>`;
+}
+
 function renderProtocols() {
     const table = document.getElementById('protocolsTable');
     if (!table) return;
@@ -13982,78 +14144,54 @@ function renderProtocols() {
         const i = data.protocols.indexOf(p);
         const hasSections = p.sections && p.sections.some(s => s.positions && s.positions.length > 0);
 
-        // Build drawer HTML
+        // Build drawer HTML (dashboard-themed expanded panel)
         let drawerHtml = '';
         if (hasSections) {
             const _drawerTypeCounts = {};
-            const sectionHtmls = p.sections.filter(s => s.positions && s.positions.length).map(sec => {
+            drawerHtml = buildProtocolDrawerHtml(p.sections, `pdrawer-${i}`, sec => {
                 const sectionIndex = p.sections.indexOf(sec);
                 const _secType = sec.type || 'Yield';
                 _drawerTypeCounts[_secType] = (_drawerTypeCounts[_secType] || 0) + 1;
                 const _secIdx = _drawerTypeCounts[_secType] > 1 ? `[${_drawerTypeCounts[_secType]}]` : '';
                 const isLendingSection = /lending|leveraged farming/i.test(_secType);
-                const lendingTotals = isLendingSection ? (sec.positions || []).reduce((acc, pos) => {
-                    const sub = (pos.sub || '').toLowerCase();
-                    if (sub === 'supplied') acc.supplied += protocolPositionValue(pos);
-                    else if (sub === 'borrowed') acc.borrowed += protocolPositionValue(pos);
-                    return acc;
-                }, { supplied: 0, borrowed: 0 }) : null;
-                // lendingApyHtml removed — Supply/Borrow APY is now a collapsible in the main row header
-                const lendingSummary = lendingTotals && (lendingTotals.supplied || lendingTotals.borrowed)
-                    ? `<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0.3rem 0 0.2rem;">
-                        <span class="apr-badge pos">Supplied ${fmtV(lendingTotals.supplied)}</span>
-                        <span class="apr-badge neg">Borrowed ${fmtV(lendingTotals.borrowed)}</span>
-                    </div>`
+                const lendingTotals = isLendingSection
+                    ? protocolDrawerLendingTotals(sec, protocolPositionValue)
+                    : null;
+                const summaryHtml = lendingTotals && (lendingTotals.supplied || lendingTotals.borrowed)
+                    ? `<div class="drawer-summary">
+                        <span class="drawer-summary-pill sup">Supplied ${fmtV(lendingTotals.supplied)}</span>
+                        <span class="drawer-summary-pill bor">Borrowed ${fmtV(lendingTotals.borrowed)}</span>
+                       </div>`
                     : '';
-                // Group positions by their sub-label (Supplied / Borrowed / null)
-                let lastSub = undefined;
-                const posRows = sec.positions.map(pos => {
+                const rowBuilder = pos => {
                     const positionIndex = sec.positions.indexOf(pos);
-                    let subHeader = '';
-                    if (pos.sub !== lastSub) {
-                        lastSub = pos.sub;
-                        if (pos.sub) {
-                            const subColor = pos.sub?.toLowerCase() === 'borrowed'
-                                ? 'var(--red)'
-                                : pos.sub?.toLowerCase() === 'liquidity pool'
-                                    ? 'var(--indigo)'
-                                    : 'var(--teal)';
-                            subHeader = `<div style="font-size:0.62rem;font-weight:800;letter-spacing:0.12em;
-                                text-transform:uppercase;color:${subColor};margin:0.5rem 0 0.25rem;
-                                font-family:var(--ff-display)">${pos.sub}</div>`;
-                        }
-                    }
-                    const tokensHtml = pos.tokens.length
-                        ? pos.tokens.map((t, tokenIndex) => {
+                    const tokensHtml = (pos.tokens || []).length
+                        ? (pos.tokens || []).map((t, tokenIndex) => {
                             const sym = t.trim().toUpperCase();
                             const price = livePrices[sym];
                             const fixedTag = stableUnitPriceTag(pos, t);
                             const priceTag = fixedTag || (price
                                 ? ` <span style="color:var(--t3);font-size:0.68rem;font-family:var(--ff-mono)">$${price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4})}</span>`
                                 : '');
-                            return `<div class="drawer-position-token-input"><input class="defi-edit-input" value="${dashEsc(t)}" aria-label="Edit token amount" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionToken(${i},${sectionIndex},${positionIndex},${tokenIndex},this.value)" onblur="updateProtocolPositionToken(${i},${sectionIndex},${positionIndex},${tokenIndex},this.value)">${priceTag}</div>`;
-                        }).join('')
-                        : '<div style="color:var(--t3);font-style:italic">—</div>';
+                            return `<span><input class="defi-edit-input" value="${dashEsc(t)}" aria-label="Edit token amount" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionToken(${i},${sectionIndex},${positionIndex},${tokenIndex},this.value)" onblur="updateProtocolPositionToken(${i},${sectionIndex},${positionIndex},${tokenIndex},this.value)">${priceTag}</span>`;
+                        }).join(' · ')
+                        : '—';
                     const posKey = `${p.name}|||${_secType}${_secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
                     const aprHtml = aprBadgeHtml(posKey, pos.sub);
-                    return `${subHeader}<div class="drawer-position">
-                        <div>
-                            <div class="drawer-position-name">${pos.pool}</div>
-                            <div class="drawer-position-tokens">${tokensHtml}</div>
-                        </div>
-                        <div class="drawer-position-apr">${aprHtml}</div>
-                        <div class="drawer-position-value"><input class="defi-edit-input" type="number" min="0" step="0.01" value="${Number(protocolPositionValue(pos) || 0).toFixed(2)}" aria-label="Edit USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionUsd(${i},${sectionIndex},${positionIndex},this.value)" onblur="updateProtocolPositionUsd(${i},${sectionIndex},${positionIndex},this.value)"></div>
-                    </div>`;
-                }).join('');
-
-                return `<div class="drawer-section">
-                    <div class="drawer-section-label">${sec.type}</div>
-                    ${lendingSummary}
-                    ${posRows}
-                </div>`;
-            }).join('');
-
-            drawerHtml = `<div class="protocol-drawer" id="pdrawer-${i}">${sectionHtmls}</div>`;
+                    const valueHtml = `<input class="defi-edit-input" type="number" min="0" step="0.01" value="${Number(protocolPositionValue(pos) || 0).toFixed(2)}" aria-label="Edit USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionUsd(${i},${sectionIndex},${positionIndex},this.value)" onblur="updateProtocolPositionUsd(${i},${sectionIndex},${positionIndex},this.value)">`;
+                    return protocolDrawerLegRowHtml(pos, { fmtV, aprHtml, valueHtml, tokensHtml });
+                };
+                return protocolDrawerSectionHtml(sec, {
+                    fmtV,
+                    secType: _secType,
+                    secIdx: _secIdx,
+                    isLendingSection,
+                    lendingTotals,
+                    summaryHtml,
+                    rowBuilder,
+                    positions: sec.positions || [],
+                });
+            });
         }
 
         const expandBtn = hasSections
@@ -14446,62 +14584,41 @@ function renderProtocolsSnapshot() {
         let drawerHtml = '';
         if (hasSections) {
             const _drawerTypeCounts = {};
-            const sectionHtmls = p.sections.filter(s => s.positions && s.positions.length).map(sec => {
+            drawerHtml = buildProtocolDrawerHtml(p.sections, `snap-pdrawer-${i}`, sec => {
                 const _secType = sec.type || 'Yield';
                 _drawerTypeCounts[_secType] = (_drawerTypeCounts[_secType] || 0) + 1;
                 const _secIdx = _drawerTypeCounts[_secType] > 1 ? `[${_drawerTypeCounts[_secType]}]` : '';
                 const isLendingSection = /lending|leveraged farming/i.test(_secType);
-                const lendingTotals = isLendingSection ? (sec.positions || []).reduce((acc, pos) => {
-                    const sub = (pos.sub || '').toLowerCase();
-                    if (sub === 'supplied') acc.supplied += Number(pos.value || 0);
-                    else if (sub === 'borrowed') acc.borrowed += Number(pos.value || 0);
-                    return acc;
-                }, { supplied: 0, borrowed: 0 }) : null;
-                const lendingSummary = lendingTotals && (lendingTotals.supplied || lendingTotals.borrowed)
-                    ? `<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0.3rem 0 0.2rem;">
-                        <span class="apr-badge pos">Supplied ${fmtV(lendingTotals.supplied)}</span>
-                        <span class="apr-badge neg">Borrowed ${fmtV(lendingTotals.borrowed)}</span>
-                    </div>`
+                const lendingTotals = isLendingSection
+                    ? protocolDrawerLendingTotals(sec, pos => Number(pos.value || 0))
+                    : null;
+                const summaryHtml = lendingTotals && (lendingTotals.supplied || lendingTotals.borrowed)
+                    ? `<div class="drawer-summary">
+                        <span class="drawer-summary-pill sup">Supplied ${fmtV(lendingTotals.supplied)}</span>
+                        <span class="drawer-summary-pill bor">Borrowed ${fmtV(lendingTotals.borrowed)}</span>
+                       </div>`
                     : '';
-                let lastSub = undefined;
-                const posRows = sec.positions.map(pos => {
-                    let subHeader = '';
-                    if (pos.sub !== lastSub) {
-                        lastSub = pos.sub;
-                        if (pos.sub) {
-                            const subColor = pos.sub?.toLowerCase() === 'borrowed'
-                                ? 'var(--red)'
-                                : pos.sub?.toLowerCase() === 'liquidity pool'
-                                    ? 'var(--indigo)'
-                                    : 'var(--teal)';
-                            subHeader = `<div style="font-size:0.62rem;font-weight:800;letter-spacing:0.12em;
-                                text-transform:uppercase;color:${subColor};margin:0.5rem 0 0.25rem;
-                                font-family:var(--ff-display)">${pos.sub}</div>`;
-                        }
-                    }
+                const rowBuilder = pos => {
                     const tokensHtml = (pos.tokens || []).length
-                        ? pos.tokens.map(t => `<div>${t}</div>`).join('')
-                        : '<div style="color:var(--t3);font-style:italic">—</div>';
+                        ? (pos.tokens || []).map(t => dashEsc(t)).join(' · ')
+                        : '—';
                     const posKey = `${p.name}|||${_secType}${_secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
                     const aprHtml = snapshotAprBadgeHtml(posKey, pos.sub, aprPair.newer, aprPair.older);
-                    return `${subHeader}<div class="drawer-position">
-                        <div>
-                            <div class="drawer-position-name">${pos.pool}</div>
-                            <div class="drawer-position-tokens">${tokensHtml}</div>
-                        </div>
-                        <div class="drawer-position-apr">${aprHtml}</div>
-                        <div class="drawer-position-value">${isLendingSection && ['supplied','borrowed'].includes((pos.sub || '').toLowerCase()) ? '' : fmtV(pos.value)}</div>
-                    </div>`;
-                }).join('');
-
-                return `<div class="drawer-section">
-                    <div class="drawer-section-label">${sec.type}</div>
-                    ${lendingSummary}
-                    ${posRows}
-                </div>`;
-            }).join('');
-
-            drawerHtml = `<div class="protocol-drawer" id="snap-pdrawer-${i}">${sectionHtmls}</div>`;
+                    const hideVal = isLendingSection && ['supplied', 'borrowed'].includes(String(pos.sub || '').toLowerCase());
+                    const valueHtml = hideVal ? '' : fmtV(Number(pos.value || 0));
+                    return protocolDrawerLegRowHtml(pos, { fmtV, aprHtml, valueHtml, tokensHtml });
+                };
+                return protocolDrawerSectionHtml(sec, {
+                    fmtV,
+                    secType: _secType,
+                    secIdx: _secIdx,
+                    isLendingSection,
+                    lendingTotals,
+                    summaryHtml,
+                    rowBuilder,
+                    positions: sec.positions || [],
+                });
+            });
         }
 
         const expandBtn = hasSections
