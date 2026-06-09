@@ -1342,6 +1342,7 @@ assert.match(indexHtml, /const PROTO_STABLE_PEG_MAX = 1\.004;/, 'stable $1 peg m
 assert.match(indexHtml, /function protocolTokenDisplayText\(pos, tokenText\)/, 'pegged tokens must display amount without symbol');
 assert.match(indexHtml, /function protocolImportPositionMap\(entry\)/, 'protocol APR must rebuild snapshot position maps from stored protocols');
 assert.match(indexHtml, /function protocolTokenCoingeckoUnitPrice\(pos\)/, 'protocol positions must value legs from CoinGecko');
-assert.match(indexHtml, /function collectDeFiPriceSymbols\(\)/, 'CoinGecko fetch must include protocol position symbols');
+assert.match(indexHtml, /await fetchLiveTokenPrices\(\{ force: true \}\)/, 'protocol prices must prefetch before first DeFi render');
+assert.match(indexHtml, /let livePrices = \{\}/, 'livePrices must be initialized before protocol valuation helpers');
 
 console.log('PASS: perps accounting and dashboard regression checks');
