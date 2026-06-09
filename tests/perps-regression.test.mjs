@@ -775,7 +775,8 @@ assert.match(indexHtml, /function loopRefreshPeriodApyMetrics\(/, 'loop chart to
 assert.match(indexHtml, /loopRefreshPeriodApyMetrics\(chart\)/, 'loop chart mode switch must update period APY metrics');
 assert.match(indexHtml, /loop-realized-row/, 'loop cards must render realized APY mini metrics');
 assert.match(indexHtml, /loopBuildChartHistoryPoints\(historyPoints, loop\.raw, liveEndValue, liveEndTs\)/, 'loop charts must reset net value history after deposits and withdrawals');
-assert.match(indexHtml, /function computeProtocolPnlFromLatestSnapshot\(/, 'protocol PNL must compare live positions to latest snapshot only');
+assert.match(indexHtml, /buildProtocolPnlPositionRows\(currentProtocols\)/, 'protocol PNL must match exact positions in current data and latest snapshot');
+assert.match(indexHtml, /normalizePnlMatchKey\(cur\.key\)/, 'protocol PNL must match position keys between snapshot and live data');
 assert.match(indexHtml, /computeProtocolSnapshotDeltaPnl\(pairs/, 'protocol PNL must filter by APY and 1\\.2% max net move');
 assert.match(indexHtml, /PROTOCOL_PNL_MAX_MOVE_PCT\s*=\s*1\.2/, 'protocol PNL max move threshold must be 1.2%');
 assert.match(indexHtml, /\[1-9A-HJ-NP-Za-km-z\]\{32,44\}/, 'loop yield wallets must accept Solana addresses');

@@ -179,4 +179,14 @@ const {
   assert.ok(Math.abs(chart.total - 120) < 0.01);
 }
 
+{
+  const { total, count } = computeProtocolSnapshotDeltaPnl([
+    { currentNet: 10050, snapshotNet: 10000, apy: 5 },
+    { currentNet: 50000, snapshotNet: 10000, apy: 5 },
+    { currentNet: 10050, snapshotNet: 10000, apy: null },
+  ]);
+  assert.ok(Math.abs(total - 50) < 0.01, 'only qualifying rows must sum');
+  assert.equal(count, 1);
+}
+
 console.log('PASS: defi-pnl cost-basis tests');

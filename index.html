@@ -11059,13 +11059,61 @@ function collectWalletPnlSnapshots() {
 
 const PROTOCOL_PNL_MAX_MOVE_PCT = 1.2;
 
-function findProtocolInSnapshot(protocol, snapshotProtocols) {
-    const name = String(protocol?.name || '').trim();
-    if (!name || !Array.isArray(snapshotProtocols)) return null;
-    const exact = snapshotProtocols.find(p => String(p?.name || '').trim() === name);
-    if (exact) return exact;
-    const low = name.toLowerCase();
-    return snapshotProtocols.find(p => String(p?.name || '').trim().toLowerCase() === low) || null;
+function normalizePnlMatchKey(key) {
+    const [protocol, rest = ''] = String(key || '').split('|||');
+    const norm = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    return `${norm(protocol)}|||${norm(rest)}`;
+}
+
+function buildProtocolPnlPositionRows(protocols) {
+    const rows = new Map();
+    for (const p of protocols || []) {
+        if (!p?.sections?.length) {
+            const key = `${p.name}|||__pnl__`;
+            rows.set(normalizePnlMatchKey(key), {
+                key,
+                net: protocolNetValue(p),
+                apy: protocolAprBreakdown(p)?.totalApr ?? null,
+            });
+            continue;
+        }
+        const typeCounts = {};
+        for (const sec of p.sections) {
+            if (!sec.positions?.length) continue;
+            const st = sec.type || 'Yield';
+            typeCounts[st] = (typeCounts[st] || 0) + 1;
+            const secIdx = typeCounts[st] > 1 ? `[${typeCounts[st]}]` : '';
+            const hasLendingSide = sec.positions.some(pos =>
+                ['supplied', 'borrowed'].includes(String(pos.sub || '').toLowerCase()));
+            if (hasLendingSide) {
+                let supplied = 0;
+                let borrowed = 0;
+                for (const pos of sec.positions) {
+                    const v = protocolPositionValue(pos);
+                    const sub = String(pos.sub || '').toLowerCase();
+                    if (sub === 'borrowed') borrowed += v;
+                    else supplied += v;
+                }
+                const key = `${p.name}|||${st}${secIdx}:__net__`;
+                rows.set(normalizePnlMatchKey(key), {
+                    key,
+                    net: supplied - borrowed,
+                    apy: lendingSectionApyBreakdown(p, sec)?.totalApr ?? null,
+                });
+            } else {
+                for (const pos of sec.positions) {
+                    const key = `${p.name}|||${st}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+                    const { apr } = calcPositionAPR(key);
+                    rows.set(normalizePnlMatchKey(key), {
+                        key,
+                        net: protocolPositionValue(pos),
+                        apy: apr,
+                    });
+                }
+            }
+        }
+    }
+    return rows;
 }
 
 function computeProtocolPnlFromLatestSnapshot() {
@@ -11076,16 +11124,18 @@ function computeProtocolPnlFromLatestSnapshot() {
     if (!snapshot || !Array.isArray(snapshotProtocols) || !snapshotProtocols.length || !currentProtocols.length) {
         return { points: [], total: 0, snapshotTs: null };
     }
+    const currentRows = buildProtocolPnlPositionRows(currentProtocols);
+    const snapshotRows = buildProtocolPnlPositionRows(snapshotProtocols);
     const pairs = [];
-    for (const p of currentProtocols) {
-        const baseline = findProtocolInSnapshot(p, snapshotProtocols);
-        if (!baseline) continue;
-        const { apr } = protocolAprStats(p);
+    for (const [, cur] of currentRows) {
+        const base = snapshotRows.get(normalizePnlMatchKey(cur.key));
+        if (!base) continue;
+        if (cur.apy == null || !Number.isFinite(Number(cur.apy))) continue;
         pairs.push({
-            name: p.name,
-            currentNet: protocolNetValue(p),
-            snapshotNet: protocolNetValue(baseline),
-            apy: apr,
+            name: cur.key,
+            currentNet: cur.net,
+            snapshotNet: base.net,
+            apy: Number(cur.apy),
         });
     }
     const { total } = DefiPnl.computeProtocolSnapshotDeltaPnl(pairs, {
@@ -11114,7 +11164,7 @@ function renderDefiPnlPanel() {
         if (emptyEl) {
             emptyEl.style.display = 'block';
             emptyEl.textContent = _defiPnlView === 'protocol'
-                ? 'Protocol PNL needs a saved snapshot and matching live positions with APR. Import twice or wait for the next snapshot baseline — moves above 1.2% are treated as deposits/withdrawals and excluded.'
+                ? 'Protocol PNL compares matching positions in live data vs the latest snapshot only. Positions need Total APY (not "-") and a net move under 1.2% — larger moves are treated as deposits or withdrawals.'
                 : 'Add wallet tokens or import protocol positions to start tracking cost-basis PNL.';
         }
         if (chartWrap) chartWrap.style.display = 'none';
