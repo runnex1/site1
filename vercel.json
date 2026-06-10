@@ -1,11 +1,11 @@
 {
   "version": 2,
   "ignoreCommand": "[ \"$VERCEL_ENV\" = \"preview\" ]",
-  "regions": ["hnd1"],
+  "regions": ["iad1"],
   "functions": {
     "api/aave-proxy.js": {
       "maxDuration": 60,
-      "regions": ["hnd1"]
+      "regions": ["iad1"]
     },
     "api/*.js": {
       "maxDuration": 60

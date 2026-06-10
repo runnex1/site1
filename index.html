@@ -6439,6 +6439,7 @@ body[data-active-tab="loops"] .page-content,
           <div class="defi-panel defi-side-panel defi-stablecoin-panel">
             <div class="section-header">
               <div class="section-title"><div class="section-title-dot" style="background:var(--teal)"></div>Stablecoin Monitor</div>
+              <button type="button" class="btn-base add-btn" style="padding:0.28rem 0.55rem;font-size:0.68rem;" onclick="openModal('stablecoinAdd')">+ Token</button>
             </div>
             <div class="defi-panel-body defi-scroll" id="defiStablecoinPanel"></div>
           </div>
@@ -7219,6 +7220,41 @@ body[data-active-tab="loops"] .page-content,
   </div>
 </div>
 
+<div id="stablecoinAddModal" class="modal">
+  <div class="modal-content" style="max-width:460px;">
+    <div class="modal-header">Add Stablecoin Monitor</div>
+    <div class="modal-sub">Track peg via CoinGecko price (not the portfolio $1 fixed rule). Enter a symbol or contract address.</div>
+    <div class="form-group">
+      <label class="form-label">Symbol or contract</label>
+      <input type="text" class="form-input" id="stablecoinAddInput" placeholder="e.g. USDe or 0x… contract"
+        onkeydown="if(event.key==='Enter')stablecoinSubmitAdd()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Chain (for contracts)</label>
+      <select class="form-select" id="stablecoinAddChain">
+        <option value="ethereum">Ethereum</option>
+        <option value="solana">Solana</option>
+      </select>
+    </div>
+    <div id="stablecoinAddStatus" style="display:none;margin-bottom:0.65rem;font-size:0.78rem;color:var(--t3);"></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('stablecoinAdd')">Cancel</button>
+      <button class="btn btn-primary" id="stablecoinAddBtn" onclick="stablecoinSubmitAdd()">Add</button>
+    </div>
+  </div>
+</div>
+
+<div id="geckoPickModal" class="modal">
+  <div class="modal-content" style="max-width:520px;">
+    <div class="modal-header">Choose CoinGecko Token</div>
+    <div class="modal-sub" id="geckoPickSub">Multiple matches found — pick the asset to monitor.</div>
+    <div id="geckoPickList" style="display:flex;flex-direction:column;gap:0.45rem;max-height:320px;overflow-y:auto;margin:0.75rem 0;"></div>
+    <div class="form-actions">
+      <button class="btn btn-secondary" onclick="closeModal('geckoPick')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="tickerAddModal" class="modal">
   <div class="modal-content" style="max-width:420px;">
     <div class="modal-header">Add Ticker</div>
@@ -7811,10 +7847,10 @@ async function resolveAllPendingLogos() {
 // =============================================================================
 // APP STATE & STORAGE
 // =============================================================================
-let data = { tokens: [], protocols: [], etfs: [], predictionMarkets: [], opinionMarkets: [], polymarketWallets: [], defiPanelNotes: [], etfRealizedPnl: 0 };
+let data = { tokens: [], protocols: [], etfs: [], predictionMarkets: [], opinionMarkets: [], polymarketWallets: [], defiPanelNotes: [], stablecoinMonitors: [], etfRealizedPnl: 0 };
 function normalizePortfolioData() {
     if (!data || typeof data !== 'object') {
-        data = { tokens: [], protocols: [], etfs: [], predictionMarkets: [], opinionMarkets: [], polymarketWallets: [], defiPanelNotes: [], etfRealizedPnl: 0 };
+        data = { tokens: [], protocols: [], etfs: [], predictionMarkets: [], opinionMarkets: [], polymarketWallets: [], defiPanelNotes: [], stablecoinMonitors: [], etfRealizedPnl: 0 };
         return;
     }
     if (!Array.isArray(data.tokens)) data.tokens = [];
@@ -7824,6 +7860,7 @@ function normalizePortfolioData() {
     if (!Array.isArray(data.opinionMarkets)) data.opinionMarkets = [];
     if (!Array.isArray(data.polymarketWallets)) data.polymarketWallets = [];
     if (!Array.isArray(data.defiPanelNotes)) data.defiPanelNotes = [];
+    if (!Array.isArray(data.stablecoinMonitors)) data.stablecoinMonitors = [];
     if (!Number.isFinite(Number(data.etfRealizedPnl))) data.etfRealizedPnl = 0;
     for (const protocol of data.protocols) {
         for (const sec of protocol.sections || []) {
@@ -9215,6 +9252,12 @@ function openModal(type) {
         const srcEl = document.getElementById('tickerAddSource');
         if (symEl) symEl.value = '';
         if (srcEl) srcEl.value = 'coingecko';
+    }
+    if (type === 'stablecoinAdd') {
+        const input = document.getElementById('stablecoinAddInput');
+        const status = document.getElementById('stablecoinAddStatus');
+        if (input) input.value = '';
+        if (status) { status.style.display = 'none'; status.textContent = ''; }
     }
     document.getElementById(`${type}Modal`).classList.add('active');
 }
@@ -11069,20 +11112,203 @@ function defiAlertPositionsHtml(items, level) {
         <div class="defi-mini-sub" style="margin-top:0.12rem">${dashEsc(item.position)}</div>
       </div>`).join('');
 }
+const STABLECOIN_MONITOR_PRICE_CACHE = {};
+let _stablecoinMonitorPricePromise = null;
+let _geckoPickResolver = null;
+
+function stablecoinMonitorGeckoId(token) {
+    return String(token?.geckoId || token?.id || '').trim().toLowerCase();
+}
+function stablecoinMonitorKey(token) {
+    const sym = String(token?.symbol || '').trim().toUpperCase();
+    const geckoId = stablecoinMonitorGeckoId(token);
+    return geckoId ? `${sym}::${geckoId}` : sym;
+}
+function stablecoinMonitorExposureValue(row) {
+    const amt = Number(row?.amount) || 0;
+    const geckoId = row?.geckoId || geckoIdForSymbol(row?.symbol);
+    const cgPrice = geckoId ? STABLECOIN_MONITOR_PRICE_CACHE[geckoId] : null;
+    if (Number.isFinite(cgPrice) && amt) return amt * cgPrice;
+    return Number(row?.value || 0);
+}
+function stablecoinLooksLikeContract(input) {
+    const raw = String(input || '').trim();
+    if (/^0x[a-fA-F0-9]{40}$/.test(raw)) return true;
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(raw);
+}
+async function resolveGeckoIdCandidates(symbol) {
+    const sym = String(symbol || '').trim().toUpperCase();
+    if (!sym) return [];
+    const known = GECKO_SYMBOL_IDS[sym] || _geckoSymbolIdCache[sym];
+    if (known) return [{ id: known, symbol: sym, name: sym, market_cap_rank: null, thumb: null }];
+    const searchRes = await fetch(`/api/prices?cgPath=/search&query=${encodeURIComponent(sym)}`, { signal: AbortSignal.timeout(10000) });
+    if (!searchRes.ok) return [];
+    const search = await searchRes.json();
+    const coins = (search?.coins || [])
+        .filter(c => c?.id && String(c.symbol || '').toUpperCase() === sym)
+        .slice(0, 12);
+    if (!coins.length) return [];
+    const ids = coins.map(c => c.id).join(',');
+    const mktRes = await fetch(
+        `/api/prices?cgPath=/coins/markets&vs_currency=usd&ids=${encodeURIComponent(ids)}&order=market_cap_desc&per_page=12&page=1&sparkline=false`,
+        { signal: AbortSignal.timeout(10000) }
+    );
+    const markets = mktRes.ok ? await mktRes.json() : [];
+    const marketById = Object.fromEntries((Array.isArray(markets) ? markets : []).map(m => [m.id, m]));
+    return coins
+        .map(c => ({
+            id: c.id,
+            symbol: String(c.symbol || sym).toUpperCase(),
+            name: c.name || c.id,
+            market_cap_rank: marketById[c.id]?.market_cap_rank ?? c.market_cap_rank ?? null,
+            thumb: c.thumb || marketById[c.id]?.image || null,
+            current_price: marketById[c.id]?.current_price ?? null,
+        }))
+        .sort((a, b) =>
+            (Number(a.market_cap_rank || 999999) - Number(b.market_cap_rank || 999999))
+            || (Number(b.current_price || 0) - Number(a.current_price || 0))
+        );
+}
+async function resolveGeckoFromContract(address, chain) {
+    const platform = COINGECKO_PLATFORM_BY_CHAIN[monitorChainKey(chain)] || monitorChainKey(chain);
+    const res = await fetch(`/api/prices?cgPath=/coins/${encodeURIComponent(platform)}/contract/${encodeURIComponent(address)}`, { signal: AbortSignal.timeout(12000) });
+    if (!res.ok) throw new Error('CoinGecko contract lookup failed');
+    const json = await res.json();
+    const id = String(json?.id || '').trim();
+    if (!id) throw new Error('CoinGecko contract not found');
+    return {
+        id,
+        symbol: String(json?.symbol || '').toUpperCase() || 'TOKEN',
+        name: json?.name || id,
+        market_cap_rank: json?.market_cap_rank ?? null,
+        thumb: json?.image?.small || json?.image?.thumb || null,
+        current_price: Number(json?.market_data?.current_price?.usd) || null,
+        chain: monitorChainKey(chain),
+        address: String(address || '').trim(),
+    };
+}
+function openGeckoPickModal(candidates, onPick) {
+    _geckoPickResolver = onPick;
+    const list = document.getElementById('geckoPickList');
+    const sub = document.getElementById('geckoPickSub');
+    if (!list) return;
+    if (sub) sub.textContent = `Multiple CoinGecko matches for ${candidates[0]?.symbol || 'token'} — pick one to monitor.`;
+    list.innerHTML = candidates.map((c, i) => `<button type="button" class="btn btn-secondary" style="justify-content:flex-start;text-align:left;gap:0.65rem;padding:0.55rem 0.7rem;"
+        onclick="stablecoinPickGeckoCandidate(${i})">
+        ${c.thumb ? `<img src="${dashEsc(c.thumb)}" alt="" width="22" height="22" style="border-radius:50%;flex:0 0 auto;">` : ''}
+        <span style="flex:1;min-width:0;">
+          <strong>${dashEsc(c.name)}</strong>
+          <span style="color:var(--t3);font-family:var(--ff-mono);font-size:0.72rem;"> ${dashEsc(c.symbol)} · ${dashEsc(c.id)}${c.market_cap_rank ? ` · #${c.market_cap_rank}` : ''}</span>
+        </span>
+        ${Number.isFinite(c.current_price) ? `<span style="font-family:var(--ff-mono);font-size:0.74rem;">$${Number(c.current_price).toFixed(4)}</span>` : ''}
+      </button>`).join('');
+    window._geckoPickCandidates = candidates;
+    openModal('geckoPick');
+}
+function stablecoinPickGeckoCandidate(index) {
+    const candidate = (window._geckoPickCandidates || [])[index];
+    closeModal('geckoPick');
+    if (candidate && typeof _geckoPickResolver === 'function') _geckoPickResolver(candidate);
+    _geckoPickResolver = null;
+    window._geckoPickCandidates = null;
+}
+function stablecoinMonitorExists(token) {
+    const key = stablecoinMonitorKey(token);
+    return (data.stablecoinMonitors || []).some(t => stablecoinMonitorKey(t) === key);
+}
+function addStablecoinMonitorToken(token) {
+    normalizePortfolioData();
+    const geckoId = stablecoinMonitorGeckoId(token);
+    const symbol = String(token?.symbol || '').trim().toUpperCase();
+    if (!symbol || !geckoId) return false;
+    const normalized = { ...token, symbol, geckoId };
+    if (stablecoinMonitorExists(normalized)) return false;
+    data.stablecoinMonitors.push({
+        id: String(Date.now()),
+        symbol,
+        geckoId,
+        chain: token.chain || null,
+        address: token.address || null,
+        name: token.name || null,
+        addedAt: Date.now(),
+    });
+    _geckoSymbolIdCache[symbol] = geckoId;
+    persistGeckoIdCache();
+    saveData();
+    return true;
+}
+function removeStablecoinMonitor(id) {
+    normalizePortfolioData();
+    data.stablecoinMonitors = (data.stablecoinMonitors || []).filter(t => t.id !== id);
+    saveData();
+    try { renderDefiCockpit(); } catch (e) { console.error('[DeFi stables remove]', e); }
+}
+async function stablecoinSubmitAdd() {
+    const input = document.getElementById('stablecoinAddInput');
+    const chainEl = document.getElementById('stablecoinAddChain');
+    const status = document.getElementById('stablecoinAddStatus');
+    const btn = document.getElementById('stablecoinAddBtn');
+    const raw = String(input?.value || '').trim();
+    if (!raw) { alert('Enter a symbol or contract address.'); return; }
+    if (btn) btn.disabled = true;
+    if (status) { status.style.display = 'block'; status.textContent = 'Resolving on CoinGecko…'; }
+    try {
+        let resolved = null;
+        if (stablecoinLooksLikeContract(raw)) {
+            resolved = await resolveGeckoFromContract(raw, chainEl?.value || 'ethereum');
+        } else {
+            const candidates = await resolveGeckoIdCandidates(raw.toUpperCase());
+            if (!candidates.length) throw new Error(`CoinGecko could not find ${raw.toUpperCase()}`);
+            if (candidates.length === 1) resolved = candidates[0];
+            else {
+                return new Promise((resolve) => {
+                    openGeckoPickModal(candidates, async (pick) => {
+                        try {
+                            if (!addStablecoinMonitorToken(pick)) alert('This token is already monitored.');
+                            else {
+                                closeModal('stablecoinAdd');
+                                try { renderDefiCockpit(); } catch (e) { console.error('[DeFi stables add]', e); }
+                            }
+                        } finally {
+                            if (btn) btn.disabled = false;
+                            if (status) status.style.display = 'none';
+                            resolve();
+                        }
+                    });
+                });
+            }
+        }
+        if (!addStablecoinMonitorToken(resolved)) alert('This token is already monitored.');
+        else {
+            closeModal('stablecoinAdd');
+            try { renderDefiCockpit(); } catch (e) { console.error('[DeFi stables add]', e); }
+        }
+    } catch (e) {
+        if (status) status.textContent = e.message || 'Lookup failed';
+        else alert(e.message || 'Lookup failed');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
 function stablecoinRowsForDefi() {
     const by = new Map();
-    const add = (symbol, amount, value, source, direction = 1) => {
+    const add = (symbol, amount, value, source, direction = 1, extra = {}) => {
         const sym = String(symbol || '').trim().toUpperCase();
         if (!sym || /^(PT|YT)-/.test(sym)) return;
-        if (!/(USD|DAI|FRAX|LUSD|GHO|SUSDE|USDE|USDS|USDM|EURC|FDUSD|PYUSD|USD0|USDT0|USDC)/i.test(sym)) return;
+        const isCustom = !!extra.custom;
+        if (!isCustom && !/(USD|DAI|FRAX|LUSD|GHO|SUSDE|USDE|USDS|USDM|EURC|FDUSD|PYUSD|USD0|USDT0|USDC)/i.test(sym)) return;
         const amt = Number(amount || 0), val = Number(value || 0);
-        if (!amt || !val) return;
-        const key = sym;
-        const prev = by.get(key) || { symbol:sym, amount:0, value:0, sources:new Set() };
+        if (!isCustom && (!amt || !val)) return;
+        const key = extra.geckoId ? `${sym}::${extra.geckoId}` : sym;
+        const prev = by.get(key) || { symbol:sym, geckoId: extra.geckoId || null, amount:0, value:0, sources:new Set(), custom:false, monitorId:null, name:extra.name || null };
         const sign = direction < 0 ? -1 : 1;
-        prev.amount += sign * Math.abs(amt);
-        prev.value += sign * Math.abs(val);
+        if (amt) prev.amount += sign * Math.abs(amt);
+        if (val) prev.value += sign * Math.abs(val);
         if (source) prev.sources.add(source);
+        if (extra.custom) prev.custom = true;
+        if (extra.monitorId) prev.monitorId = extra.monitorId;
+        if (extra.geckoId) prev.geckoId = extra.geckoId;
+        if (extra.name) prev.name = extra.name;
         by.set(key, prev);
     };
     for (const t of data.tokens || []) add(t.symbol, t.amount, t.value, 'Wallet');
@@ -11096,14 +11322,76 @@ function stablecoinRowsForDefi() {
             }
         }
     }
+    for (const monitor of data.stablecoinMonitors || []) {
+        const sym = String(monitor.symbol || '').toUpperCase();
+        if (!sym) continue;
+        const key = stablecoinMonitorKey(monitor);
+        if (by.has(key)) {
+            const row = by.get(key);
+            row.geckoId = monitor.geckoId || row.geckoId;
+            row.monitorId = monitor.id;
+            row.name = monitor.name || row.name;
+            continue;
+        }
+        add(sym, 0, 0, 'Monitored', 1, {
+            custom: true,
+            geckoId: monitor.geckoId,
+            monitorId: monitor.id,
+            name: monitor.name,
+        });
+    }
     return [...by.values()]
-      .filter(x => Math.abs(Number(x.value || 0)) > 0.01)
-      .sort((a,b)=>Math.abs(b.value)-Math.abs(a.value))
-      .slice(0,12)
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value) || String(a.symbol).localeCompare(String(b.symbol)))
       .map(x => {
-        const unit = x.amount ? Math.abs(x.value / x.amount) : 0;
-        return { ...x, unit, pegDiff: unit ? ((unit - 1) * 100) : 0, source:[...x.sources].slice(0,2).join(', ') };
-    });
+        const geckoId = x.geckoId || geckoIdForSymbol(x.symbol) || null;
+        return {
+            ...x,
+            geckoId,
+            source: [...x.sources].slice(0, 2).join(', '),
+            cgPrice: geckoId ? STABLECOIN_MONITOR_PRICE_CACHE[geckoId] ?? null : null,
+        };
+      });
+}
+async function refreshStablecoinMonitorPrices(rows) {
+    const targets = (rows || []).map(r => ({
+        symbol: r.symbol,
+        geckoId: r.geckoId || geckoIdForSymbol(r.symbol),
+    })).filter(t => t.geckoId);
+    if (!targets.length) return false;
+    const uniqueIds = [...new Set(targets.map(t => t.geckoId).filter(Boolean))];
+    const res = await fetch(`/api/prices?ids=${uniqueIds.join(',')}`, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return false;
+    const prices = await res.json();
+    let changed = false;
+    for (const t of targets) {
+        const usd = prices[t.geckoId]?.usd;
+        if (!Number.isFinite(usd) || usd <= 0) continue;
+        const cacheKey = t.geckoId;
+        if (STABLECOIN_MONITOR_PRICE_CACHE[cacheKey] !== usd) {
+            STABLECOIN_MONITOR_PRICE_CACHE[cacheKey] = usd;
+            livePrices[t.symbol] = usd;
+            changed = true;
+        }
+    }
+    if (changed) persistLivePricesCache();
+    return changed;
+}
+function scheduleStablecoinMonitorPriceRefresh(rows) {
+    if (_stablecoinMonitorPricePromise) return;
+    _stablecoinMonitorPricePromise = refreshStablecoinMonitorPrices(rows)
+        .then(changed => {
+            if (!changed) return;
+            try { renderDefiStablecoinPanel(stablecoinRowsForDefi()); } catch (e) { console.warn('[Stablecoin monitor render]', e); }
+            const stableExposure = stablecoinRowsForDefi().reduce((sum, x) => sum + stablecoinMonitorExposureValue(x), 0);
+            const totalWallet = (data.tokens || []).reduce((s, t) => s + Number(t.value || 0), 0);
+            const totalProtos = (data.protocols || []).reduce((s, p) => s + protocolDisplayValue(p), 0);
+            const el = document.getElementById('defiKpiStableExposure');
+            const sub = document.getElementById('defiKpiStableExposureSub');
+            if (el) el.textContent = dashUsd(stableExposure);
+            if (sub) sub.textContent = `${totalWallet + totalProtos ? ((stableExposure / (totalWallet + totalProtos)) * 100).toFixed(1) : '0.0'}% of DeFi value`;
+        })
+        .catch(e => console.warn('[Stablecoin monitor prices]', e))
+        .finally(() => { _stablecoinMonitorPricePromise = null; });
 }
 function updateDefiProtocolNote(index, value) {
     normalizePortfolioData();
@@ -11443,21 +11731,34 @@ function renderDefiStablecoinPanel(stableRows) {
     const stables = document.getElementById('defiStablecoinPanel');
     if (!stables) return;
     const rows = stableRows || stablecoinRowsForDefi();
+    scheduleStablecoinMonitorPriceRefresh(rows);
     stables.innerHTML = rows.length
         ? `<div class="defi-side-table-head"><div>Stablecoin</div><div>Net Exposure</div><div>Peg</div><div>Status</div></div>`
             + rows.map(x => {
                 const amt = Number(x.amount) || 0;
-                const cls = Math.abs(x.pegDiff) > 0.2 ? 'negative' : Math.abs(x.pegDiff) > 0.05 ? '' : 'positive';
-                const offPeg = Math.abs(x.pegDiff) > 0.2;
-                const netCls = x.value >= 0 ? 'positive' : 'negative';
+                const geckoId = x.geckoId || geckoIdForSymbol(x.symbol);
+                const cgPrice = geckoId ? STABLECOIN_MONITOR_PRICE_CACHE[geckoId] : null;
+                const displayValue = Number.isFinite(cgPrice) && amt
+                    ? amt * cgPrice
+                    : Number(x.value || 0);
+                const pegDiff = Number.isFinite(cgPrice) ? ((cgPrice - 1) * 100) : null;
+                const cls = pegDiff == null ? '' : Math.abs(pegDiff) > 0.2 ? 'negative' : Math.abs(pegDiff) > 0.05 ? '' : 'positive';
+                const offPeg = pegDiff != null && Math.abs(pegDiff) > 0.2;
+                const netCls = displayValue >= 0 ? 'positive' : 'negative';
+                const priceLabel = Number.isFinite(cgPrice)
+                    ? `$${cgPrice.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} CG`
+                    : 'fetching…';
+                const removeBtn = x.monitorId
+                    ? ` <button type="button" title="Remove monitor" onclick="removeStablecoinMonitor(${JSON.stringify(x.monitorId)})" style="border:none;background:transparent;color:var(--t3);cursor:pointer;padding:0 0.15rem;font-size:0.9rem;line-height:1;">×</button>`
+                    : '';
                 return `<div class="defi-mini-row" style="grid-template-columns:1fr auto auto auto">
-                  <div><div class="defi-mini-title">${dashEsc(x.symbol)}</div><div class="defi-mini-sub">${dashEsc(x.source || 'Portfolio')} · net ${amt.toLocaleString('en-US',{maximumFractionDigits:2})} tokens</div></div>
-                  <div class="defi-mini-value ${netCls}">${dashUsd(x.value)}</div>
-                  <div class="defi-mini-sub ${cls}" style="text-align:right">${x.pegDiff >= 0 ? '+' : ''}${(Number(x.pegDiff) || 0).toFixed(3)}%</div>
-                  <div><span class="defi-peg-status ${offPeg ? 'off' : ''}">${offPeg ? 'Off Peg' : 'On Peg'}</span></div>
+                  <div><div class="defi-mini-title">${dashEsc(x.symbol)}${removeBtn}${x.name && x.name !== x.symbol ? ` <span style="color:var(--t3);font-weight:400;">${dashEsc(x.name)}</span>` : ''}</div><div class="defi-mini-sub">${dashEsc(x.source || 'Portfolio')} · net ${amt.toLocaleString('en-US',{maximumFractionDigits:2})} · ${priceLabel}</div></div>
+                  <div class="defi-mini-value ${netCls}">${dashUsd(displayValue)}</div>
+                  <div class="defi-mini-sub ${cls}" style="text-align:right">${pegDiff == null ? '—' : `${pegDiff >= 0 ? '+' : ''}${pegDiff.toFixed(3)}%`}</div>
+                  <div><span class="defi-peg-status ${offPeg ? 'off' : ''}">${pegDiff == null ? '…' : offPeg ? 'Off Peg' : 'On Peg'}</span></div>
                 </div>`;
             }).join('')
-        : '<div class="dash-empty">No stablecoin exposure detected in wallet or protocol positions.</div>';
+        : '<div class="dash-empty">No stablecoin exposure yet. Use <strong>+ Token</strong> to monitor a peg via CoinGecko.</div>';
 }
 function renderDefiNotesPanel() {
     const notes = document.getElementById('defiNotesPanel');
@@ -11532,7 +11833,7 @@ function renderDefiCockpit() {
         : 'no snapshot baseline');
     setText('defiKpiApy', avg === null ? '-' : `${avg > 0 ? '+' : ''}${avg.toFixed(1)}%`);
     setColor('defiKpiApy', avg === null ? 'var(--t1)' : avg > 0 ? 'var(--green)' : avg < 0 ? 'var(--red)' : 'var(--t1)');
-    const stableExposure = stableRows.reduce((sum,x)=>sum+Number(x.value||0),0);
+    const stableExposure = stableRows.reduce((sum, x) => sum + stablecoinMonitorExposureValue(x), 0);
     setText('defiKpiStableExposure', dashUsd(stableExposure));
     setText('defiKpiStableExposureSub', `${totalWallet + totalProtos ? ((stableExposure / (totalWallet + totalProtos)) * 100).toFixed(1) : '0.0'}% of DeFi value`);
     setText('defiKpiAlerts', `${stats.critical} / ${stats.warning}`);
@@ -14667,6 +14968,9 @@ function collectDeFiPriceSymbols() {
     const syms = new Set();
     for (const t of data.tokens || []) {
         if (t?.symbol) syms.add(String(t.symbol).toUpperCase());
+    }
+    for (const monitor of data.stablecoinMonitors || []) {
+        if (monitor?.symbol) syms.add(String(monitor.symbol).toUpperCase());
     }
     for (const p of data.protocols || []) {
         for (const sec of p.sections || []) {
