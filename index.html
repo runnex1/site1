@@ -23727,7 +23727,7 @@ function newsFeedDefaultSettings() {
         sources,
         keywords: [],
         searchBody: false,
-        requireKeywords: false,
+        includeNonMatching: false,
     };
 }
 
@@ -23742,7 +23742,9 @@ function newsFeedLoadSettings() {
             sources: { ...base.sources, ...(parsed.sources || {}) },
             keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(k => String(k).trim().toLowerCase()).filter(Boolean) : [],
             searchBody: Boolean(parsed.searchBody),
-            requireKeywords: Boolean(parsed.requireKeywords),
+            includeNonMatching: parsed.includeNonMatching != null
+                ? Boolean(parsed.includeNonMatching)
+                : false,
         };
     } catch (e) {
         return newsFeedDefaultSettings();
@@ -23810,8 +23812,15 @@ function newsFeedToggleSavedByUrl(url) {
 }
 
 function newsFeedMatchedKeywords(item, keywords, searchBody) {
-    const text = `${item.title || ''} ${searchBody ? (item.desc || '') : ''}`.toLowerCase();
+    const text = `${item.title || ''} ${searchBody ? (item.desc || item.description || '') : ''}`.toLowerCase();
     return (keywords || []).filter(kw => kw && text.includes(kw));
+}
+
+function newsFeedPassesKeywordFilter(item, settings) {
+    const s = settings || newsFeedLoadSettings();
+    const matches = newsFeedMatchedKeywords(item, s.keywords, s.searchBody);
+    item._matchedKeywords = matches;
+    return !(s.keywords?.length && !matches.length && !s.includeNonMatching);
 }
 
 function newsFeedNormalizeType(type) {
@@ -23830,9 +23839,7 @@ function newsFeedApplyFilters(items, settings) {
         if (!enabledCats.includes(type)) return false;
         const source = String(item.source || '').trim();
         if (source && s.sources && Object.prototype.hasOwnProperty.call(s.sources, source) && s.sources[source] === false) return false;
-        const matches = newsFeedMatchedKeywords(item, s.keywords, s.searchBody);
-        if (s.requireKeywords && s.keywords?.length && !matches.length) return false;
-        item._matchedKeywords = matches;
+        if (!newsFeedPassesKeywordFilter(item, s)) return false;
         return true;
     }).sort((a, b) => {
         const am = (a._matchedKeywords || []).length;
@@ -23856,7 +23863,7 @@ function newsFeedRenderLens(settings) {
         chips.push(`<span class="news-feed-lens-chip on">Keywords: ${dashEsc(s.keywords.slice(0, 4).join(', '))}${s.keywords.length > 4 ? '…' : ''}</span>`);
     }
     chips.push(`<span class="news-feed-lens-chip ${s.searchBody ? 'on' : ''}">${s.searchBody ? 'Title + body' : 'Title only'}</span>`);
-    if (s.requireKeywords && s.keywords?.length) chips.push('<span class="news-feed-lens-chip on">Require keywords</span>');
+    if (s.keywords?.length && !s.includeNonMatching) chips.push('<span class="news-feed-lens-chip on">Keyword filter</span>');
     el.innerHTML = chips.join('');
 }
 
@@ -23924,7 +23931,10 @@ function newsFeedRenderCenterFeed() {
     const filtered = newsFeedApplyFilters(_newsFeedRawPool, settings);
     const cards = [];
     if (_newsFeedKobeissiItem && settings.categories?.macro !== false) {
-        cards.push(newsFeedRenderCenterCard({ ..._newsFeedKobeissiItem, type: 'kobeissi' }, { featured: true }));
+        const kobeissi = { ..._newsFeedKobeissiItem, type: 'kobeissi' };
+        if (newsFeedPassesKeywordFilter(kobeissi, settings)) {
+            cards.push(newsFeedRenderCenterCard(kobeissi, { featured: true }));
+        }
     }
     if (!filtered.length && !cards.length) {
         grid.innerHTML = '<div class="news-feed-loading">No headlines match your filters. Try Feed settings.</div>';
@@ -23974,8 +23984,8 @@ function newsFeedBuildSettingsForm() {
                 <div class="news-feed-toggle${s.searchBody ? ' on' : ''}" id="newsFeedToggleBody" onclick="newsFeedToggleSetting('searchBody')"></div>
             </div>
             <div class="news-feed-toggle-row">
-                <span>Require keyword match</span>
-                <div class="news-feed-toggle${s.requireKeywords ? ' on' : ''}" id="newsFeedToggleRequire" onclick="newsFeedToggleSetting('requireKeywords')"></div>
+                <span>Include headlines without keyword match</span>
+                <div class="news-feed-toggle${s.includeNonMatching ? ' on' : ''}" id="newsFeedToggleIncludeNonMatching" onclick="newsFeedToggleSetting('includeNonMatching')"></div>
             </div>
         </div>
         <button type="button" class="news-feed-apply-btn" onclick="newsFeedApplySettings()">Apply filters</button>`;
