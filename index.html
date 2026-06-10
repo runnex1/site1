@@ -4615,6 +4615,15 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 }
 .ticker-custom-input:focus { border-color: var(--teal); }
 .ticker-custom-input::placeholder { color: var(--t3); opacity: 0.5; }
+.ticker-custom-edit-row {
+  display: flex; align-items: center; gap: 0.28rem;
+}
+.ticker-contract-suffix {
+  font-family: var(--ff-mono); font-size: 0.62rem; font-weight: 600;
+  color: var(--t3); letter-spacing: 0.02em; flex-shrink: 0;
+  padding: 1px 4px; border-radius: 3px;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+}
 .ticker-edit-btn {
   width: 16px; height: 16px; border-radius: 3px; background: transparent;
   border: 1px solid var(--border); color: var(--t3); font-size: 0.55rem;
@@ -23137,8 +23146,11 @@ function tickerCustomItemHtml(entry, idx) {
               <button class="ticker-edit-btn" onclick="tkEditStart(${idx})" title="Edit symbol">✎</button>
             </div>
             <div id="${slug}-editor" style="display:none;">
-              <input class="ticker-custom-input" id="${slug}-input" maxlength="10" placeholder="AAPL"
-                onkeydown="if(event.key==='Enter')tkEditSave(${idx});if(event.key==='Escape')tkEditCancel(${idx});">
+              <div class="ticker-custom-edit-row">
+                <input class="ticker-custom-input" id="${slug}-input" maxlength="10" placeholder="AAPL"
+                  onkeydown="if(event.key==='Enter')tkEditSave(${idx});if(event.key==='Escape')tkEditCancel(${idx});">
+                <span class="ticker-contract-suffix" id="${slug}-addr-hint" hidden></span>
+              </div>
               <select class="ticker-source-select" id="${slug}-source-input">
                 <option value="coingecko"${source === 'coingecko' ? ' selected' : ''}>CoinGecko</option>
                 <option value="jupiter"${source === 'jupiter' ? ' selected' : ''}>Jupiter</option>
@@ -23194,6 +23206,28 @@ function tickerSubmitAdd() {
     fetchCustomTickerByIndex(list.length - 1);
 }
 
+function tkContractSuffixHint(symbol) {
+    const custom = customTokenGet(String(symbol || '').trim());
+    const addr = custom?.address ? String(custom.address).trim() : '';
+    if (addr.length < 4) return null;
+    return { suffix: addr.slice(-4), full: addr };
+}
+
+function tkSetContractSuffixHint(slug, symbol) {
+    const hint = document.getElementById(`${slug}-addr-hint`);
+    if (!hint) return;
+    const meta = tkContractSuffixHint(symbol);
+    if (meta) {
+        hint.textContent = meta.suffix;
+        hint.title = meta.full;
+        hint.hidden = false;
+    } else {
+        hint.textContent = '';
+        hint.title = '';
+        hint.hidden = true;
+    }
+}
+
 function tkEditStart(idx) {
     const slug = tkCustomSlug(idx);
     const editor = document.getElementById(`${slug}-editor`);
@@ -23204,6 +23238,7 @@ function tkEditStart(idx) {
     if (!editor || !input) return;
     input.value = entry?.symbol || '';
     if (sourceInput) sourceInput.value = entry?.source || 'auto';
+    tkSetContractSuffixHint(slug, entry?.symbol || '');
     editor.style.display = 'block';
     if (lbl) lbl.style.display = 'none';
     input.focus();
