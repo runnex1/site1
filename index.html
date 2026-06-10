@@ -22919,6 +22919,7 @@ const TICKER_SOURCES = ['coingecko', 'jupiter', 'tradfi', 'auto'];
 let _tickerScrollDelayTimer = null;
 let _tickerHoverDwellTimer = null;
 let _tickerMarqueeHeld = false;
+let _tickerEditPaused = false;
 let _tkGeckoIdCache = {};
 let _tkJupiterMintCache = {};
 let _tkGeckoContractCache = {};
@@ -23295,6 +23296,7 @@ async function tkEditStart(idx) {
     const lbl    = document.getElementById(`${slug}-label`);
     const entry = tickerGetEntry(idx);
     if (!editor || !input) return;
+    tickerPauseMarqueeForEdit();
     input.value = entry?.symbol || '';
     if (sourceInput) sourceInput.value = entry?.source || 'auto';
     tkSetContractSuffixHint(slug, null);
@@ -23328,6 +23330,9 @@ function tkEditSave(idx) {
             list.splice(idx, 1);
             tickerSaveCustomEntries(list);
             tickerRenderCustomItems();
+            if (editor) editor.style.display = 'none';
+            if (lbl) lbl.style.display = '';
+            _tickerEditPaused = false;
             return;
         }
         delete _tkGeckoIdCache[list[idx].symbol];
@@ -23345,6 +23350,7 @@ function tkEditSave(idx) {
     }
     if (editor) editor.style.display = 'none';
     if (lbl) lbl.style.display = '';
+    if (_tickerEditPaused) tickerResumeMarqueeAfterEdit();
 }
 
 function tkEditCancel(idx) {
@@ -23353,6 +23359,7 @@ function tkEditCancel(idx) {
     const lbl    = document.getElementById(`${slug}-label`);
     if (editor) editor.style.display = 'none';
     if (lbl) lbl.style.display = '';
+    tickerResumeMarqueeAfterEdit();
 }
 
 function tickerRefreshDupClone() {
@@ -23367,6 +23374,22 @@ function tickerRefreshDupClone() {
     dup.removeAttribute('id');
     dup.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
     track.appendChild(dup);
+}
+
+function tickerPauseMarqueeForEdit() {
+    const track = document.getElementById('tickerStripTrack');
+    clearTimeout(_tickerHoverDwellTimer);
+    _tickerHoverDwellTimer = null;
+    _tickerEditPaused = true;
+    if (!track || track.dataset.marqueeActive !== '1') return;
+    if (track.classList.contains('scrolling')) track.classList.add('paused');
+}
+
+function tickerResumeMarqueeAfterEdit() {
+    const track = document.getElementById('tickerStripTrack');
+    _tickerEditPaused = false;
+    if (!track) return;
+    if (track.classList.contains('scrolling')) track.classList.remove('paused');
 }
 
 function tickerRestartMarqueeAnimation(track) {
@@ -23392,6 +23415,7 @@ function tickerSetupMarquee() {
     clearTimeout(_tickerHoverDwellTimer);
     _tickerHoverDwellTimer = null;
     _tickerMarqueeHeld = false;
+    _tickerEditPaused = false;
     track.classList.remove('scrolling', 'paused');
     track.style.removeProperty('transform');
     track.style.removeProperty('--ticker-scroll-duration');
@@ -23425,6 +23449,7 @@ function tickerInitMarqueeControls() {
     viewport.addEventListener('mouseenter', () => {
         clearTimeout(_tickerHoverDwellTimer);
         _tickerHoverDwellTimer = setTimeout(() => {
+            if (_tickerEditPaused) return;
             if (track.dataset.marqueeActive !== '1') return;
             if (_tickerMarqueeHeld) {
                 _tickerMarqueeHeld = false;
