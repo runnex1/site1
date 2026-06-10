@@ -22,6 +22,9 @@ const {
   buildCloseSlippageByDay,
   mergeCloseSlippageIntoDailySeries,
   sumPairSessionRealizedSlippage,
+  pairLatestSessionStartMsFromDailySeries,
+  applyPairSessionRealizedSlippage,
+  trimDailySeriesToLatestSession,
   computeCombinedNetDeposits,
   filterFullyClosedPairs,
   mergeNadoMatches,
@@ -147,6 +150,49 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.equal(slip, -5, 'session realized slippage must sum partial close PnL on both legs since open');
   const beforeOpen = sumPairSessionRealizedSlippage('ONDO', 'hyperliquid', 'grvt', fills, partialClose + 5000);
   assert.equal(beforeOpen, 0, 'session slippage must ignore closes before the session start');
+}
+
+{
+  const oldOpen = now - 60 * 86400000;
+  const oldClose = now - 45 * 86400000;
+  const newOpen = now - 10 * 86400000;
+  const partialClose = now - 2 * 86400000;
+  const fills = {
+    hyperliquid: [
+      { symbol: 'ONDO', time: oldOpen, side: 'B', px: 1, sz: 200000, closedPnl: 0 },
+      { symbol: 'ONDO', time: oldClose, side: 'A', px: 1.01, sz: 200000, closedPnl: -5000 },
+      { symbol: 'ONDO', time: newOpen, side: 'B', px: 1, sz: 150000, closedPnl: 0 },
+      { symbol: 'ONDO', time: partialClose, side: 'A', px: 1.01, sz: 50000, closedPnl: -3 },
+    ],
+    grvt: [
+      { symbol: 'ONDO', time: oldOpen + 1000, side: 'sell', px: 1, sz: 200000, closedPnl: 0 },
+      { symbol: 'ONDO', time: oldClose + 1000, side: 'buy', px: 1.01, sz: 200000, closedPnl: -4796 },
+      { symbol: 'ONDO', time: newOpen + 1000, side: 'sell', px: 1, sz: 150000, closedPnl: 0 },
+      { symbol: 'ONDO', time: partialClose + 1000, side: 'buy', px: 1.01, sz: 50000, closedPnl: -2 },
+    ],
+  };
+  const series = buildDailyFundingSeries({
+    hlPayments: [
+      { symbol: 'ONDO', time: oldOpen + 3600000, usdc: 2 },
+      { symbol: 'ONDO', time: oldClose + 3600000, usdc: 1 },
+      { symbol: 'ONDO', time: newOpen + 3600000, usdc: 3 },
+    ],
+    days: 90,
+    pairedBases: ['ONDO'],
+  });
+  const latest = trimDailySeriesToLatestSession(series);
+  const sessionStart = pairLatestSessionStartMsFromDailySeries(series);
+  assert.ok(latest.length >= 1, 'latest session must exist after reopen');
+  assert.equal(sessionStart, Date.parse(latest[0].day + 'T00:00:00.000Z'), 'session start must match first active day of latest session');
+  const slip = sumPairSessionRealizedSlippage('ONDO', 'hyperliquid', 'grvt', fills, sessionStart);
+  assert.equal(slip, -5, 'realized slippage must exclude prior fully closed round slippage');
+  const pair = applyPairSessionRealizedSlippage({
+    symbol: 'ONDO',
+    venueA: 'hyperliquid',
+    venueB: 'grvt',
+    dailyPerformanceSeries: series,
+  }, fills);
+  assert.equal(pair.sessionRealizedSlippage, -5, 'applyPairSessionRealizedSlippage must use latest session boundary');
 }
 
 {
@@ -817,6 +863,7 @@ assert.match(indexHtml, /Spread \+ Funding − Trading fees/, 'total PnL tooltip
 assert.match(indexHtml, /Realized slippage/, 'total PnL tooltip must expose partial close slippage');
 assert.match(indexHtml, /function perpsShowClosedPnlTip\(/, 'closed tab must expose Net PnL and close slippage tooltips');
 assert.match(indexHtml, /dailySlippage/, 'daily funding chart must include close slippage in series rows');
+assert.match(indexHtml, /sessionRealizedSlippage/, 'open positions must read session realized slippage from pair payload');
 assert.doesNotMatch(indexHtml, /loop-head-stat-sub/, 'loop health must not show Risk/Watch/Safe sublabel');
 assert.doesNotMatch(indexHtml, /\.loop-head-eyebrow/, 'loop header must not use protocol eyebrow styling');
 assert.match(indexHtml, /loop-history-chart/, 'loop cards must render snapshot history chart');
