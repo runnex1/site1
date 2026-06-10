@@ -4695,6 +4695,16 @@ body {
 .dash-event-text { color:var(--t1); font-size:0.77rem; line-height:1.32; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 .dash-event-text .dash-yes { color:var(--green); font-weight:800; }
 .dash-event-text .dash-no { color:var(--red); font-weight:800; }
+.dash-event-text .dash-event-market-link { color:var(--sky); text-decoration:none; font-weight:600; }
+.dash-event-text .dash-event-market-link:hover { text-decoration:underline; }
+.news-feed-root { max-width:920px; margin:0 auto; padding:1.25rem 1.5rem 2rem; }
+.news-feed-header { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1.25rem; flex-wrap:wrap; }
+.news-feed-title { font-size:1.35rem; font-weight:700; color:var(--t1); margin:0 0 0.2rem; }
+.news-feed-sub { font-size:0.78rem; color:var(--t3); margin:0; }
+.news-feed-refresh { font-size:0.68rem; padding:0.35rem 0.7rem; border-radius:6px; border:1px solid var(--border); background:var(--surf-2); color:var(--t2); cursor:pointer; }
+.news-feed-refresh:hover { border-color:var(--border-mid); color:var(--t1); }
+.news-feed-section { margin-bottom:1.1rem; }
+.news-feed-grid { display:flex; flex-direction:column; gap:0.5rem; }
 .dash-event-age { font-size:0.66rem; color:var(--t3); white-space:nowrap; flex-shrink:0; padding-top:0.1rem; }
 .dash-event-loading { padding:0.6rem 0.45rem; font-size:0.76rem; color:var(--t3); }
 .dash-event-filters { display:flex; gap:0.35rem; overflow-x:auto; padding:0.15rem 0.65rem 0.45rem; scrollbar-width:none; }
@@ -4849,6 +4859,8 @@ body[data-active-tab="defi"] .page-content,
 .dash-allocation-chart { position:relative; height:100%; min-height:106px; max-height:148px; align-self:start; }
 .dash-allocation-legend { display:flex; flex-direction:column; gap:0.45rem; min-width:0; }
 .dash-allocation-item { display:grid; grid-template-columns: 9px 1fr auto; gap:0.4rem; align-items:center; font-size:0.68rem; color:var(--t1); }
+.dash-allocation-item.child { padding-left:0.62rem; }
+.dash-allocation-item.child .dash-allocation-name { color:var(--t3); font-size:0.62rem; }
 .dash-allocation-item.clickable { cursor:pointer; border-radius:6px; padding:0.12rem 0.18rem; margin:0 -0.18rem; }
 .dash-allocation-item.clickable:hover, .dash-allocation-item.active { background:rgba(94,234,212,0.08); color:#f8fafc; }
 .dash-allocation-dot { width:8px; height:8px; border-radius:50%; }
@@ -6064,6 +6076,10 @@ body[data-active-tab="loops"] .page-content,
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         Watcher
       </div>
+      <div class="nav-item" data-tab="news" onclick="switchTab('news')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="16" y2="11"/></svg>
+        News Feed
+      </div>
     </div>
 
     <div class="sidebar-section">
@@ -6223,7 +6239,7 @@ body[data-active-tab="loops"] .page-content,
                 <button class="dash-info-tab active" data-info-tab="events" onclick="setDashboardInfoTab('events')">Event Log</button>
                 <button class="dash-info-tab" data-info-tab="brief" onclick="setDashboardInfoTab('brief')">Daily Brief</button>
               </div>
-              <a class="dash-panel-link" onclick="switchTab('terminal')">View all</a>
+              <a class="dash-panel-link" onclick="switchTab('news')">Full feed</a>
             </div>
             <div class="dash-info-pane active" id="dashboardInfoEvents">
               <div class="dash-event-filters" id="dashboardEventFilters"></div>
@@ -6821,6 +6837,30 @@ body[data-active-tab="loops"] .page-content,
         </div>
       </div>
 
+      <div id="newsTab" class="tab-pane">
+        <div class="news-feed-root">
+          <div class="news-feed-header">
+            <div>
+              <h2 class="news-feed-title">News Feed</h2>
+              <p class="news-feed-sub">Ranked headlines from crypto, DeFi, macro, Telegram, and your holdings</p>
+            </div>
+            <button type="button" class="news-feed-refresh" onclick="fetchDailyNews(true)">Refresh</button>
+          </div>
+          <div id="newsFeedKobeissi" class="news-feed-section" style="display:none"></div>
+          <div class="news-feed-section">
+            <div class="brief-section-label">Portfolio updates</div>
+            <div class="brief-news-grid news-feed-grid" id="newsFeedPortfolioGrid">
+              <div class="brief-news-loading">Scanning holdings news...</div>
+            </div>
+          </div>
+          <div class="news-feed-section">
+            <div class="brief-section-label">Top stories</div>
+            <div class="brief-news-grid news-feed-grid" id="newsFeedGrid">
+              <div class="brief-news-loading">Loading latest news...</div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div id="terminalTab" class="tab-pane">
         <div class="term-shell">
@@ -8172,7 +8212,7 @@ function saveOpportunityMonitors() {
 async function loadData() {
     _dashboardDataLoading = location.protocol !== 'file:';
     updateDashboardDataLoading();
-    const validInitialTabs = new Set(['overview','defi','prediction','loops','etf','terminal','watcher','perps','history']);
+    const validInitialTabs = new Set(['overview','defi','prediction','loops','etf','terminal','watcher','news','perps','history']);
     const savedTab = (() => {
         try { return localStorage.getItem('vault-active-tab') || 'overview'; }
         catch(e) { return 'overview'; }
@@ -9060,7 +9100,9 @@ const featureSearchItems = [
     { label: 'Perps DEXs', tab: 'perps', keywords: 'perps hyperliquid nado funding rate arbitrage dex' },
     { label: 'Prediction Markets', tab: 'prediction', keywords: 'prediction markets polymarket opinion positions bets' },
     { label: 'ETF & Stocks', tab: 'etf', keywords: 'etf stocks equity holdings watchlist' },
-    { label: 'Weekly Snapshots', tab: 'history', keywords: 'weekly snapshots history first snapshot performance apr' }
+    { label: 'Weekly Snapshots', tab: 'history', keywords: 'weekly snapshots history first snapshot performance apr' },
+    { label: 'News Feed', tab: 'news', keywords: 'news feed daily brief headlines rss crypto defi macro telegram' },
+    { label: 'Alert Terminal', tab: 'terminal', keywords: 'alert terminal ai assistant portfolio alerts' }
 ];
 let featureSearchMatches = [];
 
@@ -9195,6 +9237,7 @@ function switchTab(tab, opts = {}) {
     if (tab === 'etf' && typeof refreshEtfLivePrices === 'function') {
         refreshEtfLivePrices();
     }
+    if (tab === 'news' && typeof fetchDailyNews === 'function') fetchDailyNews(true);
     syncTabRefreshTimers(tab);
 }
 
@@ -9689,6 +9732,9 @@ async function fetchMovers(wallets) {
                 title: pos.title || 'Unknown Market',
                 outcome: pos.outcome || '',
                 asset: pos.asset,
+                slug: pos.slug || pos.marketSlug || pos.market_slug || '',
+                eventSlug: pos.eventSlug || pos.event_slug || '',
+                marketUrl: pos.marketUrl || pos.url || '',
                 curPrice,
                 price24hAgo,
                 pctChange,
@@ -9779,6 +9825,9 @@ function groupFilledTradesByWindow(trades, groupMs = PM_ORDER_FILL_GROUP_MS) {
                     title: t.title,
                     outcome: t.outcome,
                     side: t.side,
+                    slug: t.slug || t.marketSlug || t.market_slug || '',
+                    eventSlug: t.eventSlug || t.event_slug || '',
+                    marketUrl: dashPolymarketMarketUrl(t),
                     latestTs: tsMs || 0,
                     earliestTs: tsMs || 0,
                     totalShares: 0,
@@ -13078,16 +13127,39 @@ function updateDashboardProtocolNote(index, value) {
     data.protocols[index].notes = value;
     saveData();
 }
+function dashboardPerpsEquityValue() {
+    const live = _perpsLastData || _perpsCache;
+    if (live?.summary) {
+        const s = live.summary;
+        return Number(s.hlAccountValue || 0) + Number(s.nadoAccountValue || 0) + Number(s.grvtAccountValue || 0) + Number(s.extendedAccountValue || 0);
+    }
+    if (live?.equityNow?.total != null) return Number(live.equityNow.total) || 0;
+    const pts = perpsEquitySnapshotPoints();
+    const last = pts[pts.length - 1];
+    return last ? Number(last.totalEquity || 0) : 0;
+}
+function dashboardPerpsSnapshotAt(ts) {
+    const pts = perpsEquitySnapshotPoints();
+    if (!pts.length || !ts) return 0;
+    let best = pts[0];
+    for (const p of pts) {
+        if (Math.abs(p.time - ts) < Math.abs(best.time - ts)) best = p;
+    }
+    if (Math.abs(best.time - ts) > 7 * 86400000) return 0;
+    return Number(best.totalEquity || 0);
+}
 function dashCurrentTotal() {
     const tw = data.tokens.reduce((sum,t)=>sum+Number(t.value||0),0);
     const tp = data.protocols.reduce((sum,p)=>sum+protocolDisplayValue(p),0);
     const te = data.etfs.reduce((sum,e)=>sum+(Number(e.shares||0)*Number(e.currentPrice||0)),0);
     const tpm = (data.predictionMarkets||[]).reduce((sum,p)=>sum+Number(p.currentValue||0),0);
     const top = (data.opinionMarkets||[]).reduce((sum,p)=>sum+Number(p.currentValue||0),0);
-    return tw + tp + te + tpm + top;
+    return tw + tp + te + tpm + top + dashboardPerpsEquityValue();
 }
 function dashSnapshotTotal(snap) {
-    return Number(snap?.totalTokens||0) + Number(snap?.totalProtocols||0) + Number(snap?.totalEtfs||0) + Number(snap?.totalPM||0) + Number(snap?.totalOp||0);
+    const base = Number(snap?.totalTokens||0) + Number(snap?.totalProtocols||0) + Number(snap?.totalEtfs||0) + Number(snap?.totalPM||0) + Number(snap?.totalOp||0);
+    const ts = Date.parse(snap?.date || '') || 0;
+    return base + dashboardPerpsSnapshotAt(ts);
 }
 function dashboardCleanSnapshotRecords() {
     const current = dashCurrentTotal();
@@ -13185,26 +13257,60 @@ function eventVisual(kind, iconKey, color, alphaBg) {
     }
     return { iconKey, color, alphaBg };
 }
-function eventTextHtml(kind, text) {
+function eventMarketTitleFromText(kind, text) {
+    const s = String(text || '');
+    if (/^Order Filled$/i.test(String(kind || ''))) {
+        const m = s.match(/^(.+?)(?:\s+[—–-]\s+)/);
+        return m ? m[1].trim() : '';
+    }
+    if (/^PM Price Move$/i.test(String(kind || ''))) {
+        const m = s.match(/^(.+?)\s*\(/);
+        return m ? m[1].trim() : '';
+    }
+    return '';
+}
+function dashPmUrlForTitle(title) {
+    const norm = dashNormalizeMarketTitle(title);
+    if (!norm) return '';
+    const pm = [...(data.predictionMarkets || []), ...(data.opinionMarkets || [])]
+        .find(p => dashNormalizeMarketTitle(p.title) === norm || dashNormalizeMarketTitle(p.title).startsWith(norm) || norm.startsWith(dashNormalizeMarketTitle(p.title)));
+    return pm ? dashPolymarketMarketUrl(pm) : '';
+}
+function eventTextHtml(kind, text, meta = {}) {
     let html = dashEsc(text);
     if (/^PM Price Move$/i.test(String(kind || ''))) {
         html = html
             .replace(/\((YES|Yes|yes)\)/g, '(<span class="dash-yes">YES</span>)')
             .replace(/\((NO|No|no)\)/g, '(<span class="dash-no">NO</span>)');
     }
+    if (/^Order Filled$/i.test(String(kind || '')) || /^PM Price Move$/i.test(String(kind || ''))) {
+        const marketTitle = meta.marketTitle || eventMarketTitleFromText(kind, text);
+        const marketUrl = meta.marketUrl || dashPmUrlForTitle(marketTitle);
+        if (marketTitle && marketUrl) {
+            const escTitle = dashEsc(marketTitle);
+            html = html.replace(escTitle, `<a class="dash-event-market-link" href="${dashEsc(marketUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${escTitle}</a>`);
+        }
+    }
     return html;
 }
-function _evCard(kind, iconKey, color, alphaBg, text, ts, hoverText='') {
+function _evCard(kind, iconKey, color, alphaBg, text, ts, hoverText='', meta = {}) {
     const v = eventVisual(kind, iconKey, color, alphaBg);
     const titleText = hoverText || text;
+    const evMeta = { marketUrl: meta.marketUrl || '', marketTitle: meta.marketTitle || '' };
     return `<div class="dash-event-card" style="border-left-color:${v.color}">` +
         `<div class="dash-event-icon" style="background:${v.alphaBg};color:${v.color}">${_EV_ICONS[v.iconKey] || _EV_ICONS.fill}</div>` +
         `<div class="dash-event-body">` +
             `<div class="dash-event-kind clickable" style="color:${v.color}" onclick="setDashboardEventFilter(decodeURIComponent('${dashUri(kind)}'))" title="Show only ${dashEsc(eventFilterLabel(kind))}">${dashEsc(kind)}</div>` +
-            `<div class="dash-event-text" title="${dashEsc(titleText)}">${eventTextHtml(kind, text)}</div>` +
+            `<div class="dash-event-text" title="${dashEsc(titleText)}">${eventTextHtml(kind, text, evMeta)}</div>` +
         `</div>` +
         `<div class="dash-event-age">${_evAbsTime(ts)}</div>` +
     `</div>`;
+}
+function _evCardFromItem(it) {
+    return _evCard(it.kind, it.icon, it.color, it.alpha, it.text, it.ts, it.hover, {
+        marketUrl: it.marketUrl,
+        marketTitle: it.marketTitle,
+    });
 }
 
 function eventFilterLabel(kind) {
@@ -13279,7 +13385,11 @@ async function _evHistSave(newItems) {
             _evDedupeKey(e) === itemKey &&
             Math.abs((e.ts || 0) - (item.ts || 0)) < windowMs
         );
-        if (!dup) existing.push({ kind: item.kind, icon: item.icon, color: item.color, alpha: item.alpha, text: item.text, ts: item.ts, hover: item.hover || '' });
+        if (!dup) existing.push({
+            kind: item.kind, icon: item.icon, color: item.color, alpha: item.alpha,
+            text: item.text, ts: item.ts, hover: item.hover || '',
+            marketUrl: item.marketUrl || '', marketTitle: item.marketTitle || '',
+        });
     }
 
     // Health warnings: keep only one per protocol per 72h (most recent)
@@ -13387,7 +13497,7 @@ async function renderDashboardEventLog() {
             el.innerHTML = _evCard('All Clear', 'fill', 'var(--green)', 'rgba(34,197,94,0.1)', 'No alerts, warnings or fills detected. Monitors are quiet.', now);
             return;
         }
-        el.innerHTML = sorted.map(it => _evCard(it.kind, it.icon, it.color, it.alpha, it.text, it.ts, it.hover)).join('');
+        el.innerHTML = sorted.map(it => _evCardFromItem(it)).join('');
         return;
     }
 
@@ -13434,13 +13544,16 @@ async function renderDashboardEventLog() {
             .forEach(g => {
                 const isBuy = g.side === 'BUY';
                 const avgPrice = g.totalShares > 0 ? g.totalCost / g.totalShares : 0;
+                const marketTitle = g.title.slice(0, 55);
                 freshItems.push({ kind: 'Order Filled', icon: 'fill',
                     color: isBuy ? 'var(--green)' : 'var(--red)',
                     alpha: isBuy ? 'rgba(34,197,94,0.12)' : 'rgba(244,63,94,0.12)',
-                    text: g.title.slice(0, 55) + ' — ' + (g.outcome ? g.outcome + ' ' : '') +
+                    text: marketTitle + ' — ' + (g.outcome ? g.outcome + ' ' : '') +
                           g.side + ' ' + g.totalShares.toFixed(0) + ' shares @ ' + (avgPrice * 100).toFixed(1) + '¢',
                     ts: g.latestTs,
-                    hover: orderFillHoverText(g) });
+                    hover: orderFillHoverText(g),
+                    marketTitle,
+                    marketUrl: g.marketUrl || dashPolymarketMarketUrl(g) });
             });
     }
 
@@ -13461,11 +13574,14 @@ async function renderDashboardEventLog() {
     } else {
         (_rawPolyMovers || []).slice(0, 4).forEach(m => {
             const up   = m.pctChange >= 0;
+            const marketTitle = (m.title || '').slice(0, 55);
             freshItems.push({ kind: 'PM Price Move', icon: up ? 'up' : 'down',
                 color: up ? 'var(--green)' : 'var(--red)',
                 alpha: up ? 'rgba(34,197,94,0.12)' : 'rgba(244,63,94,0.12)',
                 text: dashPmPriceMoveText(m, 55),
-                ts: now - 15 * 60000 });
+                ts: now - 15 * 60000,
+                marketTitle,
+                marketUrl: dashPolymarketMarketUrl(m) });
         });
     }
 
@@ -13582,7 +13698,7 @@ async function renderDashboardEventLog() {
     renderDashboardEventFilters(allItems);
     const visibleItems = allItems.filter(e => _dashboardEventFilter !== 'all' || !_dashboardMutedEventTypes.includes(e.kind));
     const sorted = _dashboardEventFilter === 'all' ? visibleItems : visibleItems.filter(e => e.kind === _dashboardEventFilter);
-    el.innerHTML = sorted.map(it => _evCard(it.kind, it.icon, it.color, it.alpha, it.text, it.ts, it.hover)).join('');
+    el.innerHTML = sorted.map(it => _evCardFromItem(it)).join('');
 }
 
 function readOpportunityPmSettingsFromForm() {
@@ -17831,13 +17947,25 @@ function updateDashboardDataLoading() {
 function dashboardChartPoints() {
     const now = Date.now();
     const rangeDays = { '7D': 7, '30D': 30, '90D': 90 }[dashboardChartState.range] || null;
-    let snaps = dashboardCleanSnapshotRecords()
-        .map(x => ({
-            label: x.snap.date ? new Date(x.snap.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : x.snap.week || '',
-            value: dashboardChartSnapshotValue(x.snap),
-            ts: x.ts
-        }))
-        .sort((a,b)=>a.ts-b.ts);
+    const cat = dashboardChartState.category || 'total';
+    let snaps;
+    if (cat === 'perps') {
+        snaps = perpsEquitySnapshotPoints()
+            .map(p => ({
+                label: new Date(p.time).toLocaleDateString('en-US', { month:'short', day:'numeric' }),
+                value: Number(p.totalEquity || 0),
+                ts: p.time
+            }))
+            .sort((a, b) => a.ts - b.ts);
+    } else {
+        snaps = dashboardCleanSnapshotRecords()
+            .map(x => ({
+                label: x.snap.date ? new Date(x.snap.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : x.snap.week || '',
+                value: dashboardChartSnapshotValue(x.snap),
+                ts: x.ts
+            }))
+            .sort((a,b)=>a.ts-b.ts);
+    }
     if (rangeDays) snaps = snaps.filter(x => now - x.ts <= rangeDays * 86400000);
     const current = dashboardChartCurrentValue();
     snaps.push({ label: 'Now', value: current, ts: now });
@@ -17847,6 +17975,7 @@ function dashboardChartPoints() {
 function dashboardChartSnapshotValue(snap) {
     const cat = dashboardChartState.category || 'total';
     if (cat === 'prediction') return Number(snap.totalPM || 0) + Number(snap.totalOp || 0);
+    if (cat === 'perps') return dashboardPerpsSnapshotAt(Date.parse(snap?.date || '') || 0);
     if (cat === 'tokens') return Number(snap.totalTokens || 0);
     if (cat === 'defi') return Number(snap.totalProtocols || 0);
     if (cat === 'etf') return Number(snap.totalEtfs || 0);
@@ -17855,6 +17984,7 @@ function dashboardChartSnapshotValue(snap) {
 function dashboardChartCurrentValue() {
     const cat = dashboardChartState.category || 'total';
     if (cat === 'prediction') return [...(data.predictionMarkets || []), ...(data.opinionMarkets || [])].reduce((s,p)=>s+Number(p.currentValue||0),0);
+    if (cat === 'perps') return dashboardPerpsEquityValue();
     if (cat === 'tokens') return (data.tokens || []).reduce((s,t)=>s+Number(t.value||0),0);
     if (cat === 'defi') return (data.protocols || []).filter(p => !/prediction/i.test(p.type || '')).reduce((s,p)=>s+protocolDisplayValue(p),0);
     if (cat === 'etf') return (data.etfs || []).reduce((s,e)=>s+(Number(e.shares||0)*Number(e.currentPrice||0)),0);
@@ -17863,14 +17993,17 @@ function dashboardChartCurrentValue() {
 function dashboardAllocationData() {
     const defi = (data.protocols || []).filter(p => !/prediction/i.test(p.type || '')).reduce((s,p)=>s+protocolDisplayValue(p),0);
     const pm = [...(data.predictionMarkets || []), ...(data.opinionMarkets || [])].reduce((s,p)=>s+Number(p.currentValue||0),0);
+    const perps = dashboardPerpsEquityValue();
     const tokens = (data.tokens || []).reduce((s,t)=>s+Number(t.value||0),0);
     const etfs = (data.etfs || []).reduce((s,e)=>s+(Number(e.shares||0)*Number(e.currentPrice||0)),0);
-    return [
+    const rows = [
         { label:'DeFi Positions', value:defi, color:'#2dd4bf', chartCategory:'defi' },
         { label:'Prediction Markets', value:pm, color:'#a78bfa', chartCategory:'prediction' },
+        ...(perps > 0 ? [{ label:'Perpetual DEXs', value:perps, color:'#c4b5fd', chartCategory:'perps', child:true }] : []),
         { label:'Liquid Tokens', value:tokens, color:'#38bdf8', chartCategory:'tokens' },
         { label:'ETF / Stocks', value:etfs, color:'#fbbf24', chartCategory:'etf' },
-    ].filter(x => x.value > 0);
+    ];
+    return rows.filter(x => x.value > 0);
 }
 function dashboardAttributionBaseline() {
     const targetDays = { '1D': 1, '7D': 7, '30D': 30 }[dashboardPnlRange] || null;
@@ -18123,7 +18256,7 @@ function updateCharts(force=false) {
                 });
             }
             if (allocationLegend) allocationLegend.innerHTML = alloc.map(x => `
-              <div class="dash-allocation-item clickable ${dashboardChartState.category === x.chartCategory ? 'active' : ''}" onclick="setDashboardChartCategory('${dashEsc(x.chartCategory)}')" title="Show ${dashEsc(x.label)} trend">
+              <div class="dash-allocation-item clickable ${x.child ? 'child' : ''} ${dashboardChartState.category === x.chartCategory ? 'active' : ''}" onclick="setDashboardChartCategory('${dashEsc(x.chartCategory)}')" title="Show ${dashEsc(x.label)} trend">
                 <span class="dash-allocation-dot" style="background:${x.color}"></span>
                 <span class="dash-allocation-name">${dashEsc(x.label)}</span>
                 <span class="dash-allocation-val">${((x.value/total)*100).toFixed(1)}%</span>
@@ -23336,10 +23469,12 @@ document.addEventListener('DOMContentLoaded', () => {
 // =============================================================================
 // DAILY BRIEF — NEWS FEED (RSS fetch → Groq/Llama ranking)
 // =============================================================================
-async function fetchDailyNews() {
-    const el = document.getElementById('briefNewsGrid');
-    const portfolioEl = document.getElementById('briefPortfolioGrid');
-    if (!el) return;
+async function fetchDailyNews(force = false) {
+    const briefGrid = document.getElementById('briefNewsGrid');
+    const feedGrid = document.getElementById('newsFeedGrid');
+    const briefPortfolioEl = document.getElementById('briefPortfolioGrid');
+    const feedPortfolioEl = document.getElementById('newsFeedPortfolioGrid');
+    if (!briefGrid && !feedGrid) return;
 
     const CACHE_KEY  = 'vault_news_cache_v4';
     const CACHE_TTL  = 60 * 60 * 1000; // 1 hour
@@ -23408,12 +23543,11 @@ async function fetchDailyNews() {
         } catch(e) { return null; }
     }
 
-    function renderKobeissi(item) {
-        const card = document.getElementById('kobeissiCard');
-        if (!card) return;
-        if (!item) { card.style.display = 'none'; return; }
-        card.style.display = 'block';
-        card.innerHTML = `
+    function renderKobeissiCard(target, item) {
+        if (!target) return;
+        if (!item) { target.style.display = 'none'; target.innerHTML = ''; return; }
+        target.style.display = 'block';
+        target.innerHTML = `
             <a class="brief-news-card" href="${item.url}" target="_blank" rel="noopener" style="border-color:rgba(245,158,11,0.2)">
                 <span class="brief-news-card-tag kobeissi">⚡ Kobeissi</span>
                 <div class="brief-news-card-body">
@@ -23426,27 +23560,42 @@ async function fetchDailyNews() {
             </a>`;
     }
 
-    function renderItems(items, kobeissiItem, portfolioItems = []) {
-        renderKobeissi(kobeissiItem);
-        if (typeof renderDashboardEventLog === 'function') renderDashboardEventLog();
-        const filtered = (items || []).filter(i => i.type !== 'kobeissi');
-        if (portfolioEl) {
-            portfolioEl.innerHTML = portfolioItems.length
-                ? portfolioItems.slice(0, 2).map(item => renderNewsCard({ ...item, portfolioTag: portfolioTagFor(item) })).join('')
-                : '<div class="brief-news-loading">No important holding-specific headlines in the last 24h.</div>';
-        }
-        if (!filtered.length) {
-            el.innerHTML = '<div class="brief-news-loading">No major market-moving news today.</div>';
+    function renderKobeissi(item) {
+        renderKobeissiCard(document.getElementById('kobeissiCard'), item);
+        renderKobeissiCard(document.getElementById('newsFeedKobeissi'), item);
+    }
+
+    function renderNewsToGrid(gridEl, items, perTypeLimit) {
+        if (!gridEl) return;
+        if (!items.length) {
+            gridEl.innerHTML = '<div class="brief-news-loading">No major market-moving news today.</div>';
             return;
         }
-        const byType = filtered.reduce((acc, item) => {
+        const byType = items.reduce((acc, item) => {
             const type = item.type || 'macro';
             (acc[type] ||= []).push(item);
             return acc;
         }, {});
         const orderedTypes = [...typeOrder, ...Object.keys(byType)].filter((t, i, a) => byType[t]?.length && a.indexOf(t) === i);
-        const visibleItems = orderedTypes.flatMap(type => byType[type].slice(0, 4));
-        el.innerHTML = visibleItems.map(renderNewsCard).join('');
+        const visibleItems = orderedTypes.flatMap(type => byType[type].slice(0, perTypeLimit));
+        gridEl.innerHTML = visibleItems.map(renderNewsCard).join('');
+    }
+
+    function renderPortfolioToGrid(gridEl, items, limit) {
+        if (!gridEl) return;
+        gridEl.innerHTML = items.length
+            ? items.slice(0, limit).map(item => renderNewsCard({ ...item, portfolioTag: portfolioTagFor(item) })).join('')
+            : '<div class="brief-news-loading">No important holding-specific headlines in the last 24h.</div>';
+    }
+
+    function renderItems(items, kobeissiItem, portfolioItems = []) {
+        renderKobeissi(kobeissiItem);
+        if (typeof renderDashboardEventLog === 'function') renderDashboardEventLog();
+        const filtered = (items || []).filter(i => i.type !== 'kobeissi');
+        renderPortfolioToGrid(briefPortfolioEl, portfolioItems, 2);
+        renderPortfolioToGrid(feedPortfolioEl, portfolioItems, 12);
+        renderNewsToGrid(briefGrid, filtered, 4);
+        renderNewsToGrid(feedGrid, filtered, 12);
         try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items: filtered, portfolioItems, ts: Date.now(), handles: tgChannels, holdings })); } catch(e) {}
     }
 
@@ -23460,7 +23609,7 @@ async function fetchDailyNews() {
             const { items, portfolioItems, ts, handles, holdings: cachedHoldings } = JSON.parse(cached);
             const same = JSON.stringify(handles || []) === JSON.stringify(tgChannels);
             const sameHoldings = JSON.stringify(cachedHoldings || []) === JSON.stringify(holdings);
-            if (Date.now() - ts < CACHE_TTL && items && same && sameHoldings) {
+            if (!force && Date.now() - ts < CACHE_TTL && items && same && sameHoldings) {
                 const kobeissiItem = await kobeissiPromise;
                 renderItems(items, kobeissiItem, portfolioItems || []);
                 return;
@@ -23487,7 +23636,9 @@ async function fetchDailyNews() {
         } catch(e) {
             console.warn('[News] /api/news failed:', e.message);
         }
-        el.innerHTML = '<div class="brief-news-loading">News unavailable — try again later.</div>';
+        const errHtml = '<div class="brief-news-loading">News unavailable — try again later.</div>';
+        if (briefGrid) briefGrid.innerHTML = errHtml;
+        if (feedGrid) feedGrid.innerHTML = errHtml;
         return;
     }
 
@@ -23566,7 +23717,9 @@ async function fetchDailyNews() {
         const items = localRankNews(settled.flatMap(s => s.status === 'fulfilled' ? s.value : []));
         renderItems(items, kobeissiItem);
     } catch(e) {
-        el.innerHTML = `<div class="brief-news-loading">News unavailable (${e.message})</div>`;
+        const errHtml = `<div class="brief-news-loading">News unavailable (${e.message})</div>`;
+        if (briefGrid) briefGrid.innerHTML = errHtml;
+        if (feedGrid) feedGrid.innerHTML = errHtml;
     }
 }
 
@@ -26233,6 +26386,7 @@ function perpsComputePortfolioStats(data) {
 
 function perpsRenderStatsBar(data) {
     _perpsLastData = data;
+    if (typeof updateCharts === 'function' && document.body.dataset.activeTab === 'overview') updateCharts(true);
     const stats = perpsComputePortfolioStats(data);
     _perpsVenueEquity = stats.venueEquity;
     const set = (id, val, cls) => {

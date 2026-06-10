@@ -395,6 +395,9 @@ async function getPolymarketMarketMoves(query) {
         asset,
         title: pos.title || 'Unknown Market',
         outcome: pos.outcome || '',
+        slug: pos.slug || pos.marketSlug || pos.market_slug || '',
+        eventSlug: pos.eventSlug || pos.event_slug || '',
+        marketUrl: pos.marketUrl || pos.url || '',
         size: 0,
         currentValue: 0
       };
@@ -402,6 +405,15 @@ async function getPolymarketMarketMoves(query) {
       existing.currentValue += Number.isFinite(currentValue) ? currentValue : 0;
       if (!existing.title && pos.title) existing.title = pos.title;
       if (!existing.outcome && pos.outcome) existing.outcome = pos.outcome;
+      if (!existing.slug && (pos.slug || pos.marketSlug || pos.market_slug)) {
+        existing.slug = pos.slug || pos.marketSlug || pos.market_slug;
+      }
+      if (!existing.eventSlug && (pos.eventSlug || pos.event_slug)) {
+        existing.eventSlug = pos.eventSlug || pos.event_slug;
+      }
+      if (!existing.marketUrl && (pos.marketUrl || pos.url)) {
+        existing.marketUrl = pos.marketUrl || pos.url;
+      }
       byAsset.set(asset, existing);
     }
 
@@ -428,6 +440,9 @@ async function getPolymarketMarketMoves(query) {
           title: pos.title || 'Unknown Market',
           outcome: pos.outcome || '',
           asset: pos.asset,
+          slug: pos.slug || '',
+          eventSlug: pos.eventSlug || '',
+          marketUrl: pmMarketUrlFrom(pos, null),
           curPrice,
           price24hAgo,
           pctChange,
