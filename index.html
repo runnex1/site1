@@ -580,6 +580,19 @@ body[data-active-tab="news"] .market-ticker-strip,
 .page-content:has(#newsTab.active) .market-ticker-strip {
   display:none !important;
 }
+body[data-active-tab="news"] .page-content,
+.page-content.tab-news,
+.page-content:has(#newsTab.active) {
+  padding:10px 14px;
+  overflow:hidden;
+  background:
+    radial-gradient(circle at 74% -8%, rgba(89,240,200,0.08), transparent 32%),
+    linear-gradient(180deg, rgba(8,16,25,0.99), rgba(3,7,11,0.99));
+}
+body[data-active-tab="news"] #newsTab,
+.page-content.tab-news #newsTab {
+  height:100%; min-height:0;
+}
 
 /* Watcher tab: hide market ticker, match dashboard surface */
 body[data-active-tab="watcher"] .market-ticker-strip,
@@ -4704,14 +4717,160 @@ body {
 .dash-event-text .dash-no { color:var(--red); font-weight:800; }
 .dash-event-text .dash-event-market-link { color:inherit; text-decoration:none; font-weight:inherit; }
 .dash-event-text .dash-event-market-link:hover { color:inherit; text-decoration:underline; }
-.news-feed-root { max-width:920px; margin:0 auto; padding:1.25rem 1.5rem 2rem; }
-.news-feed-header { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1.25rem; flex-wrap:wrap; }
-.news-feed-title { font-size:1.35rem; font-weight:700; color:var(--t1); margin:0 0 0.2rem; }
-.news-feed-sub { font-size:0.78rem; color:var(--t3); margin:0; }
-.news-feed-refresh { font-size:0.68rem; padding:0.35rem 0.7rem; border-radius:6px; border:1px solid var(--border); background:var(--surf-2); color:var(--t2); cursor:pointer; }
-.news-feed-refresh:hover { border-color:var(--border-mid); color:var(--t1); }
-.news-feed-section { margin-bottom:1.1rem; }
-.news-feed-grid { display:flex; flex-direction:column; gap:0.5rem; }
+.news-feed-root { height:100%; min-height:0; display:flex; flex-direction:column; }
+.news-feed-layout {
+  flex:1; min-height:0;
+  display:grid;
+  grid-template-columns:220px minmax(0,1fr) 168px;
+  gap:12px;
+}
+.news-feed-panel {
+  border:1px solid var(--border-mid);
+  border-radius:12px;
+  background:rgba(16,17,24,0.92);
+  display:flex; flex-direction:column;
+  min-height:0; overflow:hidden;
+}
+.news-feed-panel-head {
+  flex-shrink:0;
+  padding:12px 14px 10px;
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+}
+.news-feed-panel-title {
+  font-size:11px; font-weight:800; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--t3);
+}
+.news-feed-panel-count { font-family:var(--ff-mono); font-size:10px; color:var(--t3); }
+.news-feed-saved-list { flex:1; overflow:auto; padding:6px; }
+.news-feed-saved-card {
+  padding:9px 9px; border-radius:8px; border:1px solid transparent;
+  margin-bottom:5px; cursor:pointer;
+}
+.news-feed-saved-card:hover { background:rgba(255,255,255,0.03); border-color:var(--border); }
+.news-feed-saved-card.active { background:var(--teal-10); border-color:rgba(0,212,170,0.22); }
+.news-feed-saved-tag {
+  font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+  padding:2px 6px; border-radius:4px; display:inline-block; margin-bottom:5px;
+}
+.news-feed-saved-tag.crypto { background:var(--teal-10); color:var(--teal); }
+.news-feed-saved-tag.defi { background:var(--fuchsia-10); color:var(--fuchsia); }
+.news-feed-saved-tag.macro { background:var(--indigo-10); color:var(--indigo); }
+.news-feed-saved-tag.tg { background:rgba(56,189,248,0.12); color:var(--sky); }
+.news-feed-saved-title { font-size:12px; line-height:1.35; font-weight:600; margin-bottom:3px; color:var(--t1); }
+.news-feed-saved-meta { font-size:10px; color:var(--t3); font-family:var(--ff-mono); }
+.news-feed-saved-empty { padding:10px; font-size:11px; color:var(--t3); line-height:1.4; }
+.news-feed-center { position:relative; }
+.news-feed-center-head {
+  padding:14px 16px 12px; border-bottom:1px solid var(--border);
+  display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
+}
+.news-feed-center-head h1 { margin:0 0 4px; font-size:22px; font-weight:900; letter-spacing:-.02em; color:var(--t1); }
+.news-feed-center-head p { margin:0; font-size:12px; color:var(--t3); line-height:1.4; }
+.news-feed-lens { margin-top:8px; display:flex; flex-wrap:wrap; gap:5px; }
+.news-feed-lens-chip {
+  font-family:var(--ff-mono); font-size:10px; padding:3px 8px; border-radius:999px;
+  border:1px solid var(--border-mid); color:var(--t3); background:rgba(255,255,255,0.02);
+}
+.news-feed-lens-chip.on { color:var(--teal); border-color:rgba(0,212,170,0.3); background:var(--teal-10); }
+.news-feed-lens-chip.off { opacity:.55; }
+.news-feed-settings-btn {
+  flex-shrink:0; display:flex; align-items:center; gap:7px;
+  padding:8px 12px; border-radius:8px;
+  border:1px solid var(--border-mid); background:var(--surf-2);
+  color:var(--t1); font-family:var(--ff-mono); font-size:10px; font-weight:700;
+  letter-spacing:.05em; cursor:pointer;
+}
+.news-feed-settings-btn:hover { border-color:rgba(0,212,170,0.35); background:var(--teal-10); }
+.news-feed-settings-btn svg { color:var(--teal); flex-shrink:0; }
+.news-feed-scroll { flex:1; overflow:auto; padding:10px 12px 14px; }
+.news-feed-card {
+  display:flex; gap:11px; padding:12px 12px; border-radius:10px;
+  border:1px solid var(--border); background:rgba(20,21,30,0.65);
+  margin-bottom:8px; transition:border-color .15s;
+}
+.news-feed-card:hover { border-color:var(--border-mid); }
+.news-feed-card.featured { border-color:rgba(0,212,170,0.22); background:linear-gradient(135deg,rgba(0,212,170,0.06),rgba(20,21,30,0.7)); }
+.news-feed-card-tag {
+  flex-shrink:0; align-self:flex-start;
+  font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+  padding:4px 7px; border-radius:5px; height:fit-content;
+}
+.news-feed-card-tag.crypto { background:var(--teal-10); color:var(--teal); border:1px solid rgba(0,212,170,0.2); }
+.news-feed-card-tag.defi { background:var(--fuchsia-10); color:var(--fuchsia); border:1px solid rgba(217,70,239,0.2); }
+.news-feed-card-tag.macro { background:var(--indigo-10); color:var(--indigo); border:1px solid rgba(108,114,255,0.2); }
+.news-feed-card-tag.kobeissi { background:rgba(245,158,11,0.15); color:var(--amber); border:1px solid rgba(245,158,11,0.35); }
+.news-feed-card-body { flex:1; min-width:0; }
+.news-feed-card-title { font-size:13px; font-weight:700; line-height:1.35; margin-bottom:5px; color:var(--t1); }
+.news-feed-card-title a { color:inherit; text-decoration:none; }
+.news-feed-card-title a:hover { text-decoration:underline; }
+.news-feed-card-snippet { font-size:11px; color:var(--t3); line-height:1.45; margin-bottom:6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.news-feed-card-meta { display:flex; flex-wrap:wrap; gap:10px; font-family:var(--ff-mono); font-size:10px; color:var(--t3); }
+.news-feed-card-actions { display:flex; flex-direction:column; gap:5px; flex-shrink:0; }
+.news-feed-icon-btn {
+  width:28px; height:28px; border-radius:7px; border:1px solid var(--border);
+  background:transparent; color:var(--t3); display:flex; align-items:center; justify-content:center;
+  cursor:pointer; font-size:14px; line-height:1;
+}
+.news-feed-icon-btn:hover { border-color:var(--border-mid); color:var(--t1); }
+.news-feed-icon-btn.saved { color:var(--amber); border-color:rgba(245,158,11,0.3); background:rgba(245,158,11,0.1); }
+.news-feed-loading { font-size:11px; color:var(--t3); padding:8px 4px; }
+.news-feed-context-body { flex:1; min-height:0; }
+.news-feed-settings-drawer {
+  position:absolute; top:0; right:0; bottom:0; width:min(340px,92%);
+  background:rgba(12,13,18,0.97); border-left:1px solid rgba(0,212,170,0.22);
+  box-shadow:-12px 0 40px rgba(0,0,0,0.45); z-index:5;
+  display:none; flex-direction:column; backdrop-filter:blur(8px);
+}
+.news-feed-settings-drawer.open { display:flex; }
+.news-feed-settings-head {
+  padding:14px 14px 10px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between;
+}
+.news-feed-settings-head h3 { margin:0; font-size:14px; font-weight:800; color:var(--t1); }
+.news-feed-settings-body { flex:1; overflow:auto; padding:12px 14px 16px; }
+.news-feed-set-section { margin-bottom:16px; }
+.news-feed-set-label { font-size:10px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:var(--t3); margin-bottom:7px; }
+.news-feed-cat-row { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:8px; }
+.news-feed-cat-btn {
+  padding:6px 11px; border-radius:8px; border:1px solid var(--border-mid);
+  background:transparent; color:var(--t3); font-size:11px; font-weight:700; cursor:pointer;
+}
+.news-feed-cat-btn.on { color:var(--teal); border-color:rgba(0,212,170,0.35); background:var(--teal-10); }
+.news-feed-cat-btn.on.defi { color:var(--fuchsia); border-color:rgba(217,70,239,0.35); background:var(--fuchsia-10); }
+.news-feed-cat-btn.on.macro { color:var(--indigo); border-color:rgba(108,114,255,0.35); background:var(--indigo-10); }
+.news-feed-source-item {
+  display:flex; align-items:center; gap:8px; padding:6px 9px; border-radius:7px;
+  border:1px solid var(--border); font-size:11px; color:var(--t3); margin-bottom:5px;
+}
+.news-feed-source-item input { accent-color:var(--teal); }
+.news-feed-kw-input {
+  width:100%; background:var(--surf-3); border:1px solid var(--border-mid);
+  border-radius:8px; color:var(--t1); font-family:var(--ff-mono); font-size:11px;
+  padding:8px 10px; margin-bottom:7px;
+}
+.news-feed-kw-chips { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; }
+.news-feed-kw-chip { font-family:var(--ff-mono); font-size:10px; padding:3px 8px; border-radius:999px; background:var(--surf-3); border:1px solid var(--border-mid); color:var(--t1); }
+.news-feed-toggle-row { display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--t3); margin-top:7px; }
+.news-feed-toggle {
+  width:34px; height:18px; border-radius:999px; background:rgba(255,255,255,0.08);
+  border:1px solid var(--border-mid); position:relative; cursor:pointer;
+}
+.news-feed-toggle.on { background:var(--teal-20); border-color:rgba(0,212,170,0.4); }
+.news-feed-toggle.on::after { content:''; position:absolute; right:3px; top:3px; width:10px; height:10px; border-radius:50%; background:var(--teal); }
+.news-feed-toggle::after { content:''; position:absolute; left:3px; top:3px; width:10px; height:10px; border-radius:50%; background:var(--t3); }
+.news-feed-apply-btn {
+  width:100%; padding:9px; border:none; border-radius:8px;
+  background:linear-gradient(135deg,var(--teal),#00a88a);
+  color:#04120e; font-weight:800; font-size:11px; letter-spacing:.04em; cursor:pointer;
+}
+@media (max-width:1100px) {
+  .news-feed-layout { grid-template-columns:200px minmax(0,1fr) 140px; }
+}
+@media (max-width:900px) {
+  .news-feed-layout { grid-template-columns:1fr; grid-template-rows:auto 1fr auto; }
+  .news-feed-saved-list { max-height:140px; }
+}
 .dash-event-age { font-size:0.66rem; color:var(--t3); white-space:nowrap; flex-shrink:0; padding-top:0.1rem; }
 .dash-event-loading { padding:0.6rem 0.45rem; font-size:0.76rem; color:var(--t3); }
 .dash-event-filters { display:flex; gap:0.35rem; overflow-x:auto; padding:0.15rem 0.65rem 0.45rem; scrollbar-width:none; }
@@ -6846,25 +7005,47 @@ body[data-active-tab="loops"] .page-content,
 
       <div id="newsTab" class="tab-pane">
         <div class="news-feed-root">
-          <div class="news-feed-header">
-            <div>
-              <h2 class="news-feed-title">News Feed</h2>
-              <p class="news-feed-sub">Ranked headlines from crypto, DeFi, macro, Telegram, and your holdings</p>
-            </div>
-            <button type="button" class="news-feed-refresh" onclick="fetchDailyNews(true)">Refresh</button>
-          </div>
-          <div id="newsFeedKobeissi" class="news-feed-section" style="display:none"></div>
-          <div class="news-feed-section">
-            <div class="brief-section-label">Portfolio updates</div>
-            <div class="brief-news-grid news-feed-grid" id="newsFeedPortfolioGrid">
-              <div class="brief-news-loading">Scanning holdings news...</div>
-            </div>
-          </div>
-          <div class="news-feed-section">
-            <div class="brief-section-label">Top stories</div>
-            <div class="brief-news-grid news-feed-grid" id="newsFeedGrid">
-              <div class="brief-news-loading">Loading latest news...</div>
-            </div>
+          <div class="news-feed-layout">
+            <section class="news-feed-panel" id="newsFeedSavedPanel">
+              <div class="news-feed-panel-head">
+                <span class="news-feed-panel-title">Saved</span>
+                <span class="news-feed-panel-count" id="newsFeedSavedCount">0</span>
+              </div>
+              <div class="news-feed-saved-list" id="newsFeedSavedList">
+                <div class="news-feed-saved-empty">Save stories from the feed with the star button.</div>
+              </div>
+            </section>
+
+            <section class="news-feed-panel news-feed-center" id="newsFeedCenterPanel">
+              <div class="news-feed-center-head">
+                <div>
+                  <h1>News Feed</h1>
+                  <p>Ranked headlines filtered by your category, sources, and keywords</p>
+                  <div class="news-feed-lens" id="newsFeedLens"></div>
+                </div>
+                <button type="button" class="news-feed-settings-btn" id="newsFeedSettingsBtn" onclick="newsFeedOpenSettings()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                  Feed settings
+                </button>
+              </div>
+              <div class="news-feed-scroll" id="newsFeedGrid">
+                <div class="news-feed-loading">Loading latest news...</div>
+              </div>
+              <aside class="news-feed-settings-drawer" id="newsFeedSettingsDrawer" aria-hidden="true">
+                <div class="news-feed-settings-head">
+                  <h3>Feed settings</h3>
+                  <button type="button" class="news-feed-icon-btn" onclick="newsFeedCloseSettings()" title="Close">✕</button>
+                </div>
+                <div class="news-feed-settings-body" id="newsFeedSettingsBody"></div>
+              </aside>
+            </section>
+
+            <section class="news-feed-panel" id="newsFeedContextPanel">
+              <div class="news-feed-panel-head">
+                <span class="news-feed-panel-title">Context</span>
+              </div>
+              <div class="news-feed-context-body"></div>
+            </section>
           </div>
         </div>
       </div>
@@ -9246,7 +9427,10 @@ function switchTab(tab, opts = {}) {
     if (tab === 'etf' && typeof refreshEtfLivePrices === 'function') {
         refreshEtfLivePrices();
     }
-    if (tab === 'news' && typeof fetchDailyNews === 'function') fetchDailyNews(true);
+    if (tab === 'news') {
+        if (typeof newsFeedRenderSaved === 'function') newsFeedRenderSaved();
+        if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
+    }
     syncTabRefreshTimers(tab);
 }
 
@@ -23476,13 +23660,336 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // =============================================================================
+// NEWS FEED PAGE — layout, filters, saved
+// =============================================================================
+const NEWS_FEED_SETTINGS_KEY = 'vault_news_feed_settings_v1';
+const NEWS_FEED_SAVED_KEY = 'vault_news_saved_v1';
+const NEWS_FEED_SOURCE_CATALOG = {
+    crypto: ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'The Block', 'Unchained', 'CryptoPanic'],
+    defi: ['The Defiant', 'Blockworks', 'DL News', 'Google News DeFi'],
+    macro: ['Reuters Business', 'Reuters Politics', 'BBC Business', 'BBC World', 'Investing.com', 'WSJ Markets', 'CNBC Finance', 'MarketWatch', 'NYT World', 'FT'],
+};
+const NEWS_FEED_CATEGORY_TYPES = ['crypto', 'defi', 'macro'];
+let _newsFeedRawPool = [];
+let _newsFeedKobeissiItem = null;
+let _newsFeedSettingsDraft = null;
+
+function newsFeedDefaultSettings() {
+    const sources = {};
+    for (const type of NEWS_FEED_CATEGORY_TYPES) {
+        for (const label of (NEWS_FEED_SOURCE_CATALOG[type] || [])) sources[label] = true;
+    }
+    return {
+        categories: { crypto: true, defi: true, macro: true },
+        sources,
+        keywords: [],
+        searchBody: false,
+        requireKeywords: false,
+    };
+}
+
+function newsFeedLoadSettings() {
+    try {
+        const raw = localStorage.getItem(NEWS_FEED_SETTINGS_KEY);
+        if (!raw) return newsFeedDefaultSettings();
+        const parsed = JSON.parse(raw);
+        const base = newsFeedDefaultSettings();
+        return {
+            categories: { ...base.categories, ...(parsed.categories || {}) },
+            sources: { ...base.sources, ...(parsed.sources || {}) },
+            keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(k => String(k).trim().toLowerCase()).filter(Boolean) : [],
+            searchBody: Boolean(parsed.searchBody),
+            requireKeywords: Boolean(parsed.requireKeywords),
+        };
+    } catch (e) {
+        return newsFeedDefaultSettings();
+    }
+}
+
+function newsFeedSaveSettings(settings) {
+    try { localStorage.setItem(NEWS_FEED_SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+}
+
+function newsFeedLoadSaved() {
+    try {
+        const raw = localStorage.getItem(NEWS_FEED_SAVED_KEY);
+        const list = raw ? JSON.parse(raw) : [];
+        return Array.isArray(list) ? list.filter(i => i && i.url) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function newsFeedPersistSaved(list) {
+    try { localStorage.setItem(NEWS_FEED_SAVED_KEY, JSON.stringify(list.slice(0, 200))); } catch (e) {}
+}
+
+function newsFeedItemKey(item) {
+    return String(item?.url || item?.link || '').trim();
+}
+
+function newsFeedIsSaved(item) {
+    const key = newsFeedItemKey(item);
+    return key && newsFeedLoadSaved().some(s => s.url === key);
+}
+
+function newsFeedFindItemByUrl(url) {
+    const key = String(url || '').trim();
+    if (!key) return null;
+    const hit = (_newsFeedRawPool || []).find(i => newsFeedItemKey(i) === key);
+    if (hit) return hit;
+    if (_newsFeedKobeissiItem && newsFeedItemKey(_newsFeedKobeissiItem) === key) return _newsFeedKobeissiItem;
+    return newsFeedLoadSaved().find(s => s.url === key) || null;
+}
+
+function newsFeedToggleSaved(item) {
+    const key = newsFeedItemKey(item);
+    if (!key) return;
+    let saved = newsFeedLoadSaved();
+    const idx = saved.findIndex(s => s.url === key);
+    if (idx >= 0) saved.splice(idx, 1);
+    else saved.unshift({
+        url: key,
+        title: item.title || '',
+        type: item.type || 'macro',
+        source: item.source || '',
+        publishedAt: item.publishedAt || item.pubDate || '',
+        savedAt: Date.now(),
+    });
+    newsFeedPersistSaved(saved);
+    newsFeedRenderSaved();
+    newsFeedRenderCenterFeed();
+}
+
+function newsFeedToggleSavedByUrl(url) {
+    const item = newsFeedFindItemByUrl(url);
+    if (item) newsFeedToggleSaved(item);
+}
+
+function newsFeedMatchedKeywords(item, keywords, searchBody) {
+    const text = `${item.title || ''} ${searchBody ? (item.desc || '') : ''}`.toLowerCase();
+    return (keywords || []).filter(kw => kw && text.includes(kw));
+}
+
+function newsFeedNormalizeType(type) {
+    const t = String(type || 'macro').toLowerCase();
+    if (NEWS_FEED_CATEGORY_TYPES.includes(t)) return t;
+    if (t === 'tg' || t === 'x') return 'crypto';
+    if (t === 'kobeissi') return 'macro';
+    return 'macro';
+}
+
+function newsFeedApplyFilters(items, settings) {
+    const s = settings || newsFeedLoadSettings();
+    const enabledCats = NEWS_FEED_CATEGORY_TYPES.filter(c => s.categories?.[c]);
+    return (items || []).filter(item => {
+        const type = newsFeedNormalizeType(item.type);
+        if (!enabledCats.includes(type)) return false;
+        const source = String(item.source || '').trim();
+        if (source && s.sources && Object.prototype.hasOwnProperty.call(s.sources, source) && s.sources[source] === false) return false;
+        const matches = newsFeedMatchedKeywords(item, s.keywords, s.searchBody);
+        if (s.requireKeywords && s.keywords?.length && !matches.length) return false;
+        item._matchedKeywords = matches;
+        return true;
+    }).sort((a, b) => {
+        const am = (a._matchedKeywords || []).length;
+        const bm = (b._matchedKeywords || []).length;
+        if (bm !== am) return bm - am;
+        const at = Date.parse(a.publishedAt || a.pubDate || '') || 0;
+        const bt = Date.parse(b.publishedAt || b.pubDate || '') || 0;
+        return bt - at;
+    });
+}
+
+function newsFeedRenderLens(settings) {
+    const el = document.getElementById('newsFeedLens');
+    if (!el) return;
+    const s = settings || newsFeedLoadSettings();
+    const chips = [];
+    for (const c of NEWS_FEED_CATEGORY_TYPES) {
+        chips.push(`<span class="news-feed-lens-chip ${s.categories?.[c] ? 'on' : 'off'}">${c.charAt(0).toUpperCase() + c.slice(1)}${s.categories?.[c] ? '' : ' off'}</span>`);
+    }
+    if (s.keywords?.length) {
+        chips.push(`<span class="news-feed-lens-chip on">Keywords: ${dashEsc(s.keywords.slice(0, 4).join(', '))}${s.keywords.length > 4 ? '…' : ''}</span>`);
+    }
+    chips.push(`<span class="news-feed-lens-chip ${s.searchBody ? 'on' : ''}">${s.searchBody ? 'Title + body' : 'Title only'}</span>`);
+    if (s.requireKeywords && s.keywords?.length) chips.push('<span class="news-feed-lens-chip on">Require keywords</span>');
+    el.innerHTML = chips.join('');
+}
+
+function newsFeedTimeLabel(item) {
+    const ts = Date.parse(item?.publishedAt || item?.pubDate || '');
+    if (!Number.isFinite(ts)) return '';
+    return new Date(ts).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+function newsFeedRenderSaved() {
+    const listEl = document.getElementById('newsFeedSavedList');
+    const countEl = document.getElementById('newsFeedSavedCount');
+    if (!listEl) return;
+    const saved = newsFeedLoadSaved();
+    if (countEl) countEl.textContent = String(saved.length);
+    if (!saved.length) {
+        listEl.innerHTML = '<div class="news-feed-saved-empty">Save stories from the feed with the star button.</div>';
+        return;
+    }
+    listEl.innerHTML = saved.map(item => {
+        const type = newsFeedNormalizeType(item.type);
+        const time = newsFeedTimeLabel(item);
+        return `<a class="news-feed-saved-card" href="${dashEsc(item.url)}" target="_blank" rel="noopener">
+            <span class="news-feed-saved-tag ${dashEsc(type)}">${dashEsc(type)}</span>
+            <div class="news-feed-saved-title">${dashEsc(item.title || 'Untitled')}</div>
+            <div class="news-feed-saved-meta">${dashEsc(item.source || '')}${time ? ` · ${time}` : ''}</div>
+        </a>`;
+    }).join('');
+}
+
+function newsFeedRenderCenterCard(item, opts = {}) {
+    const type = newsFeedNormalizeType(item.type);
+    const featured = Boolean(opts.featured);
+    const saved = newsFeedIsSaved(item);
+    const time = newsFeedTimeLabel(item);
+    const url = newsFeedItemKey(item) || '#';
+    const tag = type === 'kobeissi' ? 'kobeissi' : type;
+    const tagLabel = item.type === 'kobeissi' ? '⚡ Kobeissi' : (type.charAt(0).toUpperCase() + type.slice(1));
+    const matched = (item._matchedKeywords || []).length
+        ? `<span>matched: ${dashEsc(item._matchedKeywords.join(', '))}</span>` : '';
+    const desc = item.desc ? `<div class="news-feed-card-snippet">${dashEsc(item.desc)}</div>` : '';
+    return `<article class="news-feed-card${featured ? ' featured' : ''}">
+        <span class="news-feed-card-tag ${dashEsc(tag)}">${dashEsc(tagLabel)}</span>
+        <div class="news-feed-card-body">
+            <div class="news-feed-card-title"><a href="${dashEsc(url)}" target="_blank" rel="noopener">${dashEsc(item.title || '')}</a></div>
+            ${desc}
+            <div class="news-feed-card-meta">
+                <span>${dashEsc(item.source || '')}</span>
+                ${time ? `<span>${time}</span>` : ''}
+                ${matched}
+            </div>
+        </div>
+        <div class="news-feed-card-actions">
+            <button type="button" class="news-feed-icon-btn${saved ? ' saved' : ''}" title="${saved ? 'Unsave' : 'Save'}" data-url="${dashEsc(url)}" onclick="newsFeedToggleSavedByUrl(this.dataset.url)">${saved ? '★' : '☆'}</button>
+            <a class="news-feed-icon-btn" href="${dashEsc(url)}" target="_blank" rel="noopener" title="Open">↗</a>
+        </div>
+    </article>`;
+}
+
+function newsFeedRenderCenterFeed() {
+    const grid = document.getElementById('newsFeedGrid');
+    if (!grid) return;
+    const settings = newsFeedLoadSettings();
+    newsFeedRenderLens(settings);
+    const filtered = newsFeedApplyFilters(_newsFeedRawPool, settings);
+    const cards = [];
+    if (_newsFeedKobeissiItem && settings.categories?.macro !== false) {
+        cards.push(newsFeedRenderCenterCard({ ..._newsFeedKobeissiItem, type: 'kobeissi' }, { featured: true }));
+    }
+    if (!filtered.length && !cards.length) {
+        grid.innerHTML = '<div class="news-feed-loading">No headlines match your filters. Try Feed settings.</div>';
+        return;
+    }
+    grid.innerHTML = cards.concat(filtered.map(item => newsFeedRenderCenterCard(item))).join('');
+}
+
+function newsFeedRenderPage(items, kobeissiItem) {
+    _newsFeedRawPool = items || [];
+    _newsFeedKobeissiItem = kobeissiItem || null;
+    newsFeedRenderSaved();
+    newsFeedRenderCenterFeed();
+}
+
+function newsFeedBuildSettingsForm() {
+    const body = document.getElementById('newsFeedSettingsBody');
+    if (!body) return;
+    const s = _newsFeedSettingsDraft || newsFeedLoadSettings();
+    const catBtn = (key, label) => {
+        const on = s.categories?.[key];
+        return `<button type="button" class="news-feed-cat-btn${on ? ' on ' + key : ''}" data-cat="${key}" onclick="newsFeedToggleCategory('${key}')">${label}</button>`;
+    };
+    const sourceSection = type => {
+        const labels = NEWS_FEED_SOURCE_CATALOG[type] || [];
+        return `<div class="news-feed-set-section">
+            <div class="news-feed-set-label">Sources · ${type.charAt(0).toUpperCase() + type.slice(1)}</div>
+            ${labels.map(label => `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)">${dashEsc(label)}</label>`).join('')}
+        </div>`;
+    };
+    body.innerHTML = `
+        <div class="news-feed-set-section">
+            <div class="news-feed-set-label">Categories</div>
+            <div class="news-feed-cat-row">
+                ${catBtn('crypto', 'Crypto')}
+                ${catBtn('defi', 'DeFi')}
+                ${catBtn('macro', 'Macro')}
+            </div>
+        </div>
+        ${NEWS_FEED_CATEGORY_TYPES.map(sourceSection).join('')}
+        <div class="news-feed-set-section">
+            <div class="news-feed-set-label">Keywords</div>
+            <input class="news-feed-kw-input" id="newsFeedKwInput" type="text" placeholder="aave, ethena, funding" value="${dashEsc((s.keywords || []).join(', '))}">
+            <div class="news-feed-kw-chips" id="newsFeedKwChips">${(s.keywords || []).map(k => `<span class="news-feed-kw-chip">${dashEsc(k)}</span>`).join('')}</div>
+            <div class="news-feed-toggle-row">
+                <span>Search title + body</span>
+                <div class="news-feed-toggle${s.searchBody ? ' on' : ''}" id="newsFeedToggleBody" onclick="newsFeedToggleSetting('searchBody')"></div>
+            </div>
+            <div class="news-feed-toggle-row">
+                <span>Require keyword match</span>
+                <div class="news-feed-toggle${s.requireKeywords ? ' on' : ''}" id="newsFeedToggleRequire" onclick="newsFeedToggleSetting('requireKeywords')"></div>
+            </div>
+        </div>
+        <button type="button" class="news-feed-apply-btn" onclick="newsFeedApplySettings()">Apply filters</button>`;
+}
+
+function newsFeedOpenSettings() {
+    _newsFeedSettingsDraft = JSON.parse(JSON.stringify(newsFeedLoadSettings()));
+    newsFeedBuildSettingsForm();
+    const drawer = document.getElementById('newsFeedSettingsDrawer');
+    if (drawer) { drawer.classList.add('open'); drawer.setAttribute('aria-hidden', 'false'); }
+}
+
+function newsFeedCloseSettings() {
+    const drawer = document.getElementById('newsFeedSettingsDrawer');
+    if (drawer) { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); }
+    _newsFeedSettingsDraft = null;
+}
+
+function newsFeedToggleCategory(key) {
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    _newsFeedSettingsDraft.categories[key] = !_newsFeedSettingsDraft.categories[key];
+    newsFeedBuildSettingsForm();
+}
+
+function newsFeedToggleSource(label, checked) {
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    _newsFeedSettingsDraft.sources[label] = checked;
+}
+
+function newsFeedToggleSetting(key) {
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    _newsFeedSettingsDraft[key] = !_newsFeedSettingsDraft[key];
+    newsFeedBuildSettingsForm();
+}
+
+function newsFeedApplySettings() {
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    const input = document.getElementById('newsFeedKwInput');
+    const raw = String(input?.value || '').split(/[,;\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    _newsFeedSettingsDraft.keywords = [...new Set(raw)].slice(0, 30);
+    newsFeedSaveSettings(_newsFeedSettingsDraft);
+    _newsFeedSettingsDraft = null;
+    newsFeedCloseSettings();
+    newsFeedRenderCenterFeed();
+}
+
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') newsFeedCloseSettings();
+});
+
+// =============================================================================
 // DAILY BRIEF — NEWS FEED (RSS fetch → Groq/Llama ranking)
 // =============================================================================
 async function fetchDailyNews(force = false) {
     const briefGrid = document.getElementById('briefNewsGrid');
     const feedGrid = document.getElementById('newsFeedGrid');
     const briefPortfolioEl = document.getElementById('briefPortfolioGrid');
-    const feedPortfolioEl = document.getElementById('newsFeedPortfolioGrid');
     if (!briefGrid && !feedGrid) return;
 
     const CACHE_KEY  = 'vault_news_cache_v4';
@@ -23571,7 +24078,6 @@ async function fetchDailyNews(force = false) {
 
     function renderKobeissi(item) {
         renderKobeissiCard(document.getElementById('kobeissiCard'), item);
-        renderKobeissiCard(document.getElementById('newsFeedKobeissi'), item);
     }
 
     function renderNewsToGrid(gridEl, items, perTypeLimit) {
@@ -23601,10 +24107,17 @@ async function fetchDailyNews(force = false) {
         renderKobeissi(kobeissiItem);
         if (typeof renderDashboardEventLog === 'function') renderDashboardEventLog();
         const filtered = (items || []).filter(i => i.type !== 'kobeissi');
+        const pool = [];
+        const seen = new Set();
+        for (const item of [...(portfolioItems || []), ...filtered]) {
+            const key = String(item?.url || item?.link || item?.title || '').trim();
+            if (!key || seen.has(key)) continue;
+            seen.add(key);
+            pool.push(item);
+        }
         renderPortfolioToGrid(briefPortfolioEl, portfolioItems, 2);
-        renderPortfolioToGrid(feedPortfolioEl, portfolioItems, 12);
         renderNewsToGrid(briefGrid, filtered, 4);
-        renderNewsToGrid(feedGrid, filtered, 12);
+        if (feedGrid) newsFeedRenderPage(pool, kobeissiItem);
         try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items: filtered, portfolioItems, ts: Date.now(), handles: tgChannels, holdings })); } catch(e) {}
     }
 
@@ -23646,8 +24159,9 @@ async function fetchDailyNews(force = false) {
             console.warn('[News] /api/news failed:', e.message);
         }
         const errHtml = '<div class="brief-news-loading">News unavailable — try again later.</div>';
+        const feedErrHtml = '<div class="news-feed-loading">News unavailable — try again later.</div>';
         if (briefGrid) briefGrid.innerHTML = errHtml;
-        if (feedGrid) feedGrid.innerHTML = errHtml;
+        if (feedGrid) feedGrid.innerHTML = feedErrHtml;
         return;
     }
 
@@ -23727,8 +24241,9 @@ async function fetchDailyNews(force = false) {
         renderItems(items, kobeissiItem);
     } catch(e) {
         const errHtml = `<div class="brief-news-loading">News unavailable (${e.message})</div>`;
+        const feedErrHtml = `<div class="news-feed-loading">News unavailable (${dashEsc(e.message)})</div>`;
         if (briefGrid) briefGrid.innerHTML = errHtml;
-        if (feedGrid) feedGrid.innerHTML = errHtml;
+        if (feedGrid) feedGrid.innerHTML = feedErrHtml;
     }
 }
 
