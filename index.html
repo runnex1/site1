@@ -22921,6 +22921,7 @@ let _tickerHoverDwellTimer = null;
 let _tickerMarqueeHeld = false;
 let _tkGeckoIdCache = {};
 let _tkJupiterMintCache = {};
+let _tkGeckoContractCache = {};
 
 function tkCustomSlug(idx) {
     return `tk-custom-${idx}`;
@@ -23206,17 +23207,15 @@ function tickerSubmitAdd() {
     fetchCustomTickerByIndex(list.length - 1);
 }
 
-function tkContractSuffixHint(symbol) {
-    const custom = customTokenGet(String(symbol || '').trim());
-    const addr = custom?.address ? String(custom.address).trim() : '';
-    if (addr.length < 4) return null;
-    return { suffix: addr.slice(-4), full: addr };
+function tkContractMetaFromAddress(addr) {
+    const full = String(addr || '').trim();
+    if (full.length < 4) return null;
+    return { suffix: full.slice(-4), full };
 }
 
-function tkSetContractSuffixHint(slug, symbol) {
+function tkSetContractSuffixHint(slug, meta) {
     const hint = document.getElementById(`${slug}-addr-hint`);
     if (!hint) return;
-    const meta = tkContractSuffixHint(symbol);
     if (meta) {
         hint.textContent = meta.suffix;
         hint.title = meta.full;
@@ -23228,7 +23227,67 @@ function tkSetContractSuffixHint(slug, symbol) {
     }
 }
 
-function tkEditStart(idx) {
+async function tkGeckoContractAddress(sym) {
+    const upper = String(sym || '').toUpperCase();
+    if (_tkGeckoContractCache[upper] !== undefined) return _tkGeckoContractCache[upper];
+    const geckoId = await tkGeckoResolve(upper);
+    if (!geckoId) {
+        _tkGeckoContractCache[upper] = null;
+        return null;
+    }
+    try {
+        const r = await fetch(
+            `https://api.coingecko.com/api/v3/coins/${geckoId}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false`,
+            { signal: AbortSignal.timeout(7000) },
+        );
+        if (r.ok) {
+            const platforms = (await r.json())?.platforms || {};
+            const pref = ['ethereum', 'base', 'arbitrum-one', 'optimistic-ethereum', 'polygon-pos', 'binance-smart-chain'];
+            for (const chain of pref) {
+                const addr = String(platforms[chain] || '').trim();
+                if (addr.length >= 4) {
+                    _tkGeckoContractCache[upper] = addr;
+                    return addr;
+                }
+            }
+            for (const addr of Object.values(platforms)) {
+                const clean = String(addr || '').trim();
+                if (clean.length >= 4) {
+                    _tkGeckoContractCache[upper] = clean;
+                    return clean;
+                }
+            }
+        }
+    } catch (e) {}
+    _tkGeckoContractCache[upper] = null;
+    return null;
+}
+
+async function tkResolveContractForHint(symbol, source) {
+    const sym = String(symbol || '').trim().toUpperCase();
+    if (!sym) return null;
+    const custom = customTokenGet(sym);
+    if (custom?.address) return tkContractMetaFromAddress(custom.address);
+
+    const src = source || 'auto';
+    if (src === 'tradfi') return null;
+
+    if (src === 'jupiter') {
+        const mint = await tkResolveJupiterMint(sym);
+        return tkContractMetaFromAddress(mint);
+    }
+    if (src === 'coingecko') {
+        const addr = await tkGeckoContractAddress(sym);
+        return tkContractMetaFromAddress(addr);
+    }
+
+    const mint = await tkResolveJupiterMint(sym);
+    if (mint) return tkContractMetaFromAddress(mint);
+    const addr = await tkGeckoContractAddress(sym);
+    return tkContractMetaFromAddress(addr);
+}
+
+async function tkEditStart(idx) {
     const slug = tkCustomSlug(idx);
     const editor = document.getElementById(`${slug}-editor`);
     const input  = document.getElementById(`${slug}-input`);
@@ -23238,11 +23297,17 @@ function tkEditStart(idx) {
     if (!editor || !input) return;
     input.value = entry?.symbol || '';
     if (sourceInput) sourceInput.value = entry?.source || 'auto';
-    tkSetContractSuffixHint(slug, entry?.symbol || '');
+    tkSetContractSuffixHint(slug, null);
     editor.style.display = 'block';
     if (lbl) lbl.style.display = 'none';
     input.focus();
     input.select();
+    tkResolveContractForHint(entry?.symbol || '', entry?.source || 'auto')
+        .then(meta => {
+            if (document.getElementById(`${slug}-editor`)?.style.display !== 'block') return;
+            tkSetContractSuffixHint(slug, meta);
+        })
+        .catch(() => {});
 }
 
 function tkEditSave(idx) {
@@ -23259,6 +23324,7 @@ function tkEditSave(idx) {
         if (!sym) {
             delete _tkGeckoIdCache[list[idx].symbol];
             delete _tkJupiterMintCache[list[idx].symbol];
+            delete _tkGeckoContractCache[list[idx].symbol];
             list.splice(idx, 1);
             tickerSaveCustomEntries(list);
             tickerRenderCustomItems();
@@ -23266,6 +23332,7 @@ function tkEditSave(idx) {
         }
         delete _tkGeckoIdCache[list[idx].symbol];
         delete _tkJupiterMintCache[list[idx].symbol];
+        delete _tkGeckoContractCache[list[idx].symbol];
         list[idx] = { symbol: sym, source: TICKER_SOURCES.includes(source) ? source : 'auto' };
         tickerSaveCustomEntries(list);
         tkSetLabel(idx, sym, list[idx].source);
