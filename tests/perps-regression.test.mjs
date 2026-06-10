@@ -1482,9 +1482,11 @@ assert.match(indexHtml, /<div>Protocol<\/div><div>Type<\/div><div>Position<\/div
 assert.match(indexHtml, /periodYield \+= delta;/, '24h yield must use raw period deltas instead of dividing by elapsed time');
 assert.match(indexHtml, /const PROTO_STABLE_PEG_MIN = 0\.998;/, 'stable $1 peg must start at 0.998 unit price');
 assert.match(indexHtml, /const PROTO_STABLE_PEG_MAX = 1\.004;/, 'stable $1 peg must end at 1.004 unit price');
-assert.match(indexHtml, /function protocolTokenDisplayText\(pos, tokenText\)/, 'pegged tokens must display amount without symbol');
-assert.match(indexHtml, /function protocolImportPositionMap\(entry\)/, 'protocol APR must rebuild snapshot position maps from stored protocols');
-assert.match(indexHtml, /function protocolTokenCoingeckoUnitPrice\(pos\)/, 'protocol positions must value legs from CoinGecko');
+assert.match(indexHtml, /function protocolTokenDisplayText\(pos, tokenText, unitPrices = null\)/, 'pegged tokens must display amount without symbol');
+assert.match(indexHtml, /function protocolImportPositionMap\(entry\)/, 'protocol APR must resolve snapshot position maps from import history');
+assert.match(indexHtml, /unitPrices/, 'protocol imports must freeze CoinGecko unit prices at import time');
+assert.match(indexHtml, /if \(entry\.positions && typeof entry\.positions === 'object'\) return entry\.positions;/, 'snapshot APR must use frozen position values when available');
+assert.match(indexHtml, /function protocolTokenCoingeckoUnitPrice\(pos, unitPrices = null\)/, 'protocol positions must value legs from CoinGecko with optional frozen import map');
 assert.match(indexHtml, /fetchLiveTokenPrices\(\{ force: true \}\)/, 'protocol prices must prefetch on load');
 assert.match(indexHtml, /let _fetchLiveTokenPricesPromise = null/, 'price fetch must dedupe in-flight requests');
 assert.match(indexHtml, /async function resolveGeckoIdsForSymbols\(symbols, \{ concurrency = 3 \} = \{\}\)/, 'gecko resolve must be concurrency-limited');

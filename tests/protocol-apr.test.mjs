@@ -5,9 +5,10 @@ const indexHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8'
 
 assert.match(indexHtml, /const GECKO_SYMBOL_IDS = \{/, 'CoinGecko symbol map must exist');
 assert.match(indexHtml, /function geckoIdForSymbol\(symbol\)/, 'CoinGecko id resolver must exist');
-assert.match(indexHtml, /function protocolTokenCoingeckoUnitPrice\(pos\)/, 'protocol positions must read CoinGecko prices');
+assert.match(indexHtml, /function protocolTokenCoingeckoUnitPrice\(pos, unitPrices = null\)/, 'protocol positions must read CoinGecko prices with optional frozen import map');
+assert.match(indexHtml, /unitPrices/, 'protocol imports must store frozen CoinGecko unit prices');
 assert.match(indexHtml, /function collectDeFiPriceSymbols\(\)/, 'DeFi price fetch must include protocol tokens');
-assert.match(indexHtml, /function protocolPositionUnitPrice\(pos\)/, 'protocol unit price must prefer CoinGecko');
+assert.match(indexHtml, /function protocolPositionUnitPrice\(pos, unitPrices = null\)/, 'protocol unit price must prefer CoinGecko with optional frozen map');
 assert.match(indexHtml, /AUSD:'agora-dollar'/, 'AUSD stablecoin must map to agora-dollar');
 assert.match(indexHtml, /async function resolveGeckoIdByMarketCap\(symbol\)/, 'ambiguous tickers must resolve by market cap');
 assert.match(indexHtml, /function sectionHasLendingLoop\(sec\)/, 'lending loop sections must be detectable');
@@ -35,10 +36,12 @@ function protocolPositionSingleToken(pos) {
   if (/^(PT|YT)-/.test(parsed.symbol.toUpperCase())) return null;
   return parsed;
 }
-function protocolTokenCoingeckoUnitPrice(pos) {
+function protocolTokenCoingeckoUnitPrice(pos, unitPrices = null) {
   const parsed = protocolPositionSingleToken(pos);
   if (!parsed) return null;
-  const usd = livePrices[parsed.symbol.toUpperCase()];
+  const sym = parsed.symbol.toUpperCase();
+  if (unitPrices && Number.isFinite(unitPrices[sym]) && unitPrices[sym] > 0) return unitPrices[sym];
+  const usd = livePrices[sym];
   return Number.isFinite(usd) && usd > 0 ? usd : null;
 }
 function protocolPositionImportUnitPrice(pos) {
@@ -48,25 +51,25 @@ function protocolPositionImportUnitPrice(pos) {
   if (!rawValue) return null;
   return rawValue / parsed.amount;
 }
-function protocolPositionUnitPrice(pos) {
-  const cgUnit = protocolTokenCoingeckoUnitPrice(pos);
+function protocolPositionUnitPrice(pos, unitPrices = null) {
+  const cgUnit = protocolTokenCoingeckoUnitPrice(pos, unitPrices);
   if (cgUnit !== null) return cgUnit;
   return protocolPositionImportUnitPrice(pos);
 }
-function fixedStablePositionValue(pos) {
+function fixedStablePositionValue(pos, unitPrices = null) {
   const parsed = protocolPositionSingleToken(pos);
   if (!parsed) return null;
-  const unit = protocolPositionUnitPrice(pos);
+  const unit = protocolPositionUnitPrice(pos, unitPrices);
   if (unit === null || !stableUnitPriceInPegBand(unit)) return null;
   return parsed.amount;
 }
-function protocolPositionValue(pos) {
+function protocolPositionValue(pos, unitPrices = null) {
   if (pos?.manualUsd) return Number(pos?.value || 0);
-  const pegged = fixedStablePositionValue(pos);
+  const pegged = fixedStablePositionValue(pos, unitPrices);
   if (pegged !== null) return pegged;
   const parsed = protocolPositionSingleToken(pos);
   if (parsed) {
-    const cgUnit = protocolTokenCoingeckoUnitPrice(pos);
+    const cgUnit = protocolTokenCoingeckoUnitPrice(pos, unitPrices);
     if (cgUnit !== null) return parsed.amount * cgUnit;
   }
   return Number(pos?.value || 0);
@@ -100,5 +103,16 @@ assert.equal(protocolPositionValue(ghoStaleManual), 30104.6862, 'stale manualVal
 
 const ghoManualUsd = { ...gho, manualUsd: true };
 assert.equal(protocolPositionValue(ghoManualUsd), 29924.06, 'explicit USD override keeps import value');
+
+const reusd = {
+  pool: 'reUSD',
+  sub: 'Supplied',
+  tokens: ['24400 reUSD'],
+  value: 25000,
+};
+const frozenReusd = { REUSD: 1.082 };
+livePrices.REUSD = 1.05;
+assert.equal(protocolPositionValue(reusd, frozenReusd), 24400 * 1.082, 'frozen import unit price overrides live CoinGecko');
+assert.equal(protocolPositionValue(reusd), 24400 * 1.05, 'current view still uses live CoinGecko');
 
 console.log('PASS: protocol APR stable $1 peg tests');

@@ -8908,14 +8908,43 @@ hydrateLivePricesCache();
 let _protocolSelectedSnapshotTs = null; // null = latest snapshot baseline for APR
 let _protocolSnapshotPickerOpen = false;
 
-function buildPositionMap(protocols) {
+function collectProtocolPriceSymbols(protocols) {
+    const syms = new Set();
+    for (const p of protocols || []) {
+        for (const sec of p.sections || []) {
+            for (const pos of sec.positions || []) {
+                const parsed = protocolPositionSingleToken(pos);
+                if (parsed) {
+                    syms.add(parsed.symbol.toUpperCase());
+                    continue;
+                }
+                for (const raw of pos.tokens || []) {
+                    const token = protocolTokenAmountAndSymbol(raw);
+                    if (token) syms.add(token.symbol.toUpperCase());
+                }
+            }
+        }
+    }
+    return [...syms];
+}
+
+function captureProtocolUnitPrices(protocols) {
+    const out = {};
+    for (const sym of collectProtocolPriceSymbols(protocols)) {
+        const usd = livePrices[sym];
+        if (Number.isFinite(usd) && usd > 0) out[sym] = usd;
+    }
+    return out;
+}
+
+function buildPositionMap(protocols, unitPrices = null) {
     const positions = {};
     for (const p of protocols) {
         // Always store the protocol-level net value (used by snapshot view for correct totals)
-        positions[`${p.name}|||__net__`] = protocolDisplayValue(p);
+        positions[`${p.name}|||__net__`] = protocolDisplayValue(p, unitPrices);
 
         if (!p.sections) {
-            positions[`${p.name}|||__total__`] = (positions[`${p.name}|||__total__`] || 0) + protocolDisplayValue(p);
+            positions[`${p.name}|||__total__`] = (positions[`${p.name}|||__total__`] || 0) + protocolDisplayValue(p, unitPrices);
             continue;
         }
         const secTypeCounts = {};
@@ -8926,7 +8955,7 @@ function buildPositionMap(protocols) {
             const secIdx = secTypeCounts[st] > 1 ? `[${secTypeCounts[st]}]` : '';
             for (const pos of sec.positions) {
                 const key = `${p.name}|||${st}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
-                positions[key] = (positions[key] || 0) + protocolPositionValue(pos);
+                positions[key] = (positions[key] || 0) + protocolPositionValue(pos, unitPrices);
             }
         }
     }
@@ -9066,11 +9095,13 @@ function saveProtocolSnapshot(protocols, ts = Date.now()) {
         const prev = loadProtocolImportHistory();
         const snapshots = prev.filter(e => isProtocolSnapshotEntry(e) && e.v === PROTO_HISTORY_VERSION);
         const regular = prev.filter(e => !isProtocolSnapshotEntry(e) && e.v === PROTO_HISTORY_VERSION);
+        const unitPrices = captureProtocolUnitPrices(protocols);
         const entry = {
             v: PROTO_HISTORY_VERSION,
             ts,
             snapshot: true,
-            positions: buildPositionMap(protocols),
+            unitPrices,
+            positions: buildPositionMap(protocols, unitPrices),
             protocols: JSON.parse(JSON.stringify(protocols))
         };
         const nextSnaps = [entry, ...snapshots.filter(s => Number(s.ts) !== Number(ts))]
@@ -9085,10 +9116,12 @@ function saveProtocolImportHistory(protocols, { ts = Date.now() } = {}) {
         const prev = loadProtocolImportHistory();
         const snapshots = prev.filter(e => isProtocolSnapshotEntry(e) && e.v === PROTO_HISTORY_VERSION);
         let regular = prev.filter(e => !isProtocolSnapshotEntry(e) && e.v === PROTO_HISTORY_VERSION);
+        const unitPrices = captureProtocolUnitPrices(protocols);
         regular.push({
             v: PROTO_HISTORY_VERSION,
             ts,
-            positions: buildPositionMap(protocols)
+            unitPrices,
+            positions: buildPositionMap(protocols, unitPrices)
         });
         while (regular.length > MAX_HISTORY_ENTRIES) regular.shift();
         localStorage.setItem(PROTO_HISTORY_KEY, JSON.stringify([...snapshots, ...regular]));
@@ -9161,7 +9194,7 @@ function calcSnapshotPositionAPR(posKey, newerSnap, olderSnap) {
     return { apr, daysDiff };
 }
 
-function protocolAprStatsBetweenSnapshots(p, newerSnap, olderSnap) {
+function protocolAprStatsBetweenSnapshots(p, newerSnap, olderSnap, unitPrices = null) {
     if (!p?.sections?.length || !newerSnap || !olderSnap) return { apr: null, weight: 0 };
     let totalWeight = 0, weightedSum = 0, hasAny = false;
     const typeCounts = {};
@@ -9176,7 +9209,7 @@ function protocolAprStatsBetweenSnapshots(p, newerSnap, olderSnap) {
             const key = `${p.name}|||${sectionType}${sectionIndex}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
             let { apr } = calcSnapshotPositionAPR(key, newerSnap, olderSnap);
             if (apr === null) continue;
-            const val = protocolPositionValue(pos);
+            const val = protocolPositionValue(pos, unitPrices);
             const sub = String(pos.sub || '').toLowerCase();
             if (sub === 'borrowed') apr = -Math.abs(apr);
             if (isLendingSection) {
@@ -9197,7 +9230,7 @@ function protocolAprStatsBetweenSnapshots(p, newerSnap, olderSnap) {
     return hasAny && totalWeight > 0 ? { apr: weightedSum / totalWeight, weight: totalWeight } : { apr: null, weight: 0 };
 }
 
-function protocolAprBreakdownBetweenSnapshots(p, newerSnap, olderSnap) {
+function protocolAprBreakdownBetweenSnapshots(p, newerSnap, olderSnap, unitPrices = null) {
     if (!p?.sections?.length || !newerSnap || !olderSnap) return null;
     let suppliedWeight = 0, suppliedWeighted = 0;
     let borrowedWeight = 0, borrowedWeighted = 0;
@@ -9211,7 +9244,7 @@ function protocolAprBreakdownBetweenSnapshots(p, newerSnap, olderSnap) {
             const key = `${p.name}|||${sectionType}${sectionIndex}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
             let { apr } = calcSnapshotPositionAPR(key, newerSnap, olderSnap);
             if (apr === null) continue;
-            const val = Math.abs(protocolPositionValue(pos));
+            const val = Math.abs(protocolPositionValue(pos, unitPrices));
             if (!val) continue;
             const sub = String(pos.sub || '').toLowerCase();
             if (sub === 'borrowed') {
@@ -9226,7 +9259,7 @@ function protocolAprBreakdownBetweenSnapshots(p, newerSnap, olderSnap) {
     }
     const suppliedApr = suppliedWeight ? suppliedWeighted / suppliedWeight : null;
     const borrowedApr = borrowedWeight ? borrowedWeighted / borrowedWeight : null;
-    const totalApr = protocolAprStatsBetweenSnapshots(p, newerSnap, olderSnap).apr;
+    const totalApr = protocolAprStatsBetweenSnapshots(p, newerSnap, olderSnap, unitPrices).apr;
     if (suppliedApr === null && borrowedApr === null && totalApr === null) return null;
     return { suppliedApr, borrowedApr, totalApr };
 }
@@ -10604,7 +10637,7 @@ function processTokensImport() {
 }
 
 
-function processProtocolsImport() {
+async function processProtocolsImport() {
     const text = document.getElementById('importProtocolsText').value;
     if (!text) return;
     const previousProtocols = JSON.parse(JSON.stringify(data.protocols || []));
@@ -10778,11 +10811,18 @@ function processProtocolsImport() {
         imported++;
     }
 
+    const importSymbols = [...new Set([
+        ...collectProtocolPriceSymbols(previousProtocols),
+        ...collectProtocolPriceSymbols(data.protocols),
+    ])];
+    if (importSymbols.length) {
+        await fetchLiveTokenPrices({ force: true, symbols: importSymbols });
+    }
     if (previousProtocols.length) promoteProtocolsToSnapshot(previousProtocols);
     saveProtocolImportHistory(data.protocols);
     saveData();
     updateUI();
-    fetchLiveTokenPrices();
+    fetchLiveTokenPrices({ force: true });
     closeModal('importProtocols');
     document.getElementById('importProtocolsText').value = '';
     if (imported > 0) alert(`✅ Imported ${imported} protocol positions`);
@@ -11799,14 +11839,14 @@ function normalizePnlMatchKey(key) {
     return `${norm(protocol)}|||${norm(rest)}`;
 }
 
-function buildProtocolPnlPositionRows(protocols) {
+function buildProtocolPnlPositionRows(protocols, unitPrices = null) {
     const rows = new Map();
     for (const p of protocols || []) {
         if (!p?.sections?.length) {
             const key = `${p.name}|||__pnl__`;
             rows.set(normalizePnlMatchKey(key), {
                 key,
-                net: protocolNetValue(p),
+                net: protocolNetValue(p, unitPrices),
                 apy: protocolAprBreakdown(p)?.totalApr ?? null,
             });
             continue;
@@ -11823,7 +11863,7 @@ function buildProtocolPnlPositionRows(protocols) {
                 let supplied = 0;
                 let borrowed = 0;
                 for (const pos of sec.positions) {
-                    const v = protocolPositionValue(pos);
+                    const v = protocolPositionValue(pos, unitPrices);
                     const sub = String(pos.sub || '').toLowerCase();
                     if (sub === 'borrowed') borrowed += v;
                     else supplied += v;
@@ -11840,7 +11880,7 @@ function buildProtocolPnlPositionRows(protocols) {
                     const { apr } = calcPositionAPR(key);
                     rows.set(normalizePnlMatchKey(key), {
                         key,
-                        net: protocolPositionValue(pos),
+                        net: protocolPositionValue(pos, unitPrices),
                         apy: apr,
                     });
                 }
@@ -11859,7 +11899,7 @@ function computeProtocolPnlFromLatestSnapshot() {
         return { points: [], total: 0, snapshotTs: null };
     }
     const currentRows = buildProtocolPnlPositionRows(currentProtocols);
-    const snapshotRows = buildProtocolPnlPositionRows(snapshotProtocols);
+    const snapshotRows = buildProtocolPnlPositionRows(snapshotProtocols, snapshot.unitPrices || null);
     const pairs = [];
     for (const [, cur] of currentRows) {
         const base = snapshotRows.get(normalizePnlMatchKey(cur.key));
@@ -12146,13 +12186,13 @@ function renderDefiCockpit() {
         if (el) el.innerHTML = '';
     }
 }
-function protocolNetValue(p) {
+function protocolNetValue(p, unitPrices = null) {
     if (p?.manualValue) return Number(p?.value || 0);
     if (!p?.sections?.length) return Number(p?.value || 0);
     let supplied = 0, borrowed = 0, other = 0, sawLendingSide = false;
     for (const sec of p.sections || []) {
         for (const pos of sec.positions || []) {
-            const val = protocolPositionValue(pos);
+            const val = protocolPositionValue(pos, unitPrices);
             const sub = String(pos.sub || '').toLowerCase();
             if (sub === 'supplied') { supplied += val; sawLendingSide = true; }
             else if (sub === 'borrowed') { borrowed += val; sawLendingSide = true; }
@@ -12179,10 +12219,12 @@ function protocolPositionSingleToken(pos) {
     if (/^(PT|YT)-/.test(parsed.symbol.toUpperCase())) return null;
     return parsed;
 }
-function protocolTokenCoingeckoUnitPrice(pos) {
+function protocolTokenCoingeckoUnitPrice(pos, unitPrices = null) {
     const parsed = protocolPositionSingleToken(pos);
     if (!parsed) return null;
-    const usd = livePrices[parsed.symbol.toUpperCase()];
+    const sym = parsed.symbol.toUpperCase();
+    if (unitPrices && Number.isFinite(unitPrices[sym]) && unitPrices[sym] > 0) return unitPrices[sym];
+    const usd = livePrices[sym];
     return Number.isFinite(usd) && usd > 0 ? usd : null;
 }
 function protocolPositionImportUnitPrice(pos) {
@@ -12192,34 +12234,34 @@ function protocolPositionImportUnitPrice(pos) {
     if (!rawValue) return null;
     return rawValue / parsed.amount;
 }
-function protocolPositionUnitPrice(pos) {
-    const cgUnit = protocolTokenCoingeckoUnitPrice(pos);
+function protocolPositionUnitPrice(pos, unitPrices = null) {
+    const cgUnit = protocolTokenCoingeckoUnitPrice(pos, unitPrices);
     if (cgUnit !== null) return cgUnit;
     return protocolPositionImportUnitPrice(pos);
 }
-function protocolStablePriceTagHtml(pos, tokenText) {
+function protocolStablePriceTagHtml(pos, tokenText, unitPrices = null) {
     const parsed = protocolTokenAmountAndSymbol(tokenText);
     if (!parsed || !parsed.amount || !Number.isFinite(parsed.amount)) return '';
     if (/^(PT|YT)-/.test(parsed.symbol.toUpperCase())) return '';
     if ((pos.tokens || []).length !== 1) return '';
-    const unit = protocolPositionUnitPrice(pos);
+    const unit = protocolPositionUnitPrice(pos, unitPrices);
     if (unit === null) return '';
     if (stableUnitPriceInPegBand(unit)) {
         return ` <span style="color:var(--green);font-size:0.68rem;font-family:var(--ff-mono)">$1.0000 fixed</span>`;
     }
-    if (protocolTokenCoingeckoUnitPrice(pos) !== null) {
+    if (protocolTokenCoingeckoUnitPrice(pos, unitPrices) !== null) {
         return ` <span style="color:var(--t3);font-size:0.68rem;font-family:var(--ff-mono)">$${unit.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4})} CG</span>`;
     }
     return '';
 }
-function protocolTokenDisplayText(pos, tokenText) {
+function protocolTokenDisplayText(pos, tokenText, unitPrices = null) {
     const parsed = protocolTokenAmountAndSymbol(tokenText);
     if (!parsed) return tokenText;
     const amountMatch = String(tokenText || '').trim().match(/^([\d,]+(?:\.\d+)?)/);
     const amountStr = amountMatch
         ? amountMatch[1]
         : parsed.amount.toLocaleString('en-US', { maximumFractionDigits: 10 });
-    if (fixedStablePositionValue(pos) !== null) return amountStr;
+    if (fixedStablePositionValue(pos, unitPrices) !== null) return amountStr;
     const poolSym = String(pos?.pool || '').trim().toUpperCase();
     const tokenSym = parsed.symbol.toUpperCase();
     if (poolSym && (poolSym === tokenSym || poolSym.startsWith(tokenSym) || tokenSym.startsWith(poolSym))) {
@@ -12227,39 +12269,40 @@ function protocolTokenDisplayText(pos, tokenText) {
     }
     return tokenText;
 }
-function fixedStablePositionValue(pos) {
+function fixedStablePositionValue(pos, unitPrices = null) {
     const parsed = protocolPositionSingleToken(pos);
     if (!parsed) return null;
-    const unit = protocolPositionUnitPrice(pos);
+    const unit = protocolPositionUnitPrice(pos, unitPrices);
     if (unit === null || !stableUnitPriceInPegBand(unit)) return null;
     return parsed.amount;
 }
 function protocolImportPositionMap(entry) {
     if (!entry) return null;
+    if (entry.positions && typeof entry.positions === 'object') return entry.positions;
     if (Array.isArray(entry.protocols) && entry.protocols.length) {
-        return buildPositionMap(entry.protocols);
+        return buildPositionMap(entry.protocols, entry.unitPrices || null);
     }
-    return entry.positions || null;
+    return null;
 }
-function protocolPositionValue(pos) {
+function protocolPositionValue(pos, unitPrices = null) {
     if (pos?.manualUsd) return Number(pos?.value || 0);
-    const pegged = fixedStablePositionValue(pos);
+    const pegged = fixedStablePositionValue(pos, unitPrices);
     if (pegged !== null) return pegged;
     const parsed = protocolPositionSingleToken(pos);
     if (parsed) {
-        const cgUnit = protocolTokenCoingeckoUnitPrice(pos);
+        const cgUnit = protocolTokenCoingeckoUnitPrice(pos, unitPrices);
         if (cgUnit !== null) return parsed.amount * cgUnit;
     }
     return Number(pos?.value || 0);
 }
-function protocolDisplayValue(p) {
+function protocolDisplayValue(p, unitPrices = null) {
     if (p?.manualValue) return Number(p?.value || 0);
     const base = Number(p?.value || 0);
     if (!p?.sections?.length) return base;
     let delta = 0;
     for (const sec of p.sections || []) {
         for (const pos of sec.positions || []) {
-            const fixed = fixedStablePositionValue(pos);
+            const fixed = fixedStablePositionValue(pos, unitPrices);
             if (fixed !== null) delta += fixed - Number(pos.value || 0);
         }
     }
@@ -15360,8 +15403,9 @@ async function fetchLiveTokenPrices(opts = {}) {
 }
 async function fetchLiveTokenPricesInner(opts = {}) {
     const force = !!opts.force;
-    if (!force && (document.body.dataset.activeTab !== 'defi' || document.hidden)) return false;
-    const symbols = collectDeFiPriceSymbols();
+    const importFetch = !!opts.symbols?.length;
+    if (!force && !importFetch && (document.body.dataset.activeTab !== 'defi' || document.hidden)) return false;
+    const symbols = importFetch ? opts.symbols : collectDeFiPriceSymbols();
     if (!symbols.length) return false;
 
     const pulse  = document.getElementById('tokenPricePulse');
@@ -16170,7 +16214,8 @@ function renderProtocolsSnapshot() {
 
     const fmtV = v => '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const snapDateTime = formatProtocolImportTs(snap.ts);
-    const grandTotal = snapProtocols.reduce((s, p) => s + (Number(p.value) || 0), 0);
+    const snapUnitPrices = snap.unitPrices || null;
+    const grandTotal = snapProtocols.reduce((s, p) => s + protocolNetValue(p, snapUnitPrices), 0);
     const aprPair = getSnapshotAprPair(snap);
     const yieldNote = aprPair.older
         ? `Yield vs ${formatProtocolImportTs(aprPair.older.ts)}`
@@ -16178,7 +16223,7 @@ function renderProtocolsSnapshot() {
 
     // Render each protocol exactly like renderProtocols does
     const rowsHtml = [...snapProtocols].sort((a, b) => b.value - a.value).map((p, i) => {
-        const breakdown = protocolAprBreakdownBetweenSnapshots(p, aprPair.newer, aprPair.older) || {};
+        const breakdown = protocolAprBreakdownBetweenSnapshots(p, aprPair.newer, aprPair.older, snapUnitPrices) || {};
         const hasSections = p.sections && p.sections.some(s => s.positions && s.positions.length > 0);
 
         let drawerHtml = '';
@@ -16191,8 +16236,9 @@ function renderProtocolsSnapshot() {
                 const isLendingSection = /lending|leveraged farming/i.test(_secType);
                 const lendingTotals = isLendingSection ? (sec.positions || []).reduce((acc, pos) => {
                     const sub = (pos.sub || '').toLowerCase();
-                    if (sub === 'supplied') acc.supplied += Number(pos.value || 0);
-                    else if (sub === 'borrowed') acc.borrowed += Number(pos.value || 0);
+                    const val = protocolPositionValue(pos, snapUnitPrices);
+                    if (sub === 'supplied') acc.supplied += val;
+                    else if (sub === 'borrowed') acc.borrowed += val;
                     return acc;
                 }, { supplied: 0, borrowed: 0 }) : null;
                 const lendingSummary = lendingTotals && (lendingTotals.supplied || lendingTotals.borrowed)
@@ -16218,18 +16264,21 @@ function renderProtocolsSnapshot() {
                         }
                     }
                     const tokensHtml = (pos.tokens || []).length
-                        ? pos.tokens.map(t => `<div>${dashEsc(protocolTokenDisplayText(pos, t))}</div>`).join('')
+                        ? pos.tokens.map(t => {
+                            const priceTag = protocolStablePriceTagHtml(pos, t, snapUnitPrices);
+                            return `<div>${dashEsc(protocolTokenDisplayText(pos, t, snapUnitPrices))}${priceTag}</div>`;
+                        }).join('')
                         : '<div style="color:var(--t3);font-style:italic">—</div>';
                     const posKey = `${p.name}|||${_secType}${_secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
                     const aprHtml = snapshotAprBadgeHtml(posKey, pos.sub, aprPair.newer, aprPair.older);
-                    const snapVal = protocolPositionValue(pos);
+                    const snapVal = protocolPositionValue(pos, snapUnitPrices);
                     return `${subHeader}<div class="drawer-position">
                         <div>
                             <div class="drawer-position-name">${pos.pool}</div>
                             <div class="drawer-position-tokens">${tokensHtml}</div>
                         </div>
                         <div class="drawer-position-apr">${aprHtml}</div>
-                        <div class="drawer-position-value">${isLendingSection && ['supplied','borrowed'].includes((pos.sub || '').toLowerCase()) ? fmtV(snapVal) : fmtV(pos.value)}</div>
+                        <div class="drawer-position-value">${fmtV(snapVal)}</div>
                     </div>`;
                 }).join('');
                 const posRows = sectionHasLendingLoop(sec)
@@ -16260,7 +16309,7 @@ function renderProtocolsSnapshot() {
             : '';
 
         const typeKey = (p.type || 'yield').toLowerCase().split(' ')[0];
-        const netValue = protocolNetValue(p);
+        const netValue = protocolNetValue(p, snapUnitPrices);
         return `<div class="protocol-row-wrap">
             <div class="table-row protocols-row row-${typeKey}">
                 <div class="token-info">
