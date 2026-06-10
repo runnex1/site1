@@ -22,6 +22,7 @@ const {
   buildCloseSlippageByDay,
   mergeCloseSlippageIntoDailySeries,
   sumPairSessionRealizedSlippage,
+  sumPairHedgedCloseSlippageSince,
   pairLatestSessionStartMsFromDailySeries,
   applyPairSessionRealizedSlippage,
   trimDailySeriesToLatestSession,
@@ -193,6 +194,25 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     dailyPerformanceSeries: series,
   }, fills);
   assert.equal(pair.sessionRealizedSlippage, -5, 'applyPairSessionRealizedSlippage must use latest session boundary');
+}
+
+{
+  const sessionStart = now - 20 * 86400000;
+  const unpairedDay = now - 15 * 86400000;
+  const pairedDay = now - 5 * 86400000;
+  const fills = {
+    hyperliquid: [
+      { symbol: 'ONDO', time: unpairedDay, side: 'A', px: 1.01, sz: 50000, closedPnl: -7000 },
+      { symbol: 'ONDO', time: pairedDay, side: 'A', px: 1.01, sz: 10000, closedPnl: -3 },
+    ],
+    grvt: [
+      { symbol: 'ONDO', time: pairedDay + 1000, side: 'buy', px: 1.01, sz: 10000, closedPnl: -2 },
+    ],
+  };
+  const all = sumPairSessionRealizedSlippage('ONDO', 'hyperliquid', 'grvt', fills, sessionStart);
+  const hedged = sumPairHedgedCloseSlippageSince('ONDO', 'hyperliquid', 'grvt', fills, sessionStart);
+  assert.equal(all, -7005, 'raw session slippage sums every closing leg');
+  assert.equal(hedged, -5, 'hedged session slippage must ignore single-leg close days');
 }
 
 {
