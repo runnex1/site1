@@ -24657,11 +24657,7 @@ function perpsSyncTotalPnlStat(series, rangeLabel) {
         if (totalPnl == null) {
             pnlSub.textContent = `${label} · no data in daily chart`;
         } else {
-            const parts = [`${perpsFmtUsd(totals.funding)} funding`, `−${perpsFmtUsd(Math.abs(totals.fees))} fees`];
-            if (Math.abs(totals.slippage || 0) > 0.0000001) {
-                parts.push(`${perpsFmtUsd(totals.slippage)} close slippage`);
-            }
-            pnlSub.textContent = `${label} · ${parts.join(' ')}`;
+            pnlSub.textContent = `${label} · ${perpsFmtUsd(totals.funding)} funding − ${perpsFmtUsd(Math.abs(totals.fees))} fees`;
         }
     }
     return { totalPnl, chartTotals: totals };
@@ -24688,7 +24684,6 @@ function perpsDailyRowHasActivity(row) {
     const eps = 0.0000001;
     return Math.abs(row?.dailyFunding || 0) > eps ||
         Math.abs(row?.dailyFees || 0) > eps ||
-        Math.abs(row?.dailySlippage || 0) > eps ||
         Math.abs(row?.dailyNet || 0) > eps ||
         (Array.isArray(row?.fundingEvents) && row.fundingEvents.length > 0) ||
         (Array.isArray(row?.feeEvents) && row.feeEvents.length > 0);
@@ -24787,23 +24782,20 @@ function perpsComputePortfolioAprFromChart(data, range) {
     return perpsAnnualizeReturnPct(totalPnl, avgEquity, days);
 }
 
-/** Totals from Daily funding collected chart rows (gross funding, fees, slippage, net). */
+/** Totals from Daily funding collected chart rows (gross funding, fees, net). */
 function perpsSumDailyFundingSeries(series, useNet = true) {
     const rows = Array.isArray(series) ? series : [];
     let funding = 0;
     let fees = 0;
-    let slippage = 0;
     let net = 0;
     for (const row of rows) {
         const dailyFunding = row.dailyFunding || 0;
         const dailyFees = row.dailyFees || 0;
-        const dailySlippage = row.dailySlippage || 0;
         funding += dailyFunding;
         fees += dailyFees;
-        slippage += dailySlippage;
-        net += row.dailyNet != null ? row.dailyNet : dailyFunding - dailyFees + dailySlippage;
+        net += row.dailyNet != null ? row.dailyNet : dailyFunding - dailyFees;
     }
-    return { funding, fees, slippage, net, total: useNet ? net : funding };
+    return { funding, fees, net, total: useNet ? net : funding };
 }
 
 function perpsEquitySnapshotPoints() {
@@ -25745,8 +25737,7 @@ function perpsBuildDailyFundingBars(points, showFees) {
 
     const vals = points.map(p => showFees ? p.dailyNet : p.dailyFunding);
     const feeVals = points.map(p => p.dailyFees || 0);
-    const slipVals = points.map(p => p.dailySlippage || 0);
-    const maxAbs = Math.max(1, ...vals.map(v => Math.abs(v)), ...feeVals, ...slipVals);
+    const maxAbs = Math.max(1, ...vals.map(v => Math.abs(v)), ...feeVals);
 
     const barGap = points.length > 45 ? 1 : 2;
     const barW = Math.max(2, (chartW - barGap * Math.max(points.length - 1, 0)) / points.length);
@@ -25758,7 +25749,7 @@ function perpsBuildDailyFundingBars(points, showFees) {
         const y = val >= 0 ? zeroY - h : zeroY;
         return {
             x, y, w: barW, h: val ? Math.max(h, 1.5) : 0,
-            day: p.day, val, funding: p.dailyFunding, fees: p.dailyFees, slippage: p.dailySlippage || 0, net: p.dailyNet,
+            day: p.day, val, funding: p.dailyFunding, fees: p.dailyFees, net: p.dailyNet,
             byVenue: p.byVenue || {},
             cls: val >= 0 ? 'pos' : 'neg',
         };
@@ -25859,7 +25850,7 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
     if (barsEl) {
         barsEl.innerHTML = chart.bars.map(b =>
             `<rect class="perps-fund-bar ${b.cls}" x="${b.x.toFixed(1)}" y="${b.y.toFixed(1)}" width="${b.w.toFixed(1)}" height="${b.h.toFixed(1)}" rx="1.5"
-                data-day="${dashEsc(b.day)}" data-val="${b.val}" data-funding="${b.funding}" data-fees="${b.fees}" data-slippage="${b.slippage}" data-net="${b.net}"></rect>`
+                data-day="${dashEsc(b.day)}" data-val="${b.val}" data-funding="${b.funding}" data-fees="${b.fees}" data-net="${b.net}"></rect>`
         ).join('');
     }
 
@@ -25869,7 +25860,7 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
     }
     if (noteEl) {
         noteEl.textContent = _perpsDailyFundShowFees
-            ? `${label} net funding minus fees plus close slippage on fully closed pairs · HL, Nado, GRVT, Extended`
+            ? `${label} net funding minus fees · HL, Nado, GRVT, Extended payment history`
             : `${label} gross funding · HL, Nado, GRVT, Extended payment history`;
     }
     if (badge) badge.textContent = label;
@@ -25905,9 +25896,6 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
                 if (_perpsDailyFundShowFees) {
                     detailRows.push(`Funding ${perpsFmtUsd(hit.funding)}`);
                     detailRows.push(`Fees −${perpsFmtUsd(Math.abs(hit.fees))}`);
-                    if (Math.abs(hit.slippage || 0) > 0.0000001) {
-                        detailRows.push(`Close slippage ${perpsFmtUsd(hit.slippage)}`);
-                    }
                 }
                 Object.entries(hit.byVenue || {})
                     .filter(([, v]) => v)
@@ -26251,8 +26239,7 @@ function perpsPairLatestSessionFundingByVenue(p) {
 function perpsPairTotalPnlBreakdown(p) {
     const spread = Number(p.combinedUpnl ?? 0);
     const session = perpsPairLatestSessionPnl(p);
-    const realizedSlippage = Number(p.sessionRealizedSlippage ?? 0);
-    if (!session) return { total: null, spread, funding: null, fees: null, realizedSlippage };
+    if (!session) return { total: null, spread, funding: null, fees: null };
     const funding = session.funding;
     const fees = session.fees;
     return {
@@ -26260,7 +26247,6 @@ function perpsPairTotalPnlBreakdown(p) {
         spread,
         funding,
         fees,
-        realizedSlippage,
         source: session.source,
     };
 }
@@ -26467,48 +26453,13 @@ function perpsBuildTotalPnlTooltipHtml(p) {
     if (d.total == null) {
         return '<div class="perps-apr-tip-title">Total PnL</div><div class="perps-apr-tip-meta">No session funding data yet.</div>';
     }
-    const slippageRow = Math.abs(d.realizedSlippage || 0) > 0.0000001
-        ? `<div class="perps-apr-tip-row"><span>Realized slippage</span><span class="perps-apr-tip-apr ${perpsSignedCls(d.realizedSlippage)}">${perpsFmtUsd(d.realizedSlippage)}</span></div>`
-        : '';
     return `<div class="perps-apr-tip-title">Total PnL</div>` +
         `<div class="perps-apr-tip-row"><span>Spread</span><span class="perps-apr-tip-apr ${perpsSignedCls(d.spread)}">${perpsFmtUsd(d.spread)}</span></div>` +
         `<div class="perps-apr-tip-row"><span>Funding</span><span class="perps-apr-tip-apr ${perpsSignedCls(d.funding)}">${perpsFmtUsd(d.funding)}</span></div>` +
         `<div class="perps-apr-tip-row"><span>Trading fees</span><span class="perps-apr-tip-apr neg">−${perpsFmtUsd(Math.abs(d.fees || 0)).replace(/^-/, '')}</span></div>` +
-        slippageRow +
         `<div class="perps-apr-tip-divider"></div>` +
         `<div class="perps-apr-tip-row"><span>Total</span><span class="perps-apr-tip-apr ${perpsSignedCls(d.total)}">${perpsFmtUsd(d.total)}</span></div>` +
-        `<div class="perps-apr-tip-meta">Spread + Funding − Trading fees · latest session${slippageRow ? ' · Realized slippage from partial closes shown separately' : ''}</div>`;
-}
-
-function perpsBuildClosedNetPnlTooltipHtml(p) {
-    return `<div class="perps-apr-tip-title">Net PnL</div>` +
-        `<div class="perps-apr-tip-row"><span>Close slippage</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</span></div>` +
-        `<div class="perps-apr-tip-row"><span>Funding</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.funding)}">${perpsFmtUsd(p.funding)}</span></div>` +
-        `<div class="perps-apr-tip-row"><span>Trading fees</span><span class="perps-apr-tip-apr neg">−${perpsFmtUsd(Math.abs(p.fees || 0)).replace(/^-/, '')}</span></div>` +
-        `<div class="perps-apr-tip-divider"></div>` +
-        `<div class="perps-apr-tip-row"><span>Net</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</span></div>` +
-        `<div class="perps-apr-tip-meta">Close slippage + Funding − Trading fees · latest session</div>`;
-}
-
-function perpsBuildClosedSlippageTooltipHtml(p) {
-    return `<div class="perps-apr-tip-title">Close Slippage</div>` +
-        `<div class="perps-apr-tip-row"><span>${dashEsc(perpsVenueLabel(p.longLeg?.venue))} leg</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.longLeg?.realizedPnl)}">${perpsFmtUsd(p.longLeg?.realizedPnl ?? 0)}</span></div>` +
-        `<div class="perps-apr-tip-row"><span>${dashEsc(perpsVenueLabel(p.shortLeg?.venue))} leg</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.shortLeg?.realizedPnl)}">${perpsFmtUsd(p.shortLeg?.realizedPnl ?? 0)}</span></div>` +
-        `<div class="perps-apr-tip-divider"></div>` +
-        `<div class="perps-apr-tip-row"><span>Total</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</span></div>` +
-        `<div class="perps-apr-tip-meta">Net realized PnL from closing both legs, including any partial closes in the round</div>`;
-}
-
-function perpsShowClosedPnlTip(ev, closedIdx, kind) {
-    const tip = document.getElementById('perpsAprTooltip');
-    const p = (_perpsLastData?.closedPairs || [])[closedIdx];
-    if (!tip || !p) return;
-    tip.innerHTML = kind === 'slippage'
-        ? perpsBuildClosedSlippageTooltipHtml(p)
-        : perpsBuildClosedNetPnlTooltipHtml(p);
-    tip.style.display = 'block';
-    tip.setAttribute('aria-hidden', 'false');
-    perpsMoveCurrentAprTip(ev);
+        `<div class="perps-apr-tip-meta">Spread + Funding + Trading fees · latest session</div>`;
 }
 
 function perpsBuildFundingTooltipHtml(p) {
@@ -26541,7 +26492,6 @@ function perpsDailyRowHasPerformanceActivity(row) {
     const eps = 0.0000001;
     return Math.abs(row?.dailyFunding || 0) > eps ||
         Math.abs(row?.dailyFees || 0) > eps ||
-        Math.abs(row?.dailySlippage || 0) > eps ||
         Math.abs(row?.dailyNet || 0) > eps ||
         (Array.isArray(row?.fundingEvents) && row.fundingEvents.length > 0) ||
         (Array.isArray(row?.feeEvents) && row.feeEvents.length > 0);
@@ -27209,8 +27159,8 @@ function perpsRenderClosedPositions(closedPairs) {
                 ${perpsClosedLegHtml(p.longLeg)}
                 ${perpsClosedLegHtml(p.shortLeg)}
             </div>
-            <div class="perps-pos-metric perps-pos-pnl-metric" onmouseenter="perpsShowClosedPnlTip(event, ${closedIdx}, 'net')" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</div></div>
-            <div class="perps-pos-metric perps-pos-pnl-metric" onmouseenter="perpsShowClosedPnlTip(event, ${closedIdx}, 'slippage')" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Close Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</div></div>
+            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</div></div>
+            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Close Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(p.funding)}">${perpsFmtUsd(p.funding)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Fees</div><div class="perps-pos-metric-val neg">-${perpsFmtUsd(Math.abs(p.fees || 0)).replace(/^-/, '')}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Closed</div><div class="perps-pos-metric-val">${dashEsc(closedAt)}</div></div>
