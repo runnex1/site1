@@ -1506,6 +1506,7 @@ assert.match(indexHtml, /let livePrices = \{\}/, 'livePrices must be initialized
   assert.equal(grvtLeg.side, 'long');
 }
 
+assert.match(perpsJs, /grvt-proxy/, 'GRVT fetches must use Romania proxy resolver');
 assert.match(perpsJs, /resolveGrvtStateWithFallback/, 'GRVT must resolve positions from cache when live API fails');
 assert.match(perpsJs, /vault:grvt_state:/, 'GRVT positions must persist in KV for geo-block fallback');
 assert.match(aaveProxyJs, /grvtPositionsOverride/, 'perps API must accept browser GRVT position cache');
