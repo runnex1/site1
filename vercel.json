@@ -5,7 +5,7 @@
   "functions": {
     "api/aave-proxy.js": {
       "maxDuration": 60,
-      "regions": ["iad1"]
+      "regions": ["fra1"]
     },
     "api/*.js": {
       "maxDuration": 60

@@ -6,69 +6,37 @@ import { dirname, join } from 'node:path';
 const require = createRequire(import.meta.url);
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const {
-  DEFAULT_GRVT_PROXY_COUNTRY,
-  grvtProxyCountry,
-  buildIproyalProxyUrl,
-  buildBrightDataProxyUrl,
-  buildComponentProxyUrl,
-  webshareProxyToUrl,
+  DEFAULT_GRVT_EGRESS_COUNTRY,
+  DEFAULT_GRVT_VERCEL_REGION,
+  grvtEgressCountry,
   grvtProxyUrlFromExplicit,
+  resolveGrvtProxyMeta,
 } = require(join(ROOT, 'lib', 'grvt-proxy.js'));
 
-assert.equal(DEFAULT_GRVT_PROXY_COUNTRY, 'ro');
+assert.equal(DEFAULT_GRVT_EGRESS_COUNTRY, 'de');
+assert.equal(DEFAULT_GRVT_VERCEL_REGION, 'fra1');
 
+delete process.env.GRVT_EGRESS_COUNTRY;
 delete process.env.GRVT_PROXY_COUNTRY;
-assert.equal(grvtProxyCountry(), 'ro');
+assert.equal(grvtEgressCountry(), 'de');
 
-process.env.GRVT_PROXY_COUNTRY = 'RO';
-assert.equal(grvtProxyCountry(), 'ro');
+process.env.GRVT_EGRESS_COUNTRY = 'SG';
+assert.equal(grvtEgressCountry(), 'sg');
 
 delete process.env.GRVT_PROXY_URL;
 delete process.env.HTTPS_PROXY;
 assert.equal(grvtProxyUrlFromExplicit(), null);
 
+const direct = await resolveGrvtProxyMeta();
+assert.equal(direct.source, 'direct');
+assert.equal(direct.country, 'sg');
+assert.equal(direct.url, null);
+
 process.env.GRVT_PROXY_URL = 'http://user:pass@proxy.example:8080';
-assert.equal(grvtProxyUrlFromExplicit(), 'http://user:pass@proxy.example:8080');
+const proxied = await resolveGrvtProxyMeta();
+assert.equal(proxied.source, 'env');
+assert.equal(proxied.url, 'http://user:pass@proxy.example:8080');
 delete process.env.GRVT_PROXY_URL;
+delete process.env.GRVT_EGRESS_COUNTRY;
 
-process.env.IPROYAL_PROXY_USER = 'iproyal-user';
-process.env.IPROYAL_PROXY_PASS = 'secret';
-delete process.env.GRVT_PROXY_SESSION;
-const iproyal = buildIproyalProxyUrl();
-assert.match(iproyal, /^http:\/\/iproyal-user:secret_country-ro_session-grvt\d+@geo\.iproyal\.com:12321$/);
-delete process.env.IPROYAL_PROXY_USER;
-delete process.env.IPROYAL_PROXY_PASS;
-
-process.env.BRIGHTDATA_PROXY_USER = 'brd-customer-zone-residential';
-process.env.BRIGHTDATA_PROXY_PASS = 'pass';
-const bright = buildBrightDataProxyUrl();
-assert.equal(bright, 'http://brd-customer-zone-residential-country-ro:pass@brd.superproxy.io:22225');
-delete process.env.BRIGHTDATA_PROXY_USER;
-delete process.env.BRIGHTDATA_PROXY_PASS;
-
-process.env.GRVT_PROXY_HOST = 'ro.proxy.local';
-process.env.GRVT_PROXY_USER = 'u';
-process.env.GRVT_PROXY_PASS = 'p';
-process.env.GRVT_PROXY_PORT = '3128';
-assert.equal(buildComponentProxyUrl(), 'http://u:p@ro.proxy.local:3128');
-delete process.env.GRVT_PROXY_HOST;
-delete process.env.GRVT_PROXY_USER;
-delete process.env.GRVT_PROXY_PASS;
-delete process.env.GRVT_PROXY_PORT;
-
-const direct = webshareProxyToUrl({
-  username: 'ws-user',
-  password: 'ws-pass',
-  proxy_address: '1.2.3.4',
-  port: 9999,
-}, 'direct');
-assert.equal(direct, 'http://ws-user:ws-pass@1.2.3.4:9999');
-
-const backbone = webshareProxyToUrl({
-  username: 'ws-user',
-  password: 'ws-pass',
-  port: 80,
-}, 'backbone');
-assert.equal(backbone, 'http://ws-user:ws-pass@p.webshare.io:80');
-
-console.log('PASS: grvt-proxy URL builders default to Romania');
+console.log('PASS: grvt-proxy defaults to direct Germany egress');

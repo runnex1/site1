@@ -1,6 +1,6 @@
 /**
- * Verify GRVT auth works through the configured Romania proxy.
- * Usage: GRVT_API_KEY=... [GRVT_PROXY_URL=...|WEBSHARE_API_KEY=...] node scripts/test-grvt-ro-proxy.mjs
+ * Verify GRVT auth via configured egress (Vercel fra1 direct, or GRVT_PROXY_URL).
+ * Usage: GRVT_API_KEY=... node scripts/test-grvt-egress.mjs
  */
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -19,11 +19,11 @@ async function main() {
     process.exit(1);
   }
 
-  const proxy = await resolveGrvtProxyMeta();
-  const maskedUrl = proxy.url
-    ? proxy.url.replace(/:([^:@/]+)@/, ':***@')
-    : '(direct — no proxy configured)';
-  console.log(`Proxy: ${maskedUrl} | source=${proxy.source} | country=${proxy.country}`);
+  const egress = await resolveGrvtProxyMeta();
+  const maskedUrl = egress.url
+    ? egress.url.replace(/:([^:@/]+)@/, ':***@')
+    : '(direct)';
+  console.log(`Egress: ${maskedUrl} | source=${egress.source} | country=${egress.country} | region=${egress.region || 'local'}`);
 
   const state = await fetchGrvtState(subAccountId);
   const ip = (state.positions || []).find(p => p.symbol === 'IP');

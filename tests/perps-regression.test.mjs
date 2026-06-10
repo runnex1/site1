@@ -1506,7 +1506,9 @@ assert.match(indexHtml, /let livePrices = \{\}/, 'livePrices must be initialized
   assert.equal(grvtLeg.side, 'long');
 }
 
-assert.match(perpsJs, /grvt-proxy/, 'GRVT fetches must use Romania proxy resolver');
+assert.match(perpsJs, /grvt-proxy/, 'GRVT fetches must use EU egress resolver');
+assert.match(perpsJs, /grvtEgressRegion/, 'perps summary must expose GRVT egress region');
+assert.match(vercelJson, /"api\/aave-proxy\.js"[\s\S]*?"regions":\s*\[\s*"fra1"\s*\]/, 'perps handler must run in fra1 (Germany)');
 assert.match(perpsJs, /resolveGrvtStateWithFallback/, 'GRVT must resolve positions from cache when live API fails');
 assert.match(perpsJs, /vault:grvt_state:/, 'GRVT positions must persist in KV for geo-block fallback');
 assert.match(aaveProxyJs, /grvtPositionsOverride/, 'perps API must accept browser GRVT position cache');
