@@ -34,6 +34,7 @@ const {
   perpsTpslMismatch,
   applyGrvtStateFallback,
   parseGrvtPositionsOverride,
+  perpHedgedSizesExactMatch,
 } = require('../lib/perps.js');
 const aaveProxyHandler = require('../api/aave-proxy.js');
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -1515,5 +1516,11 @@ assert.match(aaveProxyJs, /grvtPositionsOverride/, 'perps API must accept browse
 assert.match(syncJs, /grvtStateCache/, 'sync API must accept GRVT state cache uploads');
 assert.match(indexHtml, /PERPS_GRVT_STATE_CACHE_KEY/, 'browser must cache last-known GRVT positions');
 assert.match(indexHtml, /grvtPositions/, 'perps refresh must send cached GRVT positions to the server');
+
+assert.equal(perpHedgedSizesExactMatch(-44000, 44000), true, 'opposite-side legs with equal abs size must match');
+assert.equal(perpHedgedSizesExactMatch(44000, 43999), false, 'any hedged size difference must fail exact match');
+assert.match(perpsJs, /!perpHedgedSizesExactMatch/, 'paired hedges must alert on non-exact sizes');
+assert.match(indexHtml, /perpsPairHasSizeMismatch/, 'perps UI must detect hedged size mismatch');
+assert.match(indexHtml, /perps-pos-size-warn/, 'perps position cards must show size mismatch warning');
 
 console.log('PASS: perps accounting and dashboard regression checks');

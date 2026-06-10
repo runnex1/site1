@@ -865,6 +865,9 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-token-meta { font-family:var(--ff-mono); font-size:0.58rem; color:#9dacbb; margin-top:0.12rem; }
 .perps-pos-status-row { display:flex; align-items:baseline; gap:0.5rem; flex-wrap:wrap; margin-top:0.22rem; }
 .perps-pos-pill { display:inline-flex; font-family:var(--ff-mono); font-size:0.55rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; padding:0.12rem 0.4rem; border-radius:999px; border:1px solid rgba(89,240,200,0.28); color:#59f0c8; background:rgba(89,240,200,0.08); }
+.perps-pos-pill.warn { border-color:rgba(245,158,11,0.35); color:#fbbf24; background:rgba(245,158,11,0.12); }
+.perps-pos-size-warn { margin-top:0.28rem; font-family:var(--ff-mono); font-size:0.56rem; font-weight:700; color:#fbbf24; line-height:1.35; }
+.perps-pos-card.size-mismatch { border-color:rgba(245,158,11,0.28); box-shadow:inset 0 0 0 1px rgba(245,158,11,0.08); }
 .perps-pos-live-px { font-family:var(--ff-mono); font-size:0.78rem; font-weight:800; color:var(--t1); letter-spacing:0.01em; line-height:1; }
 .perps-pos-legs { display:flex; flex-direction:column; gap:0.35rem; }
 .perps-pos-leg { display:flex; align-items:center; justify-content:space-between; font-family:var(--ff-mono); font-size:0.68rem; }
@@ -25953,6 +25956,19 @@ function perpsSaveGrvtStateCache(state) {
     } catch(e) {}
 }
 
+function perpsPairHasSizeMismatch(p) {
+    return Boolean(p?.alerts?.includes('size_mismatch'));
+}
+
+function perpsPairSizeMismatchText(p) {
+    const legs = perpsPairLegs(p);
+    const aVenue = perpsVenueShort(legs.a.venue);
+    const bVenue = perpsVenueShort(legs.b.venue);
+    const aSize = legs.a.size != null ? perpsFmtSize(legs.a.size) : '—';
+    const bSize = legs.b.size != null ? perpsFmtSize(legs.b.size) : '—';
+    return `${aSize} ${aVenue} vs ${bSize} ${bVenue}`;
+}
+
 function perpsRenderAlerts(paired, unhedged, summary) {
     const bar = document.getElementById('perpsAlertBar');
     if (!bar) return;
@@ -25973,11 +25989,12 @@ function perpsRenderAlerts(paired, unhedged, summary) {
         pills.push('Extended: connected but no open positions');
     }
     for (const p of paired) {
-        if (p.alerts?.includes('size_mismatch')) pills.push(`${p.symbol}: size mismatch ${p.sizeMismatchPct.toFixed(1)}%`);
+        if (perpsPairHasSizeMismatch(p)) pills.push(`${p.symbol}: hedged size mismatch (${perpsPairSizeMismatchText(p)})`);
         if (p.alerts?.includes('basis_drift')) pills.push(`${p.symbol}: basis drift ${perpsFmtUsd(p.combinedUpnl)}`);
         if (p.alerts?.includes('spread_below_breakeven')) pills.push(`${p.symbol}: spread below break-even`);
     }
     for (const u of unhedged) pills.push(`${u.symbol}: unhedged on ${u.venue}`);
+    const hasSizeMismatch = (paired || []).some(perpsPairHasSizeMismatch);
     if (!pills.length) {
         bar.style.display = 'flex';
         bar.className = 'perps-alert-bar ok';
@@ -25985,7 +26002,7 @@ function perpsRenderAlerts(paired, unhedged, summary) {
         return;
     }
     bar.style.display = 'flex';
-    bar.className = 'perps-alert-bar' + ((summary?.nadoError || summary?.grvtError || summary?.grvtStale || summary?.extendedError) ? ' warn' : '');
+    bar.className = 'perps-alert-bar' + ((summary?.nadoError || summary?.grvtError || summary?.grvtStale || summary?.extendedError || hasSizeMismatch) ? ' warn' : '');
     bar.innerHTML = pills.map(t => `<span class="perps-alert-pill">${dashEsc(t)}</span>`).join('');
 }
 
@@ -27024,7 +27041,11 @@ function perpsRenderPortfolioPositions(paired) {
         const margin = p.avgNotional ?? 0;
         const sizeLabel = legs.a.size != null ? `${perpsFmtSize(legs.a.size)} ${p.symbol}` : p.symbol;
         const midPx = perpsPositionMidPx(p, displayLegs);
-        return `<div class="perps-pos-card"><div class="perps-pos-row">
+        const sizeMismatch = perpsPairHasSizeMismatch(p);
+        const sizeWarnHtml = sizeMismatch
+            ? `<div class="perps-pos-size-warn" title="Hedged legs should match exactly">⚠ Size mismatch: ${dashEsc(perpsPairSizeMismatchText(p))}</div>`
+            : '';
+        return `<div class="perps-pos-card${sizeMismatch ? ' size-mismatch' : ''}"><div class="perps-pos-row">
             <div class="perps-pos-token">
                 <div class="perps-pos-token-row">
                     ${makeLogo(p.symbol, false, 36)}
@@ -27032,9 +27053,10 @@ function perpsRenderPortfolioPositions(paired) {
                         <div class="perps-pos-token-name">${dashEsc(p.symbol)}</div>
                         <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}</div>
                         <div class="perps-pos-status-row">
-                            <span class="perps-pos-pill">OPEN</span>
+                            <span class="perps-pos-pill${sizeMismatch ? ' warn' : ''}">OPEN</span>
                             <span class="perps-pos-live-px">${perpsFmtPx(midPx)}</span>
                         </div>
+                        ${sizeWarnHtml}
                     </div>
                 </div>
             </div>
@@ -27314,11 +27336,11 @@ function perpsRenderPairedTable(paired) {
         <th>Asset</th><th>Pair</th><th>Leg A</th><th>Leg B</th><th>A entry</th><th>B entry</th>
         <th>A uPnL</th><th>B uPnL</th><th>Combined</th><th>A funding</th><th>B funding</th>
     </tr></thead><tbody>${paired.map(p => {
-        const mismatch = p.sizeMismatchPct > 1;
+        const mismatch = perpsPairHasSizeMismatch(p);
         const pairLabel = p.pairLabel || 'HL + Nado';
         const legs = perpsPairLegs(p);
         return `<tr>
-            <td>${dashEsc(p.symbol)}${mismatch ? ' <span class="perps-warn">⚠</span>' : ''}</td>
+            <td>${dashEsc(p.symbol)}${mismatch ? ` <span class="perps-warn" title="${dashEsc(perpsPairSizeMismatchText(p))}">⚠</span>` : ''}</td>
             <td>${dashEsc(pairLabel)}</td>
             <td>${perpsSideBadgeHtml(legs.a.size)}${dashEsc(legs.a.label)} ${legs.a.size != null ? perpsFmtSize(legs.a.size) : '—'}</td>
             <td>${perpsSideBadgeHtml(legs.b.size)}${dashEsc(legs.b.label)} ${legs.b.size != null ? perpsFmtSize(legs.b.size) : '—'}</td>
