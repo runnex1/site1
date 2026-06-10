@@ -574,6 +574,13 @@ html { height: 100%; }
   .watcher-v2-pm-row .hide-sm { display:none; }
 }
 
+/* News Feed tab: hide market ticker strip */
+body[data-active-tab="news"] .market-ticker-strip,
+.page-content.tab-news .market-ticker-strip,
+.page-content:has(#newsTab.active) .market-ticker-strip {
+  display:none !important;
+}
+
 /* Watcher tab: hide market ticker, match dashboard surface */
 body[data-active-tab="watcher"] .market-ticker-strip,
 .page-content.tab-watcher .market-ticker-strip,
@@ -9192,6 +9199,7 @@ function switchTab(tab, opts = {}) {
     if (_pc) _pc.classList.toggle('tab-loops', tab === 'loops');
     if (_pc) _pc.classList.toggle('tab-watcher', tab === 'watcher');
     if (_pc) _pc.classList.toggle('tab-perps', tab === 'perps');
+    if (_pc) _pc.classList.toggle('tab-news', tab === 'news');
     if (tab === 'terminal') { terminalRenderAlerts(); }
     if (tab === 'loops') { loopsLoadSnapshotsLocal(); renderLoops(); maybeAutoSyncLoopPositions(); loopsEnsureSnapshotsHydrated({ force: true }); }
     if (tab === 'prediction') {
