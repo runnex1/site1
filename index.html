@@ -4730,7 +4730,7 @@ body {
 .news-feed-layout {
   flex:1; min-height:0;
   display:grid;
-  grid-template-columns:320px minmax(0,1fr) 280px;
+  grid-template-columns:280px minmax(0,1fr) 200px;
   gap:12px;
 }
 .news-feed-panel {
@@ -4739,6 +4739,11 @@ body {
   background:rgba(16,17,24,0.92);
   display:flex; flex-direction:column;
   min-height:0; overflow:hidden;
+}
+.news-feed-panel.saved-panel,
+.news-feed-panel.context-panel {
+  border-color:rgba(255,255,255,0.05);
+  background:rgba(16,17,24,0.5);
 }
 .news-feed-panel-head {
   flex-shrink:0;
@@ -4771,14 +4776,15 @@ body {
 .news-feed-saved-empty { padding:10px; font-size:11px; color:var(--t3); line-height:1.4; }
 .news-feed-center { position:relative; }
 .news-feed-center-head {
-  padding:14px 16px 12px; border-bottom:1px solid var(--border);
-  display:flex; align-items:flex-start; justify-content:space-between; gap:14px;
+  padding:20px 24px 18px; border-bottom:1px solid var(--border);
+  display:flex; align-items:center; justify-content:space-between; gap:18px;
 }
-.news-feed-center-head h1 { margin:0 0 4px; font-size:22px; font-weight:900; letter-spacing:-.02em; color:var(--t1); }
-.news-feed-center-head p { margin:0; font-size:12px; color:var(--t3); line-height:1.4; }
-.news-feed-lens { margin-top:8px; display:flex; flex-wrap:wrap; gap:5px; }
+.news-feed-center-head-main { flex:1; min-width:0; }
+.news-feed-center-head h1 { margin:0 0 6px; font-size:23px; font-weight:900; letter-spacing:-.02em; color:var(--t1); }
+.news-feed-center-head p { margin:0; font-size:12px; color:var(--t3); line-height:1.5; }
+.news-feed-lens { margin-top:14px; display:flex; flex-wrap:wrap; gap:6px; }
 .news-feed-lens-chip {
-  font-family:var(--ff-mono); font-size:10px; padding:3px 8px; border-radius:999px;
+  font-family:var(--ff-mono); font-size:10px; padding:4px 10px; border-radius:999px;
   border:1px solid var(--border-mid); color:var(--t3); background:rgba(255,255,255,0.02);
 }
 .news-feed-lens-chip.on { color:var(--teal); border-color:rgba(0,212,170,0.3); background:var(--teal-10); }
@@ -4792,30 +4798,47 @@ body {
 }
 .news-feed-settings-btn:hover { border-color:rgba(0,212,170,0.35); background:var(--teal-10); }
 .news-feed-settings-btn svg { color:var(--teal); flex-shrink:0; }
-.news-feed-scroll { flex:1; overflow:auto; padding:10px 12px 14px; }
-.news-feed-card {
-  display:flex; gap:11px; padding:12px 12px; border-radius:10px;
-  border:1px solid var(--border); background:rgba(20,21,30,0.65);
-  margin-bottom:8px; transition:border-color .15s;
+.news-feed-scroll {
+  flex:1; overflow:auto; padding:16px 20px 20px;
+  display:flex; flex-direction:column; align-items:center;
 }
-.news-feed-card:hover { border-color:var(--border-mid); }
-.news-feed-card.featured { border-color:rgba(0,212,170,0.22); background:linear-gradient(135deg,rgba(0,212,170,0.06),rgba(20,21,30,0.7)); }
+.news-feed-scroll > * { width:100%; max-width:760px; }
+.news-feed-card {
+  display:flex; flex-direction:column; gap:8px;
+  padding:18px 10px; border-radius:0;
+  border:none; border-bottom:1px solid var(--border);
+  background:transparent; margin-bottom:0;
+  transition:background .15s;
+}
+.news-feed-card:hover { background:rgba(255,255,255,0.025); }
+.news-feed-card.featured {
+  padding:18px 16px; margin-bottom:4px;
+  border:1px solid rgba(0,212,170,0.22); border-radius:10px;
+  background:linear-gradient(135deg,rgba(0,212,170,0.06),rgba(20,21,30,0.7));
+}
+.news-feed-card.featured:hover { border-color:rgba(0,212,170,0.32); background:linear-gradient(135deg,rgba(0,212,170,0.08),rgba(20,21,30,0.75)); }
+.news-feed-card.featured + .news-feed-card { margin-top:8px; }
 .news-feed-card-tag {
-  flex-shrink:0; align-self:flex-start;
+  align-self:flex-start;
   font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
-  padding:4px 7px; border-radius:5px; height:fit-content;
+  padding:4px 8px; border-radius:5px;
 }
 .news-feed-card-tag.crypto { background:var(--teal-10); color:var(--teal); border:1px solid rgba(0,212,170,0.2); }
 .news-feed-card-tag.defi { background:var(--fuchsia-10); color:var(--fuchsia); border:1px solid rgba(217,70,239,0.2); }
 .news-feed-card-tag.macro { background:var(--indigo-10); color:var(--indigo); border:1px solid rgba(108,114,255,0.2); }
 .news-feed-card-tag.kobeissi { background:rgba(245,158,11,0.15); color:var(--amber); border:1px solid rgba(245,158,11,0.35); }
-.news-feed-card-body { flex:1; min-width:0; }
-.news-feed-card-title { font-size:13px; font-weight:700; line-height:1.35; margin-bottom:5px; color:var(--t1); }
+.news-feed-card-title { font-size:14px; font-weight:700; line-height:1.45; margin:0; color:var(--t1); }
 .news-feed-card-title a { color:inherit; text-decoration:none; }
 .news-feed-card-title a:hover { text-decoration:underline; }
-.news-feed-card-snippet { font-size:11px; color:var(--t3); line-height:1.45; margin-bottom:6px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.news-feed-card-meta { display:flex; flex-wrap:wrap; gap:10px; font-family:var(--ff-mono); font-size:10px; color:var(--t3); }
-.news-feed-card-actions { display:flex; flex-direction:column; gap:5px; flex-shrink:0; }
+.news-feed-card-snippet {
+  font-size:12px; color:var(--t3); line-height:1.5; margin:0;
+  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+}
+.news-feed-card-footer {
+  display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:2px;
+}
+.news-feed-card-meta { display:flex; flex-wrap:wrap; gap:8px 12px; flex:1; min-width:0; font-family:var(--ff-mono); font-size:10px; color:var(--t3); }
+.news-feed-card-actions { display:flex; flex-direction:row; gap:6px; flex-shrink:0; }
 .news-feed-icon-btn {
   width:28px; height:28px; border-radius:7px; border:1px solid var(--border);
   background:transparent; color:var(--t3); display:flex; align-items:center; justify-content:center;
@@ -4875,7 +4898,7 @@ body {
 }
 @media (max-width:1100px) {
   .news-feed-root { max-width:min(1440px, calc(100% - 2rem)); padding:0 1.5rem 0.35rem; }
-  .news-feed-layout { grid-template-columns:280px minmax(0,1fr) 240px; }
+  .news-feed-layout { grid-template-columns:260px minmax(0,1fr) 180px; }
 }
 @media (max-width:900px) {
   .news-feed-layout { grid-template-columns:1fr; grid-template-rows:auto 1fr auto; }
@@ -7016,7 +7039,7 @@ body[data-active-tab="loops"] .page-content,
       <div id="newsTab" class="tab-pane">
         <div class="news-feed-root">
           <div class="news-feed-layout">
-            <section class="news-feed-panel" id="newsFeedSavedPanel">
+            <section class="news-feed-panel saved-panel" id="newsFeedSavedPanel">
               <div class="news-feed-panel-head">
                 <span class="news-feed-panel-title">Saved</span>
                 <span class="news-feed-panel-count" id="newsFeedSavedCount">0</span>
@@ -7028,7 +7051,7 @@ body[data-active-tab="loops"] .page-content,
 
             <section class="news-feed-panel news-feed-center" id="newsFeedCenterPanel">
               <div class="news-feed-center-head">
-                <div>
+                <div class="news-feed-center-head-main">
                   <h1>News Feed</h1>
                   <p>Ranked headlines filtered by your category, sources, and keywords</p>
                   <div class="news-feed-lens" id="newsFeedLens"></div>
@@ -7050,7 +7073,7 @@ body[data-active-tab="loops"] .page-content,
               </aside>
             </section>
 
-            <section class="news-feed-panel" id="newsFeedContextPanel">
+            <section class="news-feed-panel context-panel" id="newsFeedContextPanel">
               <div class="news-feed-panel-head">
                 <span class="news-feed-panel-title">Context</span>
               </div>
@@ -23867,18 +23890,18 @@ function newsFeedRenderCenterCard(item, opts = {}) {
     const desc = item.desc ? `<div class="news-feed-card-snippet">${dashEsc(item.desc)}</div>` : '';
     return `<article class="news-feed-card${featured ? ' featured' : ''}">
         <span class="news-feed-card-tag ${dashEsc(tag)}">${dashEsc(tagLabel)}</span>
-        <div class="news-feed-card-body">
-            <div class="news-feed-card-title"><a href="${dashEsc(url)}" target="_blank" rel="noopener">${dashEsc(item.title || '')}</a></div>
-            ${desc}
+        <div class="news-feed-card-title"><a href="${dashEsc(url)}" target="_blank" rel="noopener">${dashEsc(item.title || '')}</a></div>
+        ${desc}
+        <div class="news-feed-card-footer">
             <div class="news-feed-card-meta">
                 <span>${dashEsc(item.source || '')}</span>
                 ${time ? `<span>${time}</span>` : ''}
                 ${matched}
             </div>
-        </div>
-        <div class="news-feed-card-actions">
-            <button type="button" class="news-feed-icon-btn${saved ? ' saved' : ''}" title="${saved ? 'Unsave' : 'Save'}" data-url="${dashEsc(url)}" onclick="newsFeedToggleSavedByUrl(this.dataset.url)">${saved ? '★' : '☆'}</button>
-            <a class="news-feed-icon-btn" href="${dashEsc(url)}" target="_blank" rel="noopener" title="Open">↗</a>
+            <div class="news-feed-card-actions">
+                <button type="button" class="news-feed-icon-btn${saved ? ' saved' : ''}" title="${saved ? 'Unsave' : 'Save'}" data-url="${dashEsc(url)}" onclick="newsFeedToggleSavedByUrl(this.dataset.url)">${saved ? '★' : '☆'}</button>
+                <a class="news-feed-icon-btn" href="${dashEsc(url)}" target="_blank" rel="noopener" title="Open">↗</a>
+            </div>
         </div>
     </article>`;
 }
@@ -24634,7 +24657,11 @@ function perpsSyncTotalPnlStat(series, rangeLabel) {
         if (totalPnl == null) {
             pnlSub.textContent = `${label} · no data in daily chart`;
         } else {
-            pnlSub.textContent = `${label} · ${perpsFmtUsd(totals.funding)} funding − ${perpsFmtUsd(Math.abs(totals.fees))} fees`;
+            const parts = [`${perpsFmtUsd(totals.funding)} funding`, `−${perpsFmtUsd(Math.abs(totals.fees))} fees`];
+            if (Math.abs(totals.slippage || 0) > 0.0000001) {
+                parts.push(`${perpsFmtUsd(totals.slippage)} close slippage`);
+            }
+            pnlSub.textContent = `${label} · ${parts.join(' ')}`;
         }
     }
     return { totalPnl, chartTotals: totals };
@@ -24661,6 +24688,7 @@ function perpsDailyRowHasActivity(row) {
     const eps = 0.0000001;
     return Math.abs(row?.dailyFunding || 0) > eps ||
         Math.abs(row?.dailyFees || 0) > eps ||
+        Math.abs(row?.dailySlippage || 0) > eps ||
         Math.abs(row?.dailyNet || 0) > eps ||
         (Array.isArray(row?.fundingEvents) && row.fundingEvents.length > 0) ||
         (Array.isArray(row?.feeEvents) && row.feeEvents.length > 0);
@@ -24759,20 +24787,23 @@ function perpsComputePortfolioAprFromChart(data, range) {
     return perpsAnnualizeReturnPct(totalPnl, avgEquity, days);
 }
 
-/** Totals from Daily funding collected chart rows (gross funding, fees, net). */
+/** Totals from Daily funding collected chart rows (gross funding, fees, slippage, net). */
 function perpsSumDailyFundingSeries(series, useNet = true) {
     const rows = Array.isArray(series) ? series : [];
     let funding = 0;
     let fees = 0;
+    let slippage = 0;
     let net = 0;
     for (const row of rows) {
         const dailyFunding = row.dailyFunding || 0;
         const dailyFees = row.dailyFees || 0;
+        const dailySlippage = row.dailySlippage || 0;
         funding += dailyFunding;
         fees += dailyFees;
-        net += row.dailyNet != null ? row.dailyNet : dailyFunding - dailyFees;
+        slippage += dailySlippage;
+        net += row.dailyNet != null ? row.dailyNet : dailyFunding - dailyFees + dailySlippage;
     }
-    return { funding, fees, net, total: useNet ? net : funding };
+    return { funding, fees, slippage, net, total: useNet ? net : funding };
 }
 
 function perpsEquitySnapshotPoints() {
@@ -25714,7 +25745,8 @@ function perpsBuildDailyFundingBars(points, showFees) {
 
     const vals = points.map(p => showFees ? p.dailyNet : p.dailyFunding);
     const feeVals = points.map(p => p.dailyFees || 0);
-    const maxAbs = Math.max(1, ...vals.map(v => Math.abs(v)), ...feeVals);
+    const slipVals = points.map(p => p.dailySlippage || 0);
+    const maxAbs = Math.max(1, ...vals.map(v => Math.abs(v)), ...feeVals, ...slipVals);
 
     const barGap = points.length > 45 ? 1 : 2;
     const barW = Math.max(2, (chartW - barGap * Math.max(points.length - 1, 0)) / points.length);
@@ -25726,7 +25758,7 @@ function perpsBuildDailyFundingBars(points, showFees) {
         const y = val >= 0 ? zeroY - h : zeroY;
         return {
             x, y, w: barW, h: val ? Math.max(h, 1.5) : 0,
-            day: p.day, val, funding: p.dailyFunding, fees: p.dailyFees, net: p.dailyNet,
+            day: p.day, val, funding: p.dailyFunding, fees: p.dailyFees, slippage: p.dailySlippage || 0, net: p.dailyNet,
             byVenue: p.byVenue || {},
             cls: val >= 0 ? 'pos' : 'neg',
         };
@@ -25827,7 +25859,7 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
     if (barsEl) {
         barsEl.innerHTML = chart.bars.map(b =>
             `<rect class="perps-fund-bar ${b.cls}" x="${b.x.toFixed(1)}" y="${b.y.toFixed(1)}" width="${b.w.toFixed(1)}" height="${b.h.toFixed(1)}" rx="1.5"
-                data-day="${dashEsc(b.day)}" data-val="${b.val}" data-funding="${b.funding}" data-fees="${b.fees}" data-net="${b.net}"></rect>`
+                data-day="${dashEsc(b.day)}" data-val="${b.val}" data-funding="${b.funding}" data-fees="${b.fees}" data-slippage="${b.slippage}" data-net="${b.net}"></rect>`
         ).join('');
     }
 
@@ -25837,7 +25869,7 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
     }
     if (noteEl) {
         noteEl.textContent = _perpsDailyFundShowFees
-            ? `${label} net funding minus fees · HL, Nado, GRVT, Extended payment history`
+            ? `${label} net funding minus fees plus close slippage on fully closed pairs · HL, Nado, GRVT, Extended`
             : `${label} gross funding · HL, Nado, GRVT, Extended payment history`;
     }
     if (badge) badge.textContent = label;
@@ -25873,6 +25905,9 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
                 if (_perpsDailyFundShowFees) {
                     detailRows.push(`Funding ${perpsFmtUsd(hit.funding)}`);
                     detailRows.push(`Fees −${perpsFmtUsd(Math.abs(hit.fees))}`);
+                    if (Math.abs(hit.slippage || 0) > 0.0000001) {
+                        detailRows.push(`Close slippage ${perpsFmtUsd(hit.slippage)}`);
+                    }
                 }
                 Object.entries(hit.byVenue || {})
                     .filter(([, v]) => v)
@@ -26216,7 +26251,8 @@ function perpsPairLatestSessionFundingByVenue(p) {
 function perpsPairTotalPnlBreakdown(p) {
     const spread = Number(p.combinedUpnl ?? 0);
     const session = perpsPairLatestSessionPnl(p);
-    if (!session) return { total: null, spread, funding: null, fees: null };
+    const realizedSlippage = Number(p.sessionRealizedSlippage ?? 0);
+    if (!session) return { total: null, spread, funding: null, fees: null, realizedSlippage };
     const funding = session.funding;
     const fees = session.fees;
     return {
@@ -26224,6 +26260,7 @@ function perpsPairTotalPnlBreakdown(p) {
         spread,
         funding,
         fees,
+        realizedSlippage,
         source: session.source,
     };
 }
@@ -26430,13 +26467,48 @@ function perpsBuildTotalPnlTooltipHtml(p) {
     if (d.total == null) {
         return '<div class="perps-apr-tip-title">Total PnL</div><div class="perps-apr-tip-meta">No session funding data yet.</div>';
     }
+    const slippageRow = Math.abs(d.realizedSlippage || 0) > 0.0000001
+        ? `<div class="perps-apr-tip-row"><span>Realized slippage</span><span class="perps-apr-tip-apr ${perpsSignedCls(d.realizedSlippage)}">${perpsFmtUsd(d.realizedSlippage)}</span></div>`
+        : '';
     return `<div class="perps-apr-tip-title">Total PnL</div>` +
         `<div class="perps-apr-tip-row"><span>Spread</span><span class="perps-apr-tip-apr ${perpsSignedCls(d.spread)}">${perpsFmtUsd(d.spread)}</span></div>` +
         `<div class="perps-apr-tip-row"><span>Funding</span><span class="perps-apr-tip-apr ${perpsSignedCls(d.funding)}">${perpsFmtUsd(d.funding)}</span></div>` +
         `<div class="perps-apr-tip-row"><span>Trading fees</span><span class="perps-apr-tip-apr neg">−${perpsFmtUsd(Math.abs(d.fees || 0)).replace(/^-/, '')}</span></div>` +
+        slippageRow +
         `<div class="perps-apr-tip-divider"></div>` +
         `<div class="perps-apr-tip-row"><span>Total</span><span class="perps-apr-tip-apr ${perpsSignedCls(d.total)}">${perpsFmtUsd(d.total)}</span></div>` +
-        `<div class="perps-apr-tip-meta">Spread + Funding + Trading fees · latest session</div>`;
+        `<div class="perps-apr-tip-meta">Spread + Funding − Trading fees · latest session${slippageRow ? ' · Realized slippage from partial closes shown separately' : ''}</div>`;
+}
+
+function perpsBuildClosedNetPnlTooltipHtml(p) {
+    return `<div class="perps-apr-tip-title">Net PnL</div>` +
+        `<div class="perps-apr-tip-row"><span>Close slippage</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</span></div>` +
+        `<div class="perps-apr-tip-row"><span>Funding</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.funding)}">${perpsFmtUsd(p.funding)}</span></div>` +
+        `<div class="perps-apr-tip-row"><span>Trading fees</span><span class="perps-apr-tip-apr neg">−${perpsFmtUsd(Math.abs(p.fees || 0)).replace(/^-/, '')}</span></div>` +
+        `<div class="perps-apr-tip-divider"></div>` +
+        `<div class="perps-apr-tip-row"><span>Net</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</span></div>` +
+        `<div class="perps-apr-tip-meta">Close slippage + Funding − Trading fees · latest session</div>`;
+}
+
+function perpsBuildClosedSlippageTooltipHtml(p) {
+    return `<div class="perps-apr-tip-title">Close Slippage</div>` +
+        `<div class="perps-apr-tip-row"><span>${dashEsc(perpsVenueLabel(p.longLeg?.venue))} leg</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.longLeg?.realizedPnl)}">${perpsFmtUsd(p.longLeg?.realizedPnl ?? 0)}</span></div>` +
+        `<div class="perps-apr-tip-row"><span>${dashEsc(perpsVenueLabel(p.shortLeg?.venue))} leg</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.shortLeg?.realizedPnl)}">${perpsFmtUsd(p.shortLeg?.realizedPnl ?? 0)}</span></div>` +
+        `<div class="perps-apr-tip-divider"></div>` +
+        `<div class="perps-apr-tip-row"><span>Total</span><span class="perps-apr-tip-apr ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</span></div>` +
+        `<div class="perps-apr-tip-meta">Net realized PnL from closing both legs, including any partial closes in the round</div>`;
+}
+
+function perpsShowClosedPnlTip(ev, closedIdx, kind) {
+    const tip = document.getElementById('perpsAprTooltip');
+    const p = (_perpsLastData?.closedPairs || [])[closedIdx];
+    if (!tip || !p) return;
+    tip.innerHTML = kind === 'slippage'
+        ? perpsBuildClosedSlippageTooltipHtml(p)
+        : perpsBuildClosedNetPnlTooltipHtml(p);
+    tip.style.display = 'block';
+    tip.setAttribute('aria-hidden', 'false');
+    perpsMoveCurrentAprTip(ev);
 }
 
 function perpsBuildFundingTooltipHtml(p) {
@@ -26469,6 +26541,7 @@ function perpsDailyRowHasPerformanceActivity(row) {
     const eps = 0.0000001;
     return Math.abs(row?.dailyFunding || 0) > eps ||
         Math.abs(row?.dailyFees || 0) > eps ||
+        Math.abs(row?.dailySlippage || 0) > eps ||
         Math.abs(row?.dailyNet || 0) > eps ||
         (Array.isArray(row?.fundingEvents) && row.fundingEvents.length > 0) ||
         (Array.isArray(row?.feeEvents) && row.feeEvents.length > 0);
@@ -27118,7 +27191,7 @@ function perpsRenderClosedPositions(closedPairs) {
         <div>Fees</div>
         <div>Closed</div>
     </div>`;
-    el.innerHTML = head + closedPairs.map(p => {
+    el.innerHTML = head + closedPairs.map((p, closedIdx) => {
         const sizeLabel = p.size != null ? `${perpsFmtSize(p.size)} ${p.symbol}` : p.symbol;
         const closedAt = perpsFormatEventTime(p.closeTime);
         return `<div class="perps-pos-card"><div class="perps-pos-row closed">
@@ -27136,8 +27209,8 @@ function perpsRenderClosedPositions(closedPairs) {
                 ${perpsClosedLegHtml(p.longLeg)}
                 ${perpsClosedLegHtml(p.shortLeg)}
             </div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</div></div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Close Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</div></div>
+            <div class="perps-pos-metric perps-pos-pnl-metric" onmouseenter="perpsShowClosedPnlTip(event, ${closedIdx}, 'net')" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</div></div>
+            <div class="perps-pos-metric perps-pos-pnl-metric" onmouseenter="perpsShowClosedPnlTip(event, ${closedIdx}, 'slippage')" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Close Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(p.funding)}">${perpsFmtUsd(p.funding)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Fees</div><div class="perps-pos-metric-val neg">-${perpsFmtUsd(Math.abs(p.fees || 0)).replace(/^-/, '')}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Closed</div><div class="perps-pos-metric-val">${dashEsc(closedAt)}</div></div>
