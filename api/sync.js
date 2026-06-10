@@ -795,6 +795,15 @@ module.exports = async function handler(req, res) {
       await kvSet('vault:perps_snapshots', JSON.stringify(body.perpsSnapshots));
       saved.perpsSnapshots = true;
     }
+    if (body.grvtStateCache?.subAccountId && Array.isArray(body.grvtStateCache.positions) && body.grvtStateCache.positions.length) {
+      await kvSet(`vault:grvt_state:${String(body.grvtStateCache.subAccountId).trim()}`, JSON.stringify({
+        subAccountId: String(body.grvtStateCache.subAccountId).trim(),
+        fetchedAt: Number(body.grvtStateCache.fetchedAt) || Date.now(),
+        accountValue: Number(body.grvtStateCache.accountValue) || 0,
+        positions: body.grvtStateCache.positions,
+      }));
+      saved.grvtStateCache = true;
+    }
 
     if (body.loopSnapshots && typeof body.loopSnapshots === 'object') {
       await ensureUsdeUsdmSnapshotsPurged({ kvGet, kvSet, parseJson });

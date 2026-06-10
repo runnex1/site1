@@ -32,6 +32,8 @@ const {
   parseGrvtTpslOrders,
   classifyNadoTriggerSide,
   perpsTpslMismatch,
+  applyGrvtStateFallback,
+  parseGrvtPositionsOverride,
 } = require('../lib/perps.js');
 const aaveProxyHandler = require('../api/aave-proxy.js');
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -1481,5 +1483,34 @@ assert.match(indexHtml, /fetchLiveTokenPrices\(\{ force: true \}\)/, 'protocol p
 assert.match(indexHtml, /let _fetchLiveTokenPricesPromise = null/, 'price fetch must dedupe in-flight requests');
 assert.match(indexHtml, /async function resolveGeckoIdsForSymbols\(symbols, \{ concurrency = 3 \} = \{\}\)/, 'gecko resolve must be concurrency-limited');
 assert.match(indexHtml, /let livePrices = \{\}/, 'livePrices must be initialized before protocol valuation helpers');
+
+{
+  const failed = {
+    venue: 'grvt',
+    subAccountId: '4860249204328359',
+    configured: true,
+    exists: false,
+    accountValue: 0,
+    positions: [],
+    error: 'Access from this location is not allowed',
+  };
+  const override = parseGrvtPositionsOverride([
+    { venue: 'grvt', symbol: 'IP', size: 44000, side: 'long', notional: 14142 },
+  ]);
+  const restored = applyGrvtStateFallback(failed, { positions: override, fetchedAt: Date.now() }, 'browser-cache');
+  assert.equal(restored.positions.length, 1, 'GRVT fallback must restore cached positions');
+  assert.equal(restored.staleSource, 'browser-cache');
+  const hlLeg = { symbol: 'IP', size: -44000, side: 'short' };
+  const grvtLeg = restored.positions[0];
+  assert.equal(hlLeg.side, 'short');
+  assert.equal(grvtLeg.side, 'long');
+}
+
+assert.match(perpsJs, /resolveGrvtStateWithFallback/, 'GRVT must resolve positions from cache when live API fails');
+assert.match(perpsJs, /vault:grvt_state:/, 'GRVT positions must persist in KV for geo-block fallback');
+assert.match(aaveProxyJs, /grvtPositionsOverride/, 'perps API must accept browser GRVT position cache');
+assert.match(syncJs, /grvtStateCache/, 'sync API must accept GRVT state cache uploads');
+assert.match(indexHtml, /PERPS_GRVT_STATE_CACHE_KEY/, 'browser must cache last-known GRVT positions');
+assert.match(indexHtml, /grvtPositions/, 'perps refresh must send cached GRVT positions to the server');
 
 console.log('PASS: perps accounting and dashboard regression checks');

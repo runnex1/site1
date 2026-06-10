@@ -220,6 +220,7 @@ async function handlePerps(req, res) {
     grvtSubAccount,
     days,
     knownClosedKeys,
+    grvtPositionsOverride: req.query.grvtPositions || null,
   };
 
   try {

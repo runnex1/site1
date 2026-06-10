@@ -7973,6 +7973,7 @@ const PERPS_SESSION_KEY = 'vault-perps-wallets-session';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
 const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pairs';
 const PERPS_DAILY_FUND_CACHE_KEY = 'vault-perps-daily-fund-cache';
+const PERPS_GRVT_STATE_CACHE_KEY = 'vault-grvt-state-cache';
 const TICKER_VISIBLE_TABS = new Set(['overview', 'etf', 'terminal', 'history']);
 const PM_WALLETS_BACKUP_KEY = 'vault-polymarket-wallets-backup';
 const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
@@ -25401,6 +25402,27 @@ function perpsBuildChart(series, netSeries) {
     };
 }
 
+function perpsLoadGrvtStateCache() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(PERPS_GRVT_STATE_CACHE_KEY) || 'null');
+        if (!parsed || !Array.isArray(parsed.positions) || !parsed.positions.length) return null;
+        const age = Date.now() - Number(parsed.fetchedAt || 0);
+        if (!Number.isFinite(age) || age > 7 * 86400000) return null;
+        return parsed;
+    } catch(e) { return null; }
+}
+function perpsSaveGrvtStateCache(state) {
+    if (!state || state.error || !Array.isArray(state.positions) || !state.positions.length) return;
+    try {
+        localStorage.setItem(PERPS_GRVT_STATE_CACHE_KEY, JSON.stringify({
+            subAccountId: state.subAccountId || perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || '4860249204328359',
+            fetchedAt: Number(state.fetchedAt) || Date.now(),
+            accountValue: Number(state.accountValue) || 0,
+            positions: state.positions,
+        }));
+    } catch(e) {}
+}
+
 function perpsRenderAlerts(paired, unhedged, summary) {
     const bar = document.getElementById('perpsAlertBar');
     if (!bar) return;
@@ -25408,7 +25430,9 @@ function perpsRenderAlerts(paired, unhedged, summary) {
     if (summary?.nadoError) {
         pills.push(`NADO: ${summary.nadoError}`);
     }
-    if (summary?.grvtError) {
+    if (summary?.grvtStale) {
+        pills.push(`GRVT: live API unavailable — hedges use ${summary.grvtStaleSource || 'cached'} positions`);
+    } else if (summary?.grvtError) {
         pills.push(`GRVT: ${summary.grvtError}`);
     } else if (summary?.grvtConfigured && !(summary.grvtPositionCount > 0) && (summary.grvtAccountValue ?? 0) <= 0) {
         pills.push('GRVT: connected but no open positions on this sub-account');
@@ -25431,7 +25455,7 @@ function perpsRenderAlerts(paired, unhedged, summary) {
         return;
     }
     bar.style.display = 'flex';
-    bar.className = 'perps-alert-bar' + ((summary?.nadoError || summary?.grvtError || summary?.extendedError) ? ' warn' : '');
+    bar.className = 'perps-alert-bar' + ((summary?.nadoError || summary?.grvtError || summary?.grvtStale || summary?.extendedError) ? ' warn' : '');
     bar.innerHTML = pills.map(t => `<span class="perps-alert-pill">${dashEsc(t)}</span>`).join('');
 }
 
@@ -26990,6 +27014,9 @@ function perpsRenderDashboard(data, opts = {}) {
             fetchedAt: data.fetchedAt || Date.now(),
         }));
     } catch(e) {}
+    if (data?.grvt?.state?.positions?.length && !data.grvt.state.error) {
+        perpsSaveGrvtStateCache(data.grvt.state);
+    }
     if (document.body.dataset.activeTab === 'overview') {
         renderDashboardPnlAttribution(true);
     }
@@ -27098,6 +27125,10 @@ async function perpsRefresh(silent = false) {
         if (nadoRaw && /^0x[a-fA-F0-9]{40}$/.test(nadoRaw)) params.set('nadoWallet', nadoRaw);
         const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
         if (grvtSub) params.set('grvtSubAccount', grvtSub);
+        const grvtCache = perpsLoadGrvtStateCache();
+        if (grvtCache?.positions?.length) {
+            params.set('grvtPositions', JSON.stringify(grvtCache.positions));
+        }
         const { payload, warnings } = await perpsFetchDashboardPayload(params, silent);
         perpsRenderDashboard(payload, { cloudSnapshotsAdded });
         if (warnings.length) {
