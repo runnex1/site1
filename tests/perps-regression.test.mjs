@@ -763,6 +763,8 @@ assert.doesNotMatch(indexHtml, /#fda4af/, 'loop borrow token must not use red ti
 assert.match(indexHtml, /loop-history-apy \{ stroke:rgba\(56,189,248/, 'loop APY chart must use sky blue instead of orange');
 assert.match(indexHtml, /loop-history-grid/, 'loop history chart must render subtle grid lines');
 assert.match(indexHtml, /function loopEffectiveNetValue\(/, 'loops must use Merkl-inclusive economic net value for live positions');
+assert.match(indexHtml, /function loopHistoryPositionNet\(/, 'loop capital events must ignore Merkl-only net value changes');
+assert.match(indexHtml, /function loopNetValueTooltipHtml\(/, 'loop net value must show Aave vs Merkl breakdown on hover');
 assert.match(indexHtml, /loopEffectiveNetValue\(loop\)/, 'loops KPIs and cards must rank and sum economic net value');
 assert.match(indexHtml, /function perpsPairLatestSessionPnl\(/, 'perps positions must compute latest-session PnL for open rows');
 assert.match(indexHtml, /function perpsPairTotalPnlBreakdown\(/, 'perps total PnL must combine spread funding and fees');
@@ -964,6 +966,27 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
     totalBorrowed: 400,
   };
   assert.ok(loopHistoryCapitalEvent(before, afterWithdraw), 'large withdraw must count as capital event');
+  const beforeMerkl = {
+    ts: now - 5 * MS_PER_DAY,
+    netValue: 15465,
+    positionNetValue: 14800,
+    merklRewardsUsd: 665,
+    netApy: 12,
+    totalSupplied: 20000,
+    totalBorrowed: 5000,
+  };
+  const afterMerklClaim = {
+    ts: now - 4 * MS_PER_DAY,
+    netValue: 14805,
+    positionNetValue: 14800,
+    merklRewardsUsd: 5,
+    netApy: 12,
+    totalSupplied: 20000,
+    totalBorrowed: 5000,
+  };
+  assert.ok(!loopHistoryCapitalEvent(beforeMerkl, afterMerklClaim), 'Merkl claim must not count as capital event when Aave net is stable');
+  const trimmedMerkl = loopTrimHistoryToLatestSession([beforeMerkl, afterMerklClaim]);
+  assert.equal(trimmedMerkl.length, 2, 'Merkl claim must keep full chart history');
   const trimmed = loopTrimHistoryToLatestSession([before, afterWithdraw, later]);
   assert.equal(trimmed.length, 2, 'history must reset to latest session after withdraw');
   const apy7 = loopSnapshotPeriodNetApy([before, afterWithdraw, later], 7, now);
@@ -1057,13 +1080,22 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
 }
 
 {
-  const { merklUnclaimedUsdFromBreakdown } = require('../lib/loop-rates.js');
-  const reward = { token: { decimals: 18, price: 1 } };
+  const { merklUnclaimedUsdFromBreakdown, merklUnclaimedUsdFromReward, merklClaimedUsdFromReward } = require('../lib/loop-rates.js');
+  const reward = {
+    token: { decimals: 18, price: 0.9992442571629646 },
+    amount: '700656723548154496240',
+    claimed: '595576872317631124641',
+    pending: '7573222382594431324',
+  };
   const usd = merklUnclaimedUsdFromBreakdown(reward, {
-    amount: '101861990922438054284',
+    amount: '135724799652398706003',
     claimed: '30644948421875334404',
   });
-  assert.ok(usd > 70 && usd < 72, 'Merkl unclaimed must use amount minus claimed, not gross earned');
+  assert.ok(usd > 104 && usd < 106, 'Merkl breakdown unclaimed must use amount minus claimed');
+  const rewardUsd = merklUnclaimedUsdFromReward(reward);
+  const claimedUsd = merklClaimedUsdFromReward(reward);
+  assert.ok(rewardUsd > 104 && rewardUsd < 106, 'Merkl reward unclaimed must match amount minus claimed at reward level');
+  assert.ok(claimedUsd > 594 && claimedUsd < 596, 'Merkl claimed must use reward.claimed, not gross amount');
 }
 
 {

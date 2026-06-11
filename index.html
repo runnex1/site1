@@ -6090,6 +6090,19 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-summary-core { flex-shrink:0; text-align:right; }
 .loop-summary-label { font-family:var(--ff-display); font-size:0.52rem; font-weight:850; letter-spacing:0.1em; text-transform:uppercase; color:var(--t3); }
 .loop-summary-val { font-family:var(--ff-mono); font-size:1.12rem; font-weight:900; line-height:1.1; color:var(--t1); }
+.loop-summary-val-wrap { position:relative; display:inline-block; cursor:default; }
+.loop-net-tooltip {
+  position:absolute; z-index:24; right:0; bottom:calc(100% + 6px); min-width:148px; pointer-events:none;
+  padding:0.42rem 0.52rem; border:1px solid rgba(45,212,191,0.28); border-radius:5px;
+  background:rgba(5,15,22,0.96); box-shadow:0 14px 30px rgba(0,0,0,0.28);
+  color:var(--t1); font-family:var(--ff-mono); font-size:0.66rem; font-weight:750; line-height:1.45;
+  white-space:nowrap; opacity:0; transition:opacity 120ms ease;
+}
+.loop-summary-val-wrap:hover .loop-net-tooltip { opacity:1; }
+.loop-net-tooltip-row { display:flex; justify-content:space-between; gap:0.75rem; color:var(--t3); }
+.loop-net-tooltip-row strong { color:var(--t1); font-weight:800; }
+.loop-net-tooltip-row.merkl strong { color:var(--amber); }
+.loop-net-tooltip-row.total { margin-top:0.18rem; padding-top:0.18rem; border-top:1px solid rgba(148,163,184,0.14); color:var(--teal); }
 .loop-summary-apy { font-family:var(--ff-mono); font-size:0.62rem; font-weight:650; color:var(--t3); line-height:1.35; }
 .loop-summary-apy strong { color:var(--green); font-weight:800; }
 .loop-realized-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
@@ -12601,6 +12614,7 @@ function loopsAppendSnapshotFromApiData(data) {
         .map(p => {
             const netValue = Number(p.netValue || 0);
             const merklRewardsUsd = Number(p.merklRewardsUsd || 0);
+            const merklClaimedUsd = Number(p.merklClaimedUsd || 0);
             const economicNetValue = Number(p.economicNetValue ?? netValue + merklRewardsUsd);
             return {
                 id: p.id,
@@ -12611,6 +12625,7 @@ function loopsAppendSnapshotFromApiData(data) {
                 chainId: p.chainId,
                 netValue,
                 merklRewardsUsd: merklRewardsUsd > 0.01 ? merklRewardsUsd : 0,
+                merklClaimedUsd: merklClaimedUsd > 0.01 ? merklClaimedUsd : 0,
                 economicNetValue,
                 totalSupplied: Number(p.totalSupplied || 0),
                 totalBorrowed: Number(p.totalBorrowed || 0),
@@ -12681,9 +12696,13 @@ function loopBuildChartHistoryPoints(rawPoints, rawPos, endValue, endTs) {
     const points = (rawPoints || []).slice().sort((a, b) => a.ts - b.ts);
     if (!rawPos || endValue == null) return points;
     const ts = Number(endTs) || Date.now();
+    const merklRewardsUsd = Number(rawPos.merklRewardsUsd || 0);
+    const positionNetValue = Number(rawPos.netValue ?? (Number(endValue) - merklRewardsUsd));
     const end = {
         ts,
         netValue: Number(endValue),
+        positionNetValue,
+        merklRewardsUsd: merklRewardsUsd > 0.01 ? merklRewardsUsd : 0,
         netApy: rawPos.netApy == null ? null : Number(rawPos.netApy),
         totalSupplied: Number(rawPos.totalSupplied || 0),
         totalBorrowed: Number(rawPos.totalBorrowed || 0),
@@ -12742,9 +12761,13 @@ function loopHistoryPoints(positionOrId) {
         .map(snap => {
             const pos = (snap.positions || []).find(p => loopHistoryPositionMatch(live, p));
             if (!pos) return null;
+            const merklRewardsUsd = Number(pos.merklRewardsUsd || 0);
+            const positionNetValue = Number(pos.netValue);
             return {
                 ts: Number(snap.fetchedAt) || 0,
-                netValue: Number(pos.economicNetValue ?? pos.netValue),
+                netValue: Number(pos.economicNetValue ?? positionNetValue + merklRewardsUsd),
+                positionNetValue,
+                merklRewardsUsd: merklRewardsUsd > 0.01 ? merklRewardsUsd : 0,
                 netApy: pos.netApy == null ? null : Number(pos.netApy),
                 totalSupplied: Number(pos.totalSupplied || 0),
                 totalBorrowed: Number(pos.totalBorrowed || 0),
@@ -12763,6 +12786,16 @@ function loopHistoryGrossExposure(point) {
     return Number(point?.totalSupplied || 0) + Number(point?.totalBorrowed || 0);
 }
 
+function loopHistoryPositionNet(point) {
+    if (point?.positionNetValue != null && Number.isFinite(Number(point.positionNetValue))) {
+        return Number(point.positionNetValue);
+    }
+    const economic = Number(point?.netValue ?? 0);
+    const merkl = Number(point?.merklRewardsUsd ?? 0);
+    if (merkl > 0.01 && economic > merkl) return economic - merkl;
+    return Number(point?.netValue ?? (Number(point?.totalSupplied || 0) - Number(point?.totalBorrowed || 0)));
+}
+
 function loopHistoryCapitalEvent(prev, curr) {
     if (!prev || !curr) return false;
     const prevGross = loopHistoryGrossExposure(prev);
@@ -12770,8 +12803,8 @@ function loopHistoryCapitalEvent(prev, curr) {
     const grossDelta = Math.abs(currGross - prevGross);
     if (grossDelta >= Math.max(LOOP_CAPITAL_MIN_USD, prevGross * LOOP_CAPITAL_MIN_REL)) return true;
 
-    const prevNet = Number(prev.netValue ?? (Number(prev.totalSupplied || 0) - Number(prev.totalBorrowed || 0)));
-    const currNet = Number(curr.netValue ?? (Number(curr.totalSupplied || 0) - Number(curr.totalBorrowed || 0)));
+    const prevNet = loopHistoryPositionNet(prev);
+    const currNet = loopHistoryPositionNet(curr);
     const dtDays = Math.max(Number(curr.ts || 0) - Number(prev.ts || 0), 0) / LOOP_SNAPSHOT_MS_PER_DAY;
     if (dtDays <= 0 || prevNet <= 1) return false;
 
@@ -12786,6 +12819,8 @@ function loopTrimHistoryToLatestSession(points) {
         .map(p => ({
             ts: Number(p.ts),
             netValue: Number(p.netValue),
+            positionNetValue: p.positionNetValue == null ? null : Number(p.positionNetValue),
+            merklRewardsUsd: Number(p.merklRewardsUsd || 0),
             netApy: p.netApy == null ? null : Number(p.netApy),
             totalSupplied: Number(p.totalSupplied || 0),
             totalBorrowed: Number(p.totalBorrowed || 0),
@@ -12952,9 +12987,27 @@ function loopBorrowLegApyHtml(borrowedApr) {
     return Number.isFinite(borrowedApr) ? `Borrow <strong>${borrowedApr.toFixed(2)}%</strong>` : '';
 }
 
-function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml) {
+function loopNetValueTooltipHtml(breakdown, fmtV) {
+    if (!breakdown || breakdown.merkl <= 0.01) return '';
+    const claimedLine = breakdown.claimed > 0.01
+        ? `<div class="loop-net-tooltip-row"><span>Merkl claimed</span><strong>${fmtV(breakdown.claimed)}</strong></div>`
+        : '';
+    return `<div class="loop-net-tooltip">
+        <div class="loop-net-tooltip-row"><span>Aave</span><strong>${fmtV(breakdown.aave)}</strong></div>
+        <div class="loop-net-tooltip-row merkl"><span>Merkl (unclaimed)</span><strong>${fmtV(breakdown.merkl)}</strong></div>
+        ${claimedLine}
+        <div class="loop-net-tooltip-row total"><span>Total</span><strong>${fmtV(breakdown.total)}</strong></div>
+    </div>`;
+}
+
+function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV) {
     const supplyLine = loopSupplyLegApyHtml(suppliedApr);
     const borrowLine = loopBorrowLegApyHtml(borrowedApr);
+    const fmt = fmtV || (v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    const netTip = loopNetValueTooltipHtml(netBreakdown, fmt);
+    const netValHtml = netTip
+        ? `<div class="loop-summary-val-wrap"><div class="loop-summary-val">${netValueFmt}</div>${netTip}</div>`
+        : `<div class="loop-summary-val">${netValueFmt}</div>`;
     return `<div class="loop-summary-pane">
         <div class="loop-summary-row">
             <div class="loop-summary-legs">
@@ -12963,7 +13016,7 @@ function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml
             </div>
             <div class="loop-summary-core">
                 <div class="loop-summary-label">Net value</div>
-                <div class="loop-summary-val">${netValueFmt}</div>
+                ${netValHtml}
             </div>
         </div>
         ${realizedHtml || ''}
@@ -16141,7 +16194,13 @@ function renderLoops() {
         const chartHtml = loop.live && loop.raw
             ? loopHistoryChartHtml(chartPoints, { endValue: liveEndValue, endTs: liveEndTs })
             : '<div class="loop-history-chart empty"><span>Sync live to build 2h snapshot history</span></div>';
-        const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml);
+        const aaveNetValue = loop.live && loop.raw ? Number(loop.raw.netValue ?? displayNetValue) : displayNetValue;
+        const merklUnclaimed = loop.live && loop.raw ? Number(loop.raw.merklRewardsUsd || 0) : 0;
+        const merklClaimed = loop.live && loop.raw ? Number(loop.raw.merklClaimedUsd || 0) : 0;
+        const netBreakdown = merklUnclaimed > 0.01
+            ? { aave: aaveNetValue, merkl: merklUnclaimed, claimed: merklClaimed, total: displayNetValue }
+            : null;
+        const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV);
 
         return `
         <div class="loop-card">
