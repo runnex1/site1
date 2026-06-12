@@ -12308,6 +12308,15 @@ function protocolPositionValue(pos, unitPrices = null) {
     }
     return Number(pos?.value || 0);
 }
+function loopPositionValue(pos, unitPrices = null) {
+    if (pos?.manualUsd) return Number(pos?.value || 0);
+    const parsed = protocolPositionSingleToken(pos);
+    if (parsed) {
+        const cgUnit = protocolTokenCoingeckoUnitPrice(pos, unitPrices);
+        if (cgUnit !== null) return parsed.amount * cgUnit;
+    }
+    return Number(pos?.value || 0);
+}
 function protocolDisplayValue(p, unitPrices = null) {
     if (p?.manualValue) return Number(p?.value || 0);
     const base = Number(p?.value || 0);
@@ -13341,10 +13350,10 @@ function loopImportedPositions() {
             for (const pos of (sec.positions || [])) {
                 const sub = String(pos.sub || '').toLowerCase();
                 if (sub === 'supplied') {
-                    totalSupplied += protocolPositionValue(pos);
+                    totalSupplied += loopPositionValue(pos);
                     suppliedPositions.push(pos);
                 } else if (sub === 'borrowed') {
-                    totalBorrowed += protocolPositionValue(pos);
+                    totalBorrowed += loopPositionValue(pos);
                     borrowedPositions.push(pos);
                 }
             }
@@ -15960,10 +15969,10 @@ function renderLoops() {
             for (const pos of (sec.positions || [])) {
                 const sub = (pos.sub || '').toLowerCase();
                 if (sub === 'supplied') {
-                    totalSupplied += protocolPositionValue(pos);
+                    totalSupplied += loopPositionValue(pos);
                     suppliedPositions.push(pos);
                 } else if (sub === 'borrowed') {
-                    totalBorrowed += protocolPositionValue(pos);
+                    totalBorrowed += loopPositionValue(pos);
                     borrowedPositions.push(pos);
                 }
             }
@@ -16024,7 +16033,7 @@ function renderLoops() {
             return positions.map(pos => `
                 <div class="loop-pos-row">
                     <span class="loop-pos-pool" title="${pos.pool}">${pos.pool}</span>
-                    <span class="loop-pos-val ${side}">${fmtV(protocolPositionValue(pos))}</span>
+                    <span class="loop-pos-val ${side}">${fmtV(loopPositionValue(pos))}</span>
                 </div>`).join('');
         }
 

@@ -765,6 +765,8 @@ assert.match(indexHtml, /loop-history-grid/, 'loop history chart must render sub
 assert.match(indexHtml, /function loopEffectiveNetValue\(/, 'loops must use Merkl-inclusive economic net value for live positions');
 assert.match(indexHtml, /function loopHistoryPositionNet\(/, 'loop capital events must ignore Merkl-only net value changes');
 assert.match(indexHtml, /function loopNetValueTooltipHtml\(/, 'loop net value must show Aave vs Merkl breakdown on hover');
+assert.match(indexHtml, /function loopPositionValue\(/, 'loops must price import fallback without stablecoin peg band');
+assert.match(indexHtml, /loopPositionValue\(pos\)/, 'loop import fallback must use loopPositionValue not protocolPositionValue');
 assert.match(indexHtml, /loopEffectiveNetValue\(loop\)/, 'loops KPIs and cards must rank and sum economic net value');
 assert.match(indexHtml, /function perpsPairLatestSessionPnl\(/, 'perps positions must compute latest-session PnL for open rows');
 assert.match(indexHtml, /function perpsPairTotalPnlBreakdown\(/, 'perps total PnL must combine spread funding and fees');
