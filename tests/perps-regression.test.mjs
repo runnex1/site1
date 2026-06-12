@@ -769,6 +769,8 @@ assert.match(indexHtml, /function loopHistoryPositionNet\(/, 'loop capital event
 assert.match(indexHtml, /function loopNetValueTooltipHtml\(/, 'loop net value must show Aave vs Merkl breakdown on hover');
 assert.match(indexHtml, /function loopPositionValue\(/, 'loops must price import fallback without stablecoin peg band');
 assert.match(indexHtml, /loopPositionValue\(pos\)/, 'loop import fallback must use loopPositionValue not protocolPositionValue');
+assert.match(indexHtml, /const legTokens = item =>/, 'loop live mapper must use a dedicated token amount formatter');
+assert.doesNotMatch(indexHtml, /Number\(item\.value \|\| 0\)\.toLocaleString\('en-US', \{ maximumFractionDigits: 4 \}\) \+ ` \$\{item\.symbol\}`/, 'loops must not use USD value as a fake token amount');
 assert.match(indexHtml, /loopEffectiveNetValue\(loop\)/, 'loops KPIs and cards must rank and sum economic net value');
 assert.match(indexHtml, /function perpsPairLatestSessionPnl\(/, 'perps positions must compute latest-session PnL for open rows');
 assert.match(indexHtml, /function perpsPairTotalPnlBreakdown\(/, 'perps total PnL must combine spread funding and fees');
@@ -901,8 +903,42 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
   assert.equal(portfolioPos?.marketName, 'JUICED / USDC', 'Portfolio fallback must map JUICED/USDC borrow loops');
   assert.equal(portfolioPos?.source, 'jupiter-portfolio-api', 'Portfolio fallback must tag jupiter-portfolio-api source');
   assert.ok(portfolioPos?.totalBorrowed > 90000, 'Portfolio fallback must keep borrowed USD');
+  assert.equal(portfolioPos?.supplied?.[0]?.amount, null, 'Portfolio fallback must not invent token amount from USD value');
   assert.ok(Math.abs(jupiterHealthFactor(0.024) - 1.024) < 0.0001, 'Jupiter buffer health must display as 1 + ratio');
   assert.ok(Math.abs(portfolioPos?.health - 1.42) < 0.01, 'Jupiter portfolio health must convert buffer ratio to health factor scale');
+
+  const portfolioPosWithAmount = mapJupiterPortfolioBorrowLend(
+    'FuzwwLMkp8KU3NEGykHhKz56YR4u6SWghdAmB447hxA1',
+    {
+      type: 'borrowlend',
+      fetcherId: 'jupiter-exchange-borrow',
+      platformId: 'jupiter-exchange',
+      value: 11846.98,
+      data: {
+        borrowedValue: 94496.35,
+        suppliedValue: 106343.33,
+        value: 11846.98,
+        healthRatio: 0.42,
+        link: 'https://jup.ag/lend/borrow/68/nfts/273',
+        suppliedAssets: [{
+          value: 106343.33,
+          amount: 100000,
+          data: { address: '7GxATsNMnaC88vdwd2t3mwrFuQwwGvmYPrUQ4D6FotXk' },
+        }],
+        borrowedAssets: [{
+          value: 94496.35,
+          data: { address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
+        }],
+      },
+    },
+    new Map([[68, {
+      id: 68,
+      supplyToken: { uiSymbol: 'JUICED', address: '7GxATsNMnaC88vdwd2t3mwrFuQwwGvmYPrUQ4D6FotXk' },
+      borrowToken: { uiSymbol: 'USDC', address: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
+    }]]),
+    { '7GxATsNMnaC88vdwd2t3mwrFuQwwGvmYPrUQ4D6FotXk': { symbol: 'JUICED' }, 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': { symbol: 'USDC' } },
+  );
+  assert.equal(portfolioPosWithAmount?.supplied?.[0]?.amount, 100000, 'Portfolio fallback must preserve real API token amount when present');
 }
 
 {

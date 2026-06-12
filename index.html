@@ -13548,11 +13548,16 @@ function loopNormalizeHealth(pos) {
 function loopApiToDisplayPosition(pos) {
     const supplied = Array.isArray(pos.supplied) ? pos.supplied : [];
     const borrowed = Array.isArray(pos.borrowed) ? pos.borrowed : [];
+    const legTokens = item => {
+        const amount = Number(item?.amount || 0);
+        if (item?.symbol && Number.isFinite(amount) && amount > 0) {
+            return [`${loopFormatTokenAmount(amount)} ${item.symbol}`];
+        }
+        return item?.symbol ? [String(item.symbol)] : [];
+    };
     const suppliedPositions = supplied.map(item => ({
         pool: `${item.symbol || 'Asset'}${item.role ? ' ' + item.role : ''}`,
-        tokens: item.symbol && Number(item.amount) > 0
-            ? [`${loopFormatTokenAmount(item.amount)} ${item.symbol}`]
-            : (item.symbol ? [`${Number(item.value || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })} ${item.symbol}`] : []),
+        tokens: legTokens(item),
         amount: Number(item.amount || 0) || null,
         value: Number(item.value || 0),
         liveApy: item.apy,
@@ -13563,9 +13568,7 @@ function loopApiToDisplayPosition(pos) {
     }));
     const borrowedPositions = borrowed.map(item => ({
         pool: item.symbol || 'Debt',
-        tokens: item.symbol && Number(item.amount) > 0
-            ? [`${loopFormatTokenAmount(item.amount)} ${item.symbol}`]
-            : (item.symbol ? [`${Number(item.value || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })} ${item.symbol}`] : []),
+        tokens: legTokens(item),
         amount: Number(item.amount || 0) || null,
         value: Number(item.value || 0),
         liveApy: item.apy,
