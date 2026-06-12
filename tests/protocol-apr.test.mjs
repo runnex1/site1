@@ -10,6 +10,7 @@ assert.match(indexHtml, /unitPrices/, 'protocol imports must store frozen CoinGe
 assert.match(indexHtml, /function collectDeFiPriceSymbols\(\)/, 'DeFi price fetch must include protocol tokens');
 assert.match(indexHtml, /function protocolPositionUnitPrice\(pos, unitPrices = null\)/, 'protocol unit price must prefer CoinGecko with optional frozen map');
 assert.match(indexHtml, /AUSD:'agora-dollar'/, 'AUSD stablecoin must map to agora-dollar');
+assert.match(indexHtml, /USDM:'mountain-protocol-usdm'/, 'USDm must map to Mountain Protocol USDm for live prices');
 assert.match(indexHtml, /async function resolveGeckoIdByMarketCap\(symbol\)/, 'ambiguous tickers must resolve by market cap');
 assert.match(indexHtml, /function sectionHasLendingLoop\(sec\)/, 'lending loop sections must be detectable');
 assert.match(indexHtml, /function wrapDrawerLendingLoop\(bodyHtml, breakdown\)/, 'expanded loops must show total APY between supplied and borrowed');

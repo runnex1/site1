@@ -670,6 +670,10 @@ assert.match(indexHtml, /function tickerSubmitAdd\(/, 'market ticker must let us
 assert.match(indexHtml, /list\.splice\(idx, 1\)/, 'clearing a custom ticker symbol on edit must remove it from the bar');
 assert.match(indexHtml, /tickerAddSource/, 'market ticker add flow must let users choose CoinGecko, Jupiter, or TradFi');
 assert.match(indexHtml, /function tkFetchCoingeckoLogo\(/, 'custom ticker logos must resolve from CoinGecko');
+assert.match(indexHtml, /maxlength="96" placeholder="e\.g\. HOME, AAPL, BONK, 0x\.\.\., Solana mint"/, 'market ticker add flow must accept token contracts and Solana mints');
+assert.match(indexHtml, /function tickerNormalizeInputSymbol\(value, source = 'auto'\)/, 'custom ticker symbols must preserve contract address casing');
+assert.match(indexHtml, /function tkFetchGeckoCoinByContract\(value, withMarketData = true\)/, 'custom ticker CoinGecko source must support contract-address lookup');
+assert.match(indexHtml, /if \(isSolanaMint\(clean\)\) return clean;/, 'custom ticker Jupiter source must accept a Solana mint directly');
 assert.match(indexHtml, /vault_ticker_custom_v2/, 'custom ticker metadata must persist symbol and price source');
 assert.doesNotMatch(indexHtml, /ticker-source-badge/, 'custom ticker bar must not show price source labels like Auto');
 assert.match(indexHtml, /pmMinNoOdds/, 'opportunity monitors must persist customizable PM min NO odds');
@@ -771,6 +775,12 @@ assert.match(indexHtml, /function loopPositionValue\(/, 'loops must price import
 assert.match(indexHtml, /loopPositionValue\(pos\)/, 'loop import fallback must use loopPositionValue not protocolPositionValue');
 assert.match(indexHtml, /const legTokens = item =>/, 'loop live mapper must use a dedicated token amount formatter');
 assert.doesNotMatch(indexHtml, /Number\(item\.value \|\| 0\)\.toLocaleString\('en-US', \{ maximumFractionDigits: 4 \}\) \+ ` \$\{item\.symbol\}`/, 'loops must not use USD value as a fake token amount');
+assert.match(indexHtml, /function loopLegUnitPrice\(pos\)/, 'loop tooltip price must be computed from explicit/live token prices');
+assert.doesNotMatch(indexHtml, /function loopLegUnitPrice\(amount, value\)[\s\S]{0,220}return value \/ amount;/, 'loop tooltip must not derive token price from value divided by amount');
+assert.match(indexHtml, /lendingSectionApyBreakdown\(p, sec, loopPositionValue\)/, 'Loops imported APY weighting must not use Protocol Positions stable peg valuation');
+assert.match(indexHtml, /USDM:'mountain-protocol-usdm'/, 'Loops live token prices must resolve USDm via Mountain Protocol USDm');
+assert.match(indexHtml, /\['defi','loops'\]\.includes\(document\.body\.dataset\.activeTab\)/, 'live token prices must refresh on the Loops tab');
+assert.match(indexHtml, /for \(const p of loopApiState\.positions \|\| \[\]\)/, 'live token prices must include Loop API leg symbols');
 assert.match(indexHtml, /loopEffectiveNetValue\(loop\)/, 'loops KPIs and cards must rank and sum economic net value');
 assert.match(indexHtml, /function perpsPairLatestSessionPnl\(/, 'perps positions must compute latest-session PnL for open rows');
 assert.match(indexHtml, /function perpsPairTotalPnlBreakdown\(/, 'perps total PnL must combine spread funding and fees');

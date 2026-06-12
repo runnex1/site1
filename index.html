@@ -7756,10 +7756,10 @@ body[data-active-tab="loops"] .page-content,
 <div id="tickerAddModal" class="modal">
   <div class="modal-content" style="max-width:420px;">
     <div class="modal-header">Add Ticker</div>
-    <div class="modal-sub">Choose a symbol and price source. Logos are fetched from the same provider.</div>
+    <div class="modal-sub">Choose a symbol, CoinGecko contract, or Jupiter mint. Logos are fetched from the same provider.</div>
     <div class="form-group">
-      <label class="form-label">Symbol</label>
-      <input type="text" class="form-input" id="tickerAddSymbol" maxlength="10" placeholder="e.g. HOME, AAPL, BONK"
+      <label class="form-label">Symbol or contract</label>
+      <input type="text" class="form-input" id="tickerAddSymbol" maxlength="96" placeholder="e.g. HOME, AAPL, BONK, 0x..., Solana mint"
         onkeydown="if(event.key==='Enter')tickerSubmitAdd()">
     </div>
     <div class="form-group">
@@ -9028,7 +9028,7 @@ const GECKO_SYMBOL_IDS = {
     XRP:'ripple', ADA:'cardano', DOT:'polkadot', ATOM:'cosmos',
     NEAR:'near', FTM:'fantom', ALGO:'algorand', FLOW:'flow',
     SAND:'the-sandbox', MANA:'decentraland', AXS:'axie-infinity',
-    USDC:'usd-coin', USDT:'tether', DAI:'dai', GHO:'gho', USDM:'usd-m',
+    USDC:'usd-coin', USDT:'tether', DAI:'dai', GHO:'gho', USDM:'mountain-protocol-usdm',
     USDE:'ethena-usde', SUSDE:'ethena-staked-usde', FRAX:'frax', LUSD:'liquity-usd',
     PYUSD:'paypal-usd', EURC:'euro-coin', FDUSD:'first-digital-usd', AUSD:'agora-dollar',
 };
@@ -9742,7 +9742,7 @@ function syncTabRefreshTimers(tab) {
     if (TICKER_VISIBLE_TABS.has(active)) startMarketTickerRefresh();
     else stopMarketTickerRefresh();
 
-    if (active === 'defi') startLiveTokenPrices();
+    if (active === 'defi' || active === 'loops') startLiveTokenPrices();
     else stopLiveTokenPrices();
 
     if (active === 'overview') startOverviewDashboardRefreshes();
@@ -12090,7 +12090,7 @@ function buildProtocolPnlPositionRows(protocols, unitPrices = null) {
                 rows.set(normalizePnlMatchKey(key), {
                     key,
                     net: supplied - borrowed,
-                    apy: lendingSectionApyBreakdown(p, sec)?.totalApr ?? null,
+                    apy: lendingSectionApyBreakdown(p, sec, value => protocolPositionValue(value, unitPrices))?.totalApr ?? null,
                 });
             } else {
                 for (const pos of sec.positions) {
@@ -12628,7 +12628,7 @@ function protocolSectionKeyPrefix(p, section) {
     }
     return `${p.name}|||${sectionType}${count > 1 ? `[${count}]` : ''}`;
 }
-function lendingSectionApyBreakdown(p, section) {
+function lendingSectionApyBreakdown(p, section, valueFn = protocolPositionValue) {
     if (!p || !section?.positions) return null;
     const prefix = protocolSectionKeyPrefix(p, section);
     let suppliedWeight = 0, suppliedWeighted = 0, borrowedWeight = 0, borrowedWeighted = 0;
@@ -12638,7 +12638,7 @@ function lendingSectionApyBreakdown(p, section) {
         const key = `${prefix}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
         let { apr } = calcPositionAPR(key);
         if (apr === null) continue;
-        const val = Math.abs(protocolPositionValue(pos));
+        const val = Math.abs(valueFn(pos));
         if (!val) continue;
         if (sub === 'borrowed') {
             apr = -Math.abs(apr);
@@ -12651,8 +12651,8 @@ function lendingSectionApyBreakdown(p, section) {
     }
     const suppliedApr = suppliedWeight ? suppliedWeighted / suppliedWeight : null;
     const borrowedApr = borrowedWeight ? borrowedWeighted / borrowedWeight : null;
-    const totalSupplied = (section.positions || []).filter(pos => String(pos.sub || '').toLowerCase() === 'supplied').reduce((s,pos)=>s+protocolPositionValue(pos),0);
-    const totalBorrowed = (section.positions || []).filter(pos => String(pos.sub || '').toLowerCase() === 'borrowed').reduce((s,pos)=>s+protocolPositionValue(pos),0);
+    const totalSupplied = (section.positions || []).filter(pos => String(pos.sub || '').toLowerCase() === 'supplied').reduce((s,pos)=>s+valueFn(pos),0);
+    const totalBorrowed = (section.positions || []).filter(pos => String(pos.sub || '').toLowerCase() === 'borrowed').reduce((s,pos)=>s+valueFn(pos),0);
     const netWeight = Math.max(Math.abs(totalSupplied - totalBorrowed), 1);
     const totalApr = (suppliedWeighted + borrowedWeighted) / netWeight;
     if (suppliedApr === null && borrowedApr === null) return null;
@@ -12682,7 +12682,7 @@ function wrapDrawerLendingLoop(bodyHtml, breakdown) {
         ${drawerLendingLoopTotalAprHtml(breakdown)}
     </div>`;
 }
-function lendingSectionApyBreakdownBetweenSnapshots(p, section, newerSnap, olderSnap) {
+function lendingSectionApyBreakdownBetweenSnapshots(p, section, newerSnap, olderSnap, valueFn = protocolPositionValue) {
     if (!p || !section?.positions || !newerSnap || !olderSnap) return null;
     const prefix = protocolSectionKeyPrefix(p, section);
     let suppliedWeight = 0, suppliedWeighted = 0, borrowedWeight = 0, borrowedWeighted = 0;
@@ -12692,7 +12692,7 @@ function lendingSectionApyBreakdownBetweenSnapshots(p, section, newerSnap, older
         const key = `${prefix}:${pos.sub ? `${pos.sub}:` : ''}${pos.pool}`;
         let { apr } = calcSnapshotPositionAPR(key, newerSnap, olderSnap);
         if (apr === null) continue;
-        const val = Math.abs(protocolPositionValue(pos));
+        const val = Math.abs(valueFn(pos));
         if (!val) continue;
         if (sub === 'borrowed') {
             apr = -Math.abs(apr);
@@ -12705,8 +12705,8 @@ function lendingSectionApyBreakdownBetweenSnapshots(p, section, newerSnap, older
     }
     const suppliedApr = suppliedWeight ? suppliedWeighted / suppliedWeight : null;
     const borrowedApr = borrowedWeight ? borrowedWeighted / borrowedWeight : null;
-    const totalSupplied = (section.positions || []).filter(pos => String(pos.sub || '').toLowerCase() === 'supplied').reduce((s, pos) => s + protocolPositionValue(pos), 0);
-    const totalBorrowed = (section.positions || []).filter(pos => String(pos.sub || '').toLowerCase() === 'borrowed').reduce((s, pos) => s + protocolPositionValue(pos), 0);
+    const totalSupplied = (section.positions || []).filter(pos => String(pos.sub || '').toLowerCase() === 'supplied').reduce((s, pos) => s + valueFn(pos), 0);
+    const totalBorrowed = (section.positions || []).filter(pos => String(pos.sub || '').toLowerCase() === 'borrowed').reduce((s, pos) => s + valueFn(pos), 0);
     const netWeight = Math.max(Math.abs(totalSupplied - totalBorrowed), 1);
     const totalApr = (suppliedWeighted + borrowedWeighted) / netWeight;
     if (suppliedApr === null && borrowedApr === null) return null;
@@ -13200,15 +13200,27 @@ function loopLegValue(pos) {
     return Number.isFinite(priced) && priced > 0 ? priced : null;
 }
 
-function loopLegUnitPrice(amount, value) {
-    if (!Number.isFinite(amount) || !Number.isFinite(value) || amount <= 0 || value <= 0) return null;
-    return value / amount;
+function loopLegSymbol(pos) {
+    const fromToken = Array.isArray(pos?.tokens) ? pos.tokens.find(Boolean) : '';
+    const parsed = protocolTokenAmountAndSymbol(fromToken);
+    return String(pos?.symbol || parsed?.symbol || pos?.pool || '')
+        .trim()
+        .split(/\s+/)[0]
+        .toUpperCase();
+}
+
+function loopLegUnitPrice(pos) {
+    const explicit = Number(pos?.priceUsd ?? pos?.usdPrice ?? pos?.price);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    const sym = loopLegSymbol(pos);
+    const live = sym ? Number(livePrices[sym]) : NaN;
+    return Number.isFinite(live) && live > 0 ? live : null;
 }
 
 function loopPairLegTooltipHtml(pos, side) {
     const amount = loopLegAmount(pos);
     const value = loopLegValue(pos);
-    const price = loopLegUnitPrice(amount, value);
+    const price = loopLegUnitPrice(pos);
     if (amount == null && value == null) return '';
     const sideLabel = side === 'borrow' ? 'Borrowed' : 'Supplied';
     const fmtUsd = v => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -13560,6 +13572,8 @@ function loopApiToDisplayPosition(pos) {
         tokens: legTokens(item),
         amount: Number(item.amount || 0) || null,
         value: Number(item.value || 0),
+        symbol: item.symbol || '',
+        priceUsd: Number(item.priceUsd ?? item.usdPrice ?? item.price) || null,
         liveApy: item.apy,
         nativeApy: item.nativeApy,
         merklApy: item.merklApy,
@@ -13571,6 +13585,8 @@ function loopApiToDisplayPosition(pos) {
         tokens: legTokens(item),
         amount: Number(item.amount || 0) || null,
         value: Number(item.value || 0),
+        symbol: item.symbol || '',
+        priceUsd: Number(item.priceUsd ?? item.usdPrice ?? item.price) || null,
         liveApy: item.apy,
         sub: 'Borrowed',
     }));
@@ -13636,7 +13652,7 @@ function loopImportedPositions() {
                 suppliedPositions,
                 borrowedPositions,
                 health,
-                apy: lendingSectionApyBreakdown(p, sec),
+                apy: lendingSectionApyBreakdown(p, sec, loopPositionValue),
                 network: protocolNetworkLabel(p),
                 live: false,
             });
@@ -13669,6 +13685,7 @@ async function syncLoopApiPositions({ silent = false } = {}) {
         loopApiState.coverage = json.coverage || null;
         loopsPersistApiState();
         loopsAppendSnapshotFromApiData(json);
+        try { await fetchLiveTokenPrices({ force: true }); } catch (e) {}
         try {
             await fetch('/api/sync', {
                 method: 'POST',
@@ -15715,6 +15732,11 @@ function collectDeFiPriceSymbols() {
             }
         }
     }
+    for (const p of loopApiState.positions || []) {
+        for (const leg of [...(p.supplied || []), ...(p.borrowed || [])]) {
+            if (leg?.symbol) syms.add(String(leg.symbol).toUpperCase());
+        }
+    }
     return [...syms];
 }
 
@@ -15728,7 +15750,7 @@ async function fetchLiveTokenPrices(opts = {}) {
 async function fetchLiveTokenPricesInner(opts = {}) {
     const force = !!opts.force;
     const importFetch = !!opts.symbols?.length;
-    if (!force && !importFetch && (document.body.dataset.activeTab !== 'defi' || document.hidden)) return false;
+    if (!force && !importFetch && (!['defi','loops'].includes(document.body.dataset.activeTab) || document.hidden)) return false;
     const symbols = importFetch ? opts.symbols : collectDeFiPriceSymbols();
     if (!symbols.length) return false;
 
@@ -16257,7 +16279,7 @@ function renderLoops() {
                 suppliedPositions,
                 borrowedPositions,
                 health,
-                apy: lendingSectionApyBreakdown(p, sec),
+                apy: lendingSectionApyBreakdown(p, sec, loopPositionValue),
             });
         });
     }
@@ -16610,7 +16632,7 @@ function renderProtocolsSnapshot() {
                     </div>`;
                 }).join('');
                 const posRows = sectionHasLendingLoop(sec)
-                    ? wrapDrawerLendingLoop(posRowsInner, lendingSectionApyBreakdownBetweenSnapshots(p, sec, aprPair.newer, aprPair.older))
+                    ? wrapDrawerLendingLoop(posRowsInner, lendingSectionApyBreakdownBetweenSnapshots(p, sec, aprPair.newer, aprPair.older, value => protocolPositionValue(value, snapUnitPrices)))
                     : posRowsInner;
 
                 return `<div class="drawer-section">
@@ -23305,14 +23327,34 @@ function tkCustomSlug(idx) {
     return `tk-custom-${idx}`;
 }
 
+function tickerNormalizeInputSymbol(value, source = 'auto') {
+    const clean = String(value || '').trim();
+    if (!clean) return '';
+    if (/^0x[0-9a-fA-F]{40}$/.test(clean) || isSolanaMint(clean)) return clean;
+    return source === 'tradfi' ? clean.toUpperCase() : clean.toUpperCase();
+}
+
+function tickerEntryKey(symbol, source = 'auto') {
+    const clean = String(symbol || '').trim();
+    if (/^0x[0-9a-fA-F]{40}$/.test(clean)) return `${source}:evm:${clean.toLowerCase()}`;
+    if (isSolanaMint(clean)) return `${source}:sol:${clean}`;
+    return `${source}:sym:${clean.toUpperCase()}`;
+}
+
+function tickerDisplaySymbol(symbol) {
+    const clean = String(symbol || '').trim();
+    if (/^0x[0-9a-fA-F]{40}$/.test(clean) || isSolanaMint(clean)) return `${clean.slice(0, 4)}…${clean.slice(-4)}`;
+    return clean;
+}
+
 function tickerNormalizeEntry(raw) {
     if (typeof raw === 'string') {
-        const symbol = String(raw || '').trim().toUpperCase();
+        const symbol = tickerNormalizeInputSymbol(raw, 'auto');
         return symbol ? { symbol, source: 'auto' } : null;
     }
-    const symbol = String(raw?.symbol || '').trim().toUpperCase();
-    if (!symbol) return null;
     const source = TICKER_SOURCES.includes(raw?.source) ? raw.source : 'auto';
+    const symbol = tickerNormalizeInputSymbol(raw?.symbol, source);
+    if (!symbol) return null;
     return { symbol, source };
 }
 
@@ -23346,9 +23388,9 @@ function tickerSaveCustomEntries(entries) {
     const list = (entries || []).map(tickerNormalizeEntry).filter(Boolean);
     const seen = new Set();
     const deduped = list.filter(entry => {
-        const key = `${entry.symbol}:${entry.source}`;
-        if (seen.has(entry.symbol)) return false;
-        seen.add(entry.symbol);
+        const key = tickerEntryKey(entry.symbol, entry.source);
+        if (seen.has(key)) return false;
+        seen.add(key);
         return true;
     });
     try {
@@ -23379,7 +23421,9 @@ function tkSourceLabel(source) {
 }
 
 async function tkResolveJupiterMint(sym) {
-    const upper = String(sym || '').toUpperCase();
+    const clean = String(sym || '').trim();
+    if (isSolanaMint(clean)) return clean;
+    const upper = clean.toUpperCase();
     if (_tkJupiterMintCache[upper] !== undefined) return _tkJupiterMintCache[upper];
     if (JUPITER_MINTS[upper]) {
         _tkJupiterMintCache[upper] = JUPITER_MINTS[upper];
@@ -23402,7 +23446,16 @@ async function tkResolveJupiterMint(sym) {
 }
 
 async function tkFetchCoingeckoLogo(sym) {
-    const upper = String(sym || '').toUpperCase();
+    const clean = String(sym || '').trim();
+    const upper = clean.toUpperCase();
+    const contractCoin = await tkFetchGeckoCoinByContract(clean, false);
+    if (contractCoin) {
+        const url = contractCoin?.image?.small || contractCoin?.image?.thumb || contractCoin?.image?.large;
+        if (url) {
+            LogoEngine._injectTokenImage(clean, url);
+            return url;
+        }
+    }
     try {
         const r = await fetch(
             `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(upper)}`,
@@ -23438,6 +23491,7 @@ async function tkFetchCoingeckoLogo(sym) {
 }
 
 async function tkFetchJupiterLogo(sym) {
+    const clean = String(sym || '').trim();
     const mint = await tkResolveJupiterMint(sym);
     if (!mint) return null;
     try {
@@ -23449,7 +23503,7 @@ async function tkFetchJupiterLogo(sym) {
             const d = await r.json();
             const url = d?.logoURI || d?.logo;
             if (url) {
-                LogoEngine._injectTokenImage(String(sym || '').toUpperCase(), url);
+                LogoEngine._injectTokenImage(clean || String(sym || '').toUpperCase(), url);
                 return url;
             }
         }
@@ -23481,14 +23535,16 @@ async function tkFetchTradfiLogo(sym) {
 }
 
 async function tkFetchLogo(sym, source) {
-    const upper = String(sym || '').toUpperCase();
-    const cached = LogoEngine._peekTokenImage(upper);
+    const clean = String(sym || '').trim();
+    const upper = clean.toUpperCase();
+    const cacheKey = /^0x[0-9a-fA-F]{40}$/.test(clean) || isSolanaMint(clean) ? clean : upper;
+    const cached = LogoEngine._peekTokenImage(cacheKey);
     if (cached) return cached;
-    if (source === 'coingecko') return await tkFetchCoingeckoLogo(upper);
-    if (source === 'jupiter') return await tkFetchJupiterLogo(upper);
+    if (source === 'coingecko') return await tkFetchCoingeckoLogo(clean);
+    if (source === 'jupiter') return await tkFetchJupiterLogo(clean);
     if (source === 'tradfi') return await tkFetchTradfiLogo(upper);
-    return (await tkFetchCoingeckoLogo(upper))
-        || (await tkFetchJupiterLogo(upper))
+    return (await tkFetchCoingeckoLogo(clean))
+        || (await tkFetchJupiterLogo(clean))
         || (await tkFetchTradfiLogo(upper));
 }
 
@@ -23498,7 +23554,10 @@ async function tkSetLabel(idx, sym, source) {
     const slug = tkCustomSlug(idx);
     const lbl = document.getElementById(`${slug}-label`);
     const icon = document.getElementById(`${slug}-icon`);
-    if (lbl) lbl.textContent = sym;
+    if (lbl) {
+        lbl.textContent = tickerDisplaySymbol(sym);
+        lbl.title = sym;
+    }
     if (icon) {
         const fallback = LogoEngine.makeSvgFallback(sym.substring(0, 3), sym);
         icon.innerHTML = `<img src="${fallback}" alt="${dashEsc(sym)}"
@@ -23526,7 +23585,7 @@ function tickerCustomItemHtml(entry, idx) {
             </div>
             <div id="${slug}-editor" style="display:none;">
               <div class="ticker-custom-edit-row">
-                <input class="ticker-custom-input" id="${slug}-input" maxlength="10" placeholder="AAPL"
+                <input class="ticker-custom-input" id="${slug}-input" maxlength="96" placeholder="AAPL or contract"
                   onkeydown="if(event.key==='Enter')tkEditSave(${idx});if(event.key==='Escape')tkEditCancel(${idx});">
                 <span class="ticker-contract-suffix" id="${slug}-addr-hint" hidden></span>
               </div>
@@ -23568,12 +23627,13 @@ function tickerRenderCustomItems() {
 function tickerSubmitAdd() {
     const symEl = document.getElementById('tickerAddSymbol');
     const srcEl = document.getElementById('tickerAddSource');
-    const sym = String(symEl?.value || '').trim().toUpperCase();
     const source = String(srcEl?.value || 'coingecko');
-    if (!sym || !/^[A-Z0-9.\-]{1,10}$/.test(sym)) return;
     if (!TICKER_SOURCES.includes(source) || source === 'auto') return;
+    const sym = tickerNormalizeInputSymbol(symEl?.value, source);
+    const isContract = /^0x[0-9a-fA-F]{40}$/.test(sym) || isSolanaMint(sym);
+    if (!sym || (!isContract && !/^[A-Z0-9.\-]{1,20}$/.test(sym))) return;
     const list = tickerLoadCustomEntries();
-    if (list.some(e => e.symbol === sym)) return;
+    if (list.some(e => tickerEntryKey(e.symbol, e.source) === tickerEntryKey(sym, source))) return;
     if (list.length >= TICKER_MAX_CUSTOM) {
         alert(`Maximum ${TICKER_MAX_CUSTOM} custom tickers.`);
         return;
@@ -23642,9 +23702,9 @@ async function tkGeckoContractAddress(sym) {
 }
 
 async function tkResolveContractForHint(symbol, source) {
-    const sym = String(symbol || '').trim().toUpperCase();
+    const sym = String(symbol || '').trim();
     if (!sym) return null;
-    const custom = customTokenGet(sym);
+    const custom = customTokenGet(sym.toUpperCase());
     if (custom?.address) return tkContractMetaFromAddress(custom.address);
 
     const src = source || 'auto';
@@ -23696,8 +23756,8 @@ function tkEditSave(idx) {
     const editor = document.getElementById(`${slug}-editor`);
     const lbl    = document.getElementById(`${slug}-label`);
     if (!input) return;
-    const sym = input.value.trim().toUpperCase();
     const source = String(sourceInput?.value || 'auto');
+    const sym = tickerNormalizeInputSymbol(input.value, source);
     const list = tickerLoadCustomEntries();
     if (idx >= 0 && idx < list.length) {
         if (!sym) {
@@ -23885,6 +23945,28 @@ async function tkGeckoResolve(sym) {
 
 // Try DeFiLlama coins API by contract address — works for DEX-only tokens CoinGecko can't price in USD.
 // contractAddrs: array of "chain:0x..." strings (e.g. ["ethereum:0xabc...", "arbitrum-one:0xdef..."])
+async function tkFetchGeckoCoinByContract(value, withMarketData = true) {
+    const clean = String(value || '').trim();
+    const isEvm = /^0x[0-9a-fA-F]{40}$/.test(clean);
+    const isSol = isSolanaMint(clean);
+    if (!isEvm && !isSol) return null;
+    const platforms = isSol
+        ? ['solana']
+        : ['ethereum', 'base', 'arbitrum-one', 'optimistic-ethereum', 'polygon-pos', 'binance-smart-chain', 'avalanche'];
+    for (const platform of platforms) {
+        try {
+            const r = await fetch(
+                `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(platform)}/contract/${encodeURIComponent(clean)}?localization=false&tickers=false&market_data=${withMarketData ? 'true' : 'false'}&community_data=false&developer_data=false`,
+                { signal: AbortSignal.timeout(8000) },
+            );
+            if (!r.ok) continue;
+            const coin = await r.json();
+            if (coin?.id) return coin;
+        } catch (e) {}
+    }
+    return null;
+}
+
 async function tkTryDefiLlama(contractAddrs) {
     if (!contractAddrs || contractAddrs.length === 0) return null;
     try {
@@ -23909,6 +23991,16 @@ async function tkTryDefiLlama(contractAddrs) {
 // Resolve logo + price via CoinGecko /coins/{id} in one call.
 // Falls back to DeFiLlama if CoinGecko has no USD price (DEX-only tokens like PMUSD).
 async function tkResolveLogoAndPrice(sym) {
+    const clean = String(sym || '').trim();
+    const contractCoin = await tkFetchGeckoCoinByContract(clean, true);
+    if (contractCoin) {
+        const logoUrl = contractCoin?.image?.small || contractCoin?.image?.thumb || contractCoin?.image?.large;
+        if (logoUrl) LogoEngine._injectTokenImage(clean, logoUrl);
+        const usd = Number(contractCoin?.market_data?.current_price?.usd);
+        const chg24h = contractCoin?.market_data?.price_change_percentage_24h ?? null;
+        if (Number.isFinite(usd) && usd > 0) return { price: usd, chgPct: chg24h };
+    }
+
     // Resolve CoinGecko ID for price lookup only; logos stay on the saved server cache.
     const geckoId = await tkGeckoResolve(sym);
     if (!geckoId) return null;

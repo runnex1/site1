@@ -32,4 +32,8 @@ const prices = await fetch('https://testedefi.vercel.app/api/prices?ids=agora-do
 assert.ok(prices['agora-dollar']?.usd > 0.99, 'Agora AUSD should be ~$1');
 assert.ok(prices.ausd?.usd < 0.5, 'lowercase ausd id is the wrong asset');
 
+const usdmPrices = await fetch('https://testedefi.vercel.app/api/prices?ids=mountain-protocol-usdm,usd-m').then((r) => r.json());
+assert.ok(usdmPrices['mountain-protocol-usdm']?.usd > 0.95, 'Mountain Protocol USDm should return a live market price');
+assert.equal(usdmPrices['usd-m'], undefined, 'stale usd-m id must not be used for USDm');
+
 console.log('PASS: gecko symbol resolve tests');
