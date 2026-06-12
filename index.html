@@ -6057,8 +6057,22 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
   letter-spacing:-0.02em; line-height:1.15; color:var(--t1);
 }
 .loop-pair-leg { display:inline-flex; align-items:center; gap:8px; min-width:0; }
+.loop-pair-leg.loop-pair-leg-tip { position:relative; cursor:default; }
 .loop-pair-leg .token-logo { flex-shrink:0; box-shadow:0 0 0 2px rgba(5,16,23,0.96); }
 .loop-pair-name { font-family:var(--ff-mono); font-size:0.94em; font-weight:800; white-space:nowrap; color:var(--t1); }
+.loop-pair-tooltip {
+  position:absolute; z-index:24; left:0; top:calc(100% + 6px); min-width:168px; pointer-events:none;
+  padding:0.42rem 0.52rem; border:1px solid rgba(148,163,184,0.22); border-radius:5px;
+  background:rgba(5,15,22,0.96); box-shadow:0 14px 30px rgba(0,0,0,0.28);
+  color:var(--t1); font-family:var(--ff-mono); font-size:0.66rem; font-weight:750; line-height:1.45;
+  white-space:nowrap; opacity:0; transition:opacity 120ms ease;
+}
+.loop-pair-leg.supply .loop-pair-tooltip { border-color:rgba(45,212,191,0.28); }
+.loop-pair-leg.borrow .loop-pair-tooltip { border-color:rgba(244,63,94,0.28); }
+.loop-pair-leg-tip:hover .loop-pair-tooltip { opacity:1; }
+.loop-pair-tooltip-row { display:flex; justify-content:space-between; gap:0.85rem; color:var(--t3); }
+.loop-pair-tooltip-row strong { color:var(--t1); font-weight:800; }
+.loop-pair-tooltip-row.price strong { color:var(--sky); }
 .loop-pair-sep { color:rgba(236,238,248,0.42); font-family:var(--ff-mono); font-size:0.88em; font-weight:700; }
 .loop-protocol-mark { display:inline-flex; align-items:center; flex-shrink:0; }
 .loop-protocol-mark .token-logo { border-radius:8px; box-shadow:0 0 0 1.5px rgba(5,16,23,0.96); }
@@ -12972,20 +12986,68 @@ function loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions) {
     return `<span class="loop-tag network">${dashEsc(chip)}</span>`;
 }
 
-function loopPairLegHtml(symbol, side, size = 32) {
+function loopFormatTokenAmount(amount) {
+    const n = Number(amount);
+    if (!Number.isFinite(n)) return '—';
+    return n.toLocaleString('en-US', { maximumFractionDigits: 4 });
+}
+
+function loopLegAmount(pos) {
+    const direct = Number(pos?.amount);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    for (const token of (pos?.tokens || [])) {
+        const parsed = protocolTokenAmountAndSymbol(token);
+        if (parsed?.amount > 0) return parsed.amount;
+    }
+    return null;
+}
+
+function loopLegValue(pos) {
+    const value = Number(pos?.value);
+    if (Number.isFinite(value) && value > 0) return value;
+    const priced = loopPositionValue(pos);
+    return Number.isFinite(priced) && priced > 0 ? priced : null;
+}
+
+function loopLegUnitPrice(amount, value) {
+    if (!Number.isFinite(amount) || !Number.isFinite(value) || amount <= 0 || value <= 0) return null;
+    return value / amount;
+}
+
+function loopPairLegTooltipHtml(pos, side) {
+    const amount = loopLegAmount(pos);
+    const value = loopLegValue(pos);
+    const price = loopLegUnitPrice(amount, value);
+    if (amount == null && value == null) return '';
+    const sideLabel = side === 'borrow' ? 'Borrowed' : 'Supplied';
+    const fmtUsd = v => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmtPrice = v => '$' + Number(v).toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 });
+    return `<div class="loop-pair-tooltip">
+        <div class="loop-pair-tooltip-row"><span>${sideLabel}</span><strong>${amount != null ? loopFormatTokenAmount(amount) : '—'}</strong></div>
+        <div class="loop-pair-tooltip-row"><span>Value</span><strong>${value != null ? fmtUsd(value) : '—'}</strong></div>
+        <div class="loop-pair-tooltip-row price"><span>Price</span><strong>${price != null ? fmtPrice(price) : '—'}</strong></div>
+    </div>`;
+}
+
+function loopPairLegHtml(symbol, side, size = 32, pos = null) {
     if (!symbol) return '';
-    return `<span class="loop-pair-leg ${side}">${makeLoopLogo(symbol, false, size)}<span class="loop-pair-name">${dashEsc(symbol)}</span></span>`;
+    const inner = `${makeLoopLogo(symbol, false, size)}<span class="loop-pair-name">${dashEsc(symbol)}</span>`;
+    const tip = pos ? loopPairLegTooltipHtml(pos, side) : '';
+    if (!tip) return `<span class="loop-pair-leg ${side}">${inner}</span>`;
+    return `<span class="loop-pair-leg ${side} loop-pair-leg-tip">${inner}${tip}</span>`;
 }
 
 function loopPairHtml(suppliedPositions, borrowedPositions) {
-    const supplied = loopPositionAssetLabel(suppliedPositions[0]);
-    const borrowed = loopPositionAssetLabel(borrowedPositions[0]);
+    const suppliedPos = suppliedPositions?.[0] || null;
+    const borrowedPos = borrowedPositions?.[0] || null;
+    const supplied = loopPositionAssetLabel(suppliedPos);
+    const borrowed = loopPositionAssetLabel(borrowedPos);
     if (supplied && borrowed) {
-        return `${loopPairLegHtml(supplied, 'supply')}<span class="loop-pair-sep">/</span>${loopPairLegHtml(borrowed, 'borrow')}`;
+        return `${loopPairLegHtml(supplied, 'supply', 32, suppliedPos)}<span class="loop-pair-sep">/</span>${loopPairLegHtml(borrowed, 'borrow', 32, borrowedPos)}`;
     }
     const fallback = supplied || borrowed || 'Loop';
     if (fallback === 'Loop') return dashEsc(fallback);
-    return loopPairLegHtml(fallback, 'supply');
+    return loopPairLegHtml(fallback, 'supply', 32, suppliedPos || borrowedPos);
 }
 
 function loopSupplyLegApyHtml(suppliedApr) {
@@ -13297,7 +13359,10 @@ function loopApiToDisplayPosition(pos) {
     const borrowed = Array.isArray(pos.borrowed) ? pos.borrowed : [];
     const suppliedPositions = supplied.map(item => ({
         pool: `${item.symbol || 'Asset'}${item.role ? ' ' + item.role : ''}`,
-        tokens: item.symbol ? [`${Number(item.value || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })} ${item.symbol}`] : [],
+        tokens: item.symbol && Number(item.amount) > 0
+            ? [`${loopFormatTokenAmount(item.amount)} ${item.symbol}`]
+            : (item.symbol ? [`${Number(item.value || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })} ${item.symbol}`] : []),
+        amount: Number(item.amount || 0) || null,
         value: Number(item.value || 0),
         liveApy: item.apy,
         nativeApy: item.nativeApy,
@@ -13307,7 +13372,10 @@ function loopApiToDisplayPosition(pos) {
     }));
     const borrowedPositions = borrowed.map(item => ({
         pool: item.symbol || 'Debt',
-        tokens: item.symbol ? [`${Number(item.value || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })} ${item.symbol}`] : [],
+        tokens: item.symbol && Number(item.amount) > 0
+            ? [`${loopFormatTokenAmount(item.amount)} ${item.symbol}`]
+            : (item.symbol ? [`${Number(item.value || 0).toLocaleString('en-US', { maximumFractionDigits: 4 })} ${item.symbol}`] : []),
+        amount: Number(item.amount || 0) || null,
         value: Number(item.value || 0),
         liveApy: item.apy,
         sub: 'Borrowed',

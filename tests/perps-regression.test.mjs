@@ -755,8 +755,10 @@ assert.match(indexHtml, /loop-summary-row/, 'loop summary must place supply and 
 assert.match(indexHtml, /loop-head-stats/, 'loop header must group net APY and health on the right');
 assert.match(indexHtml, /function loopHeadStatsHtml\(/, 'loop header must render net APY beside health');
 assert.match(indexHtml, /function loopPairLegHtml\(/, 'loop pair title must render token logo beside each leg symbol');
-assert.match(indexHtml, /loopPairLegHtml\(supplied, 'supply'\)/, 'loop pair title must show supply leg with logo');
-assert.match(indexHtml, /loopPairLegHtml\(borrowed, 'borrow'\)/, 'loop pair title must show borrow leg with logo');
+assert.match(indexHtml, /loopPairLegHtml\(supplied, 'supply', 32, suppliedPos\)/, 'loop pair title must show supply leg with logo');
+assert.match(indexHtml, /loopPairLegHtml\(borrowed, 'borrow', 32, borrowedPos\)/, 'loop pair title must show borrow leg with logo');
+assert.match(indexHtml, /function loopPairLegTooltipHtml\(/, 'loop pair tickers must show amount value and price on hover');
+assert.match(loopRatesJs, /amount: num\(item\?\.balance\?\.amount\?\.value\)/, 'Aave loop legs must expose token amount for ticker tooltips');
 assert.doesNotMatch(indexHtml, /loop-head-eyebrow">\$\{dashEsc\(p\.name\)\}/, 'loop cards must not show protocol name in header');
 assert.match(indexHtml, /loop-protocol-mark" title="\$\{dashEsc\(p\.name\)\}">\$\{makeLoopLogo\(p\.name, true, 26\)\}/, 'loop cards must show protocol logo without protocol name text');
 assert.doesNotMatch(indexHtml, /#fda4af/, 'loop borrow token must not use red title color');
