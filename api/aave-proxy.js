@@ -11,6 +11,7 @@ const {
   buildEquitySnapshotFromDashboard,
 } = require('../lib/perps');
 const { kvGet, kvSet } = require('../lib/kv');
+const { CACHE_KEYS, parseJson: parseCronJson } = require('../lib/cron-runner');
 const { fetchLoopRates } = require('../lib/loop-rates');
 const {
   appendLoopSnapshotStore,
@@ -31,6 +32,10 @@ function isWallet(v) {
 function parseJson(raw, fallback) {
   if (!raw) return fallback;
   try { return JSON.parse(raw); } catch (e) { return fallback; }
+}
+
+function expectedSyncSecret() {
+  return process.env.SYNC_SECRET1 || process.env.SYNC_SECRET || '';
 }
 
 function sortedCsv(raw) {
@@ -101,10 +106,48 @@ async function cachedJson(key, ttlMs, label, fn) {
   }
 }
 
+function perpsSymbolsFromDashboard(data) {
+  return [...new Set([
+    ...(data?.paired || []).map(p => p.symbol),
+    ...(data?.unhedged || []).map(p => p.symbol),
+    ...(data?.rateSpread || []).map(p => p.symbol),
+  ]
+    .map(s => String(s || '').trim().toUpperCase().replace(/-PERP$/i, ''))
+    .filter(Boolean))].sort();
+}
+
+function cacheKeyParts(key) {
+  const [scope, rest = ''] = String(key || '').split(/:(.*)/s);
+  return {
+    scope,
+    symbols: rest.split(',').map(s => s.trim()).filter(Boolean),
+  };
+}
+
+async function kvCacheGet(key, matchKey, maxAgeMs, opts = {}) {
+  const cached = parseCronJson(await kvGet(key), null);
+  if (!cached?.data || !cached.fetchedAt) return null;
+  if (matchKey && cached.key && cached.key !== matchKey) {
+    if (!opts.allowSymbolSuperset) return null;
+    const requested = cacheKeyParts(matchKey);
+    const available = cacheKeyParts(cached.key);
+    if (requested.scope !== available.scope) return null;
+    const availableSet = new Set(available.symbols);
+    if (requested.symbols.some(symbol => !availableSet.has(symbol))) return null;
+  }
+  if (Date.now() - Number(cached.fetchedAt) > maxAgeMs) return null;
+  return { ...cached.data, cached: true, cacheSource: 'kv', cacheFetchedAt: cached.fetchedAt };
+}
+
+async function kvCacheSet(key, matchKey, data) {
+  await kvSet(key, JSON.stringify({ key: matchKey, fetchedAt: Date.now(), data }));
+}
+
 async function handlePerpsCronSnapshot(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const secret = String(req.headers['x-sync-secret'] || req.query.secret || '');
-  if (!process.env.SYNC_SECRET || secret !== process.env.SYNC_SECRET) {
+  const expected = expectedSyncSecret();
+  if (!expected || secret !== expected) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -190,12 +233,18 @@ async function handlePerps(req, res) {
         .split(',')
         .map(s => s.trim())
         .filter(Boolean);
+      const cacheKey = `${grvtSubAccount}:${sortedCsv(req.query.symbols)}`;
+      const kvCached = req.query.force === '1'
+        ? null
+        : await kvCacheGet(CACHE_KEYS.perpsLive, cacheKey, 90 * 1000, { allowSymbolSuperset: true });
+      if (kvCached) return res.status(200).json(kvCached);
       const data = await cachedJson(
-        `perps:live:${grvtSubAccount}:${sortedCsv(req.query.symbols)}`,
+        `perps:live:${cacheKey}`,
         msUntilNextHourly02(),
         'Perps live funding',
         () => fetchPerpsLiveRates({ grvtSubAccount, symbols }),
       );
+      await kvCacheSet(CACHE_KEYS.perpsLive, cacheKey, data);
       return res.status(200).json(data);
     } catch (e) {
       console.error('[perps-live]', e);
@@ -232,6 +281,8 @@ async function handlePerps(req, res) {
         'Perps dashboard',
         () => fetchPerpsDashboard(dashboardOpts),
       );
+    const activeSymbols = perpsSymbolsFromDashboard(data);
+    if (activeSymbols.length) await kvSet('vault:perps_symbols', JSON.stringify(activeSymbols));
     return res.status(200).json(data);
   } catch (e) {
     console.error('[perps]', e);
@@ -254,7 +305,8 @@ async function persistLoopLogoCache(positions) {
 async function handleLoopCronSnapshot(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const secret = String(req.headers['x-sync-secret'] || req.query.secret || '');
-  if (!process.env.SYNC_SECRET || secret !== process.env.SYNC_SECRET) {
+  const expected = expectedSyncSecret();
+  if (!expected || secret !== expected) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -327,14 +379,23 @@ async function handleLoopRates(req, res) {
     .filter(Boolean);
 
   try {
+    const walletKey = wallets.map(w => w.toLowerCase()).sort().join(',');
+    const kvCached = req.query.force === '1'
+      ? null
+      : await kvCacheGet(CACHE_KEYS.loopRates, walletKey, 6 * 60 * 1000);
+    if (kvCached) {
+      await persistLoopSnapshotsFromRates(kvCached);
+      return res.status(200).json(kvCached);
+    }
     const data = await cachedJson(
-      `loop-rates:${wallets.map(w => w.toLowerCase()).sort().join(',')}`,
+      `loop-rates:${walletKey}`,
       LOOP_RATES_CACHE_MS,
       'Loop rates',
       () => fetchLoopRates({ wallets }),
     );
     await persistLoopSnapshotsFromRates(data);
     await persistLoopLogoCache(data.positions);
+    await kvCacheSet(CACHE_KEYS.loopRates, walletKey, data);
     return res.status(200).json(data);
   } catch (e) {
     console.error('[loop-rates]', e);
