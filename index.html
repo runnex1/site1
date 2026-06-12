@@ -2188,15 +2188,15 @@ body::after {
 .protocol-row-wrap .table-row { border-bottom: none; }
 
 .protocol-expand-btn {
-  display: inline-flex; align-items: center; gap: 0.3rem;
-  background: var(--surf-3); border: 1px solid var(--border-mid);
-  color: var(--t3); border-radius: var(--r-xs);
-  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em;
-  padding: 0.2rem 0.55rem; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content:center; gap: 0.35rem;
+  background: rgba(148,163,184,0.06); border: 1px solid rgba(148,163,184,0.18);
+  color: var(--t2); border-radius: 999px;
+  font-size: 0.62rem; font-weight: 850; letter-spacing: 0.08em;
+  padding: 0.24rem 0.62rem; cursor: pointer;
   transition: all 0.15s; white-space: nowrap;
-  font-family: var(--ff-display);
+  font-family: var(--ff-mono); text-transform: uppercase;
 }
-.protocol-expand-btn:hover { color: var(--t1); border-color: var(--border-hi); }
+.protocol-expand-btn:hover { color: var(--teal); border-color: rgba(94,234,212,0.34); background:rgba(94,234,212,0.08); }
 .protocol-expand-btn .chevron {
   display: inline-block; transition: transform 0.2s;
   font-style: normal;
@@ -3284,6 +3284,162 @@ body::after {
   color: var(--t3);
   font-family: var(--ff-display);
   white-space: nowrap;
+}
+
+/* Protocol Positions refinement */
+#defiTab .protocols-header,
+#defiTab .protocols-row {
+  grid-template-columns: minmax(155px,1.18fr) 112px minmax(230px,1.48fr) minmax(108px,0.72fr) 86px 86px 94px minmax(170px,1fr) 30px;
+  column-gap: 0.85rem;
+}
+#defiTab .protocols-header {
+  padding-left: 1.15rem;
+  padding-right: 1.15rem;
+}
+#defiTab .protocols-row {
+  min-height: 66px;
+  padding: 0.72rem 1.15rem;
+}
+#defiTab .protocol-row-wrap {
+  border-bottom-color: rgba(129,213,201,0.10);
+}
+#defiTab .protocol-row-wrap:has(.protocol-drawer.open) .protocols-row {
+  background:
+    linear-gradient(90deg, rgba(7,30,31,0.98), rgba(4,13,19,0.99)) !important;
+  box-shadow: inset 2px 0 0 rgba(94,234,212,0.45);
+}
+.protocol-main {
+  display:flex;
+  align-items:center;
+  gap:0.72rem;
+  min-width:0;
+}
+.protocol-main .token-name {
+  font-size:0.92rem;
+  font-weight:850;
+  letter-spacing:0.01em;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.protocol-type-cell,
+.protocol-type-stack {
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:0.34rem;
+  min-width:0;
+}
+.protocol-type-cell .badge,
+.protocol-type-stack .badge {
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.protocol-position-summary {
+  color:#E7ECF8;
+  font-weight:750;
+  line-height:1.25;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.protocol-net-input .defi-edit-input {
+  height:30px;
+  text-align:right;
+  background:rgba(148,163,184,0.045);
+  border-color:rgba(148,163,184,0.10);
+  padding:0 0.52rem;
+}
+#defiTab .protocols-row .defi-apr-plain,
+#defiTab .protocols-row .apr-badge {
+  font-size:0.78rem;
+  font-weight:850;
+}
+.defi-proto-unlock-note {
+  min-width:0;
+}
+.defi-proto-note-input {
+  height:30px;
+  border-radius:7px;
+  background:rgba(148,163,184,0.055);
+  border-color:rgba(148,163,184,0.16);
+  padding:0 0.58rem;
+}
+#defiTab .protocol-drawer {
+  background:
+    radial-gradient(circle at 2% 0%, rgba(94,234,212,0.055), transparent 26%),
+    linear-gradient(180deg, rgba(8,12,20,0.98), rgba(4,9,15,0.99));
+  border-top:1px solid rgba(129,213,201,0.13);
+  padding:0.85rem 1.15rem 0.95rem;
+}
+#defiTab .drawer-section {
+  margin:0;
+}
+#defiTab .drawer-section + .drawer-section {
+  margin-top:0.85rem;
+  padding-top:0.85rem;
+  border-top:1px solid rgba(148,163,184,0.10);
+}
+#defiTab .drawer-section-label {
+  margin:0 0 0.58rem;
+  color:#AEBCCB;
+}
+#defiTab .drawer-position {
+  display:grid;
+  grid-template-columns:minmax(260px,1fr) 104px 144px;
+  align-items:center;
+  gap:1rem;
+  min-height:58px;
+  padding:0.58rem 0;
+  border-bottom-color:rgba(148,163,184,0.10);
+}
+#defiTab .drawer-position > div:first-child {
+  min-width:0;
+}
+#defiTab .drawer-position-name {
+  font-size:0.82rem;
+  font-weight:850;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+#defiTab .drawer-position-tokens {
+  margin-top:0.18rem;
+  gap:0.12rem;
+}
+#defiTab .drawer-position-token-input {
+  display:flex;
+  align-items:center;
+  gap:0.45rem;
+  min-width:0;
+}
+#defiTab .drawer-position-token-input .defi-edit-input {
+  max-width:220px;
+}
+#defiTab .drawer-position-apr {
+  justify-self:center;
+  margin:0;
+}
+#defiTab .drawer-position-value {
+  justify-self:end;
+  margin:0;
+  min-width:118px;
+}
+#defiTab .drawer-position-value .defi-edit-input {
+  height:30px;
+  background:rgba(148,163,184,0.04);
+  border-color:rgba(148,163,184,0.11);
+  padding:0 0.58rem;
+}
+@media (max-width: 1180px) {
+  #defiTab .protocols-header,
+  #defiTab .protocols-row {
+    min-width:1120px;
+  }
+  #defiTab .drawer-position {
+    grid-template-columns:minmax(220px,1fr) 96px 128px;
+  }
 }
 
 
@@ -15962,7 +16118,7 @@ function renderProtocols() {
 
         const expandBtn = hasSections
             ? `<button class="protocol-expand-btn" id="pdrawer-btn-${i}" onclick="toggleProtocolDrawer(${i})">
-                <i class="chevron">▼</i>
+                Details <i class="chevron">▼</i>
                </button>`
             : '';
         const typeKey = (p.type || 'yield').toLowerCase().split(' ')[0];
@@ -15971,7 +16127,7 @@ function renderProtocols() {
 
         return `<div class="protocol-row-wrap">
             <div class="table-row protocols-row row-${typeKey}" ondblclick="deleteItem('protocols',${i})">
-                <div class="token-info">
+                <div class="protocol-main">
                     ${makeLogo(p.name, true, 30)}
                     <div class="token-name">${p.name}</div>
                 </div>
@@ -15979,8 +16135,8 @@ function renderProtocols() {
                     <span class="badge badge-${typeKey}">${dashEsc(p.type || '-')}</span>
                     ${expandBtn}
                 </div>
-                <div>${dashEsc(protocolPositionSummary(p))}</div>
-                <div><input class="defi-edit-input" type="number" min="0" step="0.01" value="${Number(netValue || 0).toFixed(2)}" aria-label="Edit ${dashEsc(p.name)} USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolEditable(${i},this.value)" onblur="updateProtocolEditable(${i},this.value)"></div>
+                <div class="protocol-position-summary" title="${dashEsc(protocolPositionSummary(p))}">${dashEsc(protocolPositionSummary(p))}</div>
+                <div class="protocol-net-input"><input class="defi-edit-input" type="number" min="0" step="0.01" value="${Number(netValue || 0).toFixed(2)}" aria-label="Edit ${dashEsc(p.name)} USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolEditable(${i},this.value)" onblur="updateProtocolEditable(${i},this.value)"></div>
                 <div>${dashAprHtml(breakdown.suppliedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.borrowedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.totalApr)}</div>
@@ -16440,7 +16596,7 @@ function renderProtocolsSnapshot() {
                     b.classList.toggle('open',open);
                     b.querySelector('.chevron').textContent=open?'▲':'▼';
                 })(${i})">
-                <i class="chevron">▼</i>
+                Details <i class="chevron">▼</i>
                </button>`
             : '';
 
@@ -16448,7 +16604,7 @@ function renderProtocolsSnapshot() {
         const netValue = protocolNetValue(p, snapUnitPrices);
         return `<div class="protocol-row-wrap">
             <div class="table-row protocols-row row-${typeKey}">
-                <div class="token-info">
+                <div class="protocol-main">
                     ${makeLogo(p.name, true, 30)}
                     <div class="token-name">${p.name}</div>
                 </div>
@@ -16456,8 +16612,8 @@ function renderProtocolsSnapshot() {
                     <span class="badge badge-${typeKey}">${dashEsc(p.type || '-')}</span>
                     ${expandBtn}
                 </div>
-                <div>${dashEsc(protocolPositionSummary(p))}</div>
-                <div class="value">${fmtV(netValue)}</div>
+                <div class="protocol-position-summary" title="${dashEsc(protocolPositionSummary(p))}">${dashEsc(protocolPositionSummary(p))}</div>
+                <div class="value" style="text-align:right">${fmtV(netValue)}</div>
                 <div>${dashAprHtml(breakdown.suppliedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.borrowedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.totalApr)}</div>
