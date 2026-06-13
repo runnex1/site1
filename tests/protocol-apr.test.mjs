@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { mapKaminoObligation } = require('../lib/loop-solana-rates');
-const { mergeRecentLoopPositions } = require('../lib/loop-rates');
+const { mergeRecentLoopPositions, enrichPositionWithDefillamaYield } = require('../lib/loop-rates');
 
 const indexHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
@@ -154,6 +154,40 @@ assert.equal(kamino.marketName, 'eUSX / USDG');
 assert.equal(kamino.borrowed.length, 1);
 assert.equal(kamino.borrowed[0].symbol, 'USDG');
 assert.equal(kamino.totalBorrowed, 2.0011797308025069368);
+
+const kaminoMissingSupplyApy = mapKaminoObligation(
+  'FuzwwLMkp8KU3NEGykHhKz56YR4u6SWghdAmB447hxA1',
+  { name: 'Solstice Market', lendingMarket: 'solstice' },
+  {
+    supplyReserve: { liquidityToken: 'eUSX', liquidityTokenMint: 'supplyMint', supplyApy: '0' },
+    borrowReserve: { liquidityToken: 'USDG', liquidityTokenMint: 'borrowMint', borrowApy: '0.0546' },
+  },
+  {
+    obligationAddress: 'obligation',
+    refreshedStats: {
+      userTotalBorrow: '2',
+      userTotalDeposit: '4903.45',
+      netAccountValue: '4901.45',
+      loanToValue: '0.0004',
+      liquidationLtv: '0.8',
+    },
+    state: {
+      deposits: [{ depositReserve: 'supplyReserve', marketValueSf: sf(4903.45) }],
+      borrows: [{
+        borrowReserve: 'borrowReserve',
+        borrowedAmountOutsideElevationGroups: '2000000',
+        marketValueSf: sf(2),
+      }],
+    },
+  },
+);
+enrichPositionWithDefillamaYield(kaminoMissingSupplyApy, {
+  byAddress: new Map([['solana:supplymint', { apy: 3.4, score: 103.4, project: 'kamino-lend', symbol: 'eUSX' }]]),
+  bySymbolChain: new Map([['solana:EUSX', { apy: 3.4, score: 103.4, project: 'kamino-lend', symbol: 'eUSX' }]]),
+});
+assert.equal(kaminoMissingSupplyApy.supplied[0].nativeApy, 0, 'native Kamino APY is preserved for diagnostics');
+assert.equal(kaminoMissingSupplyApy.supplied[0].defillamaApy, 3.4, 'eUSX collateral APY falls back to DeFiLlama');
+assert.equal(kaminoMissingSupplyApy.supplyApy, 3.4, 'Kamino supply APY uses DeFiLlama fallback when native APY is missing');
 
 const preserved = mergeRecentLoopPositions(
   { updatedAt: Date.now(), positions: [], errors: [] },
