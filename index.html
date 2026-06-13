@@ -7033,8 +7033,9 @@ body[data-active-tab="loops"] .page-content,
                   </div>
                   <div class="etf-pnl-filters">
                     <button class="etf-pnl-filter" data-etf-range="1d" type="button" onclick="setEtfPnlRange('1d', this)">1D</button>
+                    <button class="etf-pnl-filter active" data-etf-range="3d" type="button" onclick="setEtfPnlRange('3d', this)">3D</button>
                     <button class="etf-pnl-filter" data-etf-range="7d" type="button" onclick="setEtfPnlRange('7d', this)">7D</button>
-                    <button class="etf-pnl-filter active" data-etf-range="30d" type="button" onclick="setEtfPnlRange('30d', this)">30D</button>
+                    <button class="etf-pnl-filter" data-etf-range="30d" type="button" onclick="setEtfPnlRange('30d', this)">30D</button>
                     <button class="etf-pnl-filter" data-etf-range="ytd" type="button" onclick="setEtfPnlRange('ytd', this)">YTD</button>
                     <button class="etf-pnl-filter" data-etf-range="all" type="button" onclick="setEtfPnlRange('all', this)">All-time</button>
                   </div>
@@ -8482,7 +8483,7 @@ let _dashboardPnlLastRefresh = 0;
 let _dashboardSystemStatusLastFetch = 0;
 let _dashboardPredictionPnlCache = { key: '', range: '', ts: 0, value: null, loading: false, error: '' };
 let _dashboardEtfPnlCache = { key: '', range: '', ts: 0, value: null, loading: false, error: '' };
-let _etfPnlRange = '30d';
+let _etfPnlRange = '3d';
 let _etfPnlChartSeq = 0;
 let _etfPnlChartCache = { key: '', range: '', ts: 0, points: [], error: '' };
 const ETF_PNL_ALL_START_MS = Date.UTC(2025, 9, 1);
@@ -18029,11 +18030,12 @@ function etfSnapshotSeries(currentValue) {
 }
 
 function etfPnlRangeConfig(range) {
-    const key = ['1d','7d','30d','ytd','all'].includes(String(range || '').toLowerCase()) ? String(range).toLowerCase() : '30d';
+    const key = ['1d','3d','7d','30d','ytd','all'].includes(String(range || '').toLowerCase()) ? String(range).toLowerCase() : '3d';
     const now = Date.now();
     const ytdStart = Date.UTC(new Date().getFullYear(), 0, 1);
     const map = {
         '1d': { key:'1d', label:'1D', yahooRange:'1d', interval:'1h', startMs:now - 86400000, includeTime:true },
+        '3d': { key:'3d', label:'3D', yahooRange:'1mo', interval:'1d', startMs:now - 3 * 86400000, includeTime:false },
         '7d': { key:'7d', label:'7D', yahooRange:'1mo', interval:'1d', startMs:now - 7 * 86400000, includeTime:false },
         '30d': { key:'30d', label:'30D', yahooRange:'1mo', interval:'1d', startMs:now - 30 * 86400000, includeTime:false },
         'ytd': { key:'ytd', label:'YTD', yahooRange:'ytd', interval:'1d', startMs:ytdStart, includeTime:false },
@@ -18258,7 +18260,7 @@ function renderEtfPnl(rows) {
 }
 
 function setEtfPnlRange(range, btn) {
-    _etfPnlRange = ['1d','7d','30d','ytd','all'].includes(String(range || '').toLowerCase()) ? String(range).toLowerCase() : '30d';
+    _etfPnlRange = ['1d','3d','7d','30d','ytd','all'].includes(String(range || '').toLowerCase()) ? String(range).toLowerCase() : '3d';
     const root = btn?.closest('.etf-pnl-filters') || document.querySelector('.etf-pnl-filters');
     if (root) root.querySelectorAll('.etf-pnl-filter').forEach(b => b.classList.toggle('active', b.dataset.etfRange === _etfPnlRange));
     renderEtfPnl(etfPositionRows());
