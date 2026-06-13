@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { mapKaminoObligation } = require('../lib/loop-solana-rates');
+const { mergeRecentLoopPositions } = require('../lib/loop-rates');
 
 const indexHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
@@ -153,5 +154,14 @@ assert.equal(kamino.marketName, 'eUSX / USDG');
 assert.equal(kamino.borrowed.length, 1);
 assert.equal(kamino.borrowed[0].symbol, 'USDG');
 assert.equal(kamino.totalBorrowed, 2.0011797308025069368);
+
+const preserved = mergeRecentLoopPositions(
+  { updatedAt: Date.now(), positions: [], errors: [] },
+  { positions: [kamino] },
+  { previousFetchedAt: Date.now() - 5 * 60 * 1000 },
+);
+assert.equal(preserved.positions.length, 1, 'recent Kamino positions must survive a transient empty provider poll');
+assert.equal(preserved.positions[0].protocol, 'Kamino');
+assert.equal(preserved.positions[0].stale, true);
 
 console.log('PASS: protocol APR stable $1 peg tests');

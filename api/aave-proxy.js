@@ -12,7 +12,7 @@ const {
 } = require('../lib/perps');
 const { kvGet, kvSet } = require('../lib/kv');
 const { CACHE_KEYS, parseJson: parseCronJson } = require('../lib/cron-runner');
-const { fetchLoopRates } = require('../lib/loop-rates');
+const { fetchLoopRates, mergeRecentLoopPositions } = require('../lib/loop-rates');
 const {
   appendLoopSnapshotStore,
   buildLoopSnapshotFromRates,
@@ -388,12 +388,16 @@ async function handleLoopRates(req, res) {
       await persistLoopSnapshotsFromRates(kvCached);
       return res.status(200).json(kvCached);
     }
-    const data = await cachedJson(
+    const previousCache = parseCronJson(await kvGet(CACHE_KEYS.loopRates), null);
+    const freshData = await cachedJson(
       `loop-rates:${walletKey}`,
       LOOP_RATES_CACHE_MS,
       'Loop rates',
       () => fetchLoopRates({ wallets }),
     );
+    const data = mergeRecentLoopPositions(freshData, previousCache?.data, {
+      previousFetchedAt: previousCache?.fetchedAt,
+    });
     await persistLoopSnapshotsFromRates(data);
     await persistLoopLogoCache(data.positions);
     await kvCacheSet(CACHE_KEYS.loopRates, walletKey, data);
