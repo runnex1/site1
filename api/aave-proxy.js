@@ -24,6 +24,7 @@ const { ensureLoopLogoCache } = require('../lib/logo-resolver');
 const responseCache = new Map();
 const PERPS_DASHBOARD_CACHE_MS = 5 * 60 * 1000;
 const LOOP_RATES_CACHE_MS = 15 * 60 * 1000;
+const LOOP_RATES_CACHE_VERSION = 'v2';
 
 function isWallet(v) {
   return typeof v === 'string' && /^0x[a-fA-F0-9]{40}$/.test(v.trim());
@@ -379,7 +380,7 @@ async function handleLoopRates(req, res) {
     .filter(Boolean);
 
   try {
-    const walletKey = wallets.map(w => w.toLowerCase()).sort().join(',');
+    const walletKey = `${LOOP_RATES_CACHE_VERSION}:${wallets.map(w => w.toLowerCase()).sort().join(',')}`;
     const kvCached = req.query.force === '1'
       ? null
       : await kvCacheGet(CACHE_KEYS.loopRates, walletKey, 6 * 60 * 1000);

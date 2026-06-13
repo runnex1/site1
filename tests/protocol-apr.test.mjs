@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { mapKaminoObligation } = require('../lib/loop-solana-rates');
 
 const indexHtml = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
@@ -115,5 +119,39 @@ const frozenReusd = { REUSD: 1.082 };
 livePrices.REUSD = 1.05;
 assert.equal(protocolPositionValue(reusd, frozenReusd), 24400 * 1.082, 'frozen import unit price overrides live CoinGecko');
 assert.equal(protocolPositionValue(reusd), 24400 * 1.05, 'current view still uses live CoinGecko');
+
+const sf = (usd) => String(BigInt(Math.round(usd * 100)) * (2n ** 60n) / 100n);
+const kamino = mapKaminoObligation(
+  'FuzwwLMkp8KU3NEGykHhKz56YR4u6SWghdAmB447hxA1',
+  { name: 'Solstice Market', lendingMarket: 'solstice' },
+  {
+    supplyReserve: { liquidityToken: 'eUSX', liquidityTokenMint: 'supplyMint', supplyApy: '0.034' },
+    borrowReserve: { liquidityToken: 'USDG', liquidityTokenMint: 'borrowMint', borrowApy: '0.0778' },
+  },
+  {
+    obligationAddress: 'obligation',
+    refreshedStats: {
+      userTotalBorrow: '2.0011797308025069368',
+      userTotalDeposit: '4906.5171798479682902',
+      netAccountValue: '4904.5160001171657833',
+      loanToValue: '0.00040786155585508717744',
+      liquidationLtv: '0.80000000000000000001',
+    },
+    state: {
+      deposits: [{ depositReserve: 'supplyReserve', marketValueSf: sf(4903.45) }],
+      borrows: [{
+        borrowReserve: 'borrowReserve',
+        borrowedAmountOutsideElevationGroups: '2000000',
+        marketValueSf: '0',
+      }],
+    },
+  },
+);
+assert.ok(kamino, 'Kamino obligation with non-zero raw borrow but zero marketValueSf must still map');
+assert.equal(kamino.protocol, 'Kamino');
+assert.equal(kamino.marketName, 'eUSX / USDG');
+assert.equal(kamino.borrowed.length, 1);
+assert.equal(kamino.borrowed[0].symbol, 'USDG');
+assert.equal(kamino.totalBorrowed, 2.0011797308025069368);
 
 console.log('PASS: protocol APR stable $1 peg tests');
