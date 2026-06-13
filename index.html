@@ -4749,6 +4749,8 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   margin-top: 0.22rem;
 }
 .ticker-edit-source-row .ticker-source-select { margin-top: 0; }
+.ticker-edit-source-row .ticker-source-select:first-child { max-width: 98px; }
+.ticker-edit-source-row .ticker-precision-select { max-width: 56px; }
 .ticker-ok-btn {
   min-width: 28px;
   height: 22px;
@@ -23799,12 +23801,12 @@ function tickerCustomItemHtml(entry, idx) {
                   <option value="tradfi"${source === 'tradfi' ? ' selected' : ''}>TradFi</option>
                   <option value="auto"${source === 'auto' ? ' selected' : ''}>Auto</option>
                 </select>
+                <select class="ticker-source-select ticker-precision-select" id="${slug}-precision-input" title="Price decimals">
+                  <option value="auto"${entry.precision !== '3' ? ' selected' : ''}>Auto</option>
+                  <option value="3"${entry.precision === '3' ? ' selected' : ''}>3 dp</option>
+                </select>
                 <button class="ticker-ok-btn" onclick="tkEditSave(${idx})" title="Save ticker changes">OK</button>
               </div>
-              <select class="ticker-source-select" id="${slug}-precision-input" title="Price decimals">
-                <option value="auto"${entry.precision !== '3' ? ' selected' : ''}>Auto decimals</option>
-                <option value="3"${entry.precision === '3' ? ' selected' : ''}>3 exact decimals</option>
-              </select>
             </div>
             <div class="ticker-asset-price" id="${slug}-price">—</div>
           </div>

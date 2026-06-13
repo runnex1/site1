@@ -675,7 +675,7 @@ assert.match(indexHtml, /function tickerNormalizeInputSymbol\(value, source = 'a
 assert.match(indexHtml, /function tkFetchGeckoCoinByContract\(value, withMarketData = true\)/, 'custom ticker CoinGecko source must support contract-address lookup');
 assert.match(indexHtml, /if \(isSolanaMint\(clean\)\) return clean;/, 'custom ticker Jupiter source must accept a Solana mint directly');
 assert.match(indexHtml, /tickerAddPrecision[\s\S]{0,220}3 exact decimals/, 'custom ticker add flow must allow exact 3-decimal display');
-assert.match(indexHtml, /id="\$\{slug\}-precision-input"[\s\S]{0,220}3 exact decimals/, 'custom ticker edit flow must allow exact 3-decimal display');
+assert.match(indexHtml, /id="\$\{slug\}-precision-input"[\s\S]{0,220}3 dp/, 'custom ticker edit flow must allow exact 3-decimal display');
 assert.match(indexHtml, /function tickerFmtForEntry\(price, entry = null\)[\s\S]{0,140}entry\?\.precision === '3'/, 'custom ticker formatter must honor saved exact-decimal preference');
 assert.match(indexHtml, /class="ticker-ok-btn" onclick="tkEditSave\(\$\{idx\}\)"/, 'custom ticker editor must show an OK save button beside the selected source');
 assert.match(indexHtml, /vault_ticker_custom_v2/, 'custom ticker metadata must persist symbol and price source');
