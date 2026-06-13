@@ -4742,6 +4742,26 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
   outline: none;
 }
 .ticker-source-select:focus { border-color: var(--teal); }
+.ticker-edit-source-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 0.22rem;
+}
+.ticker-edit-source-row .ticker-source-select { margin-top: 0; }
+.ticker-ok-btn {
+  min-width: 28px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid rgba(94, 234, 212, 0.35);
+  background: rgba(20, 184, 166, 0.14);
+  color: var(--teal);
+  font-family: var(--ff-mono);
+  font-size: 0.56rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.ticker-ok-btn:hover { border-color: var(--teal); background: rgba(20, 184, 166, 0.22); }
 .ticker-asset {
   display: flex; align-items: center; gap: 0.72rem;
   padding: 0 2.1rem 0 0;
@@ -7776,6 +7796,13 @@ body[data-active-tab="loops"] .page-content,
         <option value="tradfi">TradFi (stocks / ETFs)</option>
       </select>
     </div>
+    <div class="form-group">
+      <label class="form-label">Price decimals</label>
+      <select class="form-select" id="tickerAddPrecision">
+        <option value="auto">Auto</option>
+        <option value="3">3 exact decimals</option>
+      </select>
+    </div>
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal('tickerAdd')">Cancel</button>
       <button class="btn btn-primary" onclick="tickerSubmitAdd()">Add</button>
@@ -9795,8 +9822,10 @@ function openModal(type) {
     if (type === 'tickerAdd') {
         const symEl = document.getElementById('tickerAddSymbol');
         const srcEl = document.getElementById('tickerAddSource');
+        const precisionEl = document.getElementById('tickerAddPrecision');
         if (symEl) symEl.value = '';
         if (srcEl) srcEl.value = 'coingecko';
+        if (precisionEl) precisionEl.value = 'auto';
     }
     if (type === 'stablecoinAdd') {
         const input = document.getElementById('stablecoinAddInput');
@@ -23330,6 +23359,18 @@ function tickerFmt(price) {
     return fmtTokenPrice(price);
 }
 
+function tickerFmtExactDecimals(price, decimals = 3) {
+    const n = Number(price);
+    if (!Number.isFinite(n)) return '—';
+    const places = Math.max(0, Math.min(8, Number(decimals) || 3));
+    return '$' + n.toLocaleString('en-US', { minimumFractionDigits: places, maximumFractionDigits: places });
+}
+
+function tickerFmtForEntry(price, entry = null) {
+    if (entry?.precision === '3') return tickerFmtExactDecimals(price, 3);
+    return tickerFmt(price);
+}
+
 function tickerChgClass(chg) {
     if (chg === null || chg === undefined) return 'flat';
     return chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat';
@@ -23341,10 +23382,10 @@ function tickerChgStr(chg) {
     return sign + chg.toFixed(2) + '%';
 }
 
-function setTickerItem(priceId, chgId, price, chgPct) {
+function setTickerItem(priceId, chgId, price, chgPct, entry = null) {
     const pe = document.getElementById(priceId);
     const ce = document.getElementById(chgId);
-    if (pe) pe.textContent = price !== null ? tickerFmt(price) : '—';
+    if (pe) pe.textContent = price !== null ? tickerFmtForEntry(price, entry) : '—';
     if (ce) {
         ce.textContent = chgPct !== null ? tickerChgStr(chgPct) : '';
         ce.className = 'ticker-change ' + tickerChgClass(chgPct);
@@ -23516,7 +23557,8 @@ function tickerNormalizeEntry(raw) {
     const source = TICKER_SOURCES.includes(raw?.source) ? raw.source : 'auto';
     const symbol = tickerNormalizeInputSymbol(raw?.symbol, source);
     if (!symbol) return null;
-    return { symbol, source };
+    const precision = String(raw?.precision || 'auto') === '3' ? '3' : 'auto';
+    return { symbol, source, precision };
 }
 
 function tickerLoadCustomEntries() {
@@ -23750,11 +23792,18 @@ function tickerCustomItemHtml(entry, idx) {
                   onkeydown="if(event.key==='Enter')tkEditSave(${idx});if(event.key==='Escape')tkEditCancel(${idx});">
                 <span class="ticker-contract-suffix" id="${slug}-addr-hint" hidden></span>
               </div>
-              <select class="ticker-source-select" id="${slug}-source-input">
-                <option value="coingecko"${source === 'coingecko' ? ' selected' : ''}>CoinGecko</option>
-                <option value="jupiter"${source === 'jupiter' ? ' selected' : ''}>Jupiter</option>
-                <option value="tradfi"${source === 'tradfi' ? ' selected' : ''}>TradFi</option>
-                <option value="auto"${source === 'auto' ? ' selected' : ''}>Auto</option>
+              <div class="ticker-edit-source-row">
+                <select class="ticker-source-select" id="${slug}-source-input">
+                  <option value="coingecko"${source === 'coingecko' ? ' selected' : ''}>CoinGecko</option>
+                  <option value="jupiter"${source === 'jupiter' ? ' selected' : ''}>Jupiter</option>
+                  <option value="tradfi"${source === 'tradfi' ? ' selected' : ''}>TradFi</option>
+                  <option value="auto"${source === 'auto' ? ' selected' : ''}>Auto</option>
+                </select>
+                <button class="ticker-ok-btn" onclick="tkEditSave(${idx})" title="Save ticker changes">OK</button>
+              </div>
+              <select class="ticker-source-select" id="${slug}-precision-input" title="Price decimals">
+                <option value="auto"${entry.precision !== '3' ? ' selected' : ''}>Auto decimals</option>
+                <option value="3"${entry.precision === '3' ? ' selected' : ''}>3 exact decimals</option>
               </select>
             </div>
             <div class="ticker-asset-price" id="${slug}-price">—</div>
@@ -23788,7 +23837,9 @@ function tickerRenderCustomItems() {
 function tickerSubmitAdd() {
     const symEl = document.getElementById('tickerAddSymbol');
     const srcEl = document.getElementById('tickerAddSource');
+    const precisionEl = document.getElementById('tickerAddPrecision');
     const source = String(srcEl?.value || 'coingecko');
+    const precision = String(precisionEl?.value || 'auto') === '3' ? '3' : 'auto';
     if (!TICKER_SOURCES.includes(source) || source === 'auto') return;
     const sym = tickerNormalizeInputSymbol(symEl?.value, source);
     const isContract = /^0x[0-9a-fA-F]{40}$/.test(sym) || isSolanaMint(sym);
@@ -23799,7 +23850,7 @@ function tickerSubmitAdd() {
         alert(`Maximum ${TICKER_MAX_CUSTOM} custom tickers.`);
         return;
     }
-    list.push({ symbol: sym, source });
+    list.push({ symbol: sym, source, precision });
     tickerSaveCustomEntries(list);
     closeModal('tickerAdd');
     tickerRenderCustomItems();
@@ -23891,12 +23942,14 @@ async function tkEditStart(idx) {
     const editor = document.getElementById(`${slug}-editor`);
     const input  = document.getElementById(`${slug}-input`);
     const sourceInput = document.getElementById(`${slug}-source-input`);
+    const precisionInput = document.getElementById(`${slug}-precision-input`);
     const lbl    = document.getElementById(`${slug}-label`);
     const entry = tickerGetEntry(idx);
     if (!editor || !input) return;
     tickerPauseMarqueeForEdit();
     input.value = entry?.symbol || '';
     if (sourceInput) sourceInput.value = entry?.source || 'auto';
+    if (precisionInput) precisionInput.value = entry?.precision === '3' ? '3' : 'auto';
     tkSetContractSuffixHint(slug, null);
     editor.style.display = 'block';
     if (lbl) lbl.style.display = 'none';
@@ -23914,11 +23967,14 @@ function tkEditSave(idx) {
     const slug = tkCustomSlug(idx);
     const input  = document.getElementById(`${slug}-input`);
     const sourceInput = document.getElementById(`${slug}-source-input`);
+    const precisionInput = document.getElementById(`${slug}-precision-input`);
     const editor = document.getElementById(`${slug}-editor`);
     const lbl    = document.getElementById(`${slug}-label`);
     if (!input) return;
     const source = String(sourceInput?.value || 'auto');
+    const precision = String(precisionInput?.value || 'auto') === '3' ? '3' : 'auto';
     const sym = tickerNormalizeInputSymbol(input.value, source);
+    const isContract = /^0x[0-9a-fA-F]{40}$/.test(sym) || isSolanaMint(sym);
     const list = tickerLoadCustomEntries();
     if (idx >= 0 && idx < list.length) {
         if (!sym) {
@@ -23933,10 +23989,14 @@ function tkEditSave(idx) {
             _tickerEditPaused = false;
             return;
         }
+        if (!isContract && !/^[A-Z0-9.\-]{1,20}$/.test(sym)) {
+            alert('Enter a ticker, Ethereum contract, or Solana mint.');
+            return;
+        }
         delete _tkGeckoIdCache[list[idx].symbol];
         delete _tkJupiterMintCache[list[idx].symbol];
         delete _tkGeckoContractCache[list[idx].symbol];
-        list[idx] = { symbol: sym, source: TICKER_SOURCES.includes(source) ? source : 'auto' };
+        list[idx] = { symbol: sym, source: TICKER_SOURCES.includes(source) ? source : 'auto', precision };
         tickerSaveCustomEntries(list);
         tkSetLabel(idx, sym, list[idx].source);
         const priceEl = document.getElementById(`${slug}-price`);
@@ -24261,45 +24321,45 @@ async function fetchCustomTickerByIndex(idx) {
     if (source === 'jupiter') {
         const jupiterResult = await tkTryJupiter(sym);
         if (jupiterResult) {
-            setTickerItem(priceId, chgId, jupiterResult.price, jupiterResult.chgPct);
+            setTickerItem(priceId, chgId, jupiterResult.price, jupiterResult.chgPct, entry);
             return;
         }
     } else if (source === 'tradfi') {
         const yahooResult = await fetchYahoo(encodeURIComponent(sym));
         if (yahooResult) {
-            setTickerItem(priceId, chgId, yahooResult.price, yahooResult.chgPct);
+            setTickerItem(priceId, chgId, yahooResult.price, yahooResult.chgPct, entry);
             return;
         }
     } else if (source === 'coingecko') {
         const geckoResult = await tkResolveLogoAndPrice(sym);
         if (geckoResult) {
-            setTickerItem(priceId, chgId, geckoResult.price, geckoResult.chgPct);
+            setTickerItem(priceId, chgId, geckoResult.price, geckoResult.chgPct, entry);
             return;
         }
         const paprikaResult = await tkTryCoinpaprika(sym);
         if (paprikaResult) {
-            setTickerItem(priceId, chgId, paprikaResult.price, paprikaResult.chgPct);
+            setTickerItem(priceId, chgId, paprikaResult.price, paprikaResult.chgPct, entry);
             return;
         }
     } else {
         const binanceResult = await tkTryBinance(sym);
         if (binanceResult) {
-            setTickerItem(priceId, chgId, binanceResult.price, binanceResult.chgPct);
+            setTickerItem(priceId, chgId, binanceResult.price, binanceResult.chgPct, entry);
             return;
         }
         const yahooResult = await fetchYahoo(encodeURIComponent(sym));
         if (yahooResult) {
-            setTickerItem(priceId, chgId, yahooResult.price, yahooResult.chgPct);
+            setTickerItem(priceId, chgId, yahooResult.price, yahooResult.chgPct, entry);
             return;
         }
         const geckoResult = await tkResolveLogoAndPrice(sym);
         if (geckoResult) {
-            setTickerItem(priceId, chgId, geckoResult.price, geckoResult.chgPct);
+            setTickerItem(priceId, chgId, geckoResult.price, geckoResult.chgPct, entry);
             return;
         }
         const paprikaResult = await tkTryCoinpaprika(sym);
         if (paprikaResult) {
-            setTickerItem(priceId, chgId, paprikaResult.price, paprikaResult.chgPct);
+            setTickerItem(priceId, chgId, paprikaResult.price, paprikaResult.chgPct, entry);
             return;
         }
     }
