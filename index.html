@@ -12809,16 +12809,23 @@ function loopApplyManualSupplyApy(point, key) {
     };
 }
 
+function loopBorrowLegPeggedValue(leg) {
+    const amount = Number(leg?.amount);
+    if (Number.isFinite(amount) && amount > 0) return amount;
+    const value = Number(leg?.value || 0);
+    const price = Number(leg?.priceUsd ?? leg?.usdPrice ?? leg?.price);
+    if (Number.isFinite(value) && value > 0 && Number.isFinite(price) && price > 0) {
+        return value / price;
+    }
+    return value;
+}
+
 function loopBorrowedPegNetValue(point, fixPeg) {
     if (!fixPeg || !point) return Number(point?.netValue || 0);
     const borrowedLegs = Array.isArray(point.borrowedLegs) ? point.borrowedLegs : [];
     if (!borrowedLegs.length) return Number(point.netValue || 0);
     const supplied = Number(point.totalSupplied || 0);
-    const peggedBorrowed = borrowedLegs.reduce((sum, leg) => {
-        const amount = Number(leg?.amount);
-        const value = Number(leg?.value || 0);
-        return sum + (Number.isFinite(amount) && amount > 0 ? amount : value);
-    }, 0);
+    const peggedBorrowed = borrowedLegs.reduce((sum, leg) => sum + loopBorrowLegPeggedValue(leg), 0);
     const merkl = Number(point.merklRewardsUsd || 0);
     return supplied - peggedBorrowed + (merkl > 0.01 ? merkl : 0);
 }
@@ -17251,6 +17258,15 @@ function predictionAggregatePnlTotal() {
     return predictionPolymarketPnlTotal() + predictionOpinionPnlTotal();
 }
 
+function predictionAggregatePnlDisplayValue() {
+    const key = predictionManageWalletKey();
+    const cached = _predictionAggregatePnlCache || {};
+    if (key && cached.key === key && Number.isFinite(Number(cached.value))) {
+        return Number(cached.value) + predictionOpinionPnlTotal();
+    }
+    return predictionAggregatePnlTotal();
+}
+
 async function fetchPolymarketLeaderboardPnl(wallet) {
     const user = String(wallet || '').toLowerCase();
     const url = 'https://data-api.polymarket.com/v1/leaderboard?timePeriod=all&orderBy=VOL&limit=1&offset=0&category=overall&user=' + encodeURIComponent(user);
@@ -17274,30 +17290,43 @@ async function refreshPredictionAggregatePnl(opts={}) {
 
     _predictionAggregatePnlLoading = true;
     try {
-        const settled = await Promise.allSettled(wallets.map(async wallet => ({ wallet, pnl: await fetchPolymarketLeaderboardPnl(wallet) })));
-        const byWallet = {};
-        let total = 0;
-        let found = 0;
-        settled.forEach(result => {
-            if (result.status !== 'fulfilled') return;
-            const wallet = String(result.value.wallet || '').toLowerCase();
-            const pnl = Number(result.value.pnl);
-            if (!wallet || !Number.isFinite(pnl)) return;
-            byWallet[wallet] = pnl;
-            total += pnl;
-            found++;
-        });
-        if (found) {
-            _predictionAggregatePnlCache = { key, ts: Date.now(), value: total, byWallet, error: '' };
-            predictionRenderSummary();
-            if (window._predInsightTab === 'pnl') renderPredictionPnl();
-            renderDashboardPnlAttribution(true);
-        } else {
-            _predictionAggregatePnlCache = { key, ts: Date.now(), value: null, byWallet: {}, error: 'No leaderboard PNL returned' };
+        try {
+            const result = await fetchPredictionPnlChartPoints('all');
+            const chart = predictionBuildPnlChart(result.points, result.cfg, result.loadedWallets);
+            if (Number.isFinite(Number(chart.total))) {
+                _predictionAggregatePnlCache = { key, ts: Date.now(), value: Number(chart.total), byWallet: {}, source: 'pnl-chart', error: '' };
+                predictionRenderSummary();
+                if (window._predInsightTab === 'pnl') renderPredictionPnl();
+                renderDashboardPnlAttribution(true);
+                return _predictionAggregatePnlCache.value;
+            }
+            throw new Error('PNL chart returned an invalid total');
+        } catch(chartError) {
+            const settled = await Promise.allSettled(wallets.map(async wallet => ({ wallet, pnl: await fetchPolymarketLeaderboardPnl(wallet) })));
+            const byWallet = {};
+            let total = 0;
+            let found = 0;
+            settled.forEach(result => {
+                if (result.status !== 'fulfilled') return;
+                const wallet = String(result.value.wallet || '').toLowerCase();
+                const pnl = Number(result.value.pnl);
+                if (!wallet || !Number.isFinite(pnl)) return;
+                byWallet[wallet] = pnl;
+                total += pnl;
+                found++;
+            });
+            if (found) {
+                _predictionAggregatePnlCache = { key, ts: Date.now(), value: total, byWallet, source: 'leaderboard-fallback', error: '' };
+                predictionRenderSummary();
+                if (window._predInsightTab === 'pnl') renderPredictionPnl();
+                renderDashboardPnlAttribution(true);
+            } else {
+                _predictionAggregatePnlCache = { key, ts: Date.now(), value: null, byWallet: {}, error: chartError.message || 'No PNL returned' };
+            }
+            return _predictionAggregatePnlCache.value;
         }
-        return _predictionAggregatePnlCache.value;
     } catch(e) {
-        _predictionAggregatePnlCache = { ..._predictionAggregatePnlCache, key, ts: Date.now(), error: e.message || 'Leaderboard PNL failed' };
+        _predictionAggregatePnlCache = { ..._predictionAggregatePnlCache, key, ts: Date.now(), error: e.message || 'Prediction PNL failed' };
         return _predictionAggregatePnlCache.value;
     } finally {
         _predictionAggregatePnlLoading = false;
@@ -17624,7 +17653,7 @@ function predictionRenderSummary() {
     const positions = predictionAllPositions();
     const exposure = positions.reduce((sum, p) => sum + Number(p.currentValue || 0), 0);
     const total = typeof getTotalValue === 'function' ? Number(getTotalValue() || 0) : 0;
-    const pnl = predictionAggregatePnlTotal();
+    const pnl = predictionAggregatePnlDisplayValue();
     const markets = new Set(positions.map(p => dashPmMarketKey(p) || dashNormalizeMarketTitle(p.title || '')).filter(Boolean));
     const wallets = predictionWalletAddresses();
 

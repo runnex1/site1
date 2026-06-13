@@ -41,9 +41,11 @@ const aaveProxyHandler = require('../api/aave-proxy.js');
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const perpsJs = readFileSync(join(ROOT, 'lib', 'perps.js'), 'utf8');
+const loopSnapshotsJs = readFileSync(join(ROOT, 'lib', 'loop-snapshots.js'), 'utf8');
 const aaveProxyJs = readFileSync(join(ROOT, 'api', 'aave-proxy.js'), 'utf8');
 const syncJs = readFileSync(join(ROOT, 'api', 'sync.js'), 'utf8');
 const vercelJson = readFileSync(join(ROOT, 'vercel.json'), 'utf8');
+const watcherPreviewHtml = readFileSync(join(ROOT, 'ui-previews', 'watcher-preview.html'), 'utf8');
 const now = Date.now();
 
 function payment(usdc, time = now) {
@@ -732,7 +734,6 @@ assert.match(loopSolanaRatesJs, /positions\/\$\{encodeURIComponent\(wallet\)\}/,
 assert.match(loopRatesJs, /economicNetValue/, 'loop positions must include Merkl rewards in economic net value for snapshots');
 assert.match(indexHtml, /LOOP_API_STATE_KEY/, 'loops tab must cache last live API state across page refreshes');
 assert.match(indexHtml, /supplementalImported/, 'Loops must keep imported Fluid/Morpho positions when live API coverage is incomplete');
-const loopSnapshotsJs = readFileSync(join(ROOT, 'lib', 'loop-snapshots.js'), 'utf8');
 assert.match(loopSnapshotsJs, /economicNetValue/, 'loop snapshots must persist Merkl-inclusive economic net value');
 assert.match(loopSnapshotsJs, /isUsdeUsdmLoopSnapshotPosition/, 'loop snapshots must identify USDe/USDm Aave MegaETH history');
 assert.match(loopSnapshotsJs, /ensureUsdeUsdmSnapshotsPurged/, 'loop snapshots must one-time purge inflated USDe/USDm buckets');
@@ -818,6 +819,10 @@ assert.match(indexHtml, /loopSnapshotApyRowHtml\(chartMode, adjustedHistoryPoint
 assert.match(indexHtml, /function loopSetManualSupplyApy\(/, 'loops must allow timestamped manual supply APY overrides');
 assert.match(indexHtml, /Fix \$1 peg/, 'loop net value chart must expose borrowed-token $1 peg toggle');
 assert.match(indexHtml, /function loopBorrowedPegNetValue\(/, 'loop net value chart must recalculate borrowed legs with $1 peg when enabled');
+assert.match(indexHtml, /function loopBorrowLegPeggedValue\(/, 'loop $1 peg mode must derive borrowed token amount before revaluing at $1');
+assert.match(indexHtml, /return value \/ price;/, 'loop $1 peg mode must infer old snapshot borrowed amounts from value divided by recorded price');
+assert.match(indexHtml, /amount:\s*Number\(leg\?\.amount \|\| 0\) \|\| null/, 'browser loop snapshots must persist borrowed token amounts for $1 peg charts');
+assert.match(loopSnapshotsJs, /amount:\s*num\(leg\?\.amount, null\)/, 'server loop snapshots must persist borrowed token amounts for $1 peg charts');
 assert.match(indexHtml, /Net value<\/button>\s*<button type="button" class="loop-history-mode-btn peg/, 'borrowed-token $1 peg toggle must be visually attached to net value mode');
 assert.match(indexHtml, /function tickerFmt\(price\)[\s\S]{0,240}minimumFractionDigits:\s*5/, 'market ticker must show near-$1 assets with enough precision instead of looking hard-pegged');
 assert.match(indexHtml, /chartMode === 'apy'\s*\?\s*loopSnapshotPeriodNetApy\(points, targetDays, endTs\)/, 'APY chart mode must use spot net APY average');
@@ -834,6 +839,11 @@ assert.match(indexHtml, /computeProtocolSnapshotDeltaPnl\(pairs/, 'protocol PNL 
 assert.match(indexHtml, /DefiPnl\.PROTOCOL_PNL_MAX_MOVE_PCT/, 'protocol PNL max move threshold must use shared defi-pnl constant');
 assert.match(indexHtml, /\[1-9A-HJ-NP-Za-km-z\]\{32,44\}/, 'loop yield wallets must accept Solana addresses');
 assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention Solana loop protocols');
+assert.match(indexHtml, /function predictionAggregatePnlDisplayValue\(/, 'Prediction Markets top PNL must use the same aggregate cache as the PNL chart');
+assert.match(indexHtml, /fetchPredictionPnlChartPoints\('all'\)/, 'Prediction Markets top PNL must refresh from the all-time PNL chart API');
+assert.match(indexHtml, /source:\s*'pnl-chart'/, 'Prediction Markets top PNL must mark chart-backed values instead of relying first on leaderboard data');
+assert.match(watcherPreviewHtml, /Dashboard theme tokens/, 'Watcher preview must use the Dashboard theme token set');
+assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\), rgba\(5,13,19,\.97\)\)/, 'Watcher preview panels must match the Dashboard dark surface treatment');
 
 {
   const {
