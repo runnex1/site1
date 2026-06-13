@@ -805,7 +805,7 @@ assert.match(indexHtml, /loop-history-chart/, 'loop cards must render snapshot h
 assert.doesNotMatch(indexHtml, /loop-meter-wrap[\s\S]{0,1200}renderLoops/, 'loops render must not use LTV meter bar');
 assert.match(indexHtml, /function loopHistoryChartHtml\(points, opts = \{\}\)/, 'loops tab must build per-position history charts from snapshots');
 assert.match(indexHtml, /function loopHistoryChartSetMode\(/, 'loop history chart must toggle between net value and APY');
-assert.match(indexHtml, /defaultMode = hasApy \? 'apy' : 'val'/, 'loop history chart must default to APY mode when APY data exists');
+assert.match(indexHtml, /defaultMode = fixPeg \? 'val' : \(hasApy \? 'apy' : 'val'\)/, 'loop history chart must default to APY mode unless the net-value peg fix is active');
 assert.match(indexHtml, /function loopHistoryChartHover\(/, 'loop history chart must support hover tooltips');
 assert.doesNotMatch(indexHtml, /loopHistoryChartHtml[\s\S]{0,2200}loopHistoryPeriodDelta/, 'loop history chart must not render period delta footer');
 assert.doesNotMatch(indexHtml, /loop-history-foot[\s\S]{0,400}3h buckets/, 'loop history chart must not show 3h buckets hint');
@@ -818,6 +818,7 @@ assert.match(indexHtml, /loopSnapshotApyRowHtml\(chartMode, adjustedHistoryPoint
 assert.match(indexHtml, /function loopSetManualSupplyApy\(/, 'loops must allow timestamped manual supply APY overrides');
 assert.match(indexHtml, /Fix \$1 peg/, 'loop net value chart must expose borrowed-token $1 peg toggle');
 assert.match(indexHtml, /function loopBorrowedPegNetValue\(/, 'loop net value chart must recalculate borrowed legs with $1 peg when enabled');
+assert.match(indexHtml, /Net value<\/button>\s*<button type="button" class="loop-history-mode-btn peg/, 'borrowed-token $1 peg toggle must be visually attached to net value mode');
 assert.match(indexHtml, /function tickerFmt\(price\)[\s\S]{0,240}minimumFractionDigits:\s*5/, 'market ticker must show near-$1 assets with enough precision instead of looking hard-pegged');
 assert.match(indexHtml, /chartMode === 'apy'\s*\?\s*loopSnapshotPeriodNetApy\(points, targetDays, endTs\)/, 'APY chart mode must use spot net APY average');
 assert.match(indexHtml, /:\s*loopSnapshotRealizedApy\(points, targetDays, endValue, endTs\)/, 'net value chart mode must use realized net value APY');

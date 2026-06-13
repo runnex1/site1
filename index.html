@@ -13639,7 +13639,7 @@ function loopHistoryChartHtml(points, opts = {}) {
     const last = viewPoints[viewPoints.length - 1];
     const fmtUsd = v => '$' + Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
     const apyBtnAttrs = hasApy ? '' : ' disabled';
-    const defaultMode = hasApy ? 'apy' : 'val';
+    const defaultMode = fixPeg ? 'val' : (hasApy ? 'apy' : 'val');
     const chartPoints = viewPoints.map((p, i) => ({
         ts: p.ts,
         nv: p.netValue,
@@ -13670,8 +13670,8 @@ function loopHistoryChartHtml(points, opts = {}) {
         <div class="loop-history-head">
             <span class="loop-history-title">${defaultMode === 'apy' ? 'APY' : 'Net value'}</span>
             <div class="loop-history-toggle">
-                <button type="button" class="loop-history-mode-btn peg${fixPeg ? ' active' : ''}" onclick="loopToggleBorrowPeg('${dashEsc(manualKey)}')" title="For this chart only, value the borrowed token amount at $1">Fix $1 peg</button>
                 <button type="button" class="loop-history-mode-btn${defaultMode === 'val' ? ' active' : ''}" data-mode="val" onclick="loopHistoryChartSetMode(this)">Net value</button>
+                <button type="button" class="loop-history-mode-btn peg${fixPeg ? ' active' : ''}" onclick="loopToggleBorrowPeg('${dashEsc(manualKey)}')" title="Net value only: value the borrowed token amount at $1">Fix $1 peg</button>
                 <button type="button" class="loop-history-mode-btn${defaultMode === 'apy' ? ' active' : ''}" data-mode="apy" onclick="loopHistoryChartSetMode(this)"${apyBtnAttrs}>APY</button>
             </div>
         </div>
