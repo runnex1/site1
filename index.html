@@ -18037,7 +18037,7 @@ function etfPnlRangeConfig(range) {
         '7d': { key:'7d', label:'7D', yahooRange:'1mo', interval:'1d', startMs:now - 7 * 86400000, includeTime:false },
         '30d': { key:'30d', label:'30D', yahooRange:'1mo', interval:'1d', startMs:now - 30 * 86400000, includeTime:false },
         'ytd': { key:'ytd', label:'YTD', yahooRange:'ytd', interval:'1d', startMs:ytdStart, includeTime:false },
-        'all': { key:'all', label:'All-Time', yahooRange:'max', interval:'1wk', startMs: ETF_PNL_ALL_START_MS, includeTime:false }
+        'all': { key:'all', label:'All-Time', yahooRange:'max', interval:'1d', startMs: ETF_PNL_ALL_START_MS, includeTime:false }
     };
     return map[key];
 }
