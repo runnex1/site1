@@ -18108,9 +18108,10 @@ async function fetchEtfPnlChartPoints(rows, cfg) {
 
 function buildEtfPnlChart(points, cfg) {
     const base = Number(points[0]?.pnl || 0);
-    const rebased = points.map(point => ({ ...point, value:point.pnl - base }));
-    const min = Math.min(0, ...rebased.map(point => point.value));
-    const max = Math.max(0, ...rebased.map(point => point.value));
+    const useRawPnl = cfg?.key === 'all';
+    const plotted = points.map(point => ({ ...point, value:useRawPnl ? Number(point.pnl || 0) : Number(point.pnl || 0) - base }));
+    const min = Math.min(0, ...plotted.map(point => point.value));
+    const max = Math.max(0, ...plotted.map(point => point.value));
     const span = Math.max(max - min, 1);
     const width = 760;
     const height = 184;
@@ -18118,20 +18119,22 @@ function buildEtfPnlChart(points, cfg) {
     const padY = 18;
     const chartW = width - padX * 2;
     const chartH = height - padY * 2;
-    const plot = rebased.map((point, index) => {
-        const x = padX + (index / Math.max(rebased.length - 1, 1)) * chartW;
+    const plot = plotted.map((point, index) => {
+        const x = padX + (index / Math.max(plotted.length - 1, 1)) * chartW;
         const y = padY + ((max - point.value) / span) * chartH;
         return { x, y, value:point.value, raw:point.pnl, label:etfPnlDateLabel(point.ts, cfg.includeTime) };
     });
     const line = plot.map((p, index) => `${index ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-    let peak = rebased[0]?.value || 0;
+    let peak = plotted[0]?.value || 0;
     let drawdown = 0;
-    for (const point of rebased) {
+    for (const point of plotted) {
         peak = Math.max(peak, point.value);
         drawdown = Math.min(drawdown, point.value - peak);
     }
     return {
-        total:rebased.at(-1)?.value || 0,
+        total:plotted.at(-1)?.value || 0,
+        rawTotal:points.at(-1)?.pnl || 0,
+        periodChange:(points.at(-1)?.pnl || 0) - base,
         high:max,
         drawdown,
         line,
@@ -18180,6 +18183,7 @@ function renderEtfPnl(rows) {
     const totalCost = rows.reduce((sum, row) => sum + row.cost, 0);
     const unrealizedPnl = totalValue - totalCost;
     const realizedPnl = Number(data.etfRealizedPnl || 0) + rows.reduce((sum, row) => sum + Number(row.e.realizedPnl || 0), 0);
+    const accountingPnl = realizedPnl + unrealizedPnl;
     const cfg = etfPnlRangeConfig(_etfPnlRange);
     const rowKey = rows.map(row => `${row.e.ticker}:${row.shares}:${row.avgPrice}:${row.currentPrice}`).join('|');
     const noteEl = document.getElementById('etfPnlRangeNote');
@@ -18197,9 +18201,9 @@ function renderEtfPnl(rows) {
     document.querySelectorAll('.etf-pnl-filter').forEach(btn => btn.classList.toggle('active', btn.dataset.etfRange === cfg.key));
 
     if (totalEl) {
-        totalEl.textContent = fmtEtfSignedUsd(unrealizedPnl);
-        totalEl.classList.toggle('positive', unrealizedPnl >= 0);
-        totalEl.classList.toggle('negative', unrealizedPnl < 0);
+        totalEl.textContent = fmtEtfSignedUsd(accountingPnl);
+        totalEl.classList.toggle('positive', accountingPnl >= 0);
+        totalEl.classList.toggle('negative', accountingPnl < 0);
     }
     setStats();
 
@@ -18213,9 +18217,9 @@ function renderEtfPnl(rows) {
     function renderChart(points) {
         const chart = buildEtfPnlChart(points, cfg);
         if (totalEl) {
-            totalEl.textContent = fmtEtfSignedUsd(chart.total);
-            totalEl.classList.toggle('positive', chart.total >= 0);
-            totalEl.classList.toggle('negative', chart.total < 0);
+            totalEl.textContent = fmtEtfSignedUsd(accountingPnl);
+            totalEl.classList.toggle('positive', accountingPnl >= 0);
+            totalEl.classList.toggle('negative', accountingPnl < 0);
         }
         if (lineEl) lineEl.setAttribute('d', chart.line);
         if (areaEl) areaEl.setAttribute('d', chart.area);
