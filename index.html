@@ -18200,10 +18200,21 @@ function renderEtfPnl(rows) {
     };
     document.querySelectorAll('.etf-pnl-filter').forEach(btn => btn.classList.toggle('active', btn.dataset.etfRange === cfg.key));
 
+    const setHeadline = (value, forceAllTimeAccounting = false) => {
+        if (!totalEl) return;
+        const displayed = (cfg.key === 'all' || forceAllTimeAccounting) ? accountingPnl : value;
+        if (typeof displayed !== 'number' || !Number.isFinite(displayed)) {
+            totalEl.textContent = 'Loading';
+            totalEl.classList.remove('positive', 'negative');
+            return;
+        }
+        totalEl.textContent = fmtEtfSignedUsd(displayed);
+        totalEl.classList.toggle('positive', displayed >= 0);
+        totalEl.classList.toggle('negative', displayed < 0);
+    };
+
     if (totalEl) {
-        totalEl.textContent = fmtEtfSignedUsd(accountingPnl);
-        totalEl.classList.toggle('positive', accountingPnl >= 0);
-        totalEl.classList.toggle('negative', accountingPnl < 0);
+        setHeadline(cfg.key === 'all' ? accountingPnl : null);
     }
     setStats();
 
@@ -18216,11 +18227,7 @@ function renderEtfPnl(rows) {
 
     function renderChart(points) {
         const chart = buildEtfPnlChart(points, cfg);
-        if (totalEl) {
-            totalEl.textContent = fmtEtfSignedUsd(accountingPnl);
-            totalEl.classList.toggle('positive', accountingPnl >= 0);
-            totalEl.classList.toggle('negative', accountingPnl < 0);
-        }
+        setHeadline(chart.total);
         if (lineEl) lineEl.setAttribute('d', chart.line);
         if (areaEl) areaEl.setAttribute('d', chart.area);
         if (noteEl) noteEl.textContent = chart.note;
