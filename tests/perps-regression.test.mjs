@@ -810,7 +810,10 @@ assert.match(indexHtml, /height:148px/, 'loop history chart must be tall enough 
 assert.match(indexHtml, /function loopSnapshotPeriodNetApy\(/, 'loops tab must compute period net APY from spot snapshot rates');
 assert.match(indexHtml, /function loopTrimHistoryToLatestSession\(/, 'loop history must reset after deposits and withdrawals');
 assert.match(indexHtml, /function loopHistoryCapitalEvent\(/, 'loop history must detect capital flow between snapshots');
-assert.match(indexHtml, /loopSnapshotApyRowHtml\(chartMode, historyPoints, liveEndValue, liveEndTs\)/, 'loop cards must seed 7d/30d metrics from active chart mode');
+assert.match(indexHtml, /loopSnapshotApyRowHtml\(chartMode, adjustedHistoryPoints, liveEndValue, liveEndTs\)/, 'loop cards must seed 7d/30d metrics from active chart mode and manual APY overrides');
+assert.match(indexHtml, /function loopSetManualSupplyApy\(/, 'loops must allow timestamped manual supply APY overrides');
+assert.match(indexHtml, /Fix \$1 peg/, 'loop net value chart must expose borrowed-token $1 peg toggle');
+assert.match(indexHtml, /function loopBorrowedPegNetValue\(/, 'loop net value chart must recalculate borrowed legs with $1 peg when enabled');
 assert.match(indexHtml, /chartMode === 'apy'\s*\?\s*loopSnapshotPeriodNetApy\(points, targetDays, endTs\)/, 'APY chart mode must use spot net APY average');
 assert.match(indexHtml, /:\s*loopSnapshotRealizedApy\(points, targetDays, endValue, endTs\)/, 'net value chart mode must use realized net value APY');
 assert.match(indexHtml, /function loopSnapshotApyLegHtml\(/, 'loop cards must show 7d/30d APY in leg pane');

@@ -6351,8 +6351,13 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-history-mode-btn { border:0; background:transparent; color:var(--t3); padding:0.24rem 0.52rem; font-family:var(--ff-mono); font-size:0.56rem; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; cursor:pointer; }
 .loop-history-mode-btn:hover:not(:disabled) { color:var(--t1); background:rgba(255,255,255,0.04); }
 .loop-history-mode-btn.active { color:var(--teal); background:rgba(45,212,191,0.12); }
+.loop-history-mode-btn.peg.active { color:var(--amber); background:rgba(245,158,11,0.12); }
 .loop-history-chart.mode-apy .loop-history-mode-btn.active { color:var(--sky); background:rgba(56,189,248,0.12); }
+.loop-history-chart.mode-apy .loop-history-mode-btn.peg { display:none; }
 .loop-history-mode-btn:disabled { opacity:0.35; cursor:not-allowed; }
+.loop-summary-apy-edit { border:0; background:transparent; color:inherit; padding:0; font:inherit; cursor:pointer; }
+.loop-summary-apy-edit strong { text-decoration:underline dotted rgba(110,231,216,0.55); text-underline-offset:3px; }
+.loop-summary-apy-edit:hover strong { color:var(--teal); }
 .loop-history-chart-wrap { position:relative; }
 .loop-history-chart svg { display:block; width:100%; height:120px; cursor:crosshair; }
 .loop-history-grid { stroke:rgba(148,163,184,0.09); stroke-width:1; pointer-events:none; }
@@ -12724,8 +12729,91 @@ let loopApiState = {
 const LOOP_SNAPSHOTS_KEY = 'vault-loop-snapshots';
 const LOOP_USDE_USDM_PURGE_KEY = 'vault-loop-snapshots-usde-usdm-purged';
 const LOOP_API_STATE_KEY = 'vault-loop-api-state';
+const LOOP_MANUAL_APY_KEY = 'vault-loop-manual-supply-apy';
+const LOOP_FIX_PEG_KEY = 'vault-loop-fix-borrow-peg';
 let loopSnapshotsStore = {};
 let _loopSnapshotsHydratePromise = null;
+let loopManualSupplyApy = {};
+let loopFixBorrowPeg = {};
+
+function loopsLoadManualSettings() {
+    try { loopManualSupplyApy = JSON.parse(localStorage.getItem(LOOP_MANUAL_APY_KEY) || '{}') || {}; } catch (e) { loopManualSupplyApy = {}; }
+    try { loopFixBorrowPeg = JSON.parse(localStorage.getItem(LOOP_FIX_PEG_KEY) || '{}') || {}; } catch (e) { loopFixBorrowPeg = {}; }
+}
+
+function loopsSaveManualSettings() {
+    try { localStorage.setItem(LOOP_MANUAL_APY_KEY, JSON.stringify(loopManualSupplyApy || {})); } catch (e) {}
+    try { localStorage.setItem(LOOP_FIX_PEG_KEY, JSON.stringify(loopFixBorrowPeg || {})); } catch (e) {}
+}
+
+function loopManualKey(pos) {
+    return encodeURIComponent(loopPositionHistoryKey(pos || {}).toLowerCase());
+}
+
+function loopManualSupplyApyAt(key, ts) {
+    const entries = Array.isArray(loopManualSupplyApy?.[key]) ? loopManualSupplyApy[key] : [];
+    const when = Number(ts) || Date.now();
+    let active = null;
+    for (const entry of entries) {
+        const entryTs = Number(entry?.ts || 0);
+        const apy = Number(entry?.apy);
+        if (entryTs && entryTs <= when && Number.isFinite(apy)) active = apy;
+    }
+    return active;
+}
+
+function loopApplyManualSupplyApy(point, key) {
+    if (!point || !key) return point;
+    const manualApy = loopManualSupplyApyAt(key, point.ts || Date.now());
+    if (!Number.isFinite(manualApy)) return point;
+    const supplied = Number(point.totalSupplied || 0);
+    const borrowed = Number(point.totalBorrowed || 0);
+    const borrowApy = Number(point.borrowApy || 0);
+    const net = Math.max(Math.abs(supplied - borrowed), 1);
+    return {
+        ...point,
+        supplyApy: manualApy,
+        manualSupplyApy: true,
+        netApy: ((supplied * manualApy) - (borrowed * borrowApy)) / net,
+    };
+}
+
+function loopBorrowedPegNetValue(point, fixPeg) {
+    if (!fixPeg || !point) return Number(point?.netValue || 0);
+    const borrowedLegs = Array.isArray(point.borrowedLegs) ? point.borrowedLegs : [];
+    if (!borrowedLegs.length) return Number(point.netValue || 0);
+    const supplied = Number(point.totalSupplied || 0);
+    const peggedBorrowed = borrowedLegs.reduce((sum, leg) => {
+        const amount = Number(leg?.amount);
+        const value = Number(leg?.value || 0);
+        return sum + (Number.isFinite(amount) && amount > 0 ? amount : value);
+    }, 0);
+    const merkl = Number(point.merklRewardsUsd || 0);
+    return supplied - peggedBorrowed + (merkl > 0.01 ? merkl : 0);
+}
+
+function loopSetManualSupplyApy(key, currentApy) {
+    const current = Number.isFinite(Number(currentApy)) ? Number(currentApy).toFixed(2) : '';
+    const raw = prompt('Manual Supply APY % from now onward', current);
+    if (raw == null) return;
+    const value = Number(String(raw).replace('%', '').trim());
+    if (!Number.isFinite(value)) {
+        alert('Enter a valid APY percentage, e.g. 3.4');
+        return;
+    }
+    const entries = Array.isArray(loopManualSupplyApy[key]) ? loopManualSupplyApy[key].slice() : [];
+    entries.push({ ts: Date.now(), apy: value });
+    entries.sort((a, b) => Number(a.ts || 0) - Number(b.ts || 0));
+    loopManualSupplyApy[key] = entries.slice(-100);
+    loopsSaveManualSettings();
+    renderLoops();
+}
+
+function loopToggleBorrowPeg(key) {
+    loopFixBorrowPeg[key] = !loopFixBorrowPeg[key];
+    loopsSaveManualSettings();
+    renderLoops();
+}
 
 function loopsHydrateApiStateFromLocal() {
     try {
@@ -12821,6 +12909,16 @@ function loopsUploadSnapshotsToServer() {
     } catch (e) {}
 }
 
+function loopSnapshotLegs(legs) {
+    return (Array.isArray(legs) ? legs : []).map(leg => ({
+        symbol: String(leg?.symbol || '').toUpperCase(),
+        amount: Number(leg?.amount || 0) || null,
+        value: Number(leg?.value || 0),
+        apy: leg?.apy == null ? null : Number(leg.apy),
+        priceUsd: leg?.priceUsd == null ? null : Number(leg.priceUsd),
+    })).filter(leg => leg.value > 0 || leg.amount > 0);
+}
+
 function loopsAppendSnapshotFromApiData(data) {
     const fetchedAt = Date.now();
     const key = loopsSnapshotBucketKey(fetchedAt);
@@ -12844,6 +12942,8 @@ function loopsAppendSnapshotFromApiData(data) {
                 economicNetValue,
                 totalSupplied: Number(p.totalSupplied || 0),
                 totalBorrowed: Number(p.totalBorrowed || 0),
+                suppliedLegs: loopSnapshotLegs(p.supplied),
+                borrowedLegs: loopSnapshotLegs(p.borrowed),
                 supplyApy: p.supplyApy == null ? null : Number(p.supplyApy),
                 borrowApy: p.borrowApy == null ? null : Number(p.borrowApy),
                 netApy: p.netApy == null ? null : Number(p.netApy),
@@ -12919,8 +13019,12 @@ function loopBuildChartHistoryPoints(rawPoints, rawPos, endValue, endTs) {
         positionNetValue,
         merklRewardsUsd: merklRewardsUsd > 0.01 ? merklRewardsUsd : 0,
         netApy: rawPos.netApy == null ? null : Number(rawPos.netApy),
+        supplyApy: rawPos.supplyApy == null ? null : Number(rawPos.supplyApy),
+        borrowApy: rawPos.borrowApy == null ? null : Number(rawPos.borrowApy),
         totalSupplied: Number(rawPos.totalSupplied || 0),
         totalBorrowed: Number(rawPos.totalBorrowed || 0),
+        suppliedLegs: loopSnapshotLegs(rawPos.supplied),
+        borrowedLegs: loopSnapshotLegs(rawPos.borrowed),
     };
     const last = points[points.length - 1];
     if (!last) return [end];
@@ -12984,8 +13088,12 @@ function loopHistoryPoints(positionOrId) {
                 positionNetValue,
                 merklRewardsUsd: merklRewardsUsd > 0.01 ? merklRewardsUsd : 0,
                 netApy: pos.netApy == null ? null : Number(pos.netApy),
+                supplyApy: pos.supplyApy == null ? null : Number(pos.supplyApy),
+                borrowApy: pos.borrowApy == null ? null : Number(pos.borrowApy),
                 totalSupplied: Number(pos.totalSupplied || 0),
                 totalBorrowed: Number(pos.totalBorrowed || 0),
+                suppliedLegs: Array.isArray(pos.suppliedLegs) ? pos.suppliedLegs : [],
+                borrowedLegs: Array.isArray(pos.borrowedLegs) ? pos.borrowedLegs : [],
             };
         })
         .filter(p => p && p.ts && Number.isFinite(p.netValue))
@@ -13037,8 +13145,12 @@ function loopTrimHistoryToLatestSession(points) {
             positionNetValue: p.positionNetValue == null ? null : Number(p.positionNetValue),
             merklRewardsUsd: Number(p.merklRewardsUsd || 0),
             netApy: p.netApy == null ? null : Number(p.netApy),
+            supplyApy: p.supplyApy == null ? null : Number(p.supplyApy),
+            borrowApy: p.borrowApy == null ? null : Number(p.borrowApy),
             totalSupplied: Number(p.totalSupplied || 0),
             totalBorrowed: Number(p.totalBorrowed || 0),
+            suppliedLegs: Array.isArray(p.suppliedLegs) ? p.suppliedLegs : [],
+            borrowedLegs: Array.isArray(p.borrowedLegs) ? p.borrowedLegs : [],
         }))
         .sort((a, b) => a.ts - b.ts);
     if (sorted.length < 2) return sorted;
@@ -13254,8 +13366,12 @@ function loopPairHtml(suppliedPositions, borrowedPositions) {
     return loopPairLegHtml(fallback, 'supply', 32, suppliedPos || borrowedPos);
 }
 
-function loopSupplyLegApyHtml(suppliedApr) {
-    return Number.isFinite(suppliedApr) ? `Supply <strong>${suppliedApr.toFixed(2)}%</strong>` : '';
+function loopSupplyLegApyHtml(suppliedApr, manualKey = '', hasManual = false) {
+    if (!Number.isFinite(suppliedApr)) return '';
+    const canEdit = hasManual || Math.abs(suppliedApr) < 0.5;
+    const text = `Supply <strong>${suppliedApr.toFixed(2)}%</strong>`;
+    if (!canEdit || !manualKey) return text;
+    return `<button type="button" class="loop-summary-apy-edit" onclick="loopSetManualSupplyApy('${dashEsc(manualKey)}', ${Number(suppliedApr).toFixed(8)})" title="Set manual Supply APY from now onward">${text}</button>`;
 }
 
 function loopBorrowLegApyHtml(borrowedApr) {
@@ -13275,8 +13391,8 @@ function loopNetValueTooltipHtml(breakdown, fmtV) {
     </div>`;
 }
 
-function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV) {
-    const supplyLine = loopSupplyLegApyHtml(suppliedApr);
+function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey = '', hasManualSupplyApy = false) {
+    const supplyLine = loopSupplyLegApyHtml(suppliedApr, manualKey, hasManualSupplyApy);
     const borrowLine = loopBorrowLegApyHtml(borrowedApr);
     const fmt = fmtV || (v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     const netTip = loopNetValueTooltipHtml(netBreakdown, fmt);
@@ -13356,7 +13472,8 @@ function loopRefreshPeriodApyMetrics(chartEl) {
     const row = chartEl.closest('.loop-card-main')?.querySelector('.loop-realized-row');
     if (!row) return;
     const mode = chartEl.classList.contains('mode-apy') ? 'apy' : 'val';
-    const points = loopHistoryPointsFromChart(chartEl);
+    const manualKey = chartEl.dataset.manualKey || '';
+    const points = loopHistoryPointsFromChart(chartEl).map(p => loopApplyManualSupplyApy(p, manualKey));
     const endValueRaw = chartEl.dataset.endValue;
     const endValue = endValueRaw !== '' && endValueRaw != null ? Number(endValueRaw) : null;
     const endTs = Number(chartEl.dataset.endTs) || Date.now();
@@ -13384,7 +13501,7 @@ function loopHistoryChartSetMode(btn) {
     const mode = btn.dataset.mode === 'apy' ? 'apy' : 'val';
     chart.classList.remove('mode-val', 'mode-apy');
     chart.classList.add('mode-' + mode);
-    chart.querySelectorAll('.loop-history-mode-btn').forEach(b => {
+    chart.querySelectorAll('.loop-history-mode-btn:not(.peg)').forEach(b => {
         b.classList.toggle('active', b.dataset.mode === mode);
     });
     const title = chart.querySelector('.loop-history-title');
@@ -13467,8 +13584,15 @@ function loopHistoryChartHtml(points, opts = {}) {
     const iw = w - pad.l - pad.r;
     const ih = h - pad.t - pad.b;
     const baseY = pad.t + ih;
-    const vals = points.map(p => p.netValue);
-    const apys = points.map(p => p.netApy);
+    const manualKey = opts.manualKey || '';
+    const fixPeg = Boolean(opts.fixPeg);
+    const viewPoints = points.map(point => {
+        const withManual = loopApplyManualSupplyApy(point, manualKey);
+        const netValue = loopBorrowedPegNetValue(withManual, fixPeg);
+        return { ...withManual, netValue };
+    });
+    const vals = viewPoints.map(p => p.netValue);
+    const apys = viewPoints.map(p => p.netApy);
     const vmin = Math.min(...vals);
     const vmax = Math.max(...vals);
     const amin = Math.min(...apys.filter(Number.isFinite));
@@ -13476,16 +13600,16 @@ function loopHistoryChartHtml(points, opts = {}) {
     const hasApy = apys.every(Number.isFinite) && Number.isFinite(amin) && Number.isFinite(amax);
     const vspan = Math.max(vmax - vmin, 1);
     const aspan = Math.max(amax - amin, 0.5);
-    const xAt = i => pad.l + (i / (points.length - 1)) * iw;
+    const xAt = i => pad.l + (i / (viewPoints.length - 1)) * iw;
     const yVal = v => pad.t + ih - ((v - vmin) / vspan) * ih;
     const yApy = a => pad.t + ih - ((a - amin) / aspan) * ih;
-    const valSeries = loopHistoryChartPath(points, p => p.netValue, xAt, yVal, baseY);
-    const apySeries = hasApy ? loopHistoryChartPath(points, p => p.netApy, xAt, yApy, baseY) : null;
-    const last = points[points.length - 1];
+    const valSeries = loopHistoryChartPath(viewPoints, p => p.netValue, xAt, yVal, baseY);
+    const apySeries = hasApy ? loopHistoryChartPath(viewPoints, p => p.netApy, xAt, yApy, baseY) : null;
+    const last = viewPoints[viewPoints.length - 1];
     const fmtUsd = v => '$' + Number(v || 0).toLocaleString('en-US', { maximumFractionDigits: 0 });
     const apyBtnAttrs = hasApy ? '' : ' disabled';
     const defaultMode = hasApy ? 'apy' : 'val';
-    const chartPoints = points.map((p, i) => ({
+    const chartPoints = viewPoints.map((p, i) => ({
         ts: p.ts,
         nv: p.netValue,
         na: p.netApy,
@@ -13498,8 +13622,12 @@ function loopHistoryChartHtml(points, opts = {}) {
         ts: p.ts,
         netValue: p.netValue,
         netApy: p.netApy,
+        supplyApy: p.supplyApy,
+        borrowApy: p.borrowApy,
         totalSupplied: p.totalSupplied,
         totalBorrowed: p.totalBorrowed,
+        suppliedLegs: p.suppliedLegs || [],
+        borrowedLegs: p.borrowedLegs || [],
     }))));
     const endValue = opts.endValue;
     const endTs = Number(opts.endTs) || Date.now();
@@ -13507,10 +13635,11 @@ function loopHistoryChartHtml(points, opts = {}) {
         const y = (pad.t + ih * (1 - frac)).toFixed(1);
         return `<line class="loop-history-grid" x1="${pad.l}" y1="${y}" x2="${w - pad.r}" y2="${y}"></line>`;
     }).join('');
-    return `<div class="loop-history-chart mode-${defaultMode}" data-points="${pointsAttr}" data-history-points="${historyAttr}" data-end-value="${endValue != null ? endValue : ''}" data-end-ts="${endTs}" data-chart-w="${w}" data-chart-h="${h}">
+    return `<div class="loop-history-chart mode-${defaultMode}" data-points="${pointsAttr}" data-history-points="${historyAttr}" data-manual-key="${dashEsc(manualKey)}" data-end-value="${endValue != null ? endValue : ''}" data-end-ts="${endTs}" data-chart-w="${w}" data-chart-h="${h}">
         <div class="loop-history-head">
             <span class="loop-history-title">${defaultMode === 'apy' ? 'APY' : 'Net value'}</span>
             <div class="loop-history-toggle">
+                <button type="button" class="loop-history-mode-btn peg${fixPeg ? ' active' : ''}" onclick="loopToggleBorrowPeg('${dashEsc(manualKey)}')" title="For this chart only, value the borrowed token amount at $1">Fix $1 peg</button>
                 <button type="button" class="loop-history-mode-btn${defaultMode === 'val' ? ' active' : ''}" data-mode="val" onclick="loopHistoryChartSetMode(this)">Net value</button>
                 <button type="button" class="loop-history-mode-btn${defaultMode === 'apy' ? ' active' : ''}" data-mode="apy" onclick="loopHistoryChartSetMode(this)"${apyBtnAttrs}>APY</button>
             </div>
@@ -16379,6 +16508,7 @@ function renderLoops() {
     const countEl = document.getElementById('loopsCount');
     if (!grid) return;
     loopsLoadSnapshotsLocal();
+    loopsLoadManualSettings();
 
     const fmtV = v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
@@ -16457,9 +16587,17 @@ function renderLoops() {
         const h = Number(health);
         const hCls = healthClass(h);
         const statusCls = Number.isFinite(h) ? (hCls === 'danger' ? 'danger' : hCls === 'warn' ? 'warn' : 'safe') : '';
-        const totalApr = Number(apy?.totalApr);
-        const suppliedApr = Number(apy?.suppliedApr);
+        const manualKey = loop.live && loop.raw ? loopManualKey(loop.raw) : '';
+        const manualSupplyApy = manualKey ? loopManualSupplyApyAt(manualKey, Date.now()) : null;
         const borrowedApr = Number(apy?.borrowedApr);
+        const suppliedAprRaw = Number(apy?.suppliedApr);
+        const hasManualSupplyApy = Number.isFinite(manualSupplyApy);
+        const suppliedApr = hasManualSupplyApy ? manualSupplyApy : suppliedAprRaw;
+        let totalApr = Number(apy?.totalApr);
+        if (Number.isFinite(manualSupplyApy)) {
+            const netBase = Math.max(Math.abs(Number(totalSupplied || 0) - Number(totalBorrowed || 0)), 1);
+            totalApr = ((Number(totalSupplied || 0) * suppliedApr) - (Number(totalBorrowed || 0) * (Number.isFinite(borrowedApr) ? borrowedApr : 0))) / netBase;
+        }
         const apyCls = Number.isFinite(totalApr) ? (totalApr > 0 ? '' : totalApr < 0 ? 'neg' : 'neu') : 'neu';
         const apyText = Number.isFinite(totalApr) ? totalApr.toFixed(2) + '%' : '-';
         const rawHistoryPoints = loop.live && loop.raw ? loopHistoryPoints(loop.raw) : [];
@@ -16472,20 +16610,26 @@ function renderLoops() {
         const chartPoints = loop.live && loop.raw
             ? loopBuildChartHistoryPoints(historyPoints, loop.raw, liveEndValue, liveEndTs)
             : [];
+        const adjustedHistoryPoints = manualKey
+            ? historyPoints.map(point => loopApplyManualSupplyApy(point, manualKey))
+            : historyPoints;
+        const adjustedChartPoints = manualKey
+            ? chartPoints.map(point => loopApplyManualSupplyApy(point, manualKey))
+            : chartPoints;
         const marketChip = loop.raw?.marketName || sectionLabel;
         const networkChip = loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions);
         const walletChip = loop.live && loop.raw?.wallet
             ? `<span class="loop-tag">${dashEsc(loopApiShortWallet(loop.raw.wallet))}</span>`
             : '';
         const healthBadgeCls = statusCls || '';
-        const hasApyHistory = historyPoints.length >= 2
-            && historyPoints.every(p => Number.isFinite(Number(p.netApy)));
+        const hasApyHistory = adjustedHistoryPoints.length >= 2
+            && adjustedHistoryPoints.every(p => Number.isFinite(Number(p.netApy)));
         const chartMode = hasApyHistory ? 'apy' : 'val';
         const realizedHtml = loop.live && loop.raw
-            ? loopSnapshotApyRowHtml(chartMode, historyPoints, liveEndValue, liveEndTs)
+            ? loopSnapshotApyRowHtml(chartMode, adjustedHistoryPoints, liveEndValue, liveEndTs)
             : '';
         const chartHtml = loop.live && loop.raw
-            ? loopHistoryChartHtml(chartPoints, { endValue: liveEndValue, endTs: liveEndTs })
+            ? loopHistoryChartHtml(adjustedChartPoints, { endValue: liveEndValue, endTs: liveEndTs, manualKey, fixPeg: Boolean(loopFixBorrowPeg[manualKey]) })
             : '<div class="loop-history-chart empty"><span>Sync live to build 2h snapshot history</span></div>';
         const aaveNetValue = loop.live && loop.raw ? Number(loop.raw.netValue ?? displayNetValue) : displayNetValue;
         const merklUnclaimed = loop.live && loop.raw ? Number(loop.raw.merklRewardsUsd || 0) : 0;
@@ -16493,7 +16637,7 @@ function renderLoops() {
         const netBreakdown = merklUnclaimed > 0.01
             ? { aave: aaveNetValue, merkl: merklUnclaimed, claimed: merklClaimed, total: displayNetValue }
             : null;
-        const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV);
+        const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey, hasManualSupplyApy);
 
         return `
         <div class="loop-card">
