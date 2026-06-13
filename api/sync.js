@@ -520,6 +520,41 @@ async function getPolymarketPnlSeries(query) {
 }
 
 const runCheckAlerts = require('../lib/check-alerts-run');
+const { runDueJobs, getCronStatus } = require('../lib/cron-runner');
+
+function expectedCronSyncSecret() {
+  return process.env.SYNC_SECRET1 || process.env.SYNC_SECRET || '';
+}
+
+function providedCronSyncSecret(req) {
+  return String(
+    req.headers['x-sync-secret']
+    || req.query?.secret
+    || String(req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+    || '',
+  );
+}
+
+async function handleCronTick(req, res) {
+  const expected = expectedCronSyncSecret();
+  if (!expected || providedCronSyncSecret(req) !== expected) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
+  const maxJobs = Math.min(2, Math.max(1, parseInt(req.query?.maxJobs || '2', 10) || 2));
+  try {
+    return res.status(200).json(await runDueJobs({ maxJobs }));
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || 'Cron tick failed' });
+  }
+}
+
+async function handleCronStatus(req, res) {
+  try {
+    return res.status(200).json(await getCronStatus());
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message || 'Cron status failed' });
+  }
+}
 
 module.exports = async function handler(req, res) {
   // CORS
@@ -531,6 +566,12 @@ module.exports = async function handler(req, res) {
 
   if (req.query?.checkAlerts === '1') {
     return runCheckAlerts(req, res);
+  }
+  if (req.query?.cronTick === '1') {
+    return handleCronTick(req, res);
+  }
+  if (req.query?.cronStatus === '1') {
+    return handleCronStatus(req, res);
   }
 
   // ── GET — load all vault data back to the browser ─────────────────────────
