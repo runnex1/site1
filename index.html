@@ -23323,6 +23323,10 @@ function fmtTokenPrice(price) {
 }
 
 function tickerFmt(price) {
+    const n = Number(price);
+    if (Number.isFinite(n) && n >= 0.995 && n <= 1.005) {
+        return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 5 });
+    }
     return fmtTokenPrice(price);
 }
 

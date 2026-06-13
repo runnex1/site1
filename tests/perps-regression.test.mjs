@@ -814,6 +814,7 @@ assert.match(indexHtml, /loopSnapshotApyRowHtml\(chartMode, adjustedHistoryPoint
 assert.match(indexHtml, /function loopSetManualSupplyApy\(/, 'loops must allow timestamped manual supply APY overrides');
 assert.match(indexHtml, /Fix \$1 peg/, 'loop net value chart must expose borrowed-token $1 peg toggle');
 assert.match(indexHtml, /function loopBorrowedPegNetValue\(/, 'loop net value chart must recalculate borrowed legs with $1 peg when enabled');
+assert.match(indexHtml, /function tickerFmt\(price\)[\s\S]{0,240}minimumFractionDigits:\s*5/, 'market ticker must show near-$1 assets with enough precision instead of looking hard-pegged');
 assert.match(indexHtml, /chartMode === 'apy'\s*\?\s*loopSnapshotPeriodNetApy\(points, targetDays, endTs\)/, 'APY chart mode must use spot net APY average');
 assert.match(indexHtml, /:\s*loopSnapshotRealizedApy\(points, targetDays, endValue, endTs\)/, 'net value chart mode must use realized net value APY');
 assert.match(indexHtml, /function loopSnapshotApyLegHtml\(/, 'loop cards must show 7d/30d APY in leg pane');
