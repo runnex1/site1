@@ -3270,6 +3270,104 @@ body::after {
   display: block;
 }
 .drawer-lending-loop-body { min-width: 0; }
+.drawer-leg-table-wrap {
+  border: 1px solid rgba(148,163,184,0.14);
+  border-radius: 7px;
+  overflow: hidden;
+  background: rgba(6,17,24,0.72);
+}
+.drawer-leg-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.drawer-leg-table col.pool { width: 18%; }
+.drawer-leg-table col.qty { width: 24%; }
+.drawer-leg-table col.price { width: 18%; }
+.drawer-leg-table col.apy { width: 14%; }
+.drawer-leg-table col.usd { width: 26%; }
+.drawer-leg-table th,
+.drawer-leg-table td {
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(148,163,184,0.08);
+}
+.drawer-leg-table th:nth-child(4),
+.drawer-leg-table th:nth-child(5),
+.drawer-leg-table td:nth-child(4),
+.drawer-leg-table td:nth-child(5) { text-align: right; }
+.drawer-leg-section th {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(148,163,184,0.12);
+  background: rgba(8,21,29,0.58);
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-family: var(--ff-display);
+}
+.drawer-leg-section-sup th { color: var(--teal); border-top: 2px solid rgba(34,197,94,0.45); }
+.drawer-leg-section-bor th { color: var(--red); border-top: 2px solid rgba(244,63,94,0.45); }
+.drawer-leg-section-total {
+  float: right;
+  font-family: var(--ff-mono);
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--t1);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.drawer-leg-cols th {
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t3);
+  font-family: var(--ff-mono);
+  background: rgba(4,13,20,0.45);
+  padding: 5px 10px;
+}
+.drawer-leg-table tbody tr:last-child td { border-bottom: 0; }
+.drawer-leg-pool {
+  font-family: var(--ff-mono);
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--t1);
+}
+.drawer-leg-qty,
+.drawer-leg-qty-cell .drawer-leg-qty-input {
+  font-family: var(--ff-mono);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--t2);
+}
+.drawer-leg-qty-input,
+.drawer-leg-usd-input {
+  width: 100%;
+  max-width: 100%;
+  height: 28px;
+  background: transparent;
+  border-color: transparent;
+  padding: 0 0.35rem;
+}
+.drawer-leg-price {
+  font-family: var(--ff-mono);
+  font-size: 0.64rem;
+  font-weight: 650;
+  color: var(--t3);
+}
+.drawer-leg-price.fixed { color: var(--green); }
+.drawer-leg-usd {
+  font-family: var(--ff-mono);
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--t1);
+}
+.drawer-leg-apr-cell .apr-badge,
+.drawer-leg-apr-cell .defi-apr-plain {
+  font-size: 0.68rem;
+}
 .drawer-lending-loop-total {
   display: flex;
   align-items: center;
@@ -12717,6 +12815,81 @@ function drawerLendingLoopTotalAprHtml(breakdown) {
         ${dashAprHtml(breakdown?.totalApr ?? null)}
     </div>`;
 }
+function protocolDrawerPriceHtml(pos, unitPrices = null) {
+    const tokens = pos.tokens || [];
+    if (tokens.length !== 1) return '<span class="drawer-leg-price">—</span>';
+    const unit = protocolPositionUnitPrice(pos, unitPrices);
+    if (unit === null) return '<span class="drawer-leg-price">—</span>';
+    const fixed = stableUnitPriceInPegBand(unit);
+    const txt = fixed
+        ? '$1.0000'
+        : '$' + unit.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+    return `<span class="drawer-leg-price${fixed ? ' fixed' : ''}">${txt}</span>`;
+}
+function protocolDrawerQtyCellHtml(pos, protocolIndex, sectionIndex, positionIndex, unitPrices = null, editable = true) {
+    const tokens = pos.tokens || [];
+    if (!tokens.length) return '<span class="drawer-leg-qty">—</span>';
+    if (!editable) {
+        return tokens.map(t => `<span class="drawer-leg-qty">${dashEsc(protocolTokenDisplayText(pos, t, unitPrices))}</span>`).join('');
+    }
+    return tokens.map((t, tokenIndex) => {
+        return `<input class="defi-edit-input drawer-leg-qty-input" value="${dashEsc(protocolTokenDisplayText(pos, t, unitPrices))}" aria-label="Edit token amount" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionToken(${protocolIndex},${sectionIndex},${positionIndex},${tokenIndex},this.value)" onblur="updateProtocolPositionToken(${protocolIndex},${sectionIndex},${positionIndex},${tokenIndex},this.value)">`;
+    }).join('');
+}
+function buildLendingLoopDrawerTableHtml(sec, ctx) {
+    const {
+        protocolIndex,
+        sectionIndex,
+        secType,
+        secIdx = '',
+        unitPrices = null,
+        editable = true,
+        aprHtmlFn,
+        breakdown = null,
+        valueFn = protocolPositionValue,
+    } = ctx;
+    const subs = ['supplied', 'borrowed'];
+    let rows = '';
+    for (const sub of subs) {
+        const positions = (sec.positions || []).filter(pos => String(pos.sub || '').toLowerCase() === sub);
+        if (!positions.length) continue;
+        const subTotal = positions.reduce((sum, pos) => sum + valueFn(pos, unitPrices), 0);
+        const subClass = sub === 'supplied' ? 'sup' : 'bor';
+        const subLabel = sub.charAt(0).toUpperCase() + sub.slice(1);
+        rows += `<tr class="drawer-leg-section drawer-leg-section-${subClass}">
+            <th colspan="5">${subLabel}<span class="drawer-leg-section-total">${fmtV(subTotal)}</span></th>
+        </tr>
+        <tr class="drawer-leg-cols">
+            <th>Pool</th><th>Qty</th><th>Price</th><th>APY</th><th>USD</th>
+        </tr>`;
+        for (const pos of positions) {
+            const positionIndex = sec.positions.indexOf(pos);
+            const aprHtml = aprHtmlFn(pos, secType, secIdx);
+            const usdVal = Number(valueFn(pos, unitPrices) || 0);
+            const usdHtml = editable
+                ? `<input class="defi-edit-input drawer-leg-usd-input" type="number" min="0" step="0.01" value="${usdVal.toFixed(2)}" aria-label="Edit USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionUsd(${protocolIndex},${sectionIndex},${positionIndex},this.value)" onblur="updateProtocolPositionUsd(${protocolIndex},${sectionIndex},${positionIndex},this.value)">`
+                : `<span class="drawer-leg-usd">${fmtV(usdVal)}</span>`;
+            rows += `<tr class="drawer-leg-row drawer-leg-row-${subClass}">
+                <td class="drawer-leg-pool">${dashEsc(pos.pool)}</td>
+                <td class="drawer-leg-qty-cell">${protocolDrawerQtyCellHtml(pos, protocolIndex, sectionIndex, positionIndex, unitPrices, editable)}</td>
+                <td class="drawer-leg-price-cell">${protocolDrawerPriceHtml(pos, unitPrices)}</td>
+                <td class="drawer-leg-apr-cell">${aprHtml}</td>
+                <td class="drawer-leg-usd-cell">${usdHtml}</td>
+            </tr>`;
+        }
+    }
+    return `<div class="drawer-lending-loop">
+        <div class="drawer-leg-table-wrap">
+            <table class="drawer-leg-table">
+                <colgroup>
+                    <col class="pool"><col class="qty"><col class="price"><col class="apy"><col class="usd">
+                </colgroup>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+        ${drawerLendingLoopTotalAprHtml(breakdown)}
+    </div>`;
+}
 function wrapDrawerLendingLoop(bodyHtml, breakdown) {
     return `<div class="drawer-lending-loop">
         <div class="drawer-lending-loop-body">${bodyHtml}</div>
@@ -16396,18 +16569,7 @@ function renderProtocols() {
                 _drawerTypeCounts[_secType] = (_drawerTypeCounts[_secType] || 0) + 1;
                 const _secIdx = _drawerTypeCounts[_secType] > 1 ? `[${_drawerTypeCounts[_secType]}]` : '';
                 const isLendingSection = /lending|leveraged farming/i.test(_secType);
-                const lendingTotals = isLendingSection ? (sec.positions || []).reduce((acc, pos) => {
-                    const sub = (pos.sub || '').toLowerCase();
-                    if (sub === 'supplied') acc.supplied += protocolPositionValue(pos);
-                    else if (sub === 'borrowed') acc.borrowed += protocolPositionValue(pos);
-                    return acc;
-                }, { supplied: 0, borrowed: 0 }) : null;
-                const lendingSummary = lendingTotals && (lendingTotals.supplied || lendingTotals.borrowed)
-                    ? `<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0.3rem 0 0.2rem;">
-                        <span class="apr-badge pos">Supplied ${fmtV(lendingTotals.supplied)}</span>
-                        <span class="apr-badge neg">Borrowed ${fmtV(lendingTotals.borrowed)}</span>
-                    </div>`
-                    : '';
+                const isLendingLoop = isLendingSection && sectionHasLendingLoop(sec);
                 let lastSub = undefined;
                 const posRowsInner = sec.positions.map(pos => {
                     const positionIndex = sec.positions.indexOf(pos);
@@ -16441,13 +16603,23 @@ function renderProtocols() {
                         <div class="drawer-position-value"><input class="defi-edit-input" type="number" min="0" step="0.01" value="${Number(protocolPositionValue(pos) || 0).toFixed(2)}" aria-label="Edit USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionUsd(${i},${sectionIndex},${positionIndex},this.value)" onblur="updateProtocolPositionUsd(${i},${sectionIndex},${positionIndex},this.value)"></div>
                     </div>`;
                 }).join('');
-                const posRows = sectionHasLendingLoop(sec)
-                    ? wrapDrawerLendingLoop(posRowsInner, lendingSectionApyBreakdown(p, sec))
+                const posRows = isLendingLoop
+                    ? buildLendingLoopDrawerTableHtml(sec, {
+                        protocolIndex: i,
+                        sectionIndex,
+                        secType: _secType,
+                        secIdx: _secIdx,
+                        editable: true,
+                        breakdown: lendingSectionApyBreakdown(p, sec),
+                        aprHtmlFn: (pos, secType, secIdx) => {
+                            const posKey = `${p.name}|||${secType}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+                            return aprBadgeHtml(posKey, pos.sub);
+                        },
+                    })
                     : posRowsInner;
 
                 return `<div class="drawer-section">
                     <div class="drawer-section-label">${sec.type}</div>
-                    ${lendingSummary}
                     ${posRows}
                 </div>`;
             }).join('');
@@ -16891,19 +17063,7 @@ function renderProtocolsSnapshot() {
                 _drawerTypeCounts[_secType] = (_drawerTypeCounts[_secType] || 0) + 1;
                 const _secIdx = _drawerTypeCounts[_secType] > 1 ? `[${_drawerTypeCounts[_secType]}]` : '';
                 const isLendingSection = /lending|leveraged farming/i.test(_secType);
-                const lendingTotals = isLendingSection ? (sec.positions || []).reduce((acc, pos) => {
-                    const sub = (pos.sub || '').toLowerCase();
-                    const val = protocolPositionValue(pos, snapUnitPrices);
-                    if (sub === 'supplied') acc.supplied += val;
-                    else if (sub === 'borrowed') acc.borrowed += val;
-                    return acc;
-                }, { supplied: 0, borrowed: 0 }) : null;
-                const lendingSummary = lendingTotals && (lendingTotals.supplied || lendingTotals.borrowed)
-                    ? `<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0.3rem 0 0.2rem;">
-                        <span class="apr-badge pos">Supplied ${fmtV(lendingTotals.supplied)}</span>
-                        <span class="apr-badge neg">Borrowed ${fmtV(lendingTotals.borrowed)}</span>
-                    </div>`
-                    : '';
+                const isLendingLoop = isLendingSection && sectionHasLendingLoop(sec);
                 let lastSub = undefined;
                 const posRowsInner = sec.positions.map(pos => {
                     let subHeader = '';
@@ -16937,13 +17097,26 @@ function renderProtocolsSnapshot() {
                         <div class="drawer-position-value">${fmtV(snapVal)}</div>
                     </div>`;
                 }).join('');
-                const posRows = sectionHasLendingLoop(sec)
-                    ? wrapDrawerLendingLoop(posRowsInner, lendingSectionApyBreakdownBetweenSnapshots(p, sec, aprPair.newer, aprPair.older, value => protocolPositionValue(value, snapUnitPrices)))
+                const snapValueFn = (pos, prices) => protocolPositionValue(pos, prices);
+                const posRows = isLendingLoop
+                    ? buildLendingLoopDrawerTableHtml(sec, {
+                        protocolIndex: entry.protocolIndex,
+                        sectionIndex: entry.sectionIndex ?? p.sections.indexOf(sec),
+                        secType: _secType,
+                        secIdx: _secIdx,
+                        unitPrices: snapUnitPrices,
+                        editable: false,
+                        valueFn: snapValueFn,
+                        breakdown: lendingSectionApyBreakdownBetweenSnapshots(p, sec, aprPair.newer, aprPair.older, snapValueFn),
+                        aprHtmlFn: (pos, secType, secIdx) => {
+                            const posKey = `${p.name}|||${secType}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+                            return snapshotAprBadgeHtml(posKey, pos.sub, aprPair.newer, aprPair.older);
+                        },
+                    })
                     : posRowsInner;
 
                 return `<div class="drawer-section">
                     <div class="drawer-section-label">${sec.type}</div>
-                    ${lendingSummary}
                     ${posRows}
                 </div>`;
             }).join('');

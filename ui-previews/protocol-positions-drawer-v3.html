@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protocol Drawer v3 — Aligned Expansion</title>
+  <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700,800,900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#05080d; --panel:#071218; --panel2:#091720; --elev:#0b1a24;
+      --line:rgba(110,231,216,.15); --line2:rgba(148,163,184,.12);
+      --text:#eef4fb; --soft:#c5d2db; --muted:#91a4b8; --faint:#647a8c;
+      --green:#22c55e; --red:#f43f5e; --teal:#00d4aa; --amber:#fbbf24;
+      --mono:"JetBrains Mono", monospace; --font:"Satoshi", system-ui, sans-serif;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100vh; color:var(--text); font-family:var(--font);
+      background:
+        radial-gradient(circle at 18% 0%, rgba(0,212,170,.07), transparent 30%),
+        var(--bg);
+      padding:20px 22px 28px;
+    }
+    .shell { max-width:1180px; margin:0 auto; display:flex; flex-direction:column; gap:16px; }
+    .badge {
+      align-self:flex-start; padding:5px 10px; border-radius:6px;
+      border:1px dashed rgba(0,212,170,.32); background:rgba(0,212,170,.06);
+      color:var(--teal); font:700 .58rem/1 var(--mono); letter-spacing:.08em; text-transform:uppercase;
+    }
+    .note {
+      padding:12px 14px; border-radius:8px; border:1px solid rgba(0,212,170,.14);
+      background:rgba(0,212,170,.04); color:var(--soft); font:650 .74rem/1.5 var(--font); max-width:760px;
+    }
+    .note strong { color:var(--teal); }
+
+    .compare { display:flex; flex-direction:column; gap:14px; }
+
+    .panel {
+      border:1px solid var(--line); border-radius:8px; overflow:hidden;
+      background:linear-gradient(180deg, rgba(7,18,26,.96), rgba(4,12,18,.98));
+    }
+    .panel-label {
+      padding:8px 12px; border-bottom:1px solid var(--line2);
+      font:800 .58rem/1 var(--mono); letter-spacing:.1em; text-transform:uppercase;
+    }
+    .panel-label.before { color:var(--faint); background:rgba(244,63,94,.04); }
+    .panel-label.after { color:var(--teal); background:rgba(0,212,170,.05); }
+
+    /* ── Shared table row (collapsed) ── */
+    .row {
+      display:grid;
+      grid-template-columns: minmax(120px,.95fr) minmax(84px,.62fr) minmax(140px,1.1fr) minmax(92px,.75fr) repeat(3, minmax(68px,.58fr)) minmax(100px,.9fr) 28px;
+      gap:.55rem .7rem; align-items:center; padding:.58rem .85rem;
+      border-bottom:1px solid var(--line2); background:rgba(5,15,22,.5);
+    }
+    .row > div:nth-child(4),
+    .row > div:nth-child(5),
+    .row > div:nth-child(6),
+    .row > div:nth-child(7) { text-align:right; font-family:var(--mono); font-size:.78rem; }
+    .proto { display:flex; align-items:center; gap:8px; min-width:0; }
+    .logo {
+      width:28px; height:28px; border-radius:50%; flex-shrink:0;
+      display:grid; place-items:center; font:900 .58rem/1 var(--font);
+      background:linear-gradient(135deg, #2563eb, #60a5fa); color:#fff;
+    }
+    .name { font:800 .8rem/1 var(--mono); }
+    .pill {
+      display:inline-flex; padding:2px 7px; border-radius:4px;
+      font:800 .58rem/1 var(--mono); letter-spacing:.04em; text-transform:uppercase;
+      color:var(--teal); background:rgba(0,212,170,.09); border:1px solid rgba(0,212,170,.22);
+    }
+    .pos-label { color:var(--soft); font:650 .74rem/1.3 var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .apr { display:inline-flex; padding:2px 6px; border-radius:4px; font:800 .68rem/1 var(--mono); }
+    .apr.pos { color:var(--green); background:rgba(34,197,94,.1); }
+    .apr.neg { color:var(--red); background:rgba(244,63,94,.1); }
+    .apr.total { color:var(--green); background:rgba(34,197,94,.12); border:1px solid rgba(34,197,94,.22); }
+
+    /* ── BEFORE: current messy drawer ── */
+    .drawer-before {
+      padding:.7rem .9rem .85rem;
+      background:var(--panel2);
+      border-top:1px solid var(--line2);
+      opacity:.92;
+    }
+    .drawer-before .section-tag {
+      font:800 .54rem/1 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--faint); margin-bottom:.45rem;
+    }
+    .drawer-before .summary { display:flex; gap:6px; margin-bottom:.55rem; }
+    .drawer-before .summary span {
+      font:800 .62rem/1 var(--mono); padding:3px 8px; border-radius:4px;
+    }
+    .drawer-before .summary .s { color:var(--green); background:rgba(34,197,94,.08); }
+    .drawer-before .summary .b { color:var(--red); background:rgba(244,63,94,.08); }
+    .drawer-before .sub { font:800 .54rem/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; margin:.5rem 0 .2rem; }
+    .drawer-before .sub.s { color:var(--green); }
+    .drawer-before .sub.b { color:var(--red); }
+    .drawer-before .messy {
+      position:relative; min-height:46px; padding:.35rem 0 .55rem;
+      border-bottom:1px solid rgba(148,163,184,.08);
+    }
+    .drawer-before .messy .pool { font:800 .76rem/1 var(--mono); }
+    .drawer-before .messy .qty { position:absolute; left:38%; top:14px; font:700 .72rem/1 var(--mono); color:var(--muted); }
+    .drawer-before .messy .apr-f { position:absolute; right:28%; top:12px; }
+    .drawer-before .messy .val-f { position:absolute; right:8%; top:28px; font:800 .76rem/1 var(--mono); color:var(--soft); }
+    .drawer-before .messy .hint { margin-top:16px; font:650 .6rem/1 var(--mono); color:var(--faint); }
+    .drawer-before .total-apy {
+      display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-top:.55rem;
+      font:800 .58rem/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--faint);
+    }
+
+    /* ── AFTER: aligned leg cards ── */
+    .drawer-after {
+      padding:.72rem .9rem .8rem;
+      border-top:1px solid rgba(0,212,170,.14);
+      background:
+        radial-gradient(circle at 88% 100%, rgba(0,212,170,.06), transparent 42%),
+        linear-gradient(180deg, rgba(7,18,26,.98), rgba(4,12,18,.99));
+    }
+    .drawer-after-head {
+      margin-bottom:.55rem;
+    }
+    .drawer-after-head .tag {
+      font:800 .56rem/1 var(--mono); letter-spacing:.12em; text-transform:uppercase; color:var(--muted);
+      display:flex; align-items:center; gap:7px;
+    }
+    .drawer-after-head .tag::before {
+      content:''; width:3px; height:10px; border-radius:2px; background:var(--teal); opacity:.6;
+    }
+
+    .leg-table-wrap {
+      border:1px solid rgba(148,163,184,.14); border-radius:7px; overflow:hidden;
+      background:rgba(6,17,24,.78);
+    }
+    .leg-table {
+      width:100%; border-collapse:collapse; table-layout:fixed;
+    }
+    .leg-table th,
+    .leg-table td {
+      padding:8px 10px; text-align:left; vertical-align:middle;
+      border-bottom:1px solid rgba(148,163,184,.08);
+    }
+    .leg-table th:nth-child(4),
+    .leg-table th:nth-child(5),
+    .leg-table td:nth-child(4),
+    .leg-table td:nth-child(5) { text-align:right; }
+    .leg-table col.pool { width:18%; }
+    .leg-table col.qty { width:24%; }
+    .leg-table col.price { width:18%; }
+    .leg-table col.apy { width:14%; }
+    .leg-table col.usd { width:26%; }
+    .leg-table .section th {
+      padding:7px 10px; border-bottom:1px solid rgba(148,163,184,.12);
+      background:rgba(8,21,29,.58);
+      font:800 .52rem/1 var(--font); letter-spacing:.1em; text-transform:uppercase;
+    }
+    .leg-table .section.sup th { color:var(--teal); border-top:2px solid rgba(34,197,94,.5); }
+    .leg-table .section.bor th { color:var(--red); border-top:2px solid rgba(244,63,94,.5); }
+    .leg-table .section .sec-total {
+      float:right; font:800 .78rem/1 var(--mono); color:var(--text); text-transform:none; letter-spacing:0;
+    }
+    .leg-table .cols th {
+      font:800 .5rem/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--faint);
+      background:rgba(4,13,20,.45); padding:5px 10px;
+    }
+    .leg-table tbody tr:last-child td { border-bottom:0; }
+    .pool { font:800 .78rem/1.15 var(--mono); color:var(--text); }
+    .qty { font:700 .74rem/1 var(--mono); color:var(--soft); }
+    .price { font:650 .64rem/1 var(--mono); color:var(--faint); }
+    .price.fixed { color:var(--green); }
+    .leg-apr { font:800 .68rem/1 var(--mono); }
+    .leg-apr.pos { color:var(--green); }
+    .leg-apr.neg { color:var(--red); }
+    .leg-val { font:800 .78rem/1 var(--mono); color:var(--text); }
+
+    .drawer-foot {
+      display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+      margin-top:10px; padding-top:10px; border-top:1px solid rgba(148,163,184,.1);
+    }
+    .metrics { display:flex; gap:8px; flex-wrap:wrap; }
+    .metric {
+      border:1px solid rgba(148,163,184,.12); border-radius:6px; padding:6px 9px;
+      background:rgba(4,13,20,.5);
+    }
+    .metric-k { font:800 .48rem/1 var(--font); letter-spacing:.08em; text-transform:uppercase; color:var(--faint); }
+    .metric-v { margin-top:4px; font:800 .76rem/1 var(--mono); color:var(--text); }
+    .metric-v.good { color:var(--green); }
+    .total-wrap {
+      display:flex; align-items:center; gap:8px;
+      font:800 .56rem/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--faint);
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <span class="badge">Protocol drawer · v3 aligned expansion</span>
+    <p class="note">
+      <strong>Problem:</strong> expanded rows scatter pool, quantity, APY, and USD value with no shared columns.
+      <strong>Fix:</strong> one aligned table with section rows (Supplied / Borrowed) and shared column headers — Pool · Qty · Price · APY · USD. No duplicate summary pills above.
+    </p>
+
+    <div class="compare">
+      <!-- BEFORE -->
+      <section class="panel">
+        <div class="panel-label before">Before — current expansion</div>
+        <div class="row">
+          <div class="proto"><div class="logo">F</div><div class="name">Fluid</div></div>
+          <div><span class="pill">Lending</span></div>
+          <div class="pos-label">reUSD/USDT loop</div>
+          <div>$6,472.54</div>
+          <div><span class="apr pos">+5.0%</span></div>
+          <div><span class="apr neg">-7.7%</span></div>
+          <div><span class="apr total">+5.0%</span></div>
+          <div></div><div></div>
+        </div>
+        <div class="drawer-before">
+          <div class="section-tag">Lending</div>
+          <div class="summary">
+            <span class="s">Supplied $6,484.14</span>
+            <span class="b">Borrowed $11.60</span>
+          </div>
+          <div class="sub s">Supplied</div>
+          <div class="messy">
+            <div class="pool">reUSD</div>
+            <div class="qty">5,984.7489</div>
+            <div class="apr-f"><span class="apr pos">+5.0%</span></div>
+            <div class="val-f">6484.14</div>
+          </div>
+          <div class="sub b">Borrowed</div>
+          <div class="messy">
+            <div class="pool">USDT</div>
+            <div class="qty">11.6015 <span class="hint">$1.0000 fixed</span></div>
+            <div class="apr-f"><span class="apr neg">-7.7%</span></div>
+            <div class="val-f">11.60</div>
+          </div>
+          <div class="total-apy">Total APY <span class="apr total">+5.0%</span></div>
+        </div>
+      </section>
+
+      <!-- AFTER -->
+      <section class="panel">
+        <div class="panel-label after">After — proposed upgrade</div>
+        <div class="row">
+          <div class="proto"><div class="logo">F</div><div class="name">Fluid</div></div>
+          <div><span class="pill">Lending</span></div>
+          <div class="pos-label">reUSD/USDT loop</div>
+          <div>$6,472.54</div>
+          <div><span class="apr pos">+5.0%</span></div>
+          <div><span class="apr neg">-7.7%</span></div>
+          <div><span class="apr total">+5.0%</span></div>
+          <div></div><div></div>
+        </div>
+        <div class="drawer-after">
+          <div class="drawer-after-head">
+            <div class="tag">Lending · reUSD/USDT loop</div>
+          </div>
+
+          <div class="leg-table-wrap">
+            <table class="leg-table">
+              <colgroup>
+                <col class="pool"><col class="qty"><col class="price"><col class="apy"><col class="usd">
+              </colgroup>
+              <tbody>
+                <tr class="section sup">
+                  <th colspan="5">Supplied <span class="sec-total">$6,484.14</span></th>
+                </tr>
+                <tr class="cols">
+                  <th>Pool</th><th>Qty</th><th>Price</th><th>APY</th><th>USD</th>
+                </tr>
+                <tr>
+                  <td class="pool">reUSD</td>
+                  <td class="qty">5,984.7489</td>
+                  <td class="price">$1.0835</td>
+                  <td class="leg-apr pos">+5.0%</td>
+                  <td class="leg-val">$6,484.14</td>
+                </tr>
+                <tr class="section bor">
+                  <th colspan="5">Borrowed <span class="sec-total">$11.60</span></th>
+                </tr>
+                <tr class="cols">
+                  <th>Pool</th><th>Qty</th><th>Price</th><th>APY</th><th>USD</th>
+                </tr>
+                <tr>
+                  <td class="pool">USDT</td>
+                  <td class="qty">11.6015</td>
+                  <td class="price fixed">$1.0000</td>
+                  <td class="leg-apr neg">-7.7%</td>
+                  <td class="leg-val">$11.60</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="drawer-foot">
+            <div class="metrics">
+              <div class="metric">
+                <div class="metric-k">Net</div>
+                <div class="metric-v">$6,472.54</div>
+              </div>
+              <div class="metric">
+                <div class="metric-k">LTV</div>
+                <div class="metric-v">0.18%</div>
+              </div>
+              <div class="metric">
+                <div class="metric-k">Health</div>
+                <div class="metric-v good">1.94</div>
+              </div>
+            </div>
+            <div class="total-wrap">
+              Total APY
+              <span class="apr total">+5.0%</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
