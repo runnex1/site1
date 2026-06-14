@@ -1,8 +1,9 @@
 # Backup cron — fires every 5 minutes from GitHub's infrastructure.
-# Primary cron is cron-job.org (every 1 min). Configure:
+# Primary cron is cron-job.org (every 1–2 min). Configure:
 #   URL:    https://testedefi.vercel.app/api/check-alerts
 #   Header: x-cron-secret: <CRON_SECRET from Vercel env, if set>
-#   Schedule: every 1 minute
+#   Schedule: every 1–2 minutes
+# Event-log collection runs inside check-alerts (no separate predictionActivity job).
 name: Alert Check (backup)
 
 on:

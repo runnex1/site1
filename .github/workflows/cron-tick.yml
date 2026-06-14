@@ -1,0 +1,40 @@
+# Backup cron — fires every 5 minutes from GitHub's infrastructure.
+# Primary cron is cron-job.org (every 5 min). Configure:
+#   URL:    https://testedefi.vercel.app/api/cron/tick?maxJobs=1
+#   Header: x-sync-secret: <SYNC_SECRET from Vercel env>
+#   Schedule: every 5 minutes
+#
+# Other cron-job.org jobs (do not duplicate inside /api/cron/tick):
+#   /api/check-alerts          — every 1–2 min (alerts + event log)
+#   /api/loop-cron-snapshot    — every 2h at :05 UTC
+#   /api/perps?cronSnapshot=1  — every 4h at :02 UTC
+name: Cron Tick (backup)
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Trigger lightweight cron tick
+        env:
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+        run: |
+          if [ -z "$SYNC_SECRET" ]; then
+            echo "No SYNC_SECRET GitHub secret configured; skipping backup cron."
+            exit 0
+          fi
+          STATUS=$(curl -s -o /tmp/cron-tick.json -w "%{http_code}" \
+            --max-time 120 \
+            -H "x-sync-secret: ${SYNC_SECRET}" \
+            "https://testedefi.vercel.app/api/cron/tick?maxJobs=1")
+          echo "Response status: $STATUS"
+          cat /tmp/cron-tick.json || true
+          if [ "$STATUS" != "200" ]; then
+            echo "Warning: cron tick returned $STATUS"
+            exit 1
+          fi

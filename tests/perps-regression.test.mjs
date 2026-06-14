@@ -707,9 +707,18 @@ for (const rel of [
   'lib/cron-runner.js',
   '.github/workflows/loops-snapshot.yml',
   '.github/workflows/perps-equity-snapshot.yml',
+  '.github/workflows/cron-tick.yml',
 ]) {
   assert.doesNotMatch(readFileSync(join(ROOT, rel), 'utf8'), /SYNC_SECRET1/, `${rel} must use only SYNC_SECRET`);
 }
+const cronRunnerJs = readFileSync(join(ROOT, 'lib', 'cron-runner.js'), 'utf8');
+assert.doesNotMatch(cronRunnerJs, /perpsLive: \{ everyMs/, 'cron tick must not schedule unused perpsLive job');
+assert.doesNotMatch(cronRunnerJs, /fundingRates: \{ everyMs/, 'cron tick must not schedule unused fundingRates job');
+assert.doesNotMatch(cronRunnerJs, /predictionActivity: \{ everyMs/, 'event log must not duplicate via predictionActivity cron');
+assert.doesNotMatch(cronRunnerJs, /checkAlerts: \{ everyMs/, 'alerts must use dedicated /api/check-alerts only');
+assert.match(cronRunnerJs, /loopsSync: \{ everyMs: 15 \* 60 \* 1000/, 'loopsSync must run every 15 minutes');
+assert.match(syncJs, /maxJobs \|\| '1'/, 'cron tick must default to one job per wake');
+assert.match(aaveProxyJs, /LOOP_RATES_KV_CACHE_MS = 15 \* 60 \* 1000/, 'loop-rates KV cache must match 15m cron interval');
 const loopRatesJs = readFileSync(join(ROOT, 'lib', 'loop-rates.js'), 'utf8');
 assert.match(loopRatesJs, /function morphoUsdFromRaw\(amountRaw, asset\)/, 'Morpho loops must derive USD from raw token amounts when Morpho omits USD fields');
 assert.match(loopRatesJs, /borrowAssets borrowAssetsUsd/, 'Morpho loop query must request raw borrow asset amounts');
@@ -1354,13 +1363,16 @@ assert.match(indexHtml, /<div>Liq Price<\/div>/, 'open positions must show a liq
 assert.match(indexHtml, /<div>TP\/SL<\/div>/, 'open positions must show a TP/SL column after Liq Price');
 assert.doesNotMatch(indexHtml, /<div>Basis uPnL<\/div>/, 'open positions must not show Basis uPnL column');
 assert.match(indexHtml, /function perpsPositionLiqStackHtml\(p, displayLegs\)/, 'open positions must render only liquidation prices in the Liq Price column');
-assert.match(indexHtml, /function perpsFmtTpSlStackHtml\(tpPx, slPx, currentPx\)/, 'open positions must render TP above SL vertically');
+assert.match(indexHtml, /function perpsFmtTpSlStackHtml\(tpPx, slPx, currentPx, legCtx = \{\}\)/, 'open positions must render TP above SL vertically');
 assert.match(indexHtml, /perpsPriceRiskStyle\(currentPx, tp\)/, 'TP rows must use the same distance-based risk color as liq price');
 assert.match(indexHtml, /perpsPriceRiskStyle\(currentPx, sl\)/, 'SL rows must use the same distance-based risk color as liq price');
 assert.match(indexHtml, /function perpsPositionTpSlStackHtml\(p, displayLegs\)/, 'open positions must collapse common TP/SL across venues');
 assert.match(indexHtml, /function perpsComparableTpSlLegs\(displayLegs\)/, 'TP/SL mismatch must ignore Nado legs');
 assert.match(indexHtml, /venue !== 'nado'/, 'TP/SL mismatch must exclude Nado from cross-venue comparison');
 assert.match(indexHtml, /perps-pos-tpsl-warn.*Mismatch/, 'open positions must warn when TP/SL differ across venues');
+assert.match(indexHtml, /function perpsSlLiqProximityWarn\(/, 'open positions must warn when SL is too close to liquidation');
+assert.match(indexHtml, /perps-pos-sl-liq-warn/, 'SL near liquidation must use a visible warning style');
+assert.match(indexHtml, /perpsSlLiqProximityWarn\(side, sl, legCtx\.liquidationPx\)/, 'TP/SL stack must compare SL against leg liquidation price');
 assert.match(indexHtml, /perpsTpSlDiffPct\(tps\[0\], tps\[1\]\) > 0\.5/, 'TP/SL mismatch warning must use a 0.5% threshold');
 assert.match(indexHtml, /function perpsPositionMidPx\(p, displayLegs\)/, 'open positions must calculate a mid price from both exchange marks');
 assert.ok(indexHtml.includes('<span class="perps-pos-live-px">${perpsFmtPx(midPx)}</span>'), 'open positions must show live price next to OPEN without a mid pill');
@@ -1563,6 +1575,21 @@ assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketI
   assert.ok(perpsPriceRiskLevel(mark, 0.287) >= 0.99, 'downside levels at 20% distance must be full red');
   assert.equal(perpsPriceRiskStyle(mark, 0.57), '', 'neutral upside levels must not emit inline style');
   assert.match(perpsPriceRiskStyle(mark, 0.40), /color:rgb\(255,/, 'warned upside levels must emit red-tint inline style');
+}
+
+{
+  const { perpsSlLiqProximityWarn } = require('../lib/perps.js');
+  const liq = 100;
+
+  assert.equal(perpsSlLiqProximityWarn('short', 105, liq), true, 'short SL above liq must warn');
+  assert.equal(perpsSlLiqProximityWarn('short', 100, liq), true, 'short SL at liq must warn');
+  assert.equal(perpsSlLiqProximityWarn('short', 99, liq), true, 'short SL within 2% below liq must warn');
+  assert.equal(perpsSlLiqProximityWarn('short', 97, liq), false, 'short SL more than 2% below liq must not warn');
+  assert.equal(perpsSlLiqProximityWarn('long', 95, liq), true, 'long SL below liq must warn');
+  assert.equal(perpsSlLiqProximityWarn('long', 100, liq), true, 'long SL at liq must warn');
+  assert.equal(perpsSlLiqProximityWarn('long', 101, liq), true, 'long SL within 2% above liq must warn');
+  assert.equal(perpsSlLiqProximityWarn('long', 103, liq), false, 'long SL more than 2% above liq must not warn');
+  assert.equal(perpsSlLiqProximityWarn('long', 105, null), false, 'missing liq must not warn');
 }
 
 {

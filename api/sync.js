@@ -540,7 +540,7 @@ async function handleCronTick(req, res) {
   if (!expected || providedCronSyncSecret(req) !== expected) {
     return res.status(401).json({ ok: false, error: 'Unauthorized' });
   }
-  const maxJobs = Math.min(2, Math.max(1, parseInt(req.query?.maxJobs || '2', 10) || 2));
+  const maxJobs = Math.min(2, Math.max(1, parseInt(req.query?.maxJobs || '1', 10) || 1));
   try {
     return res.status(200).json(await runDueJobs({ maxJobs }));
   } catch (e) {

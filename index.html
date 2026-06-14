@@ -890,6 +890,10 @@ body[data-active-tab="perps"] .topbar,
   font-family:var(--ff-mono); font-size:0.58rem; font-weight:800; letter-spacing:0.04em;
   text-transform:uppercase; color:#ffb347; line-height:1.2;
 }
+.perps-pos-sl-liq-warn {
+  color:#ffb347 !important;
+  text-shadow:0 0 8px rgba(255,179,71,0.35) !important;
+}
 .perps-pos-apr-col { text-align:right; }
 .perps-pos-apr-val { font-family:var(--ff-mono); font-size:0.92rem; font-weight:900; white-space:nowrap; }
 .perps-pos-apr-val.pos { color:#55d66f; }
@@ -28123,6 +28127,28 @@ function perpsLiquidationRiskStyle(currentPx, liquidationPx) {
     return perpsPriceRiskStyle(currentPx, liquidationPx);
 }
 
+const PERPS_SL_LIQ_WARN_PCT = 2;
+
+function perpsSlLiqProximityWarn(side, slPx, liqPx) {
+    const sl = perpsNumOrNull(slPx);
+    const liq = perpsNumOrNull(liqPx);
+    if (sl == null || liq == null || sl <= 0 || liq <= 0) return false;
+    const isShort = side === 'short' || side === 'S';
+    const band = liq * (PERPS_SL_LIQ_WARN_PCT / 100);
+    if (isShort) {
+        if (sl >= liq) return true;
+        return liq - sl <= band;
+    }
+    if (sl <= liq) return true;
+    return sl - liq <= band;
+}
+
+function perpsSlLiqWarnTitle(side) {
+    return side === 'short' || side === 'S'
+        ? 'Stop loss is at or above liquidation price, or within 2% below it — may not trigger before liquidation'
+        : 'Stop loss is at or below liquidation price, or within 2% above it — may not trigger before liquidation';
+}
+
 function perpsPositionMidPx(p, displayLegs) {
     const prices = (displayLegs || [])
         .map(entry => perpsLegCurrentPx(p.symbol, entry.venue || entry.leg.venue, entry.leg))
@@ -28149,13 +28175,20 @@ function perpsTpSlDiffPct(a, b) {
     return avg > 0 ? (Math.abs(left - right) / avg) * 100 : null;
 }
 
-function perpsFmtTpSlStackHtml(tpPx, slPx, currentPx) {
+function perpsFmtTpSlStackHtml(tpPx, slPx, currentPx, legCtx = {}) {
     const tp = perpsNumOrNull(tpPx);
     const sl = perpsNumOrNull(slPx);
     if (tp == null && sl == null) return '<div class="perps-pos-liq-val">—</div>';
+    const side = Number(legCtx.size) < 0 ? 'short' : 'long';
     const rows = [];
     if (tp != null) rows.push(`<div class="perps-pos-liq-val" ${perpsPriceRiskStyle(currentPx, tp)}>${perpsFmtPx(tp)}</div>`);
-    if (sl != null) rows.push(`<div class="perps-pos-liq-val" ${perpsPriceRiskStyle(currentPx, sl)}>${perpsFmtPx(sl)}</div>`);
+    if (sl != null) {
+        const slLiqWarn = perpsSlLiqProximityWarn(side, sl, legCtx.liquidationPx);
+        const slWarnCls = slLiqWarn ? ' perps-pos-sl-liq-warn' : '';
+        const slWarnTitle = slLiqWarn ? ` title="${dashEsc(perpsSlLiqWarnTitle(side))}"` : '';
+        const slStyle = slLiqWarn ? '' : perpsPriceRiskStyle(currentPx, sl);
+        rows.push(`<div class="perps-pos-liq-val${slWarnCls}"${slWarnTitle} ${slStyle}>${slLiqWarn ? '⚠ ' : ''}${perpsFmtPx(sl)}</div>`);
+    }
     return `<div class="perps-pos-tpsl-pair">${rows.join('')}</div>`;
 }
 
@@ -28190,7 +28223,10 @@ function perpsPositionTpSlStackHtml(p, displayLegs) {
         const leg = entry?.leg || entry;
         const venue = entry?.venue || leg?.venue;
         const currentPx = perpsLegCurrentPx(p.symbol, venue, leg);
-        return perpsFmtTpSlStackHtml(leg?.tpPx, leg?.slPx, currentPx);
+        return perpsFmtTpSlStackHtml(leg?.tpPx, leg?.slPx, currentPx, {
+            size: leg?.size,
+            liquidationPx: leg?.liquidationPx,
+        });
     };
     if (!mismatch) {
         const pool = comparable.length ? comparable : (displayLegs || []);
