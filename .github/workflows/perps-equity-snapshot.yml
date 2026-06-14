@@ -13,10 +13,10 @@ jobs:
     steps:
       - name: Trigger 4h equity snapshot at :02
         env:
-          SYNC_SECRET: ${{ secrets.SYNC_SECRET1 || secrets.SYNC_SECRET }}
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
         run: |
           if [ -z "$SYNC_SECRET" ]; then
-            echo "No SYNC_SECRET1/SYNC_SECRET GitHub secret configured; skipping backup cron."
+            echo "No SYNC_SECRET GitHub secret configured; skipping backup cron."
             exit 0
           fi
           STATUS=$(curl -s -o /tmp/perps-cron.json -w "%{http_code}" \

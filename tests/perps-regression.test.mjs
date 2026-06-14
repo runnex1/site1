@@ -701,6 +701,15 @@ assert.match(eventLogJs, /if \(!\/\\bBREAKING\\b\/i\.test\(text\)\) continue;/, 
 assert.doesNotMatch(eventLogJs, /'Kobeissi Letter'/, 'event log must not add non-breaking Kobeissi headlines');
 assert.match(indexHtml, /ticker-strip-viewport/, 'market ticker must use a scrolling viewport for overflow symbols');
 assert.match(indexHtml, /function syncTabRefreshTimers\(tab\)/, 'tab switches must start and stop feature refresh timers');
+for (const rel of [
+  'api/aave-proxy.js',
+  'api/sync.js',
+  'lib/cron-runner.js',
+  '.github/workflows/loops-snapshot.yml',
+  '.github/workflows/perps-equity-snapshot.yml',
+]) {
+  assert.doesNotMatch(readFileSync(join(ROOT, rel), 'utf8'), /SYNC_SECRET1/, `${rel} must use only SYNC_SECRET`);
+}
 const loopRatesJs = readFileSync(join(ROOT, 'lib', 'loop-rates.js'), 'utf8');
 assert.match(loopRatesJs, /function morphoUsdFromRaw\(amountRaw, asset\)/, 'Morpho loops must derive USD from raw token amounts when Morpho omits USD fields');
 assert.match(loopRatesJs, /borrowAssets borrowAssetsUsd/, 'Morpho loop query must request raw borrow asset amounts');

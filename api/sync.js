@@ -523,7 +523,7 @@ const runCheckAlerts = require('../lib/check-alerts-run');
 const { runDueJobs, getCronStatus } = require('../lib/cron-runner');
 
 function expectedCronSyncSecret() {
-  return process.env.SYNC_SECRET1 || process.env.SYNC_SECRET || '';
+  return process.env.SYNC_SECRET || '';
 }
 
 function providedCronSyncSecret(req) {

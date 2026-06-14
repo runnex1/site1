@@ -1,7 +1,7 @@
 # Backup cron — fires every 2 hours from GitHub's infrastructure.
 # Primary cron is cron-job.org (every 2h at :05 UTC). Configure:
 #   URL:    https://testedefi.vercel.app/api/loop-cron-snapshot
-#   Header: x-sync-secret: <SYNC_SECRET1 or SYNC_SECRET>
+#   Header: x-sync-secret: <SYNC_SECRET from Vercel env>
 #   Schedule: 5 */2 * * * (or "every 2 hours" in cron-job.org UI)
 name: Loops Snapshot (backup)
 
@@ -17,10 +17,10 @@ jobs:
     steps:
       - name: Trigger 2h loop snapshot at :05
         env:
-          SYNC_SECRET: ${{ secrets.SYNC_SECRET1 || secrets.SYNC_SECRET }}
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
         run: |
           if [ -z "$SYNC_SECRET" ]; then
-            echo "No SYNC_SECRET1/SYNC_SECRET GitHub secret configured; skipping backup cron."
+            echo "No SYNC_SECRET GitHub secret configured; skipping backup cron."
             exit 0
           fi
           STATUS=$(curl -s -o /tmp/loops-cron.json -w "%{http_code}" \

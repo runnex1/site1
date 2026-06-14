@@ -36,7 +36,7 @@ function parseJson(raw, fallback) {
 }
 
 function expectedSyncSecret() {
-  return process.env.SYNC_SECRET1 || process.env.SYNC_SECRET || '';
+  return process.env.SYNC_SECRET || '';
 }
 
 function sortedCsv(raw) {
