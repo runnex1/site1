@@ -733,7 +733,10 @@ assert.match(loopRatesJs, /merkl-user-rewards-unclaimed/, 'loop coverage must re
 assert.match(loopRatesJs, /fetchDefillamaYieldApyIndex/, 'yield-bearing collateral must use DeFiLlama APY when protocol supply APY is zero');
 assert.match(loopRatesJs, /function canonicalNativeYieldApy\(/, 'native yield tokens like reUSD must use a shared DeFiLlama APY across protocols');
 assert.match(loopRatesJs, /canonicalNativeYieldApy\(chainId, leg, index\)/, 'defillama leg lookup must prefer canonical native yield before address pools');
-assert.match(indexHtml, /function loopsAppendSnapshotFromApiData\(/, 'live loop sync must append local 2h snapshots for history charts');
+assert.match(indexHtml, /function protocolDisplayEntries\(protocols\)/, 'protocol positions must split leveraged loops into separate rows');
+assert.match(indexHtml, /kind: 'lending'/, 'protocol display entries must tag leveraged lending rows');
+assert.match(indexHtml, /protocolEntrySummary\(entry\)/, 'protocol rows must show per-loop position summary');
+assert.match(indexHtml, /protocolEntryNetValue\(entry\)/, 'protocol rows must use per-section net value');
 assert.match(indexHtml, /function loopsUploadSnapshotsToServer\(/, 'loop snapshots must upload to server after local append');
 assert.match(indexHtml, /function startLoopSnapshotScheduler\(/, 'loops tab must schedule 2h snapshot sync while open');
 assert.match(indexHtml, /LOOP_SNAPSHOT_INTERVAL_MS = 2 \* 60 \* 60 \* 1000/, 'loop snapshot scheduler must run every 2 hours');

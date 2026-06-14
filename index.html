@@ -16100,9 +16100,9 @@ function updateTotalDefiApr() {
     el.textContent        = `avg APR ${sign}${avg.toFixed(1)}%${ageLabel ? ` (${ageLabel})` : ''}`;
 }
 
-function toggleProtocolDrawer(idx) {
-    const btn    = document.getElementById(`pdrawer-btn-${idx}`);
-    const drawer = document.getElementById(`pdrawer-${idx}`);
+function toggleProtocolDrawer(key) {
+    const btn    = document.getElementById(`pdrawer-btn-${key}`);
+    const drawer = document.getElementById(`pdrawer-${key}`);
     if (!btn || !drawer) return;
     const open = drawer.classList.toggle('open');
     btn.classList.toggle('open', open);
@@ -16184,13 +16184,119 @@ function protocolHealthSummary(p) {
 }
 function protocolPositionSummary(p) {
     for (const sec of p?.sections || []) {
-        const positions = sec.positions || [];
-        const supplied = positions.find(x => String(x.sub || '').toLowerCase() === 'supplied');
-        const borrowed = positions.find(x => String(x.sub || '').toLowerCase() === 'borrowed');
-        if (supplied || borrowed) return `${supplied?.pool || 'Assets'}/${borrowed?.pool || 'assets'} loop`;
-        if (positions[0]?.pool) return positions[0].pool;
+        const summary = protocolSectionSummary(sec);
+        if (summary && summary !== '-') return summary;
     }
     return p?.notes || '-';
+}
+function protocolSectionSummary(section) {
+    const positions = section?.positions || [];
+    const supplied = positions.find(x => String(x.sub || '').toLowerCase() === 'supplied');
+    const borrowed = positions.find(x => String(x.sub || '').toLowerCase() === 'borrowed');
+    if (supplied || borrowed) return `${supplied?.pool || 'Assets'}/${borrowed?.pool || 'assets'} loop`;
+    if (positions[0]?.pool) return positions[0].pool;
+    return section?.type || '-';
+}
+function protocolSectionsSummary(p, sections) {
+    if (!sections?.length) return protocolPositionSummary(p);
+    if (sections.length === 1) return protocolSectionSummary(sections[0]);
+    return sections.map(sec => protocolSectionSummary(sec)).join(' · ');
+}
+function protocolSectionNetValue(section, unitPrices = null) {
+    if (!section?.positions?.length) return 0;
+    let supplied = 0;
+    let borrowed = 0;
+    let other = 0;
+    let hasLendingSide = false;
+    for (const pos of section.positions) {
+        const val = protocolPositionValue(pos, unitPrices);
+        const sub = String(pos.sub || '').toLowerCase();
+        if (sub === 'supplied') { supplied += val; hasLendingSide = true; }
+        else if (sub === 'borrowed') { borrowed += val; hasLendingSide = true; }
+        else other += val;
+    }
+    if (hasLendingSide) return supplied - borrowed + other;
+    return section.positions.reduce((sum, pos) => sum + protocolPositionValue(pos, unitPrices), 0);
+}
+function protocolDisplayEntries(protocols) {
+    const entries = [];
+    for (let protocolIndex = 0; protocolIndex < (protocols || []).length; protocolIndex++) {
+        const protocol = protocols[protocolIndex];
+        const sections = (protocol.sections || []).filter(sec => sec.positions?.length);
+        const lendingSections = sections.filter(sectionHasLendingLoop);
+        const otherSections = sections.filter(sec => !sectionHasLendingLoop(sec));
+        if (!sections.length) {
+            entries.push({
+                protocol,
+                protocolIndex,
+                sections: [],
+                drawerKey: `${protocolIndex}-all`,
+                kind: 'protocol',
+            });
+            continue;
+        }
+        lendingSections.forEach((section) => {
+            entries.push({
+                protocol,
+                protocolIndex,
+                sections: [section],
+                sectionIndex: protocol.sections.indexOf(section),
+                drawerKey: `${protocolIndex}-${protocol.sections.indexOf(section)}`,
+                kind: 'lending',
+            });
+        });
+        if (otherSections.length) {
+            entries.push({
+                protocol,
+                protocolIndex,
+                sections: otherSections,
+                drawerKey: `${protocolIndex}-other`,
+                kind: 'other',
+            });
+        }
+    }
+    return entries;
+}
+function protocolEntryNetValue(entry, unitPrices = null) {
+    const p = entry.protocol;
+    if (p?.manualValue && entry.kind === 'protocol') return Number(p.value || 0);
+    if (entry.sections?.length === 1 && entry.kind === 'lending') {
+        return protocolSectionNetValue(entry.sections[0], unitPrices);
+    }
+    if (entry.sections?.length) {
+        return entry.sections.reduce((sum, sec) => sum + protocolSectionNetValue(sec, unitPrices), 0);
+    }
+    return protocolNetValue(p, unitPrices);
+}
+function protocolEntryDisplayValue(entry, unitPrices = null) {
+    return Math.abs(protocolEntryNetValue(entry, unitPrices)) || Number(entry.protocol?.value || 0);
+}
+function protocolEntryAprBreakdown(entry, unitPrices = null) {
+    const valueFn = pos => protocolPositionValue(pos, unitPrices);
+    if (entry.kind === 'lending' && entry.sections?.length === 1) {
+        return lendingSectionApyBreakdown(entry.protocol, entry.sections[0], valueFn);
+    }
+    if (entry.sections?.length) {
+        return protocolAprBreakdown({ ...entry.protocol, sections: entry.sections });
+    }
+    return protocolAprBreakdown(entry.protocol);
+}
+function protocolEntrySummary(entry) {
+    if (entry.kind === 'lending' && entry.sections?.length === 1) {
+        return protocolSectionSummary(entry.sections[0]);
+    }
+    if (entry.sections?.length) return protocolSectionsSummary(entry.protocol, entry.sections);
+    return protocolPositionSummary(entry.protocol);
+}
+function protocolEntryAprBreakdownSnapshot(entry, newerSnap, olderSnap, unitPrices = null) {
+    const valueFn = pos => protocolPositionValue(pos, unitPrices);
+    if (entry.kind === 'lending' && entry.sections?.length === 1) {
+        return lendingSectionApyBreakdownBetweenSnapshots(entry.protocol, entry.sections[0], newerSnap, olderSnap, valueFn);
+    }
+    if (entry.sections?.length) {
+        return protocolAprBreakdownBetweenSnapshots({ ...entry.protocol, sections: entry.sections }, newerSnap, olderSnap, unitPrices);
+    }
+    return protocolAprBreakdownBetweenSnapshots(entry.protocol, newerSnap, olderSnap, unitPrices);
 }
 function protocolUnlockSummary(p) {
     const text = `${p?.notes || ''} ${p?.chain || ''} ${(p?.sections || []).map(sec => `${sec.type || ''} ${(sec.positions || []).map(pos => `${pos.pool || ''} ${pos.notes || ''} ${pos.unlockDate || ''} ${pos.unlocksAt || ''} ${pos.unlockTime || ''}`).join(' ')}`).join(' ')}`;
@@ -16262,9 +16368,10 @@ function renderProtocols() {
         return `<span class="apr-badge ${cls}">${sign}${avg.toFixed(1)}%</span>`;
     }
 
-    const sortedProtocols = [...data.protocols].sort((a,b)=>protocolDisplayValue(b)-protocolDisplayValue(a));
-    const protocolTotal = sortedProtocols.reduce((sum,p)=>sum+protocolNetValue(p),0);
-    const totalBreakdown = sortedProtocols.reduce((acc,p) => {
+    const sortedEntries = protocolDisplayEntries(data.protocols)
+        .sort((a, b) => protocolEntryDisplayValue(b) - protocolEntryDisplayValue(a));
+    const protocolTotal = data.protocols.reduce((sum, p) => sum + protocolNetValue(p), 0);
+    const totalBreakdown = data.protocols.reduce((acc, p) => {
         const b = protocolAprBreakdown(p);
         const w = Math.abs(protocolNetValue(p)) || protocolDisplayValue(p) || 0;
         if (b?.suppliedApr !== null && b?.suppliedApr !== undefined && Number.isFinite(Number(b.suppliedApr))) { acc.supply += b.suppliedApr * w; acc.supplyW += w; }
@@ -16272,15 +16379,18 @@ function renderProtocols() {
         if (b?.totalApr !== null && b?.totalApr !== undefined && Number.isFinite(Number(b.totalApr))) { acc.total += b.totalApr * w; acc.totalW += w; }
         return acc;
     }, { supply:0, supplyW:0, borrow:0, borrowW:0, total:0, totalW:0 });
-    table.innerHTML = sortedProtocols.map((p) => {
-        const i = data.protocols.indexOf(p);
-        const hasSections = p.sections && p.sections.some(s => s.positions && s.positions.length > 0);
+    table.innerHTML = sortedEntries.map((entry) => {
+        const p = entry.protocol;
+        const i = entry.protocolIndex;
+        const drawerKey = entry.drawerKey;
+        const sectionsToShow = entry.sections || [];
+        const hasSections = sectionsToShow.some(s => s.positions && s.positions.length > 0);
 
         // Build drawer HTML
         let drawerHtml = '';
         if (hasSections) {
             const _drawerTypeCounts = {};
-            const sectionHtmls = p.sections.filter(s => s.positions && s.positions.length).map(sec => {
+            const sectionHtmls = sectionsToShow.filter(s => s.positions && s.positions.length).map(sec => {
                 const sectionIndex = p.sections.indexOf(sec);
                 const _secType = sec.type || 'Yield';
                 _drawerTypeCounts[_secType] = (_drawerTypeCounts[_secType] || 0) + 1;
@@ -16292,14 +16402,12 @@ function renderProtocols() {
                     else if (sub === 'borrowed') acc.borrowed += protocolPositionValue(pos);
                     return acc;
                 }, { supplied: 0, borrowed: 0 }) : null;
-                // lendingApyHtml removed — Supply/Borrow APY is now a collapsible in the main row header
                 const lendingSummary = lendingTotals && (lendingTotals.supplied || lendingTotals.borrowed)
                     ? `<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin:0.3rem 0 0.2rem;">
                         <span class="apr-badge pos">Supplied ${fmtV(lendingTotals.supplied)}</span>
                         <span class="apr-badge neg">Borrowed ${fmtV(lendingTotals.borrowed)}</span>
                     </div>`
                     : '';
-                // Group positions by their sub-label (Supplied / Borrowed / null)
                 let lastSub = undefined;
                 const posRowsInner = sec.positions.map(pos => {
                     const positionIndex = sec.positions.indexOf(pos);
@@ -16344,17 +16452,24 @@ function renderProtocols() {
                 </div>`;
             }).join('');
 
-            drawerHtml = `<div class="protocol-drawer" id="pdrawer-${i}">${sectionHtmls}</div>`;
+            drawerHtml = `<div class="protocol-drawer" id="pdrawer-${drawerKey}">${sectionHtmls}</div>`;
         }
 
         const expandBtn = hasSections
-            ? `<button class="protocol-expand-btn" id="pdrawer-btn-${i}" onclick="toggleProtocolDrawer(${i})">
+            ? `<button class="protocol-expand-btn" id="pdrawer-btn-${drawerKey}" onclick="toggleProtocolDrawer('${drawerKey}')">
                 Details <i class="chevron">▼</i>
                </button>`
             : '';
-        const typeKey = (p.type || 'yield').toLowerCase().split(' ')[0];
-        const breakdown = protocolAprBreakdown(p) || {};
-        const netValue = protocolNetValue(p);
+        const rowType = entry.kind === 'lending' && entry.sections[0]?.type
+            ? entry.sections[0].type
+            : (p.type || 'yield');
+        const typeKey = String(rowType).toLowerCase().split(' ')[0];
+        const breakdown = protocolEntryAprBreakdown(entry) || {};
+        const netValue = protocolEntryNetValue(entry);
+        const summary = protocolEntrySummary(entry);
+        const netCell = entry.kind === 'lending'
+            ? `<div class="value" style="text-align:right">${fmtV(netValue)}</div>`
+            : `<div class="protocol-net-input"><input class="defi-edit-input" type="number" min="0" step="0.01" value="${Number(netValue || 0).toFixed(2)}" aria-label="Edit ${dashEsc(p.name)} USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolEditable(${i},this.value)" onblur="updateProtocolEditable(${i},this.value)"></div>`;
 
         return `<div class="protocol-row-wrap">
             <div class="table-row protocols-row row-${typeKey}" ondblclick="deleteItem('protocols',${i})">
@@ -16363,11 +16478,11 @@ function renderProtocols() {
                     <div class="token-name">${p.name}</div>
                 </div>
                 <div class="protocol-type-cell">
-                    <span class="badge badge-${typeKey}">${dashEsc(p.type || '-')}</span>
+                    <span class="badge badge-${typeKey}">${dashEsc(rowType || '-')}</span>
                     ${expandBtn}
                 </div>
-                <div class="protocol-position-summary" title="${dashEsc(protocolPositionSummary(p))}">${dashEsc(protocolPositionSummary(p))}</div>
-                <div class="protocol-net-input"><input class="defi-edit-input" type="number" min="0" step="0.01" value="${Number(netValue || 0).toFixed(2)}" aria-label="Edit ${dashEsc(p.name)} USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolEditable(${i},this.value)" onblur="updateProtocolEditable(${i},this.value)"></div>
+                <div class="protocol-position-summary" title="${dashEsc(summary)}">${dashEsc(summary)}</div>
+                ${netCell}
                 <div>${dashAprHtml(breakdown.suppliedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.borrowedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.totalApr)}</div>
@@ -16759,15 +16874,19 @@ function renderProtocolsSnapshot() {
         ? `Yield vs ${formatProtocolImportTs(aprPair.older.ts)}`
         : 'No earlier snapshot for yield';
 
-    // Render each protocol exactly like renderProtocols does
-    const rowsHtml = [...snapProtocols].sort((a, b) => b.value - a.value).map((p, i) => {
-        const breakdown = protocolAprBreakdownBetweenSnapshots(p, aprPair.newer, aprPair.older, snapUnitPrices) || {};
-        const hasSections = p.sections && p.sections.some(s => s.positions && s.positions.length > 0);
+    const sortedEntries = protocolDisplayEntries(snapProtocols)
+        .sort((a, b) => protocolEntryDisplayValue(b, snapUnitPrices) - protocolEntryDisplayValue(a, snapUnitPrices));
+    const rowsHtml = sortedEntries.map((entry) => {
+        const p = entry.protocol;
+        const drawerKey = `snap-${entry.drawerKey}`;
+        const breakdown = protocolEntryAprBreakdownSnapshot(entry, aprPair.newer, aprPair.older, snapUnitPrices) || {};
+        const sectionsToShow = entry.sections || [];
+        const hasSections = sectionsToShow.some(s => s.positions && s.positions.length > 0);
 
         let drawerHtml = '';
         if (hasSections) {
             const _drawerTypeCounts = {};
-            const sectionHtmls = p.sections.filter(s => s.positions && s.positions.length).map(sec => {
+            const sectionHtmls = sectionsToShow.filter(s => s.positions && s.positions.length).map(sec => {
                 const _secType = sec.type || 'Yield';
                 _drawerTypeCounts[_secType] = (_drawerTypeCounts[_secType] || 0) + 1;
                 const _secIdx = _drawerTypeCounts[_secType] > 1 ? `[${_drawerTypeCounts[_secType]}]` : '';
@@ -16829,24 +16948,28 @@ function renderProtocolsSnapshot() {
                 </div>`;
             }).join('');
 
-            drawerHtml = `<div class="protocol-drawer" id="snap-pdrawer-${i}">${sectionHtmls}</div>`;
+            drawerHtml = `<div class="protocol-drawer" id="${drawerKey}">${sectionHtmls}</div>`;
         }
 
         const expandBtn = hasSections
-            ? `<button class="protocol-expand-btn" id="snap-pdrawer-btn-${i}"
-                onclick="(function(i){
-                    var d=document.getElementById('snap-pdrawer-'+i);
-                    var b=document.getElementById('snap-pdrawer-btn-'+i);
+            ? `<button class="protocol-expand-btn" id="${drawerKey}-btn"
+                onclick="(function(key){
+                    var d=document.getElementById(key);
+                    var b=document.getElementById(key+'-btn');
                     var open=d.classList.toggle('open');
                     b.classList.toggle('open',open);
                     b.querySelector('.chevron').textContent=open?'▲':'▼';
-                })(${i})">
+                })('${drawerKey}')">
                 Details <i class="chevron">▼</i>
                </button>`
             : '';
 
-        const typeKey = (p.type || 'yield').toLowerCase().split(' ')[0];
-        const netValue = protocolNetValue(p, snapUnitPrices);
+        const rowType = entry.kind === 'lending' && entry.sections[0]?.type
+            ? entry.sections[0].type
+            : (p.type || 'yield');
+        const typeKey = String(rowType).toLowerCase().split(' ')[0];
+        const netValue = protocolEntryNetValue(entry, snapUnitPrices);
+        const summary = protocolEntrySummary(entry);
         return `<div class="protocol-row-wrap">
             <div class="table-row protocols-row row-${typeKey}">
                 <div class="protocol-main">
@@ -16854,10 +16977,10 @@ function renderProtocolsSnapshot() {
                     <div class="token-name">${p.name}</div>
                 </div>
                 <div class="protocol-type-cell">
-                    <span class="badge badge-${typeKey}">${dashEsc(p.type || '-')}</span>
+                    <span class="badge badge-${typeKey}">${dashEsc(rowType || '-')}</span>
                     ${expandBtn}
                 </div>
-                <div class="protocol-position-summary" title="${dashEsc(protocolPositionSummary(p))}">${dashEsc(protocolPositionSummary(p))}</div>
+                <div class="protocol-position-summary" title="${dashEsc(summary)}">${dashEsc(summary)}</div>
                 <div class="value" style="text-align:right">${fmtV(netValue)}</div>
                 <div>${dashAprHtml(breakdown.suppliedApr, { plain: true })}</div>
                 <div>${dashAprHtml(breakdown.borrowedApr, { plain: true })}</div>
