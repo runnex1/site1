@@ -9168,6 +9168,7 @@ const GECKO_SYMBOL_IDS = {
     USDC:'usd-coin', USDT:'tether', DAI:'dai', GHO:'gho', USDM:'mountain-protocol-usdm',
     USDE:'ethena-usde', SUSDE:'ethena-staked-usde', FRAX:'frax', LUSD:'liquity-usd',
     PYUSD:'paypal-usd', EURC:'euro-coin', FDUSD:'first-digital-usd', AUSD:'agora-dollar',
+    REUSD:'re-protocol-reusd',
 };
 const _geckoSymbolIdCache = {};
 const GECKO_ID_CACHE_KEY = 'vault-gecko-ids-v1';
@@ -9260,6 +9261,7 @@ function protocolSymbolsMissingLivePrices() {
     return collectDeFiPriceSymbols().some(sym => !Number.isFinite(livePrices[sym]) || livePrices[sym] <= 0);
 }
 hydrateLivePricesCache();
+hydrateStablecoinMonitorCacheFromLivePrices();
 let _protocolSelectedSnapshotTs = null; // null = latest snapshot baseline for APR
 let _protocolSnapshotPickerOpen = false;
 
@@ -11805,7 +11807,48 @@ function defiAlertPositionsHtml(items, level) {
 }
 const STABLECOIN_MONITOR_PRICE_CACHE = {};
 let _stablecoinMonitorPricePromise = null;
+let _stablecoinMonitorPriceFailed = false;
 let _geckoPickResolver = null;
+
+function syncStablecoinPriceCache(symbol, geckoId, usd) {
+    const sym = String(symbol || '').trim().toUpperCase();
+    const id = String(geckoId || '').trim().toLowerCase();
+    if (!sym || !id || !Number.isFinite(usd) || usd <= 0) return false;
+    let changed = false;
+    if (STABLECOIN_MONITOR_PRICE_CACHE[id] !== usd) {
+        STABLECOIN_MONITOR_PRICE_CACHE[id] = usd;
+        changed = true;
+    }
+    if (livePrices[sym] !== usd) {
+        livePrices[sym] = usd;
+        changed = true;
+    }
+    return changed;
+}
+function hydrateStablecoinMonitorCacheFromLivePrices() {
+    for (const sym of Object.keys(livePrices || {})) {
+        const geckoId = geckoIdForSymbol(sym);
+        const usd = livePrices[sym];
+        if (geckoId) syncStablecoinPriceCache(sym, geckoId, usd);
+    }
+}
+function stablecoinMonitorPriceForRow(row) {
+    const sym = String(row?.symbol || '').trim().toUpperCase();
+    const geckoId = row?.geckoId || geckoIdForSymbol(sym);
+    if (geckoId && Number.isFinite(STABLECOIN_MONITOR_PRICE_CACHE[geckoId])) {
+        return STABLECOIN_MONITOR_PRICE_CACHE[geckoId];
+    }
+    const live = livePrices[sym];
+    return Number.isFinite(live) ? live : null;
+}
+function stablecoinMonitorPriceLabel(cgPrice, geckoId) {
+    if (Number.isFinite(cgPrice)) {
+        return `$${cgPrice.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} CG`;
+    }
+    if (!geckoId) return 'no CG id';
+    if (_stablecoinMonitorPriceFailed) return 'price unavailable';
+    return 'fetching…';
+}
 
 function stablecoinMonitorGeckoId(token) {
     return String(token?.geckoId || token?.id || '').trim().toLowerCase();
@@ -11817,8 +11860,7 @@ function stablecoinMonitorKey(token) {
 }
 function stablecoinMonitorExposureValue(row) {
     const amt = Number(row?.amount) || 0;
-    const geckoId = row?.geckoId || geckoIdForSymbol(row?.symbol);
-    const cgPrice = geckoId ? STABLECOIN_MONITOR_PRICE_CACHE[geckoId] : null;
+    const cgPrice = stablecoinMonitorPriceForRow(row);
     if (Number.isFinite(cgPrice) && amt) return amt * cgPrice;
     return Number(row?.value || 0);
 }
@@ -12050,28 +12092,38 @@ async function refreshStablecoinMonitorPrices(rows) {
     })).filter(t => t.geckoId);
     if (!targets.length) return false;
     const uniqueIds = [...new Set(targets.map(t => t.geckoId).filter(Boolean))];
-    const res = await fetch(`/api/prices?ids=${uniqueIds.join(',')}`, { signal: AbortSignal.timeout(10000) });
-    if (!res.ok) return false;
-    const prices = await res.json();
-    let changed = false;
-    for (const t of targets) {
-        const usd = prices[t.geckoId]?.usd;
-        if (!Number.isFinite(usd) || usd <= 0) continue;
-        const cacheKey = t.geckoId;
-        if (STABLECOIN_MONITOR_PRICE_CACHE[cacheKey] !== usd) {
-            STABLECOIN_MONITOR_PRICE_CACHE[cacheKey] = usd;
-            livePrices[t.symbol] = usd;
-            changed = true;
+    try {
+        const res = await fetch(`/api/prices?ids=${uniqueIds.join(',')}`, { signal: AbortSignal.timeout(10000) });
+        if (!res.ok) {
+            _stablecoinMonitorPriceFailed = true;
+            return false;
         }
+        const prices = await res.json();
+        if (prices?.error) {
+            _stablecoinMonitorPriceFailed = true;
+            return false;
+        }
+        let changed = false;
+        for (const t of targets) {
+            const usd = prices[t.geckoId]?.usd;
+            if (!Number.isFinite(usd) || usd <= 0) continue;
+            if (syncStablecoinPriceCache(t.symbol, t.geckoId, usd)) changed = true;
+        }
+        if (changed) {
+            _stablecoinMonitorPriceFailed = false;
+            persistLivePricesCache();
+        }
+        return changed;
+    } catch (e) {
+        _stablecoinMonitorPriceFailed = true;
+        console.warn('[Stablecoin monitor prices]', e);
+        return false;
     }
-    if (changed) persistLivePricesCache();
-    return changed;
 }
 function scheduleStablecoinMonitorPriceRefresh(rows) {
     if (_stablecoinMonitorPricePromise) return;
     _stablecoinMonitorPricePromise = refreshStablecoinMonitorPrices(rows)
-        .then(changed => {
-            if (!changed) return;
+        .then(() => {
             try { renderDefiStablecoinPanel(stablecoinRowsForDefi()); } catch (e) { console.warn('[Stablecoin monitor render]', e); }
             const stableExposure = stablecoinRowsForDefi().reduce((sum, x) => sum + stablecoinMonitorExposureValue(x), 0);
             const totalWallet = (data.tokens || []).reduce((s, t) => s + Number(t.value || 0), 0);
@@ -12081,7 +12133,11 @@ function scheduleStablecoinMonitorPriceRefresh(rows) {
             if (el) el.textContent = dashUsd(stableExposure);
             if (sub) sub.textContent = `${totalWallet + totalProtos ? ((stableExposure / (totalWallet + totalProtos)) * 100).toFixed(1) : '0.0'}% of DeFi value`;
         })
-        .catch(e => console.warn('[Stablecoin monitor prices]', e))
+        .catch(e => {
+            _stablecoinMonitorPriceFailed = true;
+            console.warn('[Stablecoin monitor prices]', e);
+            try { renderDefiStablecoinPanel(stablecoinRowsForDefi()); } catch (err) { console.warn('[Stablecoin monitor render]', err); }
+        })
         .finally(() => { _stablecoinMonitorPricePromise = null; });
 }
 function updateDefiProtocolNote(index, value) {
@@ -12421,6 +12477,7 @@ function renderDefiYieldPanel(avg) {
 function renderDefiStablecoinPanel(stableRows) {
     const stables = document.getElementById('defiStablecoinPanel');
     if (!stables) return;
+    hydrateStablecoinMonitorCacheFromLivePrices();
     const rows = stableRows || stablecoinRowsForDefi();
     scheduleStablecoinMonitorPriceRefresh(rows);
     stables.innerHTML = rows.length
@@ -12428,7 +12485,7 @@ function renderDefiStablecoinPanel(stableRows) {
             + rows.map(x => {
                 const amt = Number(x.amount) || 0;
                 const geckoId = x.geckoId || geckoIdForSymbol(x.symbol);
-                const cgPrice = geckoId ? STABLECOIN_MONITOR_PRICE_CACHE[geckoId] : null;
+                const cgPrice = stablecoinMonitorPriceForRow(x);
                 const displayValue = Number.isFinite(cgPrice) && amt
                     ? amt * cgPrice
                     : Number(x.value || 0);
@@ -12436,9 +12493,7 @@ function renderDefiStablecoinPanel(stableRows) {
                 const cls = pegDiff == null ? '' : Math.abs(pegDiff) > 0.2 ? 'negative' : Math.abs(pegDiff) > 0.05 ? '' : 'positive';
                 const offPeg = pegDiff != null && Math.abs(pegDiff) > 0.2;
                 const netCls = displayValue >= 0 ? 'positive' : 'negative';
-                const priceLabel = Number.isFinite(cgPrice)
-                    ? `$${cgPrice.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} CG`
-                    : 'fetching…';
+                const priceLabel = stablecoinMonitorPriceLabel(cgPrice, geckoId);
                 const removeBtn = x.monitorId
                     ? ` <button type="button" title="Remove monitor" onclick="removeStablecoinMonitor(${JSON.stringify(x.monitorId)})" style="border:none;background:transparent;color:var(--t3);cursor:pointer;padding:0 0.15rem;font-size:0.9rem;line-height:1;">×</button>`
                     : '';
@@ -16121,6 +16176,7 @@ async function fetchLiveTokenPricesInner(opts = {}) {
         const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
         if (!res.ok) throw new Error('Price API ' + res.status);
         const prices = await res.json();
+        if (prices?.error) throw new Error(prices.error);
 
         let walletUpdated = false;
         let pricesUpdated = false;
@@ -16129,8 +16185,7 @@ async function fetchLiveTokenPricesInner(opts = {}) {
             if (!geckoId) continue;
             const usd = prices[geckoId]?.usd;
             if (!Number.isFinite(usd) || usd <= 0) continue;
-            if (livePrices[sym] !== usd) pricesUpdated = true;
-            livePrices[sym] = usd;
+            if (syncStablecoinPriceCache(sym, geckoId, usd)) pricesUpdated = true;
         }
         data.tokens.forEach(t => {
             const sym = t.symbol.toUpperCase();
@@ -16297,7 +16352,6 @@ function toggleProtocolPositionsFocus() {
     btn.setAttribute('aria-label', btn.title);
     if (strip) strip.setAttribute('aria-hidden', on ? 'false' : 'true');
     syncWalletFocusStrip();
-    try { localStorage.setItem('vault-protocol-positions-focus', on ? '1' : '0'); } catch (e) {}
 }
 
 function restoreProtocolPositionsFocus() {
@@ -16305,14 +16359,12 @@ function restoreProtocolPositionsFocus() {
     const btn = document.getElementById('protocolPositionsExpandBtn');
     const strip = document.getElementById('walletFocusStrip');
     if (!tab || !btn) return;
-    let on = false;
-    try { on = localStorage.getItem('vault-protocol-positions-focus') === '1'; } catch (e) {}
-    tab.classList.toggle('protocol-positions-focus', on);
-    btn.classList.toggle('active', on);
-    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    btn.title = on ? 'Collapse protocol positions (E)' : 'Expand protocol positions — hides wallet (E)';
+    tab.classList.remove('protocol-positions-focus');
+    btn.classList.remove('active');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.title = 'Expand protocol positions — hides wallet (E)';
     btn.setAttribute('aria-label', btn.title);
-    if (strip) strip.setAttribute('aria-hidden', on ? 'false' : 'true');
+    if (strip) strip.setAttribute('aria-hidden', 'true');
     syncWalletFocusStrip();
 }
 
