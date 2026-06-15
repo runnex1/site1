@@ -9931,6 +9931,9 @@ function syncTabRefreshTimers(tab) {
     if (active === 'defi' || active === 'loops') startLiveTokenPrices();
     else stopLiveTokenPrices();
 
+    if (active === 'defi') startStablecoinMonitorRefresh();
+    else stopStablecoinMonitorRefresh();
+
     if (active === 'overview') startOverviewDashboardRefreshes();
     else stopOverviewDashboardRefreshes();
 
@@ -11853,8 +11856,12 @@ function defiAlertPositionsHtml(items, level) {
       </div>`).join('');
 }
 const STABLECOIN_MONITOR_PRICE_CACHE = {};
+const STABLECOIN_MONITOR_REFRESH_MS = 30 * 60 * 1000;
 let _stablecoinMonitorPricePromise = null;
 let _stablecoinMonitorPriceFailed = false;
+let _stablecoinMonitorLastFetchAt = 0;
+let _stablecoinMonitorRefreshTimer = null;
+let _stablecoinMonitorOnDefiTab = false;
 let _geckoPickResolver = null;
 
 function syncStablecoinPriceCache(symbol, geckoId, usd) {
@@ -12022,6 +12029,7 @@ function removeStablecoinMonitor(id) {
     data.stablecoinMonitors = (data.stablecoinMonitors || []).filter(t => t.id !== id);
     saveData();
     try { renderDefiCockpit(); } catch (e) { console.error('[DeFi stables remove]', e); }
+    refreshStablecoinMonitorPricesNow({ force: true });
 }
 async function stablecoinSubmitAdd() {
     const input = document.getElementById('stablecoinAddInput');
@@ -12048,6 +12056,7 @@ async function stablecoinSubmitAdd() {
                             else {
                                 closeModal('stablecoinAdd');
                                 try { renderDefiCockpit(); } catch (e) { console.error('[DeFi stables add]', e); }
+                                refreshStablecoinMonitorPricesNow({ force: true });
                             }
                         } finally {
                             if (btn) btn.disabled = false;
@@ -12062,6 +12071,7 @@ async function stablecoinSubmitAdd() {
         else {
             closeModal('stablecoinAdd');
             try { renderDefiCockpit(); } catch (e) { console.error('[DeFi stables add]', e); }
+            refreshStablecoinMonitorPricesNow({ force: true });
         }
     } catch (e) {
         if (status) status.textContent = e.message || 'Lookup failed';
@@ -12168,9 +12178,19 @@ async function refreshStablecoinMonitorPrices(rows) {
     }
 }
 function scheduleStablecoinMonitorPriceRefresh(rows) {
+    refreshStablecoinMonitorPricesNow({ rows, force: true });
+}
+function refreshStablecoinMonitorPricesNow(opts = {}) {
+    const rows = opts.rows || stablecoinRowsForDefi();
+    const force = !!opts.force;
+    const now = Date.now();
+    if (!force && _stablecoinMonitorLastFetchAt && (now - _stablecoinMonitorLastFetchAt) < STABLECOIN_MONITOR_REFRESH_MS) {
+        return;
+    }
     if (_stablecoinMonitorPricePromise) return;
     _stablecoinMonitorPricePromise = refreshStablecoinMonitorPrices(rows)
         .then(() => {
+            _stablecoinMonitorLastFetchAt = Date.now();
             try { renderDefiStablecoinPanel(stablecoinRowsForDefi()); } catch (e) { console.warn('[Stablecoin monitor render]', e); }
             const stableExposure = stablecoinRowsForDefi().reduce((sum, x) => sum + stablecoinMonitorExposureValue(x), 0);
             const totalWallet = (data.tokens || []).reduce((s, t) => s + Number(t.value || 0), 0);
@@ -12186,6 +12206,23 @@ function scheduleStablecoinMonitorPriceRefresh(rows) {
             try { renderDefiStablecoinPanel(stablecoinRowsForDefi()); } catch (err) { console.warn('[Stablecoin monitor render]', err); }
         })
         .finally(() => { _stablecoinMonitorPricePromise = null; });
+}
+function startStablecoinMonitorRefresh() {
+    if (_stablecoinMonitorOnDefiTab) return;
+    _stablecoinMonitorOnDefiTab = true;
+    refreshStablecoinMonitorPricesNow({ force: true });
+    if (_stablecoinMonitorRefreshTimer) return;
+    _stablecoinMonitorRefreshTimer = setInterval(() => {
+        if (document.body.dataset.activeTab !== 'defi') return;
+        refreshStablecoinMonitorPricesNow();
+    }, STABLECOIN_MONITOR_REFRESH_MS);
+}
+function stopStablecoinMonitorRefresh() {
+    _stablecoinMonitorOnDefiTab = false;
+    if (_stablecoinMonitorRefreshTimer) {
+        clearInterval(_stablecoinMonitorRefreshTimer);
+        _stablecoinMonitorRefreshTimer = null;
+    }
 }
 function updateDefiProtocolNote(index, value) {
     normalizePortfolioData();
@@ -12526,7 +12563,6 @@ function renderDefiStablecoinPanel(stableRows) {
     if (!stables) return;
     hydrateStablecoinMonitorCacheFromLivePrices();
     const rows = stableRows || stablecoinRowsForDefi();
-    scheduleStablecoinMonitorPriceRefresh(rows);
     stables.innerHTML = rows.length
         ? `<div class="defi-side-table-head"><div>Stablecoin</div><div>Net Exposure</div><div>Peg</div><div>Status</div></div>`
             + rows.map(x => {
@@ -16232,7 +16268,8 @@ async function fetchLiveTokenPricesInner(opts = {}) {
             if (!geckoId) continue;
             const usd = prices[geckoId]?.usd;
             if (!Number.isFinite(usd) || usd <= 0) continue;
-            if (syncStablecoinPriceCache(sym, geckoId, usd)) pricesUpdated = true;
+            if (livePrices[sym] !== usd) pricesUpdated = true;
+            livePrices[sym] = usd;
         }
         data.tokens.forEach(t => {
             const sym = t.symbol.toUpperCase();
