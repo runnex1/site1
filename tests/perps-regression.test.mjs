@@ -863,6 +863,9 @@ assert.match(indexHtml, /Kamino, Jupiter Lend/, 'yield wallet modal must mention
 assert.match(indexHtml, /function predictionAggregatePnlDisplayValue\(/, 'Prediction Markets top PNL must use the same aggregate cache as the PNL chart');
 assert.match(indexHtml, /fetchPredictionPnlChartPoints\('all'\)/, 'Prediction Markets top PNL must refresh from the all-time PNL chart API');
 assert.match(indexHtml, /source:\s*'pnl-chart'/, 'Prediction Markets top PNL must mark chart-backed values instead of relying first on leaderboard data');
+assert.match(indexHtml, /function ensurePolyFilledOrders\(/, 'Prediction Markets watched-wallet trades must share the Event Log fill loader');
+assert.match(indexHtml, /predictionRenderFilledGroups\(groupFilledTradesByWindow/, 'Prediction Markets smart money must render grouped Order Filled rows like Event Log');
+assert.doesNotMatch(indexHtml, /Wallet activity timed out/, 'Prediction Markets must not use a separate timed fill fetch');
 assert.match(watcherPreviewHtml, /Dashboard theme tokens/, 'Watcher preview must use the Dashboard theme token set');
 assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\), rgba\(5,13,19,\.97\)\)/, 'Watcher preview panels must match the Dashboard dark surface treatment');
 
@@ -1253,7 +1256,31 @@ assert.match(indexHtml, /perpsPriceRiskStyle\(currentPx, tp\)/, 'TP rows must us
 assert.match(logoResolverJs, /hasEmbeddedLogo\(next, target\.key\)/, 'resolved token logos must persist server-side without re-fetching');
 assert.match(logoResolverJs, /resolveTokenLogoDataUrl\(target\.symbol, next\)/, 'token logo resolve must read server cache before CoinGecko');
 assert.doesNotMatch(logoResolverJs, /isLoopPinnedTokenLogo\(target\.symbol\)/, 'pinned loop logos must not force CoinGecko re-fetch when cached');
-assert.match(indexHtml, /logoCache=1/, 'loops tab must hydrate server logo cache');
+assert.match(indexHtml, /function loopOfficialLinkHtml\(loop\)/, 'loops cards must link to official protocol pages');
+
+{
+  const { officialLoopPageUrl } = require('../lib/loop-official-urls.js');
+  const aave = officialLoopPageUrl({
+    protocol: 'Aave',
+    marketName: 'AaveV3Base',
+    chainId: 8453,
+  });
+  assert.match(aave, /^https:\/\/app\.aave\.com\/markets\/\?marketName=proto_base_v3$/, 'Aave loops must deep-link to the chain market');
+  const morpho = officialLoopPageUrl({
+    protocol: 'Morpho',
+    chainId: 8453,
+    marketId: '0xabc',
+    vaultOnly: false,
+  });
+  assert.equal(morpho, 'https://app.morpho.org/base/market/0xabc', 'Morpho borrow loops must deep-link to the market page');
+  const fluid = officialLoopPageUrl({
+    protocol: 'Fluid',
+    chainId: 1,
+    totalBorrowed: 1000,
+  });
+  assert.equal(fluid, 'https://fluid.io/borrow/1', 'Fluid borrow loops must deep-link to borrow UI');
+}
+
 
 {
   const dashboard = (fetchedAt, total, overrides = {}) => ({

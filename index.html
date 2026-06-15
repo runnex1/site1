@@ -6455,6 +6455,13 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loop-head-stat.health.warn .loop-head-stat-val { color:var(--amber); }
 .loop-head-stat.health.danger .loop-head-stat-val { color:var(--red); }
 .loop-head-meta { display:flex; align-items:center; flex-wrap:wrap; gap:6px; min-height:20px; }
+.loop-official-link {
+  display:inline-flex; align-items:center; gap:0.2rem;
+  font-family:var(--ff-mono); font-size:0.58rem; font-weight:700; letter-spacing:0.04em;
+  color:#7f9fb8; text-decoration:none; padding:0.12rem 0.38rem; border-radius:999px;
+  border:1px solid rgba(134,159,179,0.18); background:rgba(255,255,255,0.03);
+}
+.loop-official-link:hover { color:var(--teal); border-color:rgba(0,212,170,0.35); background:rgba(0,212,170,0.08); }
 .loop-card-main { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(200px,0.84fr); gap:1px; background:rgba(148,163,184,0.10); }
 .loop-chart-pane, .loop-summary-pane { min-width:0; background:rgba(4,13,19,0.88); }
 .loop-chart-pane { padding:0; }
@@ -10363,7 +10370,7 @@ async function refreshActivity() {
     if (wallets.length > 0) {
         tasks.push(
             (typeof fetchServerMarketMoves === 'function' ? fetchServerMarketMoves(wallets) : fetchMovers(wallets)).then(m => { _rawPolyMovers = m; applyMoversFilter(); }),
-            fetchFilledOrders(wallets).then(t => { _rawPolyFilled = t; renderFilledOrders(t); })
+            ensurePolyFilledOrders(wallets, { force: true })
         );
     }
     if (hasOpinion) {
@@ -10382,7 +10389,56 @@ async function refreshActivity() {
 // ── Movers / Filled raw cache + filter ───────────────────────────────────────
 let _rawPolyMovers = null;
 let _rawOpinionMovers = null;
-let _rawPolyFilled  = null;   // cached for event log
+let _rawPolyFilled  = null;   // cached for event log + prediction smart money
+let _rawPolyFilledKey = '';
+let _rawPolyFilledAt = 0;
+let _rawPolyFilledPromise = null;
+
+function polyFilledWalletKey(wallets) {
+    return mergeWalletAddresses(wallets || []).slice().sort().join('|').toLowerCase();
+}
+
+async function ensurePolyFilledOrders(wallets, opts = {}) {
+    const list = mergeWalletAddresses(wallets || []);
+    const key = polyFilledWalletKey(list);
+    if (!key) return [];
+    const force = !!opts.force;
+    if (!force && _rawPolyFilledKey === key && Array.isArray(_rawPolyFilled) && !_rawPolyFilledPromise) {
+        return _rawPolyFilled;
+    }
+    if (_rawPolyFilledPromise && _rawPolyFilledKey === key && !force) {
+        return _rawPolyFilledPromise;
+    }
+    _rawPolyFilledKey = key;
+    _rawPolyFilledPromise = fetchFilledOrders(list)
+        .then(trades => {
+            _rawPolyFilled = trades;
+            _rawPolyFilledAt = Date.now();
+            if (typeof renderFilledOrders === 'function') {
+                const activityWallets = polyFilledWalletKey((data || {}).polymarketWallets || []);
+                if (activityWallets === key) renderFilledOrders(trades);
+            }
+            return trades;
+        })
+        .catch(err => {
+            if (_rawPolyFilledKey === key) {
+                _rawPolyFilled = null;
+                _rawPolyFilledAt = 0;
+            }
+            throw err;
+        })
+        .finally(() => {
+            if (_rawPolyFilledKey === key) _rawPolyFilledPromise = null;
+        });
+    return _rawPolyFilledPromise;
+}
+
+function invalidatePolyFilledOrders() {
+    _rawPolyFilled = null;
+    _rawPolyFilledKey = '';
+    _rawPolyFilledAt = 0;
+    _rawPolyFilledPromise = null;
+}
 let _dismissedMarkets = [];      // market IDs hidden from opportunities
 let _serverEventHistory = [];    // event history loaded from server on startup
 try { _dismissedMarkets = JSON.parse(localStorage.getItem('vault-dismissed-markets') || '[]'); } catch(e) { _dismissedMarkets = []; }
@@ -13653,6 +13709,27 @@ function loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions) {
     return `<span class="loop-tag network">${dashEsc(chip)}</span>`;
 }
 
+function loopCardOfficialUrl(loop) {
+    const rawUrl = String(loop?.raw?.officialUrl || '').trim();
+    if (rawUrl) return rawUrl;
+    const name = String(loop?.p?.name || loop?.raw?.protocol || '').trim().toLowerCase();
+    const homes = {
+        aave: 'https://app.aave.com',
+        morpho: 'https://app.morpho.org',
+        fluid: 'https://fluid.io',
+        jupiter: 'https://jup.ag/lend',
+        kamino: 'https://app.kamino.finance',
+    };
+    return homes[name] || '';
+}
+
+function loopOfficialLinkHtml(loop) {
+    const url = loopCardOfficialUrl(loop);
+    if (!url) return '';
+    const label = String(loop?.p?.name || loop?.raw?.protocol || 'protocol').trim();
+    return `<a class="loop-official-link" href="${dashEsc(url)}" target="_blank" rel="noopener noreferrer" title="Open on ${dashEsc(label)}">Open ↗</a>`;
+}
+
 function loopFormatTokenAmount(amount) {
     const n = Number(amount);
     if (!Number.isFinite(n)) return '—';
@@ -14643,18 +14720,13 @@ async function renderDashboardEventLog() {
         });
 
     // ── 2. Limit orders filled — group by market+outcome+side, split by 2h gaps
-    if (_rawPolyFilled === null) {
-        const wallets = (data || {}).polymarketWallets || [];
-        if (wallets.length > 0) {
-            _rawPolyFilled = []; // mark as in-progress
-            (async () => {
-                try {
-                    _rawPolyFilled = await fetchFilledOrders(wallets);
-                    renderDashboardEventLog();
-                } catch(e) { _rawPolyFilled = null; }
-            })();
-        }
-    } else {
+    const wallets = (data || {}).polymarketWallets || [];
+    const fillKey = polyFilledWalletKey(wallets);
+    if (wallets.length > 0 && (_rawPolyFilled === null || _rawPolyFilledKey !== fillKey)) {
+        ensurePolyFilledOrders(wallets)
+            .then(() => renderDashboardEventLog())
+            .catch(() => renderDashboardEventLog());
+    } else if (Array.isArray(_rawPolyFilled)) {
         groupFilledTradesByWindow(_rawPolyFilled || [])
             .slice(0, 4)
             .forEach(g => {
@@ -17037,7 +17109,7 @@ function renderLoops() {
                             healthBadgeCls,
                         )}
                     </div>
-                    <div class="loop-head-meta"><span class="loop-protocol-mark" title="${dashEsc(p.name)}">${makeLoopLogo(p.name, true, 26)}</span>${networkChip}${walletChip}</div>
+                    <div class="loop-head-meta"><span class="loop-protocol-mark" title="${dashEsc(p.name)}">${makeLoopLogo(p.name, true, 26)}</span>${loopOfficialLinkHtml(loop)}${networkChip}${walletChip}</div>
                 </div>
             </div>
             <div class="loop-card-main">
@@ -17360,11 +17432,9 @@ function renderPredSubtabs() {
 // Prediction Markets cockpit layout. This overrides the older two-subtab scaffold
 // above while reusing the existing position, activity, and opportunity data paths.
 let _predictionIntelSeq = 0;
-let _predictionActivityCache = { key: '', ts: 0, trades: [] };
 let _predictionPulseCards = [];
 let _predictionCarryCards = [];
 let _predictionWalletCards = [];
-let _predictionActivityLoadingKey = '';
 let _predictionWalletPulseTimer = null;
 let _predictionMovesLoading = false;
 let _predictionMovesLastRefresh = 0;
@@ -18183,42 +18253,47 @@ async function predictionRenderCarry(seq) {
     }
 }
 
-function predictionRenderTrades(trades) {
+function predictionRenderFilledGroups(groups) {
     const smartEl = document.getElementById('predictionSmartMoneyRows');
-    if (!trades.length) {
+    if (!groups.length) {
         const empty = '<div class="pred-empty">No recent wallet trades found for watched wallets.</div>';
         _predictionWalletCards = [];
         predictionRenderMixedRows();
         if (smartEl) smartEl.innerHTML = empty;
         return;
     }
-    _predictionWalletCards = trades.slice(0, 3).map(t => {
-        const amount = Number(t.size || t.amount || t.usdcSize || t.usdcAmount || 0);
-        const side = String(t.side || t.outcome || 'TRADE').toUpperCase();
-        const color = side === 'BUY' ? 'var(--green)' : side === 'SELL' ? 'var(--red)' : 'var(--sky)';
-        return predictionPulseItem(side === 'BUY' ? 'Wallet Buy' : side === 'SELL' ? 'Wallet Sell' : 'Wallet Move', t.title || t.marketTitle || 'Prediction market', {
-            color,
-            alpha: side === 'BUY' ? 'rgba(34,197,94,0.12)' : side === 'SELL' ? 'rgba(244,63,94,0.12)' : 'rgba(56,189,248,0.10)',
-            icon: side === 'SELL' ? 'down' : 'fill',
-            meta: `${dashEsc(dashShortAddr(t._wallet || t.user || ''))} - ${dashEsc(t.outcome || side)}${amount ? ' - ' + amount.toFixed(0) + ' shares' : ''}`,
-            ts: Number(t.timestamp || 0) * 1000,
-            url: dashPolymarketMarketUrl(t)
+    _predictionWalletCards = groups.slice(0, 3).map(g => {
+        const isBuy = g.side === 'BUY';
+        const avgPrice = g.totalShares > 0 ? g.totalCost / g.totalShares : 0;
+        const marketTitle = predictionShortTitle(g.title, 55);
+        const text = marketTitle + (g.outcome ? ' — ' + g.outcome + ' ' : ' ') +
+            g.side + ' ' + g.totalShares.toFixed(0) + ' shares @ ' + (avgPrice * 100).toFixed(1) + '¢';
+        return predictionPulseItem('Order Filled', text, {
+            color: isBuy ? 'var(--green)' : 'var(--red)',
+            alpha: isBuy ? 'rgba(34,197,94,0.12)' : 'rgba(244,63,94,0.12)',
+            icon: 'fill',
+            meta: dashEsc(dashShortAddr(g.wallet || '')),
+            ts: g.latestTs,
+            hover: orderFillHoverText(g),
+            url: g.marketUrl || dashPolymarketMarketUrl(g)
         });
     });
     predictionRenderMixedRows();
     if (!smartEl) return;
-    smartEl.innerHTML = trades.slice(0, 6).map(t => {
-        const ts = Number(t.timestamp || 0) * 1000;
-        const amount = Number(t.size || t.amount || t.usdcSize || t.usdcAmount || 0);
-        return `<div class="pred-smart-row">
-          <div class="pred-smart-title">${dashEsc(dashShortAddr(t._wallet || t.user || 'Watched wallet'))} ${dashEsc(String(t.side || 'traded').toLowerCase())} ${amount ? amount.toFixed(0) + ' shares' : 'position'}</div>
-          <div class="pred-smart-meta">${dashEsc(predictionShortTitle(t.title || t.marketTitle, 68))} - ${dashEsc(t.outcome || '-')} - ${ts ? dashEsc(_evAbsTime(ts)) : 'recent'}</div>
+    smartEl.innerHTML = groups.slice(0, 6).map(g => {
+        const isBuy = g.side === 'BUY';
+        const avgPrice = g.totalShares > 0 ? g.totalCost / g.totalShares : 0;
+        const ts = g.latestTs || 0;
+        const multiOrder = g.orders.length > 1;
+        return `<div class="pred-smart-row" title="${dashEsc(orderFillHoverText(g))}">
+          <div class="pred-smart-title">${dashEsc(dashShortAddr(g.wallet || 'Watched wallet'))} ${dashEsc(String(g.side || 'traded').toLowerCase())} ${g.totalShares.toFixed(0)} shares @ ${(avgPrice * 100).toFixed(1)}¢${multiOrder ? ' (' + g.orders.length + ' fills)' : ''}</div>
+          <div class="pred-smart-meta">${dashEsc(predictionShortTitle(g.title, 68))}${g.outcome ? ' — ' + dashEsc(g.outcome) : ''} — ${ts ? dashEsc(_evAbsTime(ts)) : 'recent'}</div>
         </div>`;
     }).join('');
 }
 
-function predictionRenderWalletTimeout(message='Wallet activity timed out before Polymarket returned recent fills.') {
-    _predictionWalletCards = [predictionPulseItem('Wallet Activity Timeout', message, {
+function predictionRenderWalletError(message='Could not load recent wallet trades.') {
+    _predictionWalletCards = [predictionPulseItem('Wallet Activity Error', message, {
         color: 'var(--amber)',
         alpha: 'rgba(245,158,11,0.12)',
         icon: 'hourglass',
@@ -18278,10 +18353,10 @@ function setupPredictionWalletPulseRefresh() {
         if (document.hidden || document.body.dataset.activeTab !== 'prediction') return;
         const wallets = predictionWatchedWalletAddresses();
         if (wallets.length) {
-            const key = wallets.slice().sort().join('|');
-            if (_predictionActivityLoadingKey !== key) {
-                const stale = _predictionActivityCache.key !== key || (Date.now() - Number(_predictionActivityCache.ts || 0)) >= PREDICTION_WALLET_PULSE_MS;
-                if (stale) predictionRenderActivity(++_predictionIntelSeq, { background:true, force:true });
+            const key = polyFilledWalletKey(wallets);
+            const stale = _rawPolyFilledKey !== key || (Date.now() - _rawPolyFilledAt) >= PREDICTION_WALLET_PULSE_MS;
+            if (stale && !_rawPolyFilledPromise) {
+                predictionRenderActivity(++_predictionIntelSeq, { background:true, force:true });
             }
         }
         predictionRefreshMarketMoves({ force:true });
@@ -18312,16 +18387,16 @@ async function predictionRenderActivity(seq, opts={}) {
         if (smartEl) smartEl.innerHTML = empty;
         return;
     }
-    const key = wallets.slice().sort().join('|');
-    const hasCachedTrades = _predictionActivityCache.key === key && Array.isArray(_predictionActivityCache.trades);
-    const cacheFresh = hasCachedTrades && !opts.force && (Date.now() - _predictionActivityCache.ts) < PREDICTION_WALLET_PULSE_MS;
-    if (hasCachedTrades) {
-        predictionRenderTrades(_predictionActivityCache.trades);
+    const key = polyFilledWalletKey(wallets);
+    const hasCache = _rawPolyFilledKey === key && Array.isArray(_rawPolyFilled);
+    const cacheFresh = hasCache && !opts.force && !_rawPolyFilledPromise &&
+        (Date.now() - _rawPolyFilledAt) < PREDICTION_WALLET_PULSE_MS;
+    if (hasCache) {
+        predictionRenderFilledGroups(groupFilledTradesByWindow(_rawPolyFilled).slice(0, 8));
         if (cacheFresh) return;
     }
-    if (_predictionActivityLoadingKey === key) return;
-    _predictionActivityLoadingKey = key;
-    if (!hasCachedTrades) {
+    if (_rawPolyFilledPromise && _rawPolyFilledKey === key && !opts.force) return;
+    if (!hasCache) {
         _predictionWalletCards = [predictionPulseItem('Watched Wallets', 'Loading recent watched wallet trades...', {
             color: 'var(--sky)',
             alpha: 'rgba(56,189,248,0.10)',
@@ -18331,35 +18406,20 @@ async function predictionRenderActivity(seq, opts={}) {
         predictionRenderMixedRows();
         if (smartEl) smartEl.innerHTML = '<div class="pred-empty">Loading recent wallet trades...</div>';
     }
+    if (location.protocol !== 'file:') {
+        refreshServerEventLog(!!opts.force).catch(() => {});
+    }
     try {
-        const trades = (await Promise.race([
-            fetchFilledOrders(wallets).then(rows => rows.slice(0, 8)),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Wallet activity timeout')), 18000))
-        ]));
+        const trades = await ensurePolyFilledOrders(wallets, { force: !!opts.force });
         if (seq !== _predictionIntelSeq) return;
-        _predictionActivityCache = { key, ts: Date.now(), trades };
-        predictionRenderTrades(trades);
+        predictionRenderFilledGroups(groupFilledTradesByWindow(trades).slice(0, 8));
     } catch(e) {
         if (seq !== _predictionIntelSeq) return;
-        const timedOut = /timeout/i.test(String(e && (e.message || e)));
-        if (timedOut) {
-            predictionRenderWalletTimeout('Wallet activity timed out. Market Pulse will retry every 5 minutes.');
+        if (hasCache) {
+            predictionRenderFilledGroups(groupFilledTradesByWindow(_rawPolyFilled).slice(0, 8));
             return;
         }
-        if (hasCachedTrades) {
-            predictionRenderTrades(_predictionActivityCache.trades);
-            return;
-        }
-        const fallback = predictionActivityFallbackTrades(5);
-        if (!fallback.length) {
-            _predictionWalletCards = [];
-            predictionRenderMixedRows();
-            if (smartEl) smartEl.innerHTML = '<div class="pred-empty">Could not load recent wallet trades.</div>';
-            return;
-        }
-        predictionRenderTrades(fallback);
-    } finally {
-        if (_predictionActivityLoadingKey === key) _predictionActivityLoadingKey = '';
+        predictionRenderWalletError('Could not load recent wallet trades.');
     }
 }
 
@@ -18374,7 +18434,7 @@ function renderPredictionIntelligence() {
 }
 
 function refreshPredictionIntelligence() {
-    _predictionActivityCache = { key: '', ts: 0, trades: [] };
+    invalidatePolyFilledOrders();
     if (location.protocol !== 'file:') refreshServerEventLog(true).then(() => predictionRenderPulse());
     renderPredictionIntelligence();
 }
