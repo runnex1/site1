@@ -12836,6 +12836,9 @@ function protocolDrawerQtyCellHtml(pos, protocolIndex, sectionIndex, positionInd
         return `<input class="defi-edit-input drawer-leg-qty-input" value="${dashEsc(protocolTokenDisplayText(pos, t, unitPrices))}" aria-label="Edit token amount" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionToken(${protocolIndex},${sectionIndex},${positionIndex},${tokenIndex},this.value)" onblur="updateProtocolPositionToken(${protocolIndex},${sectionIndex},${positionIndex},${tokenIndex},this.value)">`;
     }).join('');
 }
+function protocolDrawerFmtUsd(v) {
+    return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 function buildLendingLoopDrawerTableHtml(sec, ctx) {
     const {
         protocolIndex,
@@ -12857,7 +12860,7 @@ function buildLendingLoopDrawerTableHtml(sec, ctx) {
         const subClass = sub === 'supplied' ? 'sup' : 'bor';
         const subLabel = sub.charAt(0).toUpperCase() + sub.slice(1);
         rows += `<tr class="drawer-leg-section drawer-leg-section-${subClass}">
-            <th colspan="5">${subLabel}<span class="drawer-leg-section-total">${fmtV(subTotal)}</span></th>
+            <th colspan="5">${subLabel}<span class="drawer-leg-section-total">${protocolDrawerFmtUsd(subTotal)}</span></th>
         </tr>
         <tr class="drawer-leg-cols">
             <th>Pool</th><th>Qty</th><th>Price</th><th>APY</th><th>USD</th>
@@ -12868,7 +12871,7 @@ function buildLendingLoopDrawerTableHtml(sec, ctx) {
             const usdVal = Number(valueFn(pos, unitPrices) || 0);
             const usdHtml = editable
                 ? `<input class="defi-edit-input drawer-leg-usd-input" type="number" min="0" step="0.01" value="${usdVal.toFixed(2)}" aria-label="Edit USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionUsd(${protocolIndex},${sectionIndex},${positionIndex},this.value)" onblur="updateProtocolPositionUsd(${protocolIndex},${sectionIndex},${positionIndex},this.value)">`
-                : `<span class="drawer-leg-usd">${fmtV(usdVal)}</span>`;
+                : `<span class="drawer-leg-usd">${protocolDrawerFmtUsd(usdVal)}</span>`;
             rows += `<tr class="drawer-leg-row drawer-leg-row-${subClass}">
                 <td class="drawer-leg-pool">${dashEsc(pos.pool)}</td>
                 <td class="drawer-leg-qty-cell">${protocolDrawerQtyCellHtml(pos, protocolIndex, sectionIndex, positionIndex, unitPrices, editable)}</td>
