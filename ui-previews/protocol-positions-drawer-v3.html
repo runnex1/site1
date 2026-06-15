@@ -141,8 +141,12 @@
       padding:8px 10px; text-align:left; vertical-align:middle;
       border-bottom:1px solid rgba(148,163,184,.08);
     }
+    .leg-table th:nth-child(2),
+    .leg-table th:nth-child(3),
     .leg-table th:nth-child(4),
     .leg-table th:nth-child(5),
+    .leg-table td:nth-child(2),
+    .leg-table td:nth-child(3),
     .leg-table td:nth-child(4),
     .leg-table td:nth-child(5) { text-align:right; }
     .leg-table col.pool { width:18%; }
@@ -166,13 +170,13 @@
     }
     .leg-table tbody tr:last-child td { border-bottom:0; }
     .pool { font:800 .78rem/1.15 var(--mono); color:var(--text); }
-    .qty { font:700 .74rem/1 var(--mono); color:var(--soft); }
-    .price { font:650 .64rem/1 var(--mono); color:var(--faint); }
+    .qty { font:700 .74rem/1 var(--mono); color:var(--soft); display:block; width:100%; text-align:right; font-variant-numeric:tabular-nums; }
+    .price { font:650 .64rem/1 var(--mono); color:var(--faint); display:block; width:100%; text-align:right; font-variant-numeric:tabular-nums; }
     .price.fixed { color:var(--green); }
-    .leg-apr { font:800 .68rem/1 var(--mono); }
+    .leg-apr { font:800 .68rem/1 var(--mono); display:inline-flex; justify-content:flex-end; }
     .leg-apr.pos { color:var(--green); }
     .leg-apr.neg { color:var(--red); }
-    .leg-val { font:800 .78rem/1 var(--mono); color:var(--text); }
+    .leg-val { font:800 .78rem/1 var(--mono); color:var(--text); display:block; width:100%; text-align:right; font-variant-numeric:tabular-nums; }
 
     .drawer-foot {
       display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
