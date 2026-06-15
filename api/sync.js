@@ -48,6 +48,27 @@ function parseJson(raw, fallback) {
   try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { return fallback; }
 }
 
+const GECKO_SERVER_SAVE_MIN_USD = 10000;
+
+async function mergeGeckoSymbolIds(incoming) {
+  const existing = parseJson(await kvGet('vault:gecko_symbol_ids'), {});
+  const next = { ...existing };
+  let changed = false;
+  for (const [sym, entry] of Object.entries(incoming || {})) {
+    const upper = String(sym || '').trim().toUpperCase();
+    const id = String(entry?.id || '').trim().toLowerCase();
+    const valueUsd = Number(entry?.valueUsd);
+    if (!upper || !id || !Number.isFinite(valueUsd) || valueUsd < GECKO_SERVER_SAVE_MIN_USD) continue;
+    const prev = next[upper];
+    if (!prev || prev.id !== id || valueUsd >= Number(prev.valueUsd || 0)) {
+      next[upper] = { id, ts: Date.now(), valueUsd };
+      changed = true;
+    }
+  }
+  if (changed) await kvSet('vault:gecko_symbol_ids', JSON.stringify(next));
+  return next;
+}
+
 function ageLabel(ts) {
   const n = Number(ts);
   if (!n) return 'never';
@@ -620,11 +641,16 @@ module.exports = async function handler(req, res) {
         const logoCache = parseJson(await kvGet('vault:logo_cache'), {});
         return res.status(200).json({ ok: true, logoCache });
       }
+      if (req.query?.geckoSymbolIds === '1') {
+        const geckoSymbolIds = parseJson(await kvGet('vault:gecko_symbol_ids'), {});
+        return res.status(200).json({ ok: true, geckoSymbolIds });
+      }
       const [
         portfolioRaw, watchlistRaw, watcherWalletsRaw, watcherLinksRaw,
         snapshotsRaw, aaveMarketsRaw, customTokensRaw,
         opinionWalletsRaw, tgChannelsRaw, pmWalletsRaw, opportunityMonitorsRaw,
         eventHistoryRaw, dismissedMarketsRaw, perpsConfigRaw, perpsSnapshotsRaw, logoCacheRaw,
+        geckoSymbolIdsRaw,
       ] = await Promise.all([
         kvGet('vault:portfolio'),
         kvGet('vault:watchlist'),
@@ -642,6 +668,7 @@ module.exports = async function handler(req, res) {
         kvGet('vault:perps_config'),
         kvGet('vault:perps_snapshots'),
         kvGet('vault:logo_cache'),
+        kvGet('vault:gecko_symbol_ids'),
       ]);
 
       const parse = (raw, fallback) => {
@@ -665,6 +692,7 @@ module.exports = async function handler(req, res) {
       const perpsConfig         = parse(perpsConfigRaw, {});
       const perpsSnapshots      = parse(perpsSnapshotsRaw, {});
       const logoCache           = parse(logoCacheRaw, {});
+      const geckoSymbolIds      = parse(geckoSymbolIdsRaw, {});
 
       if (Array.isArray(pmWallets)) {
         const seen = new Set();
@@ -699,6 +727,7 @@ module.exports = async function handler(req, res) {
         _perpsConfig:         perpsConfig,
         _perpsSnapshots:      perpsSnapshots,
         _logoCache:           logoCache,
+        _geckoSymbolIds:      geckoSymbolIds,
       };
 
       return res.status(200).json({ ok: true, result: JSON.stringify(result) });
@@ -763,6 +792,11 @@ module.exports = async function handler(req, res) {
     if (body.logoCache && typeof body.logoCache === 'object') {
       await kvSet('vault:logo_cache', JSON.stringify(body.logoCache));
       saved.logoCache = true;
+    }
+
+    if (body.geckoSymbolIds && typeof body.geckoSymbolIds === 'object') {
+      await mergeGeckoSymbolIds(body.geckoSymbolIds);
+      saved.geckoSymbolIds = true;
     }
 
     if (body.opportunityMonitors) {

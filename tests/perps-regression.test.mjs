@@ -805,7 +805,8 @@ assert.match(indexHtml, /function loopLegUnitPrice\(pos\)/, 'loop tooltip price 
 assert.doesNotMatch(indexHtml, /function loopLegUnitPrice\(amount, value\)[\s\S]{0,220}return value \/ amount;/, 'loop tooltip must not derive token price from value divided by amount');
 assert.match(indexHtml, /lendingSectionApyBreakdown\(p, sec, loopPositionValue\)/, 'Loops imported APY weighting must not use Protocol Positions stable peg valuation');
 assert.match(indexHtml, /USDM:'mountain-protocol-usdm'/, 'Loops live token prices must resolve USDm via Mountain Protocol USDm');
-assert.match(indexHtml, /\['defi','loops'\]\.includes\(document\.body\.dataset\.activeTab\)/, 'live token prices must refresh on the Loops tab');
+assert.match(indexHtml, /tab !== 'defi' && tab !== 'loops'/, 'live token prices must only refresh on DeFi and Loops tabs');
+assert.match(indexHtml, /LOOPS_TOKEN_PRICE_REFRESH_MS = 60 \* 60 \* 1000/, 'loops live prices must refresh hourly while tab is active');
 assert.match(indexHtml, /for \(const p of loopApiState\.positions \|\| \[\]\)/, 'live token prices must include Loop API leg symbols');
 assert.match(indexHtml, /loopEffectiveNetValue\(loop\)/, 'loops KPIs and cards must rank and sum economic net value');
 assert.match(indexHtml, /function perpsPairLatestSessionPnl\(/, 'perps positions must compute latest-session PnL for open rows');
@@ -1233,6 +1234,13 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
 
 assert.match(aaveProxyJs, /ensureLoopLogoCache/, 'loop rates cron must persist embedded logos server-side');
 assert.match(syncJs, /logoCache === '1'/, 'sync endpoint must expose server logo cache for loops hydration');
+assert.match(syncJs, /geckoSymbolIds === '1'/, 'sync endpoint must expose server gecko symbol ids');
+assert.match(syncJs, /mergeGeckoSymbolIds/, 'sync must persist gecko symbol ids for high-value positions');
+assert.match(indexHtml, /DEFI_TOKEN_PRICE_REFRESH_MS = 10 \* 60 \* 1000/, 'DeFi live prices must refresh every 10 minutes');
+assert.match(indexHtml, /LOOPS_TOKEN_PRICE_REFRESH_MS = 60 \* 60 \* 1000/, 'Loops live prices must refresh every 1 hour');
+assert.match(indexHtml, /function symbolExposureUsd\(sym\)/, 'gecko server save must gate on position exposure');
+assert.match(indexHtml, /persistServerGeckoSymbolId/, 'resolved gecko ids must persist server-side for large positions');
+assert.match(indexHtml, /warnEl\.textContent = _perpsRefreshError/, 'perps API failures must show under Updated timestamp');
 assert.match(indexHtml, /function makeLoopLogo\(symbol, isProtocol/, 'loops tab must render logos from server cache only');
 assert.match(indexHtml, /makeLoopLogo\(symbol, false, size\)/, 'loop token logos must read server-cached images via makeLoopLogo');
 const logoResolverJs = readFileSync(join(ROOT, 'lib', 'logo-resolver.js'), 'utf8');
@@ -1243,7 +1251,8 @@ assert.match(indexHtml, /lib\/loop-token-logos\.js/, 'loops tab must load embedd
 assert.match(indexHtml, /loopTokenLogoDataUrl\(sym\)/, 'loops tab must prefer pinned USDm and JUICED logos');
 assert.match(indexHtml, /perpsPriceRiskStyle\(currentPx, tp\)/, 'TP rows must use distance-based risk color like liq price');
 assert.match(logoResolverJs, /hasEmbeddedLogo\(next, target\.key\)/, 'resolved token logos must persist server-side without re-fetching');
-assert.match(logoResolverJs, /isLoopPinnedTokenLogo\(target\.symbol\)/, 'pinned loop token logos must refresh even when cached');
+assert.match(logoResolverJs, /resolveTokenLogoDataUrl\(target\.symbol, next\)/, 'token logo resolve must read server cache before CoinGecko');
+assert.doesNotMatch(logoResolverJs, /isLoopPinnedTokenLogo\(target\.symbol\)/, 'pinned loop logos must not force CoinGecko re-fetch when cached');
 assert.match(indexHtml, /logoCache=1/, 'loops tab must hydrate server logo cache');
 
 {

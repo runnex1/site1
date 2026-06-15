@@ -791,7 +791,7 @@ body[data-active-tab="perps"] .topbar,
   font-family:var(--ff-mono); font-size:0.62rem; color:#9dacbb;
 }
 .perps-refresh-bar.warn { border-color:rgba(255,92,122,0.35); background:rgba(255,92,122,0.06); }
-.perps-refresh-warn { color:#ff5c7a; font-weight:800; letter-spacing:0.04em; text-transform:uppercase; }
+.perps-refresh-warn { color:#ff5c7a; font-weight:700; font-size:0.58rem; line-height:1.35; margin-top:0.2rem; max-width:280px; }
 .perps-portfolio-head { margin-bottom:0.15rem; }
 .perps-portfolio-title { margin:0; font-family:var(--ff-display); font-size:1.45rem; font-weight:900; color:var(--t1); }
 .perps-portfolio-sub { margin:0.2rem 0 0; font-family:var(--ff-mono); font-size:0.68rem; color:#9dacbb; }
@@ -8891,7 +8891,10 @@ async function loadData() {
     document.body.dataset.activeTab = initialTab;
     switchTab(initialTab, { persist: false });
     if (location.protocol !== 'file:' && (data.protocols?.length || data.tokens?.length)) {
-        fetchLiveTokenPrices({ force: true }).catch(() => {});
+        const bootTab = document.body.dataset.activeTab || initialTab;
+        if (bootTab === 'defi' || bootTab === 'loops') {
+            fetchLiveTokenPrices({ force: true }).catch(() => {});
+        }
     }
     updateUI();
     updateLogoStatus('ready', 'Ready');
@@ -8944,6 +8947,10 @@ async function loadData() {
                     if (parsed._logoCache && typeof parsed._logoCache === 'object') {
                         try { LogoEngine.importCache(parsed._logoCache); } catch(e) {}
                         delete parsed._logoCache;
+                    }
+                    if (parsed._geckoSymbolIds && typeof parsed._geckoSymbolIds === 'object') {
+                        hydrateServerGeckoSymbolIds(parsed._geckoSymbolIds);
+                        delete parsed._geckoSymbolIds;
                     }
                     if (parsed._opportunityMonitors && typeof parsed._opportunityMonitors === 'object') {
                         opportunityMonitors = mergeOpportunityMonitorConfigs(parsed._opportunityMonitors, opportunityMonitors);
@@ -9217,6 +9224,37 @@ const GECKO_SYMBOL_IDS = {
 };
 const _geckoSymbolIdCache = {};
 const GECKO_ID_CACHE_KEY = 'vault-gecko-ids-v1';
+const GECKO_SERVER_SAVE_MIN_USD = 10000;
+let _serverGeckoSymbolIds = {};
+function hydrateServerGeckoSymbolIds(map) {
+    if (!map || typeof map !== 'object') return;
+    _serverGeckoSymbolIds = { ...map };
+    for (const [sym, entry] of Object.entries(map)) {
+        const id = entry?.id;
+        if (id) _geckoSymbolIdCache[String(sym).toUpperCase()] = id;
+    }
+    persistGeckoIdCache();
+}
+async function persistServerGeckoSymbolId(sym, geckoId) {
+    const upper = String(sym || '').trim().toUpperCase();
+    const id = String(geckoId || '').trim().toLowerCase();
+    if (!upper || !id) return;
+    const valueUsd = symbolExposureUsd(upper);
+    if (valueUsd < GECKO_SERVER_SAVE_MIN_USD) return;
+    if (_serverGeckoSymbolIds[upper]?.id === id) return;
+    _serverGeckoSymbolIds[upper] = { id, ts: Date.now(), valueUsd };
+    _geckoSymbolIdCache[upper] = id;
+    persistGeckoIdCache();
+    if (location.protocol === 'file:') return;
+    try {
+        await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ geckoSymbolIds: { [upper]: { id, valueUsd } } }),
+            keepalive: true,
+        });
+    } catch (e) { console.warn('[gecko-server]', e.message || e); }
+}
 function hydrateGeckoIdCache() {
     try {
         const raw = JSON.parse(sessionStorage.getItem(GECKO_ID_CACHE_KEY) || 'null');
@@ -9231,7 +9269,7 @@ function persistGeckoIdCache() {
 hydrateGeckoIdCache();
 function geckoIdForSymbol(symbol) {
     const sym = String(symbol || '').trim().toUpperCase();
-    return GECKO_SYMBOL_IDS[sym] || _geckoSymbolIdCache[sym] || null;
+    return GECKO_SYMBOL_IDS[sym] || _geckoSymbolIdCache[sym] || _serverGeckoSymbolIds[sym]?.id || null;
 }
 async function resolveGeckoIdByMarketCap(symbol) {
     const sym = String(symbol || '').trim().toUpperCase();
@@ -9280,6 +9318,7 @@ async function resolveGeckoIdsForSymbols(symbols, { concurrency = 3 } = {}) {
             if (id) {
                 _geckoSymbolIdCache[sym] = id;
                 idBySym[sym] = id;
+                persistServerGeckoSymbolId(sym, id).catch(() => {});
             }
         }));
     }
@@ -12019,6 +12058,7 @@ function addStablecoinMonitorToken(token) {
     });
     _geckoSymbolIdCache[symbol] = geckoId;
     persistGeckoIdCache();
+    persistServerGeckoSymbolId(symbol, geckoId).catch(() => {});
     saveData();
     return true;
 }
@@ -16152,9 +16192,57 @@ function renderTokens() {
 }
 
 // =============================================================================
-// LIVE TOKEN PRICES  (CoinGecko simple/price, refreshes every 60s)
+// LIVE TOKEN PRICES  (CoinGecko via /api/prices — DeFi every 10m, Loops every 1h while tab active)
 // =============================================================================
+const DEFI_TOKEN_PRICE_REFRESH_MS = 10 * 60 * 1000;
+const LOOPS_TOKEN_PRICE_REFRESH_MS = 60 * 60 * 1000;
 let _tokenPriceTimer = null;
+
+function liveTokenPriceRefreshMs() {
+    const tab = document.body.dataset.activeTab || '';
+    if (tab === 'defi') return DEFI_TOKEN_PRICE_REFRESH_MS;
+    if (tab === 'loops') return LOOPS_TOKEN_PRICE_REFRESH_MS;
+    return null;
+}
+
+function symbolExposureUsd(sym) {
+    const upper = String(sym || '').trim().toUpperCase();
+    if (!upper) return 0;
+    let total = 0;
+    for (const t of data.tokens || []) {
+        if (String(t.symbol || '').toUpperCase() !== upper) continue;
+        const val = Math.abs(Number(t.value) || 0);
+        if (val > 0) total += val;
+        else if (Number(t.amount) > 0) {
+            const px = Number(livePrices[upper]);
+            if (Number.isFinite(px) && px > 0) total += Math.abs(t.amount * px);
+        }
+    }
+    for (const p of data.protocols || []) {
+        for (const sec of p.sections || []) {
+            for (const pos of sec.positions || []) {
+                let matches = false;
+                const parsed = protocolPositionSingleToken(pos);
+                if (parsed?.symbol?.toUpperCase() === upper) matches = true;
+                if (!matches) {
+                    for (const raw of pos.tokens || []) {
+                        const token = protocolTokenAmountAndSymbol(raw);
+                        if (token?.symbol?.toUpperCase() === upper) { matches = true; break; }
+                    }
+                }
+                if (matches) total += Math.abs(protocolPositionValue(pos));
+            }
+        }
+    }
+    for (const lp of loopApiState.positions || []) {
+        for (const leg of [...(lp.supplied || []), ...(lp.borrowed || [])]) {
+            if (String(leg?.symbol || '').toUpperCase() !== upper) continue;
+            const v = loopLegValue(leg);
+            if (Number.isFinite(v) && v > 0) total += Math.abs(v);
+        }
+    }
+    return total;
+}
 
 function collectDeFiPriceSymbols() {
     const syms = new Set();
@@ -16197,7 +16285,8 @@ async function fetchLiveTokenPrices(opts = {}) {
 async function fetchLiveTokenPricesInner(opts = {}) {
     const force = !!opts.force;
     const importFetch = !!opts.symbols?.length;
-    if (!force && !importFetch && (!['defi','loops'].includes(document.body.dataset.activeTab) || document.hidden)) return false;
+    const tab = document.body.dataset.activeTab || '';
+    if (!force && !importFetch && ((tab !== 'defi' && tab !== 'loops') || document.hidden)) return false;
     const symbols = importFetch ? opts.symbols : collectDeFiPriceSymbols();
     if (!symbols.length) return false;
 
@@ -16265,9 +16354,16 @@ async function fetchLiveTokenPricesInner(opts = {}) {
 }
 
 function startLiveTokenPrices() {
-    if (_tokenPriceTimer) return;
+    stopLiveTokenPrices();
+    const ms = liveTokenPriceRefreshMs();
+    if (!ms) return;
     fetchLiveTokenPrices();
-    _tokenPriceTimer = setInterval(fetchLiveTokenPrices, 60000);
+    _tokenPriceTimer = setInterval(() => {
+        if (document.hidden) return;
+        const tab = document.body.dataset.activeTab || '';
+        if (tab !== 'defi' && tab !== 'loops') return;
+        fetchLiveTokenPrices();
+    }, ms);
 }
 function stopLiveTokenPrices() {
     if (_tokenPriceTimer) {
@@ -26274,13 +26370,16 @@ function perpsUpdateRefreshBar() {
     const bar = document.getElementById('perpsRefreshBar');
     const lastEl = document.getElementById('perpsLastRefresh');
     const warnEl = document.getElementById('perpsRefreshWarn');
-    if (warnEl) warnEl.style.display = _perpsRefreshError ? '' : 'none';
+    if (warnEl) {
+        warnEl.style.display = _perpsRefreshError ? '' : 'none';
+        if (_perpsRefreshError) warnEl.textContent = _perpsRefreshError;
+    }
     if (bar) bar.classList.toggle('warn', Boolean(_perpsRefreshError));
     if (lastEl) {
-        if (_perpsRefreshError) {
-            lastEl.textContent = `Last refresh failed · ${_perpsRefreshError}`;
-        } else if (_perpsLastRefreshAt) {
+        if (_perpsLastRefreshAt) {
             lastEl.textContent = `Updated ${new Date(_perpsLastRefreshAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+        } else if (_perpsRefreshError) {
+            lastEl.textContent = 'Last refresh failed';
         } else {
             lastEl.textContent = 'Waiting for data…';
         }
@@ -28786,7 +28885,10 @@ function perpsDashboardLoadWarnings(payload) {
     const s = payload?.summary || {};
     if (payload?.warning) warnings.push(payload.warning);
     if (Array.isArray(payload?.warnings)) warnings.push(...payload.warnings);
+    if (s.hlError) warnings.push(`Hyperliquid: ${s.hlError}`);
     if (s.nadoError) warnings.push(`NADO: ${s.nadoError}`);
+    if (s.grvtError) warnings.push(`GRVT: ${s.grvtError}`);
+    if (s.extendedError) warnings.push(`Extended: ${s.extendedError}`);
     if (payload?.nado?.state?.error) warnings.push(`NADO state: ${payload.nado.state.error}`);
     if (payload?.nado?.funding?.error) warnings.push(`NADO funding: ${payload.nado.funding.error}`);
     if (payload?.nado?.matches?.error) warnings.push(`NADO matches: ${payload.nado.matches.error}`);
@@ -28865,7 +28967,7 @@ async function perpsRefresh(silent = false) {
         const { payload, warnings } = await perpsFetchDashboardPayload(params, silent);
         perpsRenderDashboard(payload, { cloudSnapshotsAdded });
         if (warnings.length) {
-            _perpsRefreshError = `Loaded after retry with warnings: ${warnings.join('; ')}`;
+            _perpsRefreshError = warnings.join(' · ');
             perpsUpdateRefreshBar();
         }
         if (!silent || document.body.dataset.activeTab === 'perps') {
