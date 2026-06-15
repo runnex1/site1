@@ -827,7 +827,7 @@ assert.match(indexHtml, /loop-history-chart/, 'loop cards must render snapshot h
 assert.doesNotMatch(indexHtml, /loop-meter-wrap[\s\S]{0,1200}renderLoops/, 'loops render must not use LTV meter bar');
 assert.match(indexHtml, /function loopHistoryChartHtml\(points, opts = \{\}\)/, 'loops tab must build per-position history charts from snapshots');
 assert.match(indexHtml, /function loopHistoryChartSetMode\(/, 'loop history chart must toggle between net value and APY');
-assert.match(indexHtml, /defaultMode = fixPeg \? 'val' : \(hasApy \? 'apy' : 'val'\)/, 'loop history chart must default to APY mode unless the net-value peg fix is active');
+assert.match(indexHtml, /defaultMode = hasApy \? 'apy' : 'val'/, 'loop history chart must default to APY mode when APY history exists');
 assert.match(indexHtml, /function loopHistoryChartHover\(/, 'loop history chart must support hover tooltips');
 assert.doesNotMatch(indexHtml, /loopHistoryChartHtml[\s\S]{0,2200}loopHistoryPeriodDelta/, 'loop history chart must not render period delta footer');
 assert.doesNotMatch(indexHtml, /loop-history-foot[\s\S]{0,400}3h buckets/, 'loop history chart must not show 3h buckets hint');
@@ -838,13 +838,12 @@ assert.match(indexHtml, /function loopTrimHistoryToLatestSession\(/, 'loop histo
 assert.match(indexHtml, /function loopHistoryCapitalEvent\(/, 'loop history must detect capital flow between snapshots');
 assert.match(indexHtml, /loopSnapshotApyRowHtml\(chartMode, adjustedHistoryPoints, liveEndValue, liveEndTs\)/, 'loop cards must seed 7d/30d metrics from active chart mode and manual APY overrides');
 assert.match(indexHtml, /function loopSetManualSupplyApy\(/, 'loops must allow timestamped manual supply APY overrides');
-assert.match(indexHtml, /Fix \$1 peg/, 'loop net value chart must expose borrowed-token $1 peg toggle');
-assert.match(indexHtml, /function loopBorrowedPegNetValue\(/, 'loop net value chart must recalculate borrowed legs with $1 peg when enabled');
-assert.match(indexHtml, /function loopBorrowLegPeggedValue\(/, 'loop $1 peg mode must derive borrowed token amount before revaluing at $1');
-assert.match(indexHtml, /return value \/ price;/, 'loop $1 peg mode must infer old snapshot borrowed amounts from value divided by recorded price');
-assert.match(indexHtml, /amount:\s*Number\(leg\?\.amount \|\| 0\) \|\| null/, 'browser loop snapshots must persist borrowed token amounts for $1 peg charts');
-assert.match(loopSnapshotsJs, /amount:\s*num\(leg\?\.amount, null\)/, 'server loop snapshots must persist borrowed token amounts for $1 peg charts');
-assert.match(indexHtml, /Net value<\/button>\s*<button type="button" class="loop-history-mode-btn peg/, 'borrowed-token $1 peg toggle must be visually attached to net value mode');
+assert.doesNotMatch(indexHtml, /Fix \$1 peg/, 'loops tab must not expose borrowed-token $1 peg toggle');
+assert.doesNotMatch(indexHtml, /function loopBorrowedPegNetValue\(/, 'loops tab must not recalculate borrowed legs with $1 peg');
+assert.doesNotMatch(indexHtml, /function loopBorrowLegPeggedValue\(/, 'loops tab must not derive borrowed amounts for $1 peg charts');
+assert.doesNotMatch(indexHtml, /LOOP_FIX_PEG_KEY/, 'loops tab must not persist $1 peg toggle state');
+assert.match(indexHtml, /amount:\s*Number\(leg\?\.amount \|\| 0\) \|\| null/, 'browser loop snapshots must persist borrowed token amounts');
+assert.match(loopSnapshotsJs, /amount:\s*num\(leg\?\.amount, null\)/, 'server loop snapshots must persist borrowed token amounts');
 assert.match(indexHtml, /function tickerFmt\(price\)[\s\S]{0,240}minimumFractionDigits:\s*5/, 'market ticker must show near-$1 assets with enough precision instead of looking hard-pegged');
 assert.match(indexHtml, /chartMode === 'apy'\s*\?\s*loopSnapshotPeriodNetApy\(points, targetDays, endTs\)/, 'APY chart mode must use spot net APY average');
 assert.match(indexHtml, /:\s*loopSnapshotRealizedApy\(points, targetDays, endValue, endTs\)/, 'net value chart mode must use realized net value APY');
