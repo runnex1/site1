@@ -13403,20 +13403,27 @@ function loopPositionHistoryKey(pos) {
     const protocol = String(pos?.protocol || '').trim().toLowerCase();
     const wallet = String(pos?.wallet || '').trim().toLowerCase();
     const chainId = String(pos?.chainId ?? '');
+    const id = String(pos?.id || '').trim().toLowerCase();
+    if (!protocol || !wallet || chainId === '') return id || String(pos?.id || '');
+    if (protocol === 'fluid' && id.startsWith('fluid-vault:')) return id;
     const marketName = String(pos?.marketName || '').trim().toLowerCase();
-    if (!protocol || !wallet || chainId === '') return String(pos?.id || '');
     return `${protocol}:${wallet}:${chainId}:${marketName}`;
 }
 
 function loopHistoryPositionMatch(live, stored) {
     if (!live || !stored) return false;
     if (live.id && stored.id && live.id === stored.id) return true;
+    const lp = String(live.protocol || '').trim().toLowerCase();
+    const sp = String(stored.protocol || '').trim().toLowerCase();
+    if (lp === 'fluid' || sp === 'fluid') {
+        const liveKey = loopPositionHistoryKey(live);
+        const storedKey = stored.historyKey || loopPositionHistoryKey(stored);
+        return !!(liveKey && storedKey && liveKey === storedKey);
+    }
     const liveKey = loopPositionHistoryKey(live);
     const storedKey = stored.historyKey || loopPositionHistoryKey(stored);
     if (liveKey && storedKey && liveKey === storedKey) return true;
     const normMarket = v => String(v || '').toLowerCase().replace(/\s+/g, ' ').replace(/\s*\/\s*/g, ' / ').trim();
-    const lp = String(live.protocol || '').trim().toLowerCase();
-    const sp = String(stored.protocol || '').trim().toLowerCase();
     const lw = String(live.wallet || '').trim().toLowerCase();
     const sw = String(stored.wallet || '').trim().toLowerCase();
     const lc = String(live.chainId ?? '');

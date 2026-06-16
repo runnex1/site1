@@ -15,6 +15,7 @@
 const { kvGet, kvSet } = require('../lib/kv');
 const { mergeLoopSnapshotStores, ensureUsdeUsdmSnapshotsPurged } = require('../lib/loop-snapshots');
 const { collectEvents } = require('../lib/event-log');
+const { fetchCoinGeckoWithFailover } = require('../lib/coingecko-fetch');
 const https = require('https');
 
 const SYNC_SECRET = process.env.SYNC_SECRET || '';
@@ -40,6 +41,24 @@ async function statusFetch(url, timeout=6000) {
     return { ok:false, ms:Date.now() - start, error:e.message };
   } finally {
     clearTimeout(timer);
+  }
+}
+
+async function statusFetchCoinGecko(timeout = 6000) {
+  const start = Date.now();
+  try {
+    const result = await fetchCoinGeckoWithFailover(
+      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
+      { timeout },
+    );
+    return {
+      ok: result.ok,
+      status: result.status || (result.ok ? 200 : 0),
+      ms: Date.now() - start,
+      error: result.error,
+    };
+  } catch (e) {
+    return { ok: false, ms: Date.now() - start, error: e.message };
   }
 }
 
@@ -98,7 +117,7 @@ async function getSystemStatusText() {
     kvGet(ALERTS_KEY),
     statusFetch('https://gamma-api.polymarket.com/markets?limit=1'),
     statusFetch('https://clob.polymarket.com/markets?limit=1'),
-    statusFetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd'),
+    statusFetchCoinGecko(),
     statusFetch('https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=1d&interval=1d'),
   ]);
   const alerts = parseJson(alertsRaw, []);

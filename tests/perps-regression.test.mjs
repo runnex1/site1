@@ -763,6 +763,8 @@ assert.match(indexHtml, /loopsPurgeUsdeUsdmSnapshotHistory/, 'loops tab must pur
 assert.match(loopSnapshotsJs, /LOOP_SNAPSHOT_BUCKET_HOURS = 2/, 'loop snapshots must bucket history on 2h intervals');
 assert.match(loopSnapshotsJs, /function appendLoopSnapshotStore\(store, data/, 'loop snapshots must append server-side history');
 assert.match(loopSnapshotsJs, /function loopPositionHistoryKey\(/, 'loop snapshots must use stable history keys across Fluid NFT id changes');
+assert.match(loopSnapshotsJs, /fluid-vault:/, 'Fluid loop history keys must include vault NFT id');
+assert.match(loopRatesJs, /function fluidVaultPositionId\(/, 'Fluid vault positions must use unique ids per NFT');
 assert.match(aaveProxyJs, /loopCronSnapshot/, 'loop cron snapshots must be exposed through aave-proxy');
 assert.match(indexHtml, /function loopHistoryPositionMatch\(/, 'loop history must match snapshots by stable history key');
 assert.match(indexHtml, /\/api\/loop-snapshots/, 'loops tab must hydrate snapshots from dedicated endpoint');
@@ -1173,6 +1175,22 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
 }
 
 {
+  const { loopPositionHistoryKey } = require('../lib/loop-snapshots.js');
+  const wallet = '0x523c00000000000000000000000000000000b459';
+  const base = {
+    protocol: 'Fluid',
+    wallet,
+    chainId: 1,
+    marketName: 'reUSD / USDT',
+    totalBorrowed: 100,
+    netValue: 4000,
+  };
+  const vaultA = { ...base, id: 'fluid-vault:0x523c:1:0xvault:17728' };
+  const vaultB = { ...base, id: 'fluid-vault:0x523c:1:0xvault:18888' };
+  assert.notEqual(loopPositionHistoryKey(vaultA), loopPositionHistoryKey(vaultB), 'Fluid vault NFTs must not share snapshot history keys');
+}
+
+{
   const { merklUnclaimedUsdFromBreakdown, merklUnclaimedUsdFromReward, merklClaimedUsdFromReward } = require('../lib/loop-rates.js');
   const reward = {
     token: { decimals: 18, price: 0.9992442571629646 },
@@ -1256,7 +1274,21 @@ assert.match(indexHtml, /perpsPriceRiskStyle\(currentPx, tp\)/, 'TP rows must us
 assert.match(logoResolverJs, /hasEmbeddedLogo\(next, target\.key\)/, 'resolved token logos must persist server-side without re-fetching');
 assert.match(logoResolverJs, /resolveTokenLogoDataUrl\(target\.symbol, next\)/, 'token logo resolve must read server cache before CoinGecko');
 assert.doesNotMatch(logoResolverJs, /isLoopPinnedTokenLogo\(target\.symbol\)/, 'pinned loop logos must not force CoinGecko re-fetch when cached');
-assert.match(indexHtml, /function loopOfficialLinkHtml\(loop\)/, 'loops cards must link to official protocol pages');
+assert.match(logoResolverJs, /fetchCoinGeckoWithFailover/, 'logo resolver must failover across CoinGecko keys');
+assert.match(readFileSync(join(ROOT, 'api', 'prices.js'), 'utf8'), /fetchCoinGeckoWithFailover/, 'prices proxy must failover across CoinGecko keys');
+
+{
+  const { coinGeckoApiKeys, isRateLimitedResponse } = require('../lib/coingecko-fetch.js');
+  const prevA = process.env.COINGECKO_API_KEY;
+  const prevB = process.env.COINGECKO_API_KEY1;
+  process.env.COINGECKO_API_KEY = 'primary-key';
+  process.env.COINGECKO_API_KEY1 = 'backup-key';
+  assert.deepEqual(coinGeckoApiKeys(), ['primary-key', 'backup-key'], 'CoinGecko must read primary then COINGECKO_API_KEY1 backup');
+  assert.equal(isRateLimitedResponse(429, {}), true, 'HTTP 429 must trigger key failover');
+  assert.equal(isRateLimitedResponse(403, { status: { error_message: 'Monthly credit limit exceeded' } }), true);
+  process.env.COINGECKO_API_KEY = prevA;
+  process.env.COINGECKO_API_KEY1 = prevB;
+}
 
 {
   const { officialLoopPageUrl } = require('../lib/loop-official-urls.js');

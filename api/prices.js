@@ -14,22 +14,15 @@ exports.maxDuration = void 0;
 // Server-side proxy for CoinGecko simple/price.
 // Keeps the API key off the client and shares the rate-limit budget
 // across all users via edge caching (30s fresh, 60s stale).
-// Set COINGECKO_API_KEY in your Vercel environment variables (optional
-// but recommended — increases rate limit from ~30 to 500 req/min).
+// Set COINGECKO_API_KEY (and optional backup COINGECKO_API_KEY1) in Vercel.
+// When the primary key hits rate/monthly limits, /api/prices retries with the backup.
 // =============================================================================
+
+const { fetchCoinGeckoWithFailover } = require('../lib/coingecko-fetch');
 
 const maxDuration = exports.maxDuration = 15;
 function first(value) {
   return Array.isArray(value) ? value[0] : value;
-}
-function coingeckoHeaders() {
-  const headers = {
-    Accept: 'application/json'
-  };
-  if (process.env.COINGECKO_API_KEY) {
-    headers['x-cg-demo-api-key'] = process.env.COINGECKO_API_KEY;
-  }
-  return headers;
 }
 function safeCoinGeckoPath(raw) {
   const path = String(raw || '').trim();
@@ -39,25 +32,11 @@ function safeCoinGeckoPath(raw) {
   return allowed.some(re => re.test(normalized)) ? normalized : '';
 }
 async function fetchCoinGecko(url, timeout = 10000) {
-  const r = await fetch(url, {
-    headers: coingeckoHeaders(),
-    signal: AbortSignal.timeout(timeout)
-  });
-  const text = await r.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = {
-      error: text || 'Invalid CoinGecko response'
-    };
-  }
-  if (!r.ok) {
-    return {
-      error: data?.status?.error_message || data?.error || `CoinGecko returned HTTP ${r.status}`
-    };
-  }
-  return data;
+  const result = await fetchCoinGeckoWithFailover(url, { timeout });
+  if (result.ok) return result.data;
+  return {
+    error: result.error || 'CoinGecko request failed'
+  };
 }
 async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
