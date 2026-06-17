@@ -1809,7 +1809,7 @@ assert.match(indexHtml, /dashWalletSuffix4\(g\.wallet\)/, 'order filled text mus
 assert.match(indexHtml, /function orderFilledPulseItem\(/, 'market pulse must build order filled cards from event log logic');
 assert.match(indexHtml, /function pmPriceMovePulseItem\(/, 'market pulse must build PM price move cards from event log logic');
 assert.doesNotMatch(indexHtml, /\.\.\._predictionWalletCards/, 'market pulse must not merge watched wallet cards');
-assert.match(indexHtml, /CLOUD_SYNC_TIMEOUT_MS = 25000/, 'cloud sync must allow enough time for large portfolio payload');
+assert.match(indexHtml, /CLOUD_SYNC_TIMEOUT_MS = 35000/, 'cloud sync must allow enough time for large portfolio payload');
 assert.match(indexHtml, /slice\(-4\)/, 'wallet suffix must use last 4 wallet characters');
 assert.match(eventLogJs, /walletSuffix4\(g\.wallet\)/, 'server event log must append wallet suffix to order fills');
 
