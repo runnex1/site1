@@ -667,7 +667,7 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 assert.match(indexHtml, /function perpsClosedPairAvgNotional\(/, 'Closed tab must recompute margin from leg prices and live marks');
-assert.match(indexHtml, /repeat\(8, minmax\(0, 1fr\)\)/, 'Closed tab columns must use equal grid spacing');
+assert.match(indexHtml, /perps-pos-closed-cell/, 'Closed tab must align metric values under column headers');
 
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
 assert.match(indexHtml, /dayStart < cutoff\) return null;/, 'summary-only boundary rows must not count as full last-24h PnL');
@@ -1430,9 +1430,11 @@ assert.match(indexHtml, /perpsSetPositionsTab\('closed'/, 'Positions panel must 
 assert.match(indexHtml, /function perpsRenderClosedPositions\(closedPairs\)/, 'Closed tab must render fully closed position rounds');
 assert.match(indexHtml, /perps-pos-head closed[\s\S]{0,180}<div>APR<\/div>/, 'Closed tab must show APR column beside Net PnL');
 assert.match(indexHtml, /function perpsClosedPairSessionDays\(/, 'closed APR must use latest performance session day span');
-assert.match(indexHtml, /perpsClosedPairSessionApr\(p\)/, 'Closed tab must show session APR under Net PnL');
+assert.match(indexHtml, /perpsClosedPairSessionApr\(pair\)/, 'Closed tab must show session APR under Net PnL');
+assert.match(indexHtml, /perps-pos-closed-cell/, 'Closed tab rows must align values under headers without duplicate labels');
+assert.match(indexHtml, /function perpsNormalizeClosedPairForDisplay\(pair\)/, 'Closed tab must recompute APR from margin and session days at render time');
 assert.match(perpsJs, /function closedPairSessionApr\(/, 'closed pairs must compute session APR server-side');
-assert.match(indexHtml, /p\.closeSlippage/, 'Closed tab must show closing slippage separately');
+assert.match(indexHtml, /pair\.closeSlippage/, 'Closed tab must show closing slippage separately');
 assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response must include closed pairs');
 assert.match(perpsJs, /const CLOSED_PAIR_MATCH_WINDOW_MS = 30 \* 60 \* 1000;/, 'opposite hedge legs must close within 30 minutes');
 assert.match(perpsJs, /function mergeVenueClosedLegs\(historyLegs, fillLegs\)/, 'GRVT fill replay must supplement sparse position history');

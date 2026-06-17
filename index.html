@@ -855,10 +855,37 @@ body[data-active-tab="perps"] .topbar,
 }
 .perps-pos-row { min-width:0; }
 .perps-pos-row.closed {
-  grid-template-columns:repeat(8, minmax(0, 1fr));
+  grid-template-columns:minmax(132px,1.1fr) minmax(188px,1.35fr) repeat(5,minmax(84px,0.88fr)) minmax(104px,0.95fr);
+  gap:0.45rem 0.7rem;
+  align-items:center;
 }
 .perps-pos-head.closed {
-  grid-template-columns:repeat(8, minmax(0, 1fr));
+  grid-template-columns:minmax(132px,1.1fr) minmax(188px,1.35fr) repeat(5,minmax(84px,0.88fr)) minmax(104px,0.95fr);
+  gap:0.45rem 0.7rem;
+  align-items:end;
+  padding-left:0.85rem;
+  padding-right:0.85rem;
+}
+.perps-pos-head.closed > div:nth-child(n+3) { text-align:right; }
+.perps-pos-row.closed .perps-pos-closed-cell {
+  min-width:0;
+  text-align:right;
+  display:flex;
+  justify-content:flex-end;
+  align-items:center;
+}
+.perps-pos-row.closed .perps-pos-closed-cell .perps-pos-metric-val,
+.perps-pos-row.closed .perps-pos-closed-cell .perps-pos-apr-val {
+  margin-top:0;
+}
+.perps-pos-row.closed .perps-pos-closed-time {
+  font-size:0.72rem;
+  font-weight:700;
+  color:#9dacbb;
+  white-space:nowrap;
+}
+.perps-pos-row.closed .perps-pos-legs {
+  padding-right:0;
 }
 .perps-pos-token { display:flex; align-items:center; gap:0.55rem; min-width:0; }
 .perps-pos-token-name { font-weight:900; font-size:0.92rem; color:var(--t1); }
@@ -28527,8 +28554,23 @@ function perpsClosedPairAvgNotional(pair) {
         const legSize = Math.abs(Number(leg?.size || fallbackSize));
         return px != null && legSize > 0 ? legSize * px : null;
     }).filter(n => n != null && n > 0);
-    if (!notionals.length) return null;
-    return notionals.reduce((sum, n) => sum + n, 0) / notionals.length;
+    if (notionals.length) return notionals.reduce((sum, n) => sum + n, 0) / notionals.length;
+    if (!fallbackSize) return null;
+    const marks = legs
+        .map(leg => perpsClosedPairLegMarginPx(leg, pair?.symbol))
+        .filter(px => px != null && px > 0);
+    if (!marks.length) return null;
+    const avgPx = marks.reduce((sum, px) => sum + px, 0) / marks.length;
+    return fallbackSize * avgPx;
+}
+
+function perpsNormalizeClosedPairForDisplay(pair) {
+    const next = { ...pair };
+    const margin = perpsClosedPairAvgNotional(next);
+    if (margin) next.avgNotional = margin;
+    const apr = perpsClosedPairSessionApr(next);
+    if (apr != null) next.sessionApr = apr;
+    return next;
 }
 
 function perpsClosedPairSessionDays(pair) {
@@ -28551,14 +28593,14 @@ function perpsClosedPairSessionDays(pair) {
 }
 
 function perpsClosedPairSessionApr(pair) {
-    if (pair?.sessionApr != null && Number.isFinite(Number(pair.sessionApr))) {
-        return Number(pair.sessionApr);
-    }
     const margin = perpsClosedPairAvgNotional(pair);
     const days = perpsClosedPairSessionDays(pair);
     const netPnl = Number(pair?.netPnl);
     if (!margin || !days || days <= 0 || !Number.isFinite(netPnl)) return null;
-    return perpsAnnualizeReturnPct(netPnl, margin, days);
+    const computed = perpsAnnualizeReturnPct(netPnl, margin, days);
+    if (computed != null && Number.isFinite(computed)) return computed;
+    const stored = Number(pair?.sessionApr);
+    return Number.isFinite(stored) ? stored : null;
 }
 
 function perpsClosedPairAprTip(pair, apr) {
@@ -28569,11 +28611,12 @@ function perpsClosedPairAprTip(pair, apr) {
         ? `${pair.sessionStartDay} → ${pair.sessionEndDay}`
         : 'latest session';
     const parts = [
+        'APR = (Net PnL ÷ margin) × (365 ÷ session days) × 100',
         'Annualized Net PnL over the closed round’s latest performance session',
-        apr != null ? `APR: ${perpsFmtPct(apr)}` : null,
+        apr != null ? `APR: ${perpsFmtPct(apr)}` : 'APR unavailable (missing margin estimate or session length)',
         Number.isFinite(netPnl) ? `Net PnL: ${perpsFmtUsd(netPnl)}` : null,
-        margin ? `Margin: ${perpsFmtUsd(margin)}` : null,
-        days ? `Session: ${days.toFixed(1)}d (${sessionLabel})` : null,
+        margin ? `Margin: ${perpsFmtUsd(margin)}` : 'Margin: unavailable',
+        days ? `Session: ${days.toFixed(1)}d (${sessionLabel})` : 'Session: unavailable',
     ].filter(Boolean);
     return parts.join(' · ');
 }
@@ -28616,31 +28659,33 @@ function perpsRenderClosedPositions(closedPairs) {
         <div>Closed</div>
     </div>`;
     el.innerHTML = head + closedPairs.map((p, closedIdx) => {
-        const sizeLabel = p.size != null ? `${perpsFmtSize(p.size)} ${p.symbol}` : p.symbol;
-        const closedAt = perpsFormatEventTime(p.closeTime);
-        const sessionApr = perpsClosedPairSessionApr(p);
-        const aprTip = perpsClosedPairAprTip(p, sessionApr);
+        const pair = perpsNormalizeClosedPairForDisplay(p);
+        const sizeLabel = pair.size != null ? `${perpsFmtSize(pair.size)} ${pair.symbol}` : pair.symbol;
+        const closedAt = perpsFormatEventTime(pair.closeTime);
+        const sessionApr = perpsClosedPairSessionApr(pair);
+        const aprTip = perpsClosedPairAprTip(pair, sessionApr);
+        const feesAbs = Math.abs(Number(pair.fees || 0));
         return `<div class="perps-pos-card"><div class="perps-pos-row closed">
             <div class="perps-pos-token">
                 <div class="perps-pos-token-row">
-                    ${makeLogo(p.symbol, false, 36)}
+                    ${makeLogo(pair.symbol, false, 36)}
                     <div>
-                        <div class="perps-pos-token-name">${dashEsc(p.symbol)}</div>
+                        <div class="perps-pos-token-name">${dashEsc(pair.symbol)}</div>
                         <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}</div>
                         <span class="perps-pos-pill">CLOSED</span>
                     </div>
                 </div>
             </div>
             <div class="perps-pos-legs">
-                ${perpsClosedLegHtml(p.longLeg)}
-                ${perpsClosedLegHtml(p.shortLeg)}
+                ${perpsClosedLegHtml(pair.longLeg)}
+                ${perpsClosedLegHtml(pair.shortLeg)}
             </div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</div></div>
-            <div class="perps-pos-apr-col"><div class="perps-pos-metric-label">APR</div><div class="perps-pos-apr-val ${sessionApr != null ? perpsSignedCls(sessionApr) : ''}" title="${dashEsc(aprTip)}">${sessionApr != null ? perpsFmtPct(sessionApr) : '—'}</div></div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Close Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</div></div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(p.funding)}">${perpsFmtUsd(p.funding)}</div></div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Fees</div><div class="perps-pos-metric-val neg">-${perpsFmtUsd(Math.abs(p.fees || 0)).replace(/^-/, '')}</div></div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Closed</div><div class="perps-pos-metric-val">${dashEsc(closedAt)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-val ${perpsSignedCls(pair.netPnl)}">${perpsFmtUsd(pair.netPnl)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-apr-val ${sessionApr != null ? perpsSignedCls(sessionApr) : ''}" title="${dashEsc(aprTip)}">${sessionApr != null ? perpsFmtPct(sessionApr) : '—'}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-val ${perpsSignedCls(pair.closeSlippage)}">${perpsFmtUsd(pair.closeSlippage)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-val ${perpsSignedCls(pair.funding)}">${perpsFmtUsd(pair.funding)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-val neg">-${perpsFmtUsd(feesAbs)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-closed-time">${dashEsc(closedAt)}</div></div>
         </div></div>`;
     }).join('');
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
