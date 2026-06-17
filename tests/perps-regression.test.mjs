@@ -1768,6 +1768,8 @@ assert.match(indexHtml, /function pmPriceMovePulseItem\(/, 'market pulse must bu
 assert.doesNotMatch(indexHtml, /\.\.\._predictionWalletCards/, 'market pulse must not merge watched wallet cards');
 assert.match(indexHtml, /CLOUD_SYNC_TIMEOUT_MS = 25000/, 'cloud sync must allow enough time for large portfolio payload');
 assert.match(indexHtml, /slice\(-4\)/, 'wallet suffix must use last 4 wallet characters');
+const eventLogJs = readFileSync(join(ROOT, 'lib', 'event-log.js'), 'utf8');
+assert.match(eventLogJs, /walletSuffix4\(g\.wallet\)/, 'server event log must append wallet suffix to order fills');
 
 try {
   const loopResult = await fetchLoopRates(['0x523c4fD04438aAB5e96CADCcDC92c855390Fb459']);

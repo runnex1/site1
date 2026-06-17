@@ -18213,8 +18213,9 @@ function predictionPulseItem(kind, text, opts={}) {
 function predictionRenderMixedRows() {
     const el = document.getElementById('predictionMixedRows');
     if (!el) return;
-    const rows = [..._predictionPulseCards, ..._predictionCarryCards]
-        .filter(item => item && item.html)
+    const pulse = _predictionPulseCards.filter(item => item && item.html);
+    const carry = _predictionCarryCards.filter(item => item && item.html);
+    const rows = [...pulse, ...carry.slice(0, Math.max(0, 7 - pulse.length))]
         .sort((a,b) => Number(b.ts || 0) - Number(a.ts || 0));
     el.innerHTML = rows.length
         ? rows.slice(0, 7).map(item => item.html).join('')
