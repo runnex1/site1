@@ -8909,12 +8909,43 @@ function saveOpportunityMonitors() {
     renderDashboardOpportunityZone();
 }
 
-async function fetchCloudPortfolioPayload() {
-    const res = await fetch('/api/sync', { signal: AbortSignal.timeout(CLOUD_SYNC_TIMEOUT_MS) });
+async function fetchCloudPortfolioPayload(opts = {}) {
+    const q = opts.portfolioOnly ? '?portfolioOnly=1' : (opts.auxHeavy ? '?auxHeavy=1' : '');
+    const res = await fetch('/api/sync' + q, { signal: AbortSignal.timeout(CLOUD_SYNC_TIMEOUT_MS) });
     if (!res.ok) throw new Error(`Cloud sync HTTP ${res.status}`);
     const cloudData = await res.json();
     if (!cloudData?.result) throw new Error('Cloud sync returned no portfolio');
     return JSON.parse(cloudData.result);
+}
+
+function persistPortfolioLocalOnly() {
+    try {
+        normalizePortfolioData();
+        persistPolymarketWalletsLocal();
+        localStorage.setItem('portfolio-data-pro', JSON.stringify(data));
+    } catch (e) { console.warn('[Vault] local portfolio persist failed:', e); }
+}
+
+function scheduleCloudPortfolioAux(parsed) {
+    const run = () => {
+        try { applyCloudPortfolioAux(parsed); } catch (e) { console.warn('[Vault] Cloud aux apply failed:', e); }
+        try { invokeUpdateUI(); } catch (e) {}
+    };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 1500 });
+    else setTimeout(run, 0);
+}
+
+async function hydratePortfolioAuxHeavy() {
+    if (location.protocol === 'file:') return;
+    try {
+        const parsed = await fetchCloudPortfolioPayload({ auxHeavy: true });
+        applyCloudPortfolioAux(parsed);
+        updateCharts(true);
+        renderDashboardPnlAttribution(true);
+        invokeUpdateUI();
+    } catch (e) {
+        console.warn('[Vault] Cloud heavy aux sync failed:', e);
+    }
 }
 
 function applyCloudPortfolioAux(parsed) {
@@ -9035,12 +9066,13 @@ function mergeCloudPortfolio(parsed) {
     return true;
 }
 
-async function hydratePortfolioFromCloud() {
+async function hydratePortfolioFromCloud(opts = {}) {
+    const { portfolioOnly = true, background = false } = opts;
     if (location.protocol === 'file:') return false;
     let parsed = null;
     for (let attempt = 0; attempt < 3; attempt++) {
         try {
-            parsed = await fetchCloudPortfolioPayload();
+            parsed = await fetchCloudPortfolioPayload({ portfolioOnly });
             break;
         } catch (err) {
             if (attempt < 2) {
@@ -9056,10 +9088,17 @@ async function hydratePortfolioFromCloud() {
         console.warn('[Vault] Cloud sync returned an empty portfolio — keeping local cache');
         return false;
     }
-    applyCloudPortfolioAux(parsed);
     if (!mergeCloudPortfolio(parsed)) return false;
-    try { saveData(); } catch (e) { console.warn('[Vault] saveData after cloud sync failed:', e); }
+    persistPortfolioLocalOnly();
     try { invokeUpdateUI(); } catch (e) { console.error('[Vault] updateUI after cloud sync failed:', e); }
+    if (!background) {
+        _dashboardDataLoading = false;
+        updateDashboardDataLoading();
+        updateCharts(true);
+        renderDashboardPnlAttribution(true);
+    }
+    scheduleCloudPortfolioAux(parsed);
+    if (portfolioOnly) hydratePortfolioAuxHeavy().catch(() => {});
     return true;
 }
 
@@ -9077,7 +9116,14 @@ function markPortfolioSyncFailed(err) {
 }
 
 async function loadData() {
-    _dashboardDataLoading = location.protocol !== 'file:';
+    const hasLocalPortfolio = (() => {
+        try {
+            const saved = localStorage.getItem('portfolio-data-pro');
+            if (!saved) return false;
+            return portfolioHasEntries(JSON.parse(saved));
+        } catch (e) { return false; }
+    })();
+    _dashboardDataLoading = location.protocol !== 'file:' && !hasLocalPortfolio;
     updateDashboardDataLoading();
     const validInitialTabs = new Set(['overview','defi','prediction','loops','etf','terminal','watcher','news','perps','history']);
     const savedTab = (() => {
@@ -9124,17 +9170,25 @@ async function loadData() {
     try { invokeUpdateUI(); } catch (e) { console.error('[Vault] updateUI after local load failed:', e); }
     updateLogoStatus('ready', 'Ready');
 
-    // 3. Cloud sync — await so empty browsers recover from KV
+    // 3. Cloud sync — local cache paints immediately; cold browsers await lightweight portfolio fetch
     if (location.protocol !== 'file:') {
-        try {
-            await hydratePortfolioFromCloud();
-        } catch (e) {
-            markPortfolioSyncFailed(e);
-        } finally {
+        if (hasLocalPortfolio) {
             _dashboardDataLoading = false;
             updateDashboardDataLoading();
             updateCharts(true);
             renderDashboardPnlAttribution(true);
+            hydratePortfolioFromCloud({ portfolioOnly: true, background: true }).catch(markPortfolioSyncFailed);
+        } else {
+            try {
+                await hydratePortfolioFromCloud({ portfolioOnly: true, background: false });
+            } catch (e) {
+                markPortfolioSyncFailed(e);
+            } finally {
+                _dashboardDataLoading = false;
+                updateDashboardDataLoading();
+                updateCharts(true);
+                renderDashboardPnlAttribution(true);
+            }
         }
     } else {
         _dashboardDataLoading = false;
@@ -9154,7 +9208,7 @@ async function loadData() {
     } catch(e) {}
 
     loadDomeConfig();
-    await perpsBootPromise;
+    perpsBootPromise.catch(() => {});
 }
 
 async function saveData() {

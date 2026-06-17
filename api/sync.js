@@ -664,6 +664,31 @@ module.exports = async function handler(req, res) {
         const geckoSymbolIds = parseJson(await kvGet('vault:gecko_symbol_ids'), {});
         return res.status(200).json({ ok: true, geckoSymbolIds });
       }
+
+      const parse = (raw, fallback) => {
+        if (!raw) return fallback;
+        try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { return fallback; }
+      };
+
+      // Heavy aux only (~500KB): snapshots, logos, perps history, event log cache.
+      // Fetched in background after portfolio-first paint.
+      if (req.query?.auxHeavy === '1') {
+        const [snapshotsRaw, perpsSnapshotsRaw, logoCacheRaw, eventHistoryRaw] = await Promise.all([
+          kvGet('vault:snapshots'),
+          kvGet('vault:perps_snapshots'),
+          kvGet('vault:logo_cache'),
+          kvGet('vault:event_history'),
+        ]);
+        const result = {
+          _snapshots:      parse(snapshotsRaw, {}),
+          _perpsSnapshots: parse(perpsSnapshotsRaw, {}),
+          _logoCache:      parse(logoCacheRaw, {}),
+          _eventHistory:   parse(eventHistoryRaw, []),
+        };
+        return res.status(200).json({ ok: true, result: JSON.stringify(result) });
+      }
+
+      const portfolioOnly = req.query?.portfolioOnly === '1';
       const [
         portfolioRaw, watchlistRaw, watcherWalletsRaw, watcherLinksRaw,
         snapshotsRaw, aaveMarketsRaw, customTokensRaw,
@@ -675,25 +700,20 @@ module.exports = async function handler(req, res) {
         kvGet('vault:watchlist'),
         kvGet('vault:watcherwallets'),
         kvGet('vault:watcherlinks'),
-        kvGet('vault:snapshots'),
+        portfolioOnly ? null : kvGet('vault:snapshots'),
         kvGet('vault:aavemarkets'),
         kvGet('vault:customtokens'),
         kvGet('vault:opinion_wallets'),
         kvGet('vault:feed_channels'),
         kvGet('vault:pm_wallets'),
         kvGet('vault:opportunitymonitors'),
-        kvGet('vault:event_history'),
+        portfolioOnly ? null : kvGet('vault:event_history'),
         kvGet('vault:dismissed_markets'),
         kvGet('vault:perps_config'),
-        kvGet('vault:perps_snapshots'),
-        kvGet('vault:logo_cache'),
+        portfolioOnly ? null : kvGet('vault:perps_snapshots'),
+        portfolioOnly ? null : kvGet('vault:logo_cache'),
         kvGet('vault:gecko_symbol_ids'),
       ]);
-
-      const parse = (raw, fallback) => {
-        if (!raw) return fallback;
-        try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { return fallback; }
-      };
 
       const portfolio      = parse(portfolioRaw, { tokens: [], protocols: [], etfs: [], predictionMarkets: [], opinionMarkets: [], polymarketWallets: [] });
       const watchlist      = parse(watchlistRaw, []);
@@ -735,19 +755,21 @@ module.exports = async function handler(req, res) {
         _watchlist:      watchlist,
         _watcherWallets: watcherWallets,
         _watcherLinks:   watcherLinks,
-        _snapshots:      snapshots,
         _aaveMarkets:    aaveMarkets,
         _customTokens:   customTokens,
         _opinionConfig:  { wallets: opinionWallets, walletAddress: opinionWallets[0] || '' },
         _tgChannels:     tgChannels,
         _opportunityMonitors: opportunityMonitors,
-        _eventHistory:        eventHistory,
         _dismissedMarkets:    dismissedMarkets,
         _perpsConfig:         perpsConfig,
-        _perpsSnapshots:      perpsSnapshots,
-        _logoCache:           logoCache,
         _geckoSymbolIds:      geckoSymbolIds,
       };
+      if (!portfolioOnly) {
+        result._snapshots = snapshots;
+        result._eventHistory = eventHistory;
+        result._perpsSnapshots = perpsSnapshots;
+        result._logoCache = logoCache;
+      }
 
       return res.status(200).json({ ok: true, result: JSON.stringify(result) });
     } catch (e) {
