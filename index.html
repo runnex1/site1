@@ -8567,6 +8567,9 @@ async function resolveAllPendingLogos() {
 // APP STATE & STORAGE
 // =============================================================================
 let data = { tokens: [], protocols: [], etfs: [], predictionMarkets: [], opinionMarkets: [], polymarketWallets: [], defiPanelNotes: [], stablecoinMonitors: [], etfRealizedPnl: 0 };
+let watchlist = [];
+let watcherWallets = [];
+let watcherLinks = [];
 function normalizePortfolioData() {
     if (!data || typeof data !== 'object') {
         data = { tokens: [], protocols: [], etfs: [], predictionMarkets: [], opinionMarkets: [], polymarketWallets: [], defiPanelNotes: [], stablecoinMonitors: [], etfRealizedPnl: 0 };
@@ -8906,6 +8909,173 @@ function saveOpportunityMonitors() {
     renderDashboardOpportunityZone();
 }
 
+async function fetchCloudPortfolioPayload() {
+    const res = await fetch('/api/sync', { signal: AbortSignal.timeout(CLOUD_SYNC_TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`Cloud sync HTTP ${res.status}`);
+    const cloudData = await res.json();
+    if (!cloudData?.result) throw new Error('Cloud sync returned no portfolio');
+    return JSON.parse(cloudData.result);
+}
+
+function applyCloudPortfolioAux(parsed) {
+    const apply = (label, fn) => {
+        try { fn(); } catch (e) { console.warn(`[Vault] Cloud aux ${label} failed:`, e); }
+    };
+    apply('watcherLinks', () => {
+        if (!Array.isArray(parsed._watcherLinks)) return;
+        watcherLinks = parsed._watcherLinks;
+        localStorage.setItem('watcher-links', JSON.stringify(watcherLinks));
+        renderWatcherLinks();
+        delete parsed._watcherLinks;
+    });
+    apply('watcherWallets', () => {
+        if (!Array.isArray(parsed._watcherWallets)) return;
+        watcherWallets = parsed._watcherWallets;
+        localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets));
+        renderWatcherWallets();
+        delete parsed._watcherWallets;
+        if (document.body.dataset.activeTab === 'loops') {
+            loopApiState.triedAuto = false;
+            maybeAutoSyncLoopPositions();
+        }
+    });
+    apply('watchlist', () => {
+        if (!Array.isArray(parsed._watchlist)) return;
+        watchlist = parsed._watchlist;
+        localStorage.setItem('wl-data', JSON.stringify(watchlist));
+        delete parsed._watchlist;
+    });
+    apply('snapshots', () => {
+        if (!parsed._snapshots || typeof parsed._snapshots !== 'object') return;
+        const pruned = pruneOldSnapshots(parsed._snapshots);
+        localStorage.setItem('portfolio-snapshots', JSON.stringify(pruned.snapshots));
+        delete parsed._snapshots;
+    });
+    apply('aaveMarkets', () => {
+        if (!Array.isArray(parsed._aaveMarkets)) return;
+        localStorage.setItem('aavecap-markets-v1', JSON.stringify(parsed._aaveMarkets));
+        delete parsed._aaveMarkets;
+    });
+    apply('customTokens', () => {
+        if (!parsed._customTokens || typeof parsed._customTokens !== 'object') return;
+        localStorage.setItem('vault-custom-tokens', JSON.stringify(parsed._customTokens));
+        delete parsed._customTokens;
+    });
+    apply('logoCache', () => {
+        if (!parsed._logoCache || typeof parsed._logoCache !== 'object') return;
+        LogoEngine.importCache(parsed._logoCache);
+        delete parsed._logoCache;
+    });
+    apply('geckoSymbolIds', () => {
+        if (!parsed._geckoSymbolIds || typeof parsed._geckoSymbolIds !== 'object') return;
+        hydrateServerGeckoSymbolIds(parsed._geckoSymbolIds);
+        delete parsed._geckoSymbolIds;
+    });
+    apply('opportunityMonitors', () => {
+        if (!parsed._opportunityMonitors || typeof parsed._opportunityMonitors !== 'object') return;
+        opportunityMonitors = mergeOpportunityMonitorConfigs(parsed._opportunityMonitors, opportunityMonitors);
+        localStorage.setItem(OPPORTUNITY_MONITORS_KEY, JSON.stringify(opportunityMonitors));
+        delete parsed._opportunityMonitors;
+    });
+    apply('dismissedMarkets', () => {
+        if (!Array.isArray(parsed._dismissedMarkets)) return;
+        _dismissedMarkets = parsed._dismissedMarkets;
+        try { localStorage.setItem('vault-dismissed-markets', JSON.stringify(_dismissedMarkets)); } catch(e) {}
+        delete parsed._dismissedMarkets;
+    });
+    apply('eventHistory', () => {
+        if (!Array.isArray(parsed._eventHistory)) return;
+        _serverEventHistory = parsed._eventHistory;
+        delete parsed._eventHistory;
+    });
+    apply('opinionConfig', () => {
+        if (!parsed._opinionConfig || typeof parsed._opinionConfig !== 'object') return;
+        const oc = parsed._opinionConfig;
+        if (Array.isArray(oc.wallets)) {
+            opinionConfig.wallets = oc.wallets;
+            opinionConfig.walletAddress = oc.walletAddress || oc.wallets[0] || '';
+            localStorage.setItem('opinion-config', JSON.stringify({ wallets: oc.wallets, walletAddress: opinionConfig.walletAddress }));
+            if (typeof updateOpinionStatusBar === 'function') updateOpinionStatusBar();
+        }
+        delete parsed._opinionConfig;
+    });
+    apply('tgChannels', () => {
+        if (!Array.isArray(parsed._tgChannels)) return;
+        localStorage.setItem('vault_tg_channels', JSON.stringify(parsed._tgChannels));
+        delete parsed._tgChannels;
+    });
+    apply('perpsSnapshots', () => {
+        if (!parsed._perpsSnapshots || typeof parsed._perpsSnapshots !== 'object') return;
+        perpsMergeSnapshotsFromServer(parsed._perpsSnapshots);
+        delete parsed._perpsSnapshots;
+    });
+    apply('perpsClosedPairs', () => {
+        if (!Array.isArray(parsed._perpsClosedPairs)) return;
+        perpsMergeClosedPairsFromServer(parsed._perpsClosedPairs);
+        delete parsed._perpsClosedPairs;
+    });
+}
+
+function mergeCloudPortfolio(parsed) {
+    if (!parsed || !portfolioHasEntries(parsed)) return false;
+    parsed.polymarketWallets = mergeWalletAddresses(data.polymarketWallets, parsed.polymarketWallets);
+    parsed.etfs = mergeEtfPositions(data.etfs, parsed.etfs);
+    const walletSnap = perpsSnapshotLocalWallet();
+    const perpsConfig = parsed._perpsConfig && typeof parsed._perpsConfig === 'object' ? parsed._perpsConfig : null;
+    data = parsed;
+    normalizePortfolioData();
+    perpsRestoreWalletSnapshot(walletSnap);
+    if (perpsConfig) {
+        perpsApplyCloudConfig(perpsConfig);
+        delete parsed._perpsConfig;
+    }
+    perpsImportConfigFromPortfolio();
+    perpsLoadConfig();
+    if (document.body.dataset.activeTab === 'perps') perpsEnsureConnected();
+    return true;
+}
+
+async function hydratePortfolioFromCloud() {
+    if (location.protocol === 'file:') return false;
+    let parsed = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            parsed = await fetchCloudPortfolioPayload();
+            break;
+        } catch (err) {
+            if (attempt < 2) {
+                console.warn('[Vault] Cloud sync retry after:', err.message || err);
+                await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
+                continue;
+            }
+            throw err;
+        }
+    }
+    if (!parsed) return false;
+    if (!portfolioHasEntries(parsed)) {
+        console.warn('[Vault] Cloud sync returned an empty portfolio — keeping local cache');
+        return false;
+    }
+    applyCloudPortfolioAux(parsed);
+    if (!mergeCloudPortfolio(parsed)) return false;
+    try { saveData(); } catch (e) { console.warn('[Vault] saveData after cloud sync failed:', e); }
+    try { invokeUpdateUI(); } catch (e) { console.error('[Vault] updateUI after cloud sync failed:', e); }
+    return true;
+}
+
+function markPortfolioSyncFailed(err) {
+    console.warn('[Vault] Cloud portfolio sync failed:', err);
+    if (portfolioHasEntries()) return;
+    setDashboardSystemStatusTip('Portfolio sync failed\n\n' + (err?.message || err) + '\n\nHard refresh (Ctrl+Shift+R) or check your connection.');
+    const pill = document.getElementById('dashboardSystemStatus');
+    if (pill) {
+        const dot = pill.querySelector('span');
+        pill.textContent = '';
+        if (dot) pill.appendChild(dot);
+        pill.append('Sync failed');
+    }
+}
+
 async function loadData() {
     _dashboardDataLoading = location.protocol !== 'file:';
     updateDashboardDataLoading();
@@ -8954,156 +9124,18 @@ async function loadData() {
     try { invokeUpdateUI(); } catch (e) { console.error('[Vault] updateUI after local load failed:', e); }
     updateLogoStatus('ready', 'Ready');
 
-    // 3. Fire-and-forget cloud sync (only when served via http/https)
+    // 3. Cloud sync — await so empty browsers recover from KV
     if (location.protocol !== 'file:') {
-        (async () => {
-            const fetchCloudPortfolio = async () => {
-                const res = await fetch('/api/sync', { signal: AbortSignal.timeout(CLOUD_SYNC_TIMEOUT_MS) });
-                if (!res.ok) throw new Error(`Cloud sync HTTP ${res.status}`);
-                const cloudData = await res.json();
-                if (!cloudData?.result) throw new Error('Cloud sync returned no portfolio');
-                return JSON.parse(cloudData.result);
-            };
-            try {
-                let parsed = null;
-                for (let attempt = 0; attempt < 3; attempt++) {
-                    try {
-                        parsed = await fetchCloudPortfolio();
-                        break;
-                    } catch (err) {
-                        if (attempt < 2) {
-                            console.warn('[Vault] Cloud sync retry after:', err.message || err);
-                            await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
-                            continue;
-                        }
-                        throw err;
-                    }
-                }
-                if (parsed && portfolioHasEntries(parsed)) {
-
-                    // Extract watcher-specific keys before assigning to data
-                    if (parsed._watcherLinks && Array.isArray(parsed._watcherLinks)) {
-                        watcherLinks = parsed._watcherLinks;
-                        localStorage.setItem('watcher-links', JSON.stringify(watcherLinks));
-                        renderWatcherLinks();
-                        delete parsed._watcherLinks;
-                    }
-                    if (parsed._watcherWallets && Array.isArray(parsed._watcherWallets)) {
-                        watcherWallets = parsed._watcherWallets;
-                        localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets));
-                        renderWatcherWallets();
-                        delete parsed._watcherWallets;
-                        if (document.body.dataset.activeTab === 'loops') {
-                            loopApiState.triedAuto = false;
-                            maybeAutoSyncLoopPositions();
-                        }
-                    }
-                    if (parsed._watchlist && Array.isArray(parsed._watchlist)) {
-                        watchlist = parsed._watchlist;
-                        localStorage.setItem('wl-data', JSON.stringify(watchlist));
-                        delete parsed._watchlist;
-                    }
-                    if (parsed._snapshots && typeof parsed._snapshots === 'object') {
-                        const pruned = pruneOldSnapshots(parsed._snapshots);
-                        localStorage.setItem('portfolio-snapshots', JSON.stringify(pruned.snapshots));
-                        delete parsed._snapshots;
-                    }
-                    if (parsed._aaveMarkets && Array.isArray(parsed._aaveMarkets)) {
-                        localStorage.setItem('aavecap-markets-v1', JSON.stringify(parsed._aaveMarkets));
-                        delete parsed._aaveMarkets;
-                    }
-                    if (parsed._customTokens && typeof parsed._customTokens === 'object') {
-                        localStorage.setItem('vault-custom-tokens', JSON.stringify(parsed._customTokens));
-                        delete parsed._customTokens;
-                    }
-                    if (parsed._logoCache && typeof parsed._logoCache === 'object') {
-                        try { LogoEngine.importCache(parsed._logoCache); } catch(e) {}
-                        delete parsed._logoCache;
-                    }
-                    if (parsed._geckoSymbolIds && typeof parsed._geckoSymbolIds === 'object') {
-                        hydrateServerGeckoSymbolIds(parsed._geckoSymbolIds);
-                        delete parsed._geckoSymbolIds;
-                    }
-                    if (parsed._opportunityMonitors && typeof parsed._opportunityMonitors === 'object') {
-                        opportunityMonitors = mergeOpportunityMonitorConfigs(parsed._opportunityMonitors, opportunityMonitors);
-                        localStorage.setItem(OPPORTUNITY_MONITORS_KEY, JSON.stringify(opportunityMonitors));
-                        delete parsed._opportunityMonitors;
-                    }
-                    if (Array.isArray(parsed._dismissedMarkets)) {
-                        _dismissedMarkets = parsed._dismissedMarkets;
-                        try { localStorage.setItem('vault-dismissed-markets', JSON.stringify(_dismissedMarkets)); } catch(e) {}
-                        delete parsed._dismissedMarkets;
-                    }
-                    if (Array.isArray(parsed._eventHistory)) {
-                        _serverEventHistory = parsed._eventHistory;
-                        delete parsed._eventHistory;
-                    }
-                    if (parsed._opinionConfig && typeof parsed._opinionConfig === 'object') {
-                        const oc = parsed._opinionConfig;
-                        if (Array.isArray(oc.wallets)) {
-                            opinionConfig.wallets = oc.wallets;
-                            opinionConfig.walletAddress = oc.walletAddress || oc.wallets[0] || '';
-                            localStorage.setItem('opinion-config', JSON.stringify({ wallets: oc.wallets, walletAddress: opinionConfig.walletAddress }));
-                            if (typeof updateOpinionStatusBar === 'function') updateOpinionStatusBar();
-                        }
-                        delete parsed._opinionConfig;
-                    }
-                    if (parsed._tgChannels && Array.isArray(parsed._tgChannels)) {
-                        localStorage.setItem('vault_tg_channels', JSON.stringify(parsed._tgChannels));
-                        delete parsed._tgChannels;
-                    }
-                    if (parsed._perpsSnapshots && typeof parsed._perpsSnapshots === 'object') {
-                        perpsMergeSnapshotsFromServer(parsed._perpsSnapshots);
-                        delete parsed._perpsSnapshots;
-                    }
-                    if (Array.isArray(parsed._perpsClosedPairs)) {
-                        perpsMergeClosedPairsFromServer(parsed._perpsClosedPairs);
-                        delete parsed._perpsClosedPairs;
-                    }
-
-                    parsed.polymarketWallets = mergeWalletAddresses(data.polymarketWallets, parsed.polymarketWallets);
-
-                    parsed.etfs = mergeEtfPositions(data.etfs, parsed.etfs);
-                    const walletSnap = perpsSnapshotLocalWallet();
-                    data = parsed;
-                    normalizePortfolioData();
-                    perpsRestoreWalletSnapshot(walletSnap);
-
-                    if (parsed._perpsConfig && typeof parsed._perpsConfig === 'object') {
-                        perpsApplyCloudConfig(parsed._perpsConfig);
-                        delete parsed._perpsConfig;
-                    }
-                    perpsImportConfigFromPortfolio();
-                    perpsLoadConfig();
-                    if (document.body.dataset.activeTab === 'perps') {
-                        perpsEnsureConnected();
-                    }
-                    try { saveData(); } catch (e) { console.warn('[Vault] saveData after cloud sync failed:', e); }
-                    try { invokeUpdateUI(); } catch (e) { console.error('[Vault] updateUI after cloud sync failed:', e); }
-                } else if (parsed) {
-                    console.warn('[Vault] Cloud sync returned an empty portfolio — keeping local cache');
-                }
-            } catch (e) {
-                console.warn('[Vault] Cloud portfolio sync failed:', e);
-                const hasLocal = portfolioHasEntries();
-                if (!hasLocal) {
-                    setDashboardSystemStatusTip('Portfolio sync failed\n\n' + (e.message || e) + '\n\nHard refresh (Ctrl+Shift+R) or check your connection.');
-                    const pill = document.getElementById('dashboardSystemStatus');
-                    if (pill) {
-                        const dot = pill.querySelector('span');
-                        pill.textContent = '';
-                        if (dot) pill.appendChild(dot);
-                        pill.append('Sync failed');
-                    }
-                }
-            }
-            finally {
-                _dashboardDataLoading = false;
-                updateDashboardDataLoading();
-                updateCharts(true);
-                renderDashboardPnlAttribution(true);
-            }
-        })();
+        try {
+            await hydratePortfolioFromCloud();
+        } catch (e) {
+            markPortfolioSyncFailed(e);
+        } finally {
+            _dashboardDataLoading = false;
+            updateDashboardDataLoading();
+            updateCharts(true);
+            renderDashboardPnlAttribution(true);
+        }
     } else {
         _dashboardDataLoading = false;
         updateDashboardDataLoading();
@@ -20017,7 +20049,6 @@ async function fetchDomePnL() {
 // =============================================================================
 // WATCHLIST
 // =============================================================================
-let watchlist = [];          // [{ id, slug, tokenId, title, outcome, prices:[], alerts:[], addedAt }]
 let _wlPollTimer = null;
 let _wlCharts = {};          // chartjs instances keyed by id
 
@@ -20049,7 +20080,6 @@ function loadWatchlist() {
 
 // ── Watcher Wallets ──────────────────────────────────────────────────────────
 // Each entry: { id, address, label, category: 'yield'|'pm', addedAt }
-let watcherWallets = [];
 
 function saveWatcherWallets() {
     try { localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets)); } catch(e) {}
@@ -20258,7 +20288,6 @@ function renderWatcherWalletSection(category, gridId, countId) {
 }
 
 // ── Watcher Links ─────────────────────────────────────────────────────────────
-let watcherLinks = [];
 
 function saveWatcherLinks() {
     const savedLinks = watcherLinks.map(({ _editing, ...link }) => link);
