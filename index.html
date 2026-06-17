@@ -25778,13 +25778,8 @@ async function fetchDailyNews(force = false) {
 }
 
 // =============================================================================
-// BOOT
+// BOOT (non-blocking helpers — loadData runs after full script init below)
 // =============================================================================
-(async () => {
-    await loadData();
-    syncEtfsServerSide();
-    applyEtfDcaSchedules();
-})();
 LogoEngine.init(); // runs in background, never blocks UI
 terminalLoad();
 fetchDailyNews();
@@ -29442,6 +29437,14 @@ function switchWTab(name, btn) {
     if (name === 'wallets') updateWatcherWalletCount();
 }
 
+// =============================================================================
+// BOOT — must run after all state declarations in this script block
+// =============================================================================
+(async () => {
+    await loadData();
+    syncEtfsServerSide();
+    applyEtfDcaSchedules();
+})();
 
 </script>
 
