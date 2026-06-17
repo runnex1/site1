@@ -718,6 +718,7 @@ assert.match(indexHtml, /forceCollect: true/, 'dashboard event log polls must fo
 assert.match(indexHtml, /eventLog=1&force=1/, 'dashboard must request forced event-log collection');
 const eventLogJs = readFileSync(join(ROOT, 'lib', 'event-log.js'), 'utf8');
 assert.match(eventLogJs, /fetchKobeissiPosts/, 'event log must scrape Kobeissi Letter Telegram headlines');
+assert.match(eventLogJs, /walletSuffix4\(g\.wallet\)/, 'server event log must append wallet suffix to order fills');
 assert.match(eventLogJs, /if \(!\/\\bBREAKING\\b\/i\.test\(text\)\) continue;/, 'event log must include only breaking Kobeissi headlines');
 assert.doesNotMatch(eventLogJs, /'Kobeissi Letter'/, 'event log must not add non-breaking Kobeissi headlines');
 assert.match(indexHtml, /ticker-strip-viewport/, 'market ticker must use a scrolling viewport for overflow symbols');
@@ -1768,7 +1769,6 @@ assert.match(indexHtml, /function pmPriceMovePulseItem\(/, 'market pulse must bu
 assert.doesNotMatch(indexHtml, /\.\.\._predictionWalletCards/, 'market pulse must not merge watched wallet cards');
 assert.match(indexHtml, /CLOUD_SYNC_TIMEOUT_MS = 25000/, 'cloud sync must allow enough time for large portfolio payload');
 assert.match(indexHtml, /slice\(-4\)/, 'wallet suffix must use last 4 wallet characters');
-const eventLogJs = readFileSync(join(ROOT, 'lib', 'event-log.js'), 'utf8');
 assert.match(eventLogJs, /walletSuffix4\(g\.wallet\)/, 'server event log must append wallet suffix to order fills');
 
 try {
