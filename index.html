@@ -8570,6 +8570,20 @@ let data = { tokens: [], protocols: [], etfs: [], predictionMarkets: [], opinion
 let watchlist = [];
 let watcherWallets = [];
 let watcherLinks = [];
+let _predictionIntelSeq = 0;
+let _predictionPulseCards = [];
+let _predictionCarryCards = [];
+let _predictionWalletPulseTimer = null;
+let _predictionMovesLoading = false;
+let _predictionMovesLastRefresh = 0;
+let _predictionAggregatePnlLoading = false;
+let _predictionAggregatePnlCache = { key: '', ts: 0, value: null, byWallet: {}, error: '' };
+let _predictionPnlChartLoading = false;
+let _predictionPnlChartSeq = 0;
+let _predictionPnlChartCache = { key: '', range: '', ts: 0, points: [], error: '', loadedWallets: 0 };
+const PREDICTION_WALLET_PULSE_MS = 5 * 60 * 1000;
+const PREDICTION_AGGREGATE_PNL_MS = 5 * 60 * 1000;
+const PREDICTION_PNL_CHART_MS = 2 * 60 * 1000;
 function normalizePortfolioData() {
     if (!data || typeof data !== 'object') {
         data = { tokens: [], protocols: [], etfs: [], predictionMarkets: [], opinionMarkets: [], polymarketWallets: [], defiPanelNotes: [], stablecoinMonitors: [], etfRealizedPnl: 0 };
@@ -8940,8 +8954,7 @@ async function hydratePortfolioAuxHeavy() {
     try {
         const parsed = await fetchCloudPortfolioPayload({ auxHeavy: true });
         applyCloudPortfolioAux(parsed);
-        updateCharts(true);
-        renderDashboardPnlAttribution(true);
+        try { updateCharts(true); } catch (e) {}
         invokeUpdateUI();
     } catch (e) {
         console.warn('[Vault] Cloud heavy aux sync failed:', e);
@@ -9094,8 +9107,7 @@ async function hydratePortfolioFromCloud(opts = {}) {
     if (!background) {
         _dashboardDataLoading = false;
         updateDashboardDataLoading();
-        updateCharts(true);
-        renderDashboardPnlAttribution(true);
+        try { updateCharts(true); } catch (e) { console.warn('[Vault] chart update after cloud sync failed:', e); }
     }
     scheduleCloudPortfolioAux(parsed);
     if (portfolioOnly) hydratePortfolioAuxHeavy().catch(() => {});
@@ -9175,8 +9187,7 @@ async function loadData() {
         if (hasLocalPortfolio) {
             _dashboardDataLoading = false;
             updateDashboardDataLoading();
-            updateCharts(true);
-            renderDashboardPnlAttribution(true);
+            try { updateCharts(true); } catch (e) {}
             hydratePortfolioFromCloud({ portfolioOnly: true, background: true }).catch(markPortfolioSyncFailed);
         } else {
             try {
@@ -9186,8 +9197,7 @@ async function loadData() {
             } finally {
                 _dashboardDataLoading = false;
                 updateDashboardDataLoading();
-                updateCharts(true);
-                renderDashboardPnlAttribution(true);
+                try { updateCharts(true); } catch (e) {}
             }
         }
     } else {
@@ -16380,7 +16390,7 @@ function renderDashboardPanels() {
     renderDashboardOpportunityZone();
     renderDashboardSmartMoney();
     renderDashboardProtocolPreview();
-    renderDashboardPnlAttribution();
+    try { renderDashboardPnlAttribution(); } catch (e) { console.warn('[Vault] PnL attribution render failed:', e); }
 }
 
 function renderTokensOverview() {
@@ -17648,20 +17658,6 @@ function renderPredSubtabs() {
 
 // Prediction Markets cockpit layout. This overrides the older two-subtab scaffold
 // above while reusing the existing position, activity, and opportunity data paths.
-let _predictionIntelSeq = 0;
-let _predictionPulseCards = [];
-let _predictionCarryCards = [];
-let _predictionWalletPulseTimer = null;
-let _predictionMovesLoading = false;
-let _predictionMovesLastRefresh = 0;
-let _predictionAggregatePnlLoading = false;
-let _predictionAggregatePnlCache = { key: '', ts: 0, value: null, byWallet: {}, error: '' };
-let _predictionPnlChartLoading = false;
-let _predictionPnlChartSeq = 0;
-let _predictionPnlChartCache = { key: '', range: '', ts: 0, points: [], error: '', loadedWallets: 0 };
-const PREDICTION_WALLET_PULSE_MS = 5 * 60 * 1000;
-const PREDICTION_AGGREGATE_PNL_MS = 5 * 60 * 1000;
-const PREDICTION_PNL_CHART_MS = 2 * 60 * 1000;
 window._predSideFilter = window._predSideFilter || 'all';
 window._predPlatform = window._predPlatform || 'polymarket';
 window._predInsightTab = window._predInsightTab || 'smart';
