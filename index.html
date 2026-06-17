@@ -8698,7 +8698,23 @@ let dashboardChartState = { range: '30D', mode: 'usd', log: false, category: 'to
 let dashboardPnlRange = '7D';
 let _editingPegMonitorKey = '';
 let _dashboardDataLoading = false;
-const CLOUD_SYNC_TIMEOUT_MS = 25000;
+const CLOUD_SYNC_TIMEOUT_MS = 35000;
+function portfolioHasEntries(portfolio = data) {
+    const p = portfolio && typeof portfolio === 'object' ? portfolio : {};
+    return (p.tokens?.length || 0) + (p.protocols?.length || 0) + (p.predictionMarkets?.length || 0)
+        + (p.opinionMarkets?.length || 0) + (p.etfs?.length || 0) > 0;
+}
+function syncLsJson(key, fallback) {
+    try { return JSON.parse(localStorage.getItem(key) || fallback); } catch (e) { return JSON.parse(fallback); }
+}
+function syncWatcherLinksCount() {
+    try { return Array.isArray(watcherLinks) ? watcherLinks.length : syncLsJson('watcher-links', '[]').length; }
+    catch (e) { return syncLsJson('watcher-links', '[]').length; }
+}
+function invokeUpdateUI() {
+    const fn = window.updateUI;
+    if (typeof fn === 'function') fn();
+}
 let _dashboardFinanceLastRefresh = 0;
 let _dashboardPnlLastRefresh = 0;
 let _dashboardSystemStatusLastFetch = 0;
@@ -8912,15 +8928,14 @@ async function loadData() {
 
     loadOpportunityMonitors();
 
-    // Hydrate perps wallets from all local stores, then cloud (before first paint / tab switch)
+    // Perps wallet hydrate must not block first paint — network can hang for seconds
     try {
         perpsImportConfigFromPortfolio();
         perpsLoadConfig();
-        if (location.protocol !== 'file:') {
-            await perpsBootstrapWallet();
-            perpsLoadConfig();
-        }
     } catch (e) {}
+    const perpsBootPromise = (location.protocol !== 'file:'
+        ? perpsBootstrapWallet().then(() => { perpsLoadConfig(); }).catch(() => {})
+        : Promise.resolve());
 
     loadWatchlist();
     loadWatcherLinks();
@@ -8936,7 +8951,7 @@ async function loadData() {
             fetchLiveTokenPrices({ force: true }).catch(() => {});
         }
     }
-    updateUI();
+    try { invokeUpdateUI(); } catch (e) { console.error('[Vault] updateUI after local load failed:', e); }
     updateLogoStatus('ready', 'Ready');
 
     // 3. Fire-and-forget cloud sync (only when served via http/https)
@@ -8951,20 +8966,20 @@ async function loadData() {
             };
             try {
                 let parsed = null;
-                for (let attempt = 0; attempt < 2; attempt++) {
+                for (let attempt = 0; attempt < 3; attempt++) {
                     try {
                         parsed = await fetchCloudPortfolio();
                         break;
                     } catch (err) {
-                        if (attempt === 0) {
+                        if (attempt < 2) {
                             console.warn('[Vault] Cloud sync retry after:', err.message || err);
-                            await new Promise(r => setTimeout(r, 1200));
+                            await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
                             continue;
                         }
                         throw err;
                     }
                 }
-                if (parsed) {
+                if (parsed && portfolioHasEntries(parsed)) {
 
                     // Extract watcher-specific keys before assigning to data
                     if (parsed._watcherLinks && Array.isArray(parsed._watcherLinks)) {
@@ -9064,11 +9079,13 @@ async function loadData() {
                         perpsEnsureConnected();
                     }
                     try { saveData(); } catch (e) { console.warn('[Vault] saveData after cloud sync failed:', e); }
-                    try { (window.updateUI || updateUI)(); } catch (e) { console.error('[Vault] updateUI after cloud sync failed:', e); }
+                    try { invokeUpdateUI(); } catch (e) { console.error('[Vault] updateUI after cloud sync failed:', e); }
+                } else if (parsed) {
+                    console.warn('[Vault] Cloud sync returned an empty portfolio — keeping local cache');
                 }
             } catch (e) {
                 console.warn('[Vault] Cloud portfolio sync failed:', e);
-                const hasLocal = (data.tokens?.length || 0) + (data.protocols?.length || 0) > 0;
+                const hasLocal = portfolioHasEntries();
                 if (!hasLocal) {
                     setDashboardSystemStatusTip('Portfolio sync failed\n\n' + (e.message || e) + '\n\nHard refresh (Ctrl+Shift+R) or check your connection.');
                     const pill = document.getElementById('dashboardSystemStatus');
@@ -9105,6 +9122,7 @@ async function loadData() {
     } catch(e) {}
 
     loadDomeConfig();
+    await perpsBootPromise;
 }
 
 async function saveData() {
@@ -9126,20 +9144,21 @@ async function saveData() {
 
         // Cloud sync only works when served via http/https (not file://)
         if (location.protocol === 'file:') return;
+        if (!portfolioHasEntries()) return;
 
         // Build a complete payload with every key the server needs.
         // Sensitive values (API keys, TG token/chatId, dome key) are intentionally excluded.
-        const _ls = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || fallback); } catch(e) { return JSON.parse(fallback); } };
+        const _ls = (key, fallback) => syncLsJson(key, fallback);
         const payload = {
             // Main portfolio (tokens, protocols, ETFs, PM positions, polymarketWallets)
             portfolio:      data,
             // Keep Manage Wallets addresses explicit so server tools do not depend on nested portfolio shape.
             polymarketWallets: mergeWalletAddresses(data.polymarketWallets),
             // Watchlist
-            watchlist:      (typeof watchlist      !== 'undefined' ? watchlist      : _ls('wl-data', '[]')),
+            watchlist:      (() => { try { return Array.isArray(watchlist) ? watchlist : _ls('wl-data', '[]'); } catch (e) { return _ls('wl-data', '[]'); } })(),
             // Watcher infrastructure
-            watcherWallets: (typeof watcherWallets !== 'undefined' ? watcherWallets : _ls('vault-watcher-wallets', '[]')),
-            watcherLinks:   (typeof watcherLinks   !== 'undefined' ? watcherLinks   : _ls('watcher-links', '[]')),
+            watcherWallets: (() => { try { return Array.isArray(watcherWallets) ? watcherWallets : _ls('vault-watcher-wallets', '[]'); } catch (e) { return _ls('vault-watcher-wallets', '[]'); } })(),
+            watcherLinks:   (() => { try { return Array.isArray(watcherLinks) ? watcherLinks : _ls('watcher-links', '[]'); } catch (e) { return _ls('watcher-links', '[]'); } })(),
             // Aave cap alert markets
             aaveMarkets:    _ls('aavecap-markets-v1', '[]'),
             // Custom token address mappings
@@ -25734,7 +25753,11 @@ let watcherSearchQuery = '';
 function updateWatcherSummaryText() {
     const el = document.getElementById('watcherSummaryText');
     if (!el) return;
-    const n = (watchlist?.length || 0) + (watcherWallets?.length || 0) + (watcherLinks?.length || 0);
+    let wl = 0, ww = 0, links = 0;
+    try { wl = Array.isArray(watchlist) ? watchlist.length : syncLsJson('wl-data', '[]').length; } catch (e) { wl = syncLsJson('wl-data', '[]').length; }
+    try { ww = Array.isArray(watcherWallets) ? watcherWallets.length : syncLsJson('vault-watcher-wallets', '[]').length; } catch (e) { ww = syncLsJson('vault-watcher-wallets', '[]').length; }
+    links = syncWatcherLinksCount();
+    const n = wl + ww + links;
     el.textContent = `${n} saved item${n === 1 ? '' : 's'} · organized by collection`;
 }
 
@@ -29291,7 +29314,7 @@ async function perpsRefresh(silent = false) {
 
 // ── Watcher sub-tab switching ──────────────────────────────────────
 function updateWyCount() {
-    const n = typeof watcherLinks !== 'undefined' ? watcherLinks.length : 0;
+    const n = syncWatcherLinksCount();
     const el = document.getElementById('wy-tools-count');
     const badge = document.getElementById('wtab-yield-badge');
     if (el) el.textContent = n + (n === 1 ? ' tool saved' : ' tools saved');
