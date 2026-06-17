@@ -634,6 +634,22 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.ok(apr > 10 && apr < 14, 'closed session APR must annualize net PnL over margin and session days');
 }
 
+{
+  const pair = {
+    symbol: 'ETH',
+    sessionStartDay: '2026-01-01',
+    sessionEndDay: '2026-01-10',
+    sessionDayCount: 3,
+    avgNotional: 50000,
+    netPnl: 500,
+    openTime: Date.UTC(2025, 0, 1),
+    closeTime: Date.UTC(2026, 0, 31),
+  };
+  assert.equal(closedPairSessionDays(pair), 10, 'closed session days must prefer latest performance session span');
+  const apr = closedPairSessionApr(pair);
+  assert.ok(apr > 35 && apr < 40, 'closed session APR must use performance session days, not open-to-close calendar span');
+}
+
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
 assert.match(indexHtml, /dayStart < cutoff\) return null;/, 'summary-only boundary rows must not count as full last-24h PnL');
 assert.match(indexHtml, /return perpsRecomputeDailySeriesCumulative\(trimmed\);/, 'trimmed daily rows must rebuild cumulative totals from the selected window');
@@ -1390,6 +1406,8 @@ assert.match(indexHtml, /perpsPairDisplayLegEntries\(p\)/, 'position cards must 
 assert.match(indexHtml, /perpsVenueWithSideHtml\(entry\.venue, entry\.leg\.size\)/, 'exchange labels must show long/short badges in position cards');
 assert.match(indexHtml, /perpsSetPositionsTab\('closed'/, 'Positions panel must expose a Closed tab');
 assert.match(indexHtml, /function perpsRenderClosedPositions\(closedPairs\)/, 'Closed tab must render fully closed position rounds');
+assert.match(indexHtml, /perps-pos-head closed[\s\S]{0,180}<div>APR<\/div>/, 'Closed tab must show APR column beside Net PnL');
+assert.match(indexHtml, /function perpsClosedPairSessionDays\(/, 'closed APR must use latest performance session day span');
 assert.match(indexHtml, /perpsClosedPairSessionApr\(p\)/, 'Closed tab must show session APR under Net PnL');
 assert.match(perpsJs, /function closedPairSessionApr\(/, 'closed pairs must compute session APR server-side');
 assert.match(indexHtml, /p\.closeSlippage/, 'Closed tab must show closing slippage separately');

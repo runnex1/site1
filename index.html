@@ -855,10 +855,10 @@ body[data-active-tab="perps"] .topbar,
 }
 .perps-pos-row { min-width:0; }
 .perps-pos-row.closed {
-  grid-template-columns:minmax(140px,1.1fr) minmax(220px,1.45fr) minmax(90px,0.9fr) minmax(96px,0.95fr) minmax(88px,0.85fr) minmax(78px,0.78fr) minmax(104px,0.9fr);
+  grid-template-columns:minmax(140px,1.1fr) minmax(220px,1.45fr) minmax(90px,0.9fr) minmax(72px,0.72fr) minmax(96px,0.95fr) minmax(88px,0.85fr) minmax(78px,0.78fr) minmax(104px,0.9fr);
 }
 .perps-pos-head.closed {
-  grid-template-columns:minmax(140px,1.1fr) minmax(220px,1.45fr) minmax(90px,0.9fr) minmax(96px,0.95fr) minmax(88px,0.85fr) minmax(78px,0.78fr) minmax(104px,0.9fr);
+  grid-template-columns:minmax(140px,1.1fr) minmax(220px,1.45fr) minmax(90px,0.9fr) minmax(72px,0.72fr) minmax(96px,0.95fr) minmax(88px,0.85fr) minmax(78px,0.78fr) minmax(104px,0.9fr);
 }
 .perps-pos-token { display:flex; align-items:center; gap:0.55rem; min-width:0; }
 .perps-pos-token-name { font-weight:900; font-size:0.92rem; color:var(--t1); }
@@ -28449,21 +28449,51 @@ function perpsClosedLegHtml(leg) {
     return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(leg.venue, signedSize)}</span><span class="perps-pos-metric-val ${perpsSignedCls(leg.realizedPnl ?? 0)}">${perpsFmtUsd(leg.realizedPnl ?? 0)}</span></div>`;
 }
 
+function perpsClosedPairSessionDays(pair) {
+    const start = pair?.sessionStartDay;
+    const end = pair?.sessionEndDay;
+    if (start && end) {
+        const first = Date.parse(`${start}T12:00:00Z`);
+        const last = Date.parse(`${end}T12:00:00Z`);
+        if (Number.isFinite(first) && Number.isFinite(last)) {
+            return Math.max(1, Math.round((last - first) / 86400000) + 1);
+        }
+    }
+    const count = Number(pair?.sessionDayCount || 0);
+    if (count > 0) return count;
+    const openTime = Number(pair?.openTime || 0);
+    const closeTime = Number(pair?.closeTime || 0);
+    if (openTime > 0 && closeTime > openTime) return (closeTime - openTime) / 86400000;
+    let days = Number(pair?.sessionDays);
+    return Number.isFinite(days) && days > 0 ? days : null;
+}
+
 function perpsClosedPairSessionApr(pair) {
     if (pair?.sessionApr != null && Number.isFinite(Number(pair.sessionApr))) {
         return Number(pair.sessionApr);
     }
     const margin = Number(pair?.avgNotional) > 0 ? Number(pair.avgNotional) : null;
-    const openTime = Number(pair?.openTime || 0);
-    const closeTime = Number(pair?.closeTime || 0);
-    let days = Number(pair?.sessionDays);
-    if (!Number.isFinite(days) || days <= 0) {
-        if (openTime > 0 && closeTime > openTime) days = (closeTime - openTime) / 86400000;
-        else days = Number(pair?.sessionDayCount || 0) || null;
-    }
+    const days = perpsClosedPairSessionDays(pair);
     const netPnl = Number(pair?.netPnl);
     if (!margin || !days || days <= 0 || !Number.isFinite(netPnl)) return null;
     return perpsAnnualizeReturnPct(netPnl, margin, days);
+}
+
+function perpsClosedPairAprTip(pair, apr) {
+    const days = perpsClosedPairSessionDays(pair);
+    const margin = Number(pair?.avgNotional) > 0 ? Number(pair.avgNotional) : null;
+    const netPnl = Number(pair?.netPnl);
+    const sessionLabel = pair?.sessionStartDay && pair?.sessionEndDay
+        ? `${pair.sessionStartDay} → ${pair.sessionEndDay}`
+        : 'latest session';
+    const parts = [
+        'Annualized Net PnL over the closed round’s latest performance session',
+        apr != null ? `APR: ${perpsFmtPct(apr)}` : null,
+        Number.isFinite(netPnl) ? `Net PnL: ${perpsFmtUsd(netPnl)}` : null,
+        margin ? `Margin: ${perpsFmtUsd(margin)}` : null,
+        days ? `Session: ${days.toFixed(1)}d (${sessionLabel})` : null,
+    ].filter(Boolean);
+    return parts.join(' · ');
 }
 
 function perpsClosedDebugNoticeHtml(debug) {
@@ -28497,6 +28527,7 @@ function perpsRenderClosedPositions(closedPairs) {
         <div>Position</div>
         <div>Exchange PnL</div>
         <div>Net PnL</div>
+        <div>APR</div>
         <div>Close Slippage</div>
         <div>Funding</div>
         <div>Fees</div>
@@ -28506,9 +28537,7 @@ function perpsRenderClosedPositions(closedPairs) {
         const sizeLabel = p.size != null ? `${perpsFmtSize(p.size)} ${p.symbol}` : p.symbol;
         const closedAt = perpsFormatEventTime(p.closeTime);
         const sessionApr = perpsClosedPairSessionApr(p);
-        const aprSub = sessionApr != null
-            ? `<div class="perps-pos-metric-sub ${perpsSignedCls(sessionApr)}" title="Annualized net PnL over this round's open-to-close session">${perpsFmtPct(sessionApr)} APR</div>`
-            : '';
+        const aprTip = perpsClosedPairAprTip(p, sessionApr);
         return `<div class="perps-pos-card"><div class="perps-pos-row closed">
             <div class="perps-pos-token">
                 <div class="perps-pos-token-row">
@@ -28524,7 +28553,8 @@ function perpsRenderClosedPositions(closedPairs) {
                 ${perpsClosedLegHtml(p.longLeg)}
                 ${perpsClosedLegHtml(p.shortLeg)}
             </div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</div>${aprSub}</div>
+            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</div></div>
+            <div class="perps-pos-apr-col"><div class="perps-pos-metric-label">APR</div><div class="perps-pos-apr-val ${sessionApr != null ? perpsSignedCls(sessionApr) : ''}" title="${dashEsc(aprTip)}">${sessionApr != null ? perpsFmtPct(sessionApr) : '—'}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Close Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(p.funding)}">${perpsFmtUsd(p.funding)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Fees</div><div class="perps-pos-metric-val neg">-${perpsFmtUsd(Math.abs(p.fees || 0)).replace(/^-/, '')}</div></div>
