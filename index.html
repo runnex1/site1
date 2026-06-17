@@ -855,10 +855,10 @@ body[data-active-tab="perps"] .topbar,
 }
 .perps-pos-row { min-width:0; }
 .perps-pos-row.closed {
-  grid-template-columns:minmax(140px,1.1fr) minmax(220px,1.45fr) minmax(90px,0.9fr) minmax(72px,0.72fr) minmax(96px,0.95fr) minmax(88px,0.85fr) minmax(78px,0.78fr) minmax(104px,0.9fr);
+  grid-template-columns:repeat(8, minmax(0, 1fr));
 }
 .perps-pos-head.closed {
-  grid-template-columns:minmax(140px,1.1fr) minmax(220px,1.45fr) minmax(90px,0.9fr) minmax(72px,0.72fr) minmax(96px,0.95fr) minmax(88px,0.85fr) minmax(78px,0.78fr) minmax(104px,0.9fr);
+  grid-template-columns:repeat(8, minmax(0, 1fr));
 }
 .perps-pos-token { display:flex; align-items:center; gap:0.55rem; min-width:0; }
 .perps-pos-token-name { font-weight:900; font-size:0.92rem; color:var(--t1); }
@@ -26570,33 +26570,61 @@ function perpsPersistCachedClosedPairs(rows) {
     } catch (e) {}
 }
 
+function perpsMergeClosedPairRecord(prev, fresh) {
+    if (!prev) return fresh;
+    if (!fresh) return prev;
+    const pickNum = (a, b) => {
+        const left = Number(a);
+        const right = Number(b);
+        if (Number.isFinite(left)) return left;
+        if (Number.isFinite(right)) return right;
+        return null;
+    };
+    return {
+        ...prev,
+        ...fresh,
+        longLeg: { ...prev.longLeg, ...fresh.longLeg },
+        shortLeg: { ...prev.shortLeg, ...fresh.shortLeg },
+        avgNotional: pickNum(fresh.avgNotional, prev.avgNotional),
+        sessionApr: pickNum(fresh.sessionApr, prev.sessionApr),
+        sessionDays: pickNum(fresh.sessionDays, prev.sessionDays),
+        sessionDayCount: pickNum(fresh.sessionDayCount, prev.sessionDayCount),
+        sessionStartDay: fresh.sessionStartDay || prev.sessionStartDay || null,
+        sessionEndDay: fresh.sessionEndDay || prev.sessionEndDay || null,
+        netPnl: pickNum(fresh.netPnl, prev.netPnl) ?? prev.netPnl,
+        funding: pickNum(fresh.funding, prev.funding) ?? prev.funding,
+        fees: pickNum(fresh.fees, prev.fees) ?? prev.fees,
+        closeSlippage: pickNum(fresh.closeSlippage, prev.closeSlippage) ?? prev.closeSlippage,
+    };
+}
+
 function perpsMergeClosedPairsFromServer(serverRows) {
     const incoming = Array.isArray(serverRows) ? serverRows : [];
     if (!incoming.length) return perpsLoadCachedClosedPairs();
     const byKey = new Map(perpsLoadCachedClosedPairs().map(p => [perpsClosedPairKey(p), p]));
-    let added = false;
+    let changed = false;
     for (const pair of incoming) {
         const key = perpsClosedPairKey(pair);
-        if (!key || byKey.has(key)) continue;
-        byKey.set(key, pair);
-        added = true;
+        if (!key) continue;
+        byKey.set(key, perpsMergeClosedPairRecord(byKey.get(key), pair));
+        changed = true;
     }
     const merged = [...byKey.values()].sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
-    if (added) perpsPersistCachedClosedPairs(merged);
+    if (changed) perpsPersistCachedClosedPairs(merged);
     return merged;
 }
 
 function perpsCacheNewClosedPairs(freshPairs) {
     const byKey = new Map(perpsLoadCachedClosedPairs().map(p => [perpsClosedPairKey(p), p]));
-    let added = false;
+    let changed = false;
     for (const pair of freshPairs || []) {
         const key = perpsClosedPairKey(pair);
-        if (!key || byKey.has(key)) continue;
-        byKey.set(key, pair);
-        added = true;
+        if (!key) continue;
+        byKey.set(key, perpsMergeClosedPairRecord(byKey.get(key), pair));
+        changed = true;
     }
     const merged = [...byKey.values()].sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
-    if (added) perpsPersistCachedClosedPairs(merged);
+    if (changed) perpsPersistCachedClosedPairs(merged);
     return merged;
 }
 
@@ -28449,6 +28477,29 @@ function perpsClosedLegHtml(leg) {
     return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(leg.venue, signedSize)}</span><span class="perps-pos-metric-val ${perpsSignedCls(leg.realizedPnl ?? 0)}">${perpsFmtUsd(leg.realizedPnl ?? 0)}</span></div>`;
 }
 
+function perpsClosedPairLegMarginPx(leg, symbol) {
+    const direct = [leg?.avgEntryPx, leg?.entryPx, leg?.avgClosePx, leg?.exitPx]
+        .map(v => Number(v))
+        .find(v => Number.isFinite(v) && v > 0);
+    if (direct) return direct;
+    const mark = perpsLegCurrentPx(symbol, leg?.venue, leg);
+    return mark != null && mark > 0 ? mark : null;
+}
+
+function perpsClosedPairAvgNotional(pair) {
+    const stored = Number(pair?.avgNotional);
+    if (Number.isFinite(stored) && stored > 0) return stored;
+    const fallbackSize = Math.abs(Number(pair?.size || 0));
+    const legs = [pair?.longLeg, pair?.shortLeg].filter(Boolean);
+    const notionals = legs.map((leg) => {
+        const px = perpsClosedPairLegMarginPx(leg, pair?.symbol);
+        const legSize = Math.abs(Number(leg?.size || fallbackSize));
+        return px != null && legSize > 0 ? legSize * px : null;
+    }).filter(n => n != null && n > 0);
+    if (!notionals.length) return null;
+    return notionals.reduce((sum, n) => sum + n, 0) / notionals.length;
+}
+
 function perpsClosedPairSessionDays(pair) {
     const start = pair?.sessionStartDay;
     const end = pair?.sessionEndDay;
@@ -28472,7 +28523,7 @@ function perpsClosedPairSessionApr(pair) {
     if (pair?.sessionApr != null && Number.isFinite(Number(pair.sessionApr))) {
         return Number(pair.sessionApr);
     }
-    const margin = Number(pair?.avgNotional) > 0 ? Number(pair.avgNotional) : null;
+    const margin = perpsClosedPairAvgNotional(pair);
     const days = perpsClosedPairSessionDays(pair);
     const netPnl = Number(pair?.netPnl);
     if (!margin || !days || days <= 0 || !Number.isFinite(netPnl)) return null;
@@ -28481,7 +28532,7 @@ function perpsClosedPairSessionApr(pair) {
 
 function perpsClosedPairAprTip(pair, apr) {
     const days = perpsClosedPairSessionDays(pair);
-    const margin = Number(pair?.avgNotional) > 0 ? Number(pair.avgNotional) : null;
+    const margin = perpsClosedPairAvgNotional(pair);
     const netPnl = Number(pair?.netPnl);
     const sessionLabel = pair?.sessionStartDay && pair?.sessionEndDay
         ? `${pair.sessionStartDay} → ${pair.sessionEndDay}`
@@ -29022,7 +29073,10 @@ function perpsRenderDashboard(data, opts = {}) {
     if (document.body.dataset.activeTab === 'overview') {
         renderDashboardPnlAttribution(true);
     }
-    data.closedPairs = perpsCacheNewClosedPairs(data.closedPairs || []);
+    data.closedPairs = perpsCacheNewClosedPairs([
+        ...(data.closedPairs || []),
+        ...(data.closedPairRefreshes || []),
+    ]);
     const snapshotAdded = perpsSaveSnapshot(data);
     data._equitySeries = perpsBuildEquitySeries(data);
     if (data.rateSpread) perpsApplyLiveRates(data.rateSpread, data.fetchedAt);
