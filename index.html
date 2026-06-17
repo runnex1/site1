@@ -878,6 +878,9 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-metric-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:0.78rem; font-weight:800; color:var(--t1); }
 .perps-pos-metric-val.pos { color:#55d66f; }
 .perps-pos-metric-val.neg { color:#ff5c7a; }
+.perps-pos-metric-sub { margin-top:0.1rem; font-family:var(--ff-mono); font-size:0.58rem; font-weight:700; color:#7f8f9f; white-space:nowrap; }
+.perps-pos-metric-sub.pos { color:#55d66f; }
+.perps-pos-metric-sub.neg { color:#ff5c7a; }
 .perps-pos-liq-stack { display:flex; flex-direction:column; gap:0.35rem; font-family:var(--ff-mono); min-width:0; }
 .perps-pos-liq-val { font-size:0.78rem; font-weight:800; color:#9dacbb; white-space:nowrap; line-height:1.2; }
 .perps-pos-tpsl-stack { position:relative; }
@@ -28397,6 +28400,23 @@ function perpsClosedLegHtml(leg) {
     return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(leg.venue, signedSize)}</span><span class="perps-pos-metric-val ${perpsSignedCls(leg.realizedPnl ?? 0)}">${perpsFmtUsd(leg.realizedPnl ?? 0)}</span></div>`;
 }
 
+function perpsClosedPairSessionApr(pair) {
+    if (pair?.sessionApr != null && Number.isFinite(Number(pair.sessionApr))) {
+        return Number(pair.sessionApr);
+    }
+    const margin = Number(pair?.avgNotional) > 0 ? Number(pair.avgNotional) : null;
+    const openTime = Number(pair?.openTime || 0);
+    const closeTime = Number(pair?.closeTime || 0);
+    let days = Number(pair?.sessionDays);
+    if (!Number.isFinite(days) || days <= 0) {
+        if (openTime > 0 && closeTime > openTime) days = (closeTime - openTime) / 86400000;
+        else days = Number(pair?.sessionDayCount || 0) || null;
+    }
+    const netPnl = Number(pair?.netPnl);
+    if (!margin || !days || days <= 0 || !Number.isFinite(netPnl)) return null;
+    return perpsAnnualizeReturnPct(netPnl, margin, days);
+}
+
 function perpsClosedDebugNoticeHtml(debug) {
     if (!debug) return '';
     const byVenue = Object.entries(debug.byVenue || {})
@@ -28436,6 +28456,10 @@ function perpsRenderClosedPositions(closedPairs) {
     el.innerHTML = head + closedPairs.map((p, closedIdx) => {
         const sizeLabel = p.size != null ? `${perpsFmtSize(p.size)} ${p.symbol}` : p.symbol;
         const closedAt = perpsFormatEventTime(p.closeTime);
+        const sessionApr = perpsClosedPairSessionApr(p);
+        const aprSub = sessionApr != null
+            ? `<div class="perps-pos-metric-sub ${perpsSignedCls(sessionApr)}" title="Annualized net PnL over this round's open-to-close session">${perpsFmtPct(sessionApr)} APR</div>`
+            : '';
         return `<div class="perps-pos-card"><div class="perps-pos-row closed">
             <div class="perps-pos-token">
                 <div class="perps-pos-token-row">
@@ -28451,7 +28475,7 @@ function perpsRenderClosedPositions(closedPairs) {
                 ${perpsClosedLegHtml(p.longLeg)}
                 ${perpsClosedLegHtml(p.shortLeg)}
             </div>
-            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</div></div>
+            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(p.netPnl)}">${perpsFmtUsd(p.netPnl)}</div>${aprSub}</div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Close Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(p.closeSlippage)}">${perpsFmtUsd(p.closeSlippage)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(p.funding)}">${perpsFmtUsd(p.funding)}</div></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Fees</div><div class="perps-pos-metric-val neg">-${perpsFmtUsd(Math.abs(p.fees || 0)).replace(/^-/, '')}</div></div>

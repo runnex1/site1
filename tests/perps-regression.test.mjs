@@ -17,6 +17,8 @@ const {
   buildClosedLegsFromExchangeHistory,
   enrichClosedPairsSessionPnl,
   closedPairStableKey,
+  closedPairSessionApr,
+  closedPairSessionDays,
   filterFreshClosedPairs,
   buildDailyFundingSeries,
   trimDailySeriesToLatestSession,
@@ -611,6 +613,25 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   const fresh = filterFreshClosedPairs(rows, [key]);
   assert.equal(fresh.length, 1, 'known closed keys must skip already-saved closed rounds');
   assert.equal(closedPairStableKey(fresh[0]), closedPairStableKey(rows[1]), 'only unseen closed rounds should remain for enrichment');
+}
+
+{
+  const openTime = Date.UTC(2026, 0, 1, 0, 0);
+  const closeTime = Date.UTC(2026, 0, 31, 0, 0);
+  const pair = {
+    symbol: 'BTC',
+    openTime,
+    closeTime,
+    size: 1,
+    avgNotional: 100000,
+    netPnl: 1000,
+    longLeg: { venue: 'hyperliquid', side: 'long', size: 1, avgEntryPx: 100000 },
+    shortLeg: { venue: 'nado', side: 'short', size: 1, avgEntryPx: 100000 },
+  };
+  const days = closedPairSessionDays(pair);
+  assert.ok(days > 29 && days < 32, 'closed session days must use open-to-close duration');
+  const apr = closedPairSessionApr(pair);
+  assert.ok(apr > 10 && apr < 14, 'closed session APR must annualize net PnL over margin and session days');
 }
 
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
@@ -1368,6 +1389,8 @@ assert.match(indexHtml, /perpsPairDisplayLegEntries\(p\)/, 'position cards must 
 assert.match(indexHtml, /perpsVenueWithSideHtml\(entry\.venue, entry\.leg\.size\)/, 'exchange labels must show long/short badges in position cards');
 assert.match(indexHtml, /perpsSetPositionsTab\('closed'/, 'Positions panel must expose a Closed tab');
 assert.match(indexHtml, /function perpsRenderClosedPositions\(closedPairs\)/, 'Closed tab must render fully closed position rounds');
+assert.match(indexHtml, /perpsClosedPairSessionApr\(p\)/, 'Closed tab must show session APR under Net PnL');
+assert.match(perpsJs, /function closedPairSessionApr\(/, 'closed pairs must compute session APR server-side');
 assert.match(indexHtml, /p\.closeSlippage/, 'Closed tab must show closing slippage separately');
 assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response must include closed pairs');
 assert.match(perpsJs, /const CLOSED_PAIR_MATCH_WINDOW_MS = 30 \* 60 \* 1000;/, 'opposite hedge legs must close within 30 minutes');
