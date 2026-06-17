@@ -1760,4 +1760,29 @@ assert.match(perpsJs, /!perpHedgedSizesExactMatch/, 'paired hedges must alert on
 assert.match(indexHtml, /perpsPairHasSizeMismatch/, 'perps UI must detect hedged size mismatch');
 assert.match(indexHtml, /perps-pos-size-warn/, 'perps position cards must show size mismatch warning');
 
+assert.match(indexHtml, /function dashWalletSuffix4\(/, 'order fills must expose wallet suffix helper');
+assert.match(indexHtml, /function orderFilledEventText\(/, 'order fills must share event text formatter');
+assert.match(indexHtml, /dashWalletSuffix4\(g\.wallet\)/, 'order filled text must append wallet suffix');
+assert.match(indexHtml, /function orderFilledPulseItem\(/, 'market pulse must build order filled cards from event log logic');
+assert.match(indexHtml, /function pmPriceMovePulseItem\(/, 'market pulse must build PM price move cards from event log logic');
+assert.doesNotMatch(indexHtml, /\.\.\._predictionWalletCards/, 'market pulse must not merge watched wallet cards');
+assert.match(indexHtml, /CLOUD_SYNC_TIMEOUT_MS = 25000/, 'cloud sync must allow enough time for large portfolio payload');
+assert.match(indexHtml, /slice\(-4\)/, 'wallet suffix must use last 4 wallet characters');
+
+try {
+  const loopResult = await fetchLoopRates(['0x523c4fD04438aAB5e96CADCcDC92c855390Fb459']);
+  for (const p of loopResult.positions || []) {
+    const supplied = Number(p.totalSupplied || 0);
+    const borrowed = Number(p.totalBorrowed || 0);
+    const net = Number(p.netValue || 0);
+    assert.ok(Math.abs(supplied - borrowed - net) < 0.05, `loop netValue must equal supplied-borrowed for ${p.id || p.marketName}`);
+    const merkl = Number(p.merklRewardsUsd || 0);
+    if (merkl > 0.01 && p.economicNetValue != null) {
+      assert.ok(Math.abs(net + merkl - Number(p.economicNetValue)) < 0.05, `economicNetValue must include Merkl for ${p.id || p.marketName}`);
+    }
+  }
+} catch (e) {
+  throw new Error(`loop net value live check failed: ${e.message || e}`);
+}
+
 console.log('PASS: perps accounting and dashboard regression checks');

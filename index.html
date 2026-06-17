@@ -8669,6 +8669,7 @@ let dashboardChartState = { range: '30D', mode: 'usd', log: false, category: 'to
 let dashboardPnlRange = '7D';
 let _editingPegMonitorKey = '';
 let _dashboardDataLoading = false;
+const CLOUD_SYNC_TIMEOUT_MS = 25000;
 let _dashboardFinanceLastRefresh = 0;
 let _dashboardPnlLastRefresh = 0;
 let _dashboardSystemStatusLastFetch = 0;
@@ -8912,12 +8913,29 @@ async function loadData() {
     // 3. Fire-and-forget cloud sync (only when served via http/https)
     if (location.protocol !== 'file:') {
         (async () => {
-            try {
-                const res = await fetch('/api/sync', { signal: AbortSignal.timeout(5000) });
-                if (!res.ok) return;
+            const fetchCloudPortfolio = async () => {
+                const res = await fetch('/api/sync', { signal: AbortSignal.timeout(CLOUD_SYNC_TIMEOUT_MS) });
+                if (!res.ok) throw new Error(`Cloud sync HTTP ${res.status}`);
                 const cloudData = await res.json();
-                if (cloudData && cloudData.result) {
-                    const parsed = JSON.parse(cloudData.result);
+                if (!cloudData?.result) throw new Error('Cloud sync returned no portfolio');
+                return JSON.parse(cloudData.result);
+            };
+            try {
+                let parsed = null;
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    try {
+                        parsed = await fetchCloudPortfolio();
+                        break;
+                    } catch (err) {
+                        if (attempt === 0) {
+                            console.warn('[Vault] Cloud sync retry after:', err.message || err);
+                            await new Promise(r => setTimeout(r, 1200));
+                            continue;
+                        }
+                        throw err;
+                    }
+                }
+                if (parsed) {
 
                     // Extract watcher-specific keys before assigning to data
                     if (parsed._watcherLinks && Array.isArray(parsed._watcherLinks)) {
@@ -9016,10 +9034,23 @@ async function loadData() {
                     if (document.body.dataset.activeTab === 'perps') {
                         perpsEnsureConnected();
                     }
-                    saveData();
-                    updateUI();
+                    try { saveData(); } catch (e) { console.warn('[Vault] saveData after cloud sync failed:', e); }
+                    try { (window.updateUI || updateUI)(); } catch (e) { console.error('[Vault] updateUI after cloud sync failed:', e); }
                 }
-            } catch(e) { /* offline or not deployed */ }
+            } catch (e) {
+                console.warn('[Vault] Cloud portfolio sync failed:', e);
+                const hasLocal = (data.tokens?.length || 0) + (data.protocols?.length || 0) > 0;
+                if (!hasLocal) {
+                    setDashboardSystemStatusTip('Portfolio sync failed\n\n' + (e.message || e) + '\n\nHard refresh (Ctrl+Shift+R) or check your connection.');
+                    const pill = document.getElementById('dashboardSystemStatus');
+                    if (pill) {
+                        const dot = pill.querySelector('span');
+                        pill.textContent = '';
+                        if (dot) pill.appendChild(dot);
+                        pill.append('Sync failed');
+                    }
+                }
+            }
             finally {
                 _dashboardDataLoading = false;
                 updateDashboardDataLoading();
@@ -11866,6 +11897,21 @@ function dashPct(v) {
 function dashShortAddr(v) {
     const s = String(v || '');
     return s.length > 12 ? s.slice(0,6) + '...' + s.slice(-4) : s;
+}
+function dashWalletSuffix4(wallet) {
+    const s = String(wallet || '').trim();
+    if (s.length < 4) return '';
+    const tail = s.slice(-4);
+    return /^[a-zA-Z0-9]{4}$/.test(tail) ? ` (${tail})` : '';
+}
+function orderFilledEventText(g, maxTitle = 55) {
+    const avgPrice = g.totalShares > 0 ? g.totalCost / g.totalShares : 0;
+    const marketTitle = typeof predictionShortTitle === 'function'
+        ? predictionShortTitle(g.title || '', maxTitle)
+        : String(g.title || '').slice(0, maxTitle);
+    return marketTitle + ' — ' + (g.outcome ? g.outcome + ' ' : '') +
+        g.side + ' ' + g.totalShares.toFixed(0) + ' shares @ ' + (avgPrice * 100).toFixed(1) + '¢' +
+        dashWalletSuffix4(g.wallet);
 }
 function defiSectionPositionLabel(sec) {
     const parts = (sec?.positions || []).map(pos => {
@@ -14741,13 +14787,11 @@ async function renderDashboardEventLog() {
             .slice(0, 4)
             .forEach(g => {
                 const isBuy = g.side === 'BUY';
-                const avgPrice = g.totalShares > 0 ? g.totalCost / g.totalShares : 0;
                 const marketTitle = g.title.slice(0, 55);
                 freshItems.push({ kind: 'Order Filled', icon: 'fill',
                     color: isBuy ? 'var(--green)' : 'var(--red)',
                     alpha: isBuy ? 'rgba(34,197,94,0.12)' : 'rgba(244,63,94,0.12)',
-                    text: marketTitle + ' — ' + (g.outcome ? g.outcome + ' ' : '') +
-                          g.side + ' ' + g.totalShares.toFixed(0) + ' shares @ ' + (avgPrice * 100).toFixed(1) + '¢',
+                    text: orderFilledEventText(g),
                     ts: g.latestTs,
                     hover: orderFillHoverText(g),
                     marketTitle,
@@ -17444,7 +17488,6 @@ function renderPredSubtabs() {
 let _predictionIntelSeq = 0;
 let _predictionPulseCards = [];
 let _predictionCarryCards = [];
-let _predictionWalletCards = [];
 let _predictionWalletPulseTimer = null;
 let _predictionMovesLoading = false;
 let _predictionMovesLastRefresh = 0;
@@ -18170,35 +18213,75 @@ function predictionPulseItem(kind, text, opts={}) {
 function predictionRenderMixedRows() {
     const el = document.getElementById('predictionMixedRows');
     if (!el) return;
-    const rows = [..._predictionPulseCards, ..._predictionWalletCards, ..._predictionCarryCards]
+    const rows = [..._predictionPulseCards, ..._predictionCarryCards]
         .filter(item => item && item.html)
         .sort((a,b) => Number(b.ts || 0) - Number(a.ts || 0));
     el.innerHTML = rows.length
         ? rows.slice(0, 7).map(item => item.html).join('')
-        : '<div class="pred-empty">Market pulse is quiet. Sync wallets to populate live moves, fills, and NO APY opportunities.</div>';
+        : '<div class="pred-empty">Market pulse is quiet. Sync Polymarket wallets to populate order fills and price moves.</div>';
+}
+
+function orderFilledPulseItem(g) {
+    const isBuy = g.side === 'BUY';
+    const marketTitle = predictionShortTitle(g.title, 55);
+    return predictionPulseItem('Order Filled', orderFilledEventText(g), {
+        color: isBuy ? 'var(--green)' : 'var(--red)',
+        alpha: isBuy ? 'rgba(34,197,94,0.12)' : 'rgba(244,63,94,0.12)',
+        icon: 'fill',
+        ts: g.latestTs,
+        hover: orderFillHoverText(g),
+        url: g.marketUrl || dashPolymarketMarketUrl(g),
+        marketTitle,
+    });
+}
+
+function pmPriceMovePulseItem(m) {
+    const up = Number(m?.pctChange || 0) >= 0;
+    const marketTitle = (m.title || '').slice(0, 55);
+    return predictionPulseItem('PM Price Move', dashPmPriceMoveText(m, 55), {
+        color: up ? 'var(--green)' : 'var(--red)',
+        alpha: up ? 'rgba(34,197,94,0.12)' : 'rgba(244,63,94,0.12)',
+        icon: up ? 'up' : 'down',
+        ts: Date.now() - 15 * 60000,
+        marketTitle,
+        url: dashPolymarketMarketUrl(m),
+    });
 }
 
 function predictionRenderPulse() {
     const el = document.getElementById('predictionMixedRows');
     if (!el) return;
-    if (location.protocol !== 'file:' && !_serverEventLogLoaded && !_serverEventLogLoading) {
-        refreshServerEventLog(true).then(() => predictionRenderPulse());
+    const wallets = (data || {}).polymarketWallets || [];
+    const rows = [];
+
+    const fillKey = polyFilledWalletKey(wallets);
+    if (wallets.length > 0 && (_rawPolyFilled === null || _rawPolyFilledKey !== fillKey)) {
+        ensurePolyFilledOrders(wallets)
+            .then(() => {
+                predictionRenderPulse();
+                if (typeof renderDashboardEventLog === 'function') renderDashboardEventLog();
+            })
+            .catch(() => predictionRenderPulse());
+    } else if (Array.isArray(_rawPolyFilled)) {
+        groupFilledTradesByWindow(_rawPolyFilled || [])
+            .slice(0, 4)
+            .forEach(g => rows.push(orderFilledPulseItem(g)));
     }
-    const history = Array.isArray(_serverEventHistory) ? _evDedupeItems(_serverEventHistory) : [];
-    const pmKinds = /PM|Polymarket|Order Filled|Market|Wallet|Position Expiring/i;
-    const cutoff = Date.now() - (48 * 3600 * 1000);
-    const rows = history
-        .filter(e => pmKinds.test(`${e.kind || ''} ${e.text || ''}`))
-        .filter(e => Number(e.ts || 0) >= cutoff)
-        .sort((a,b) => Number(b.ts || 0) - Number(a.ts || 0))
-        .slice(0, 7)
-        .map(e => predictionPulseItem(e.kind || 'Market Pulse', e.text || 'Market update', {
-            color: e.color || 'var(--teal)',
-            alpha: e.alpha || 'rgba(0,212,170,0.10)',
-            icon: e.icon || 'fill',
-            ts: e.ts,
-            hover: e.hover || ''
-        }));
+
+    if (_rawPolyMovers === null && wallets.length > 0) {
+        _rawPolyMovers = [];
+        (async () => {
+            try {
+                _rawPolyMovers = typeof fetchServerMarketMoves === 'function'
+                    ? await fetchServerMarketMoves(wallets)
+                    : await fetchMovers(wallets);
+                predictionRenderPulse();
+                if (typeof renderDashboardEventLog === 'function') renderDashboardEventLog();
+            } catch (e) { _rawPolyMovers = null; }
+        })();
+    } else if (Array.isArray(_rawPolyMovers)) {
+        (_rawPolyMovers || []).slice(0, 4).forEach(m => rows.push(pmPriceMovePulseItem(m)));
+    }
 
     if (!rows.length) {
         const biggest = predictionAllPositions().slice().sort((a,b) => Math.abs(predictionPositionPnl(b)) - Math.abs(predictionPositionPnl(a))).slice(0, 3);
@@ -18214,7 +18297,8 @@ function predictionRenderPulse() {
             }));
         });
     }
-    _predictionPulseCards = rows;
+
+    _predictionPulseCards = rows.sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0));
     predictionRenderMixedRows();
 }
 
@@ -18267,49 +18351,23 @@ function predictionRenderFilledGroups(groups) {
     const smartEl = document.getElementById('predictionSmartMoneyRows');
     if (!groups.length) {
         const empty = '<div class="pred-empty">No recent wallet trades found for watched wallets.</div>';
-        _predictionWalletCards = [];
-        predictionRenderMixedRows();
         if (smartEl) smartEl.innerHTML = empty;
         return;
     }
-    _predictionWalletCards = groups.slice(0, 3).map(g => {
-        const isBuy = g.side === 'BUY';
-        const avgPrice = g.totalShares > 0 ? g.totalCost / g.totalShares : 0;
-        const marketTitle = predictionShortTitle(g.title, 55);
-        const text = marketTitle + (g.outcome ? ' — ' + g.outcome + ' ' : ' ') +
-            g.side + ' ' + g.totalShares.toFixed(0) + ' shares @ ' + (avgPrice * 100).toFixed(1) + '¢';
-        return predictionPulseItem('Order Filled', text, {
-            color: isBuy ? 'var(--green)' : 'var(--red)',
-            alpha: isBuy ? 'rgba(34,197,94,0.12)' : 'rgba(244,63,94,0.12)',
-            icon: 'fill',
-            meta: dashEsc(dashShortAddr(g.wallet || '')),
-            ts: g.latestTs,
-            hover: orderFillHoverText(g),
-            url: g.marketUrl || dashPolymarketMarketUrl(g)
-        });
-    });
-    predictionRenderMixedRows();
     if (!smartEl) return;
     smartEl.innerHTML = groups.slice(0, 6).map(g => {
-        const isBuy = g.side === 'BUY';
         const avgPrice = g.totalShares > 0 ? g.totalCost / g.totalShares : 0;
         const ts = g.latestTs || 0;
         const multiOrder = g.orders.length > 1;
+        const walletSuffix = dashWalletSuffix4(g.wallet || '');
         return `<div class="pred-smart-row" title="${dashEsc(orderFillHoverText(g))}">
-          <div class="pred-smart-title">${dashEsc(dashShortAddr(g.wallet || 'Watched wallet'))} ${dashEsc(String(g.side || 'traded').toLowerCase())} ${g.totalShares.toFixed(0)} shares @ ${(avgPrice * 100).toFixed(1)}¢${multiOrder ? ' (' + g.orders.length + ' fills)' : ''}</div>
+          <div class="pred-smart-title">${dashEsc(dashShortAddr(g.wallet || 'Watched wallet'))} ${dashEsc(String(g.side || 'traded').toLowerCase())} ${g.totalShares.toFixed(0)} shares @ ${(avgPrice * 100).toFixed(1)}¢${walletSuffix}${multiOrder ? ' (' + g.orders.length + ' fills)' : ''}</div>
           <div class="pred-smart-meta">${dashEsc(predictionShortTitle(g.title, 68))}${g.outcome ? ' — ' + dashEsc(g.outcome) : ''} — ${ts ? dashEsc(_evAbsTime(ts)) : 'recent'}</div>
         </div>`;
     }).join('');
 }
 
 function predictionRenderWalletError(message='Could not load recent wallet trades.') {
-    _predictionWalletCards = [predictionPulseItem('Wallet Activity Error', message, {
-        color: 'var(--amber)',
-        alpha: 'rgba(245,158,11,0.12)',
-        icon: 'hourglass',
-        ts: Date.now()
-    })];
-    predictionRenderMixedRows();
     const smartEl = document.getElementById('predictionSmartMoneyRows');
     if (smartEl) smartEl.innerHTML = `<div class="pred-empty">${dashEsc(message)}</div>`;
 }
@@ -18392,8 +18450,6 @@ async function predictionRenderActivity(seq, opts={}) {
     const wallets = predictionWatchedWalletAddresses();
     if (!wallets.length) {
         const empty = '<div class="pred-empty">Add Polymarket or watcher wallets to track recent bets.</div>';
-        _predictionWalletCards = [];
-        predictionRenderMixedRows();
         if (smartEl) smartEl.innerHTML = empty;
         return;
     }
@@ -18406,15 +18462,8 @@ async function predictionRenderActivity(seq, opts={}) {
         if (cacheFresh) return;
     }
     if (_rawPolyFilledPromise && _rawPolyFilledKey === key && !opts.force) return;
-    if (!hasCache) {
-        _predictionWalletCards = [predictionPulseItem('Watched Wallets', 'Loading recent watched wallet trades...', {
-            color: 'var(--sky)',
-            alpha: 'rgba(56,189,248,0.10)',
-            icon: 'fill',
-            ts: Date.now()
-        })];
-        predictionRenderMixedRows();
-        if (smartEl) smartEl.innerHTML = '<div class="pred-empty">Loading recent wallet trades...</div>';
+    if (!hasCache && smartEl) {
+        smartEl.innerHTML = '<div class="pred-empty">Loading recent wallet trades...</div>';
     }
     if (location.protocol !== 'file:') {
         refreshServerEventLog(!!opts.force).catch(() => {});
@@ -18445,7 +18494,6 @@ function renderPredictionIntelligence() {
 
 function refreshPredictionIntelligence() {
     invalidatePolyFilledOrders();
-    if (location.protocol !== 'file:') refreshServerEventLog(true).then(() => predictionRenderPulse());
     renderPredictionIntelligence();
 }
 
