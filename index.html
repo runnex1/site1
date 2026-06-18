@@ -979,9 +979,9 @@ body[data-active-tab="perps"] .topbar,
 .perps-config input.perps-masked { letter-spacing:0.08em; color:#9dacbb; }
 .perps-pnl-chart.hoverable, .perps-fund-chart-wrap { cursor:crosshair; }
 .perps-chart-tooltip {
-  position:absolute; pointer-events:none; z-index:6;
-  padding:0.45rem 0.55rem; border-radius:8px;
-  background:rgba(8,16,22,0.96); border:1px solid rgba(89,240,200,0.22);
+  position:fixed; pointer-events:none; z-index:50;
+  padding:0.45rem 0.55rem; border-radius:8px; white-space:nowrap;
+  background:rgba(8,16,22,0.98); border:1px solid rgba(89,240,200,0.22);
   font-family:var(--ff-mono); font-size:0.62rem; color:var(--t1);
   box-shadow:0 8px 24px rgba(0,0,0,0.35); display:none;
 }
@@ -27382,11 +27382,8 @@ function perpsBindEquityChartHover() {
             const d = Math.abs(p.x - x);
             if (d < bestDist) { bestDist = d; hit = p; }
         }
-        tip.style.display = 'block';
-        tip.style.left = `${ev.clientX - wrap.getBoundingClientRect().left + 12}px`;
-        tip.style.top = `${ev.clientY - wrap.getBoundingClientRect().top - 40}px`;
-        const bucketLabel = hit.bucket === 'live' ? 'Live' : String(hit.bucket || '').replace('T', ' · ') + ':00 UTC';
         tip.innerHTML = `<div style="color:#9dacbb;margin-bottom:0.15rem;">${dashEsc(bucketLabel)}</div><div style="font-weight:800;color:#c4b5fd;">${perpsFmtUsd(hit.val)}</div>`;
+        perpsPositionFundChartTooltip(ev, tip);
         if (dot) {
             dot.style.display = '';
             dot.setAttribute('cx', String(hit.x));
