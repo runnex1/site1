@@ -1409,6 +1409,83 @@ assert.match(readFileSync(join(ROOT, 'api', 'prices.js'), 'utf8'), /fetchCoinGec
   assert.equal(sampled.record.equitySampleMode, 'concurrent_balance_only', 'snapshot must identify balance-only sampling');
 }
 
+{
+  function parseBucketTime(key) {
+    if (!key) return 0;
+    if (String(key).includes('T')) return Date.parse(`${key}:00:00.000Z`) || 0;
+    return Date.parse(key) || 0;
+  }
+  function equityInterpolateAtTime(points, timeMs) {
+    const sorted = points
+      .map(p => ({ ...p, chartTime: parseBucketTime(p.bucket) || p.time || 0 }))
+      .filter(p => Number.isFinite(p.totalEquity) && p.chartTime)
+      .sort((a, b) => a.chartTime - b.chartTime);
+    let before = null;
+    let after = null;
+    for (const p of sorted) {
+      if (p.chartTime <= timeMs) before = p;
+      if (p.chartTime >= timeMs && !after) after = p;
+    }
+    if (before && after && before.chartTime !== after.chartTime) {
+      const w = (timeMs - before.chartTime) / (after.chartTime - before.chartTime);
+      return before.totalEquity + w * (after.totalEquity - before.totalEquity);
+    }
+    return (after || before)?.totalEquity ?? null;
+  }
+  function hlStrategyPayments(payments) {
+    return (payments || []).filter(p => p.kind === 'deposit' || p.kind === 'withdraw');
+  }
+  function netDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = [], extendedPayments = []) {
+    const hlP = hlStrategyPayments(hlPayments).filter(p => p.time <= timeMs);
+    const nadoP = (nadoPayments || []).filter(p => p.time <= timeMs);
+    const grvtP = (grvtPayments || []).filter(p => p.time <= timeMs);
+    const extendedP = (extendedPayments || []).filter(p => p.time <= timeMs);
+    return computeCombinedNetDeposits(
+      { payments: hlP },
+      { payments: nadoP },
+      { payments: grvtP },
+      { payments: extendedP },
+    ).combinedNetDeposits;
+  }
+  function adjustedEquityAtPoint(point, data) {
+    const time = parseBucketTime(point.bucket) || point.time || 0;
+    const cf = data.capitalFlows || {};
+    const net = netDepositsAtTime(cf.hl?.payments, cf.nado?.payments, time, cf.grvt?.payments, cf.extended?.payments);
+    return point.totalEquity - net;
+  }
+  function sessionBaselineAdjustedEquity(data, sessionMs, points) {
+    const cf = data.capitalFlows || {};
+    const equityAtSession = equityInterpolateAtTime(points, sessionMs);
+    const netAtSession = netDepositsAtTime(cf.hl?.payments, cf.nado?.payments, sessionMs, cf.grvt?.payments, cf.extended?.payments);
+    return equityAtSession - netAtSession;
+  }
+
+  const t0 = Date.UTC(2026, 5, 1, 8);
+  const t1 = Date.UTC(2026, 5, 5, 12);
+  const t3 = Date.UTC(2026, 5, 7, 8);
+  const points = [
+    { bucket: '2026-06-01T08', time: t0, totalEquity: 10000 },
+    { bucket: '2026-06-05T12', time: t1, totalEquity: 15000 },
+    { bucket: '2026-06-07T08', time: t3, totalEquity: 15500 },
+  ];
+  const data = {
+    capitalFlows: {
+      hl: {
+        payments: [
+          { time: t0, kind: 'deposit', usdc: 10000 },
+          { time: t1, kind: 'deposit', usdc: 5000 },
+        ],
+      },
+      nado: { payments: [] },
+    },
+  };
+  const baseline = sessionBaselineAdjustedEquity(data, t1, points);
+  const pnlAtEnd = adjustedEquityAtPoint(points[2], data) - baseline;
+  assert.ok(Math.abs(baseline) < 1, 'session baseline should be near zero right after a deposit');
+  assert.ok(Math.abs(pnlAtEnd - 500) < 1, 'session PnL should track trading gains after the last deposit');
+  assert.ok(points.every(p => p.totalEquity > 0), 'all-time chart must keep positive equity values');
+}
+
 assert.match(indexHtml, /if \(store\[bucket\]\) return false;/, 'browser snapshots must be append-only within each 4h bucket');
 assert.match(indexHtml, /if \(!perpsIsEquitySnapshotEligible\(data\)\) return false;/, 'browser snapshots must reject incomplete reads');
 assert.match(aaveProxyJs, /portfolio\?\.perpsArb/, 'cron snapshots must recover wallet config from the saved portfolio');
@@ -1426,7 +1503,10 @@ assert.match(indexHtml, /<g id="perpsEquityPoints"><\/g>/, 'equity chart must re
 assert.match(indexHtml, /data-perps-equity-mode="session"/, 'equity chart must default to last-session mode');
 assert.match(indexHtml, /function perpsLastCapitalEventMs\(/, 'equity chart session mode must detect last capital flow');
 assert.match(indexHtml, /function perpsApplyEquityChartMode\(/, 'equity chart must map snapshots to session PnL');
-assert.match(indexHtml, /perpsFmtUsd\(chart\.total\)/, 'equity chart badge must expose session/total PnL');
+assert.match(indexHtml, /function perpsSessionBaselineAdjustedEquity\(/, 'session chart must baseline PnL at the last capital event');
+assert.match(indexHtml, /chartKind: 'equity'/, 'all-time chart must plot portfolio equity');
+assert.match(indexHtml, /chartKind: 'pnl'/, 'last-session chart must plot PnL values');
+assert.match(indexHtml, /latest \$\{perpsFmtUsd\(chart\.plot\.at\(-1\)\?\.val\)\}/, 'all-time badge must show latest equity');
 assert.match(indexHtml, /perpsPairDisplayLegEntries\(p\)/, 'position cards must order exchange labels with the long leg first');
 assert.match(indexHtml, /perpsVenueWithSideHtml\(entry\.venue, entry\.leg\.size\)/, 'exchange labels must show long/short badges in position cards');
 assert.match(indexHtml, /perpsSetPositionsTab\('closed'/, 'Positions panel must expose a Closed tab');

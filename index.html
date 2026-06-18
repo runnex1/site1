@@ -27222,37 +27222,95 @@ function perpsPointAdjustedEquity(point, data) {
     return total - netDeposits;
 }
 
-function perpsApplyEquityChartMode(series, data, mode) {
-    let points = (series?.points || []).map(p => ({
-        ...p,
-        adjustedEquity: perpsPointAdjustedEquity(p, data),
-    }));
-    const sessionMs = perpsLastCapitalEventMs(data);
-    const chartMode = mode === 'all' ? 'all' : 'session';
-    if (chartMode === 'session' && sessionMs > 0) {
-        points = points.filter(p => (perpsParseBucketTime(p.bucket) || p.time || 0) >= sessionMs);
+function perpsCapitalFlowGroups(data) {
+    const cf = data?.capitalFlows || {};
+    return {
+        hl: cf.hl?.payments || [],
+        nado: cf.nado?.payments || [],
+        grvt: cf.grvt?.payments || [],
+        extended: cf.extended?.payments || [],
+    };
+}
+
+function perpsEquityInterpolateAtTime(points, timeMs) {
+    const sorted = (points || [])
+        .map(p => ({
+            ...p,
+            chartTime: perpsParseBucketTime(p.bucket) || p.time || 0,
+        }))
+        .filter(p => Number.isFinite(p.totalEquity) && p.chartTime)
+        .sort((a, b) => a.chartTime - b.chartTime);
+    if (!sorted.length) return null;
+    let before = null;
+    let after = null;
+    for (const p of sorted) {
+        if (p.chartTime <= timeMs) before = p;
+        if (p.chartTime >= timeMs && !after) after = p;
     }
-    if (!points.length) {
+    if (before && after && before.chartTime !== after.chartTime) {
+        const w = (timeMs - before.chartTime) / (after.chartTime - before.chartTime);
+        return before.totalEquity + w * (after.totalEquity - before.totalEquity);
+    }
+    return (after || before).totalEquity;
+}
+
+function perpsSessionBaselineAdjustedEquity(data, sessionMs, points) {
+    const g = perpsCapitalFlowGroups(data);
+    const equityAtSession = perpsEquityInterpolateAtTime(points, sessionMs);
+    if (!Number.isFinite(equityAtSession)) {
+        const firstAfter = (points || []).find(p => (perpsParseBucketTime(p.bucket) || p.time || 0) >= sessionMs);
+        return firstAfter ? perpsPointAdjustedEquity(firstAfter, data) : 0;
+    }
+    const netAtSession = perpsNetDepositsAtTime(g.hl, g.nado, sessionMs, g.grvt, g.extended);
+    return equityAtSession - netAtSession;
+}
+
+function perpsApplyEquityChartMode(series, data, mode) {
+    const allPoints = (series?.points || []).slice().sort((a, b) => {
+        const ta = perpsParseBucketTime(a.bucket) || a.time || 0;
+        const tb = perpsParseBucketTime(b.bucket) || b.time || 0;
+        return ta - tb;
+    });
+    const chartMode = mode === 'all' ? 'all' : 'session';
+
+    if (chartMode === 'all') {
         return {
             ...series,
-            points: [],
+            points: allPoints.map(p => ({
+                ...p,
+                chartValue: p.totalEquity,
+                chartKind: 'equity',
+            })),
             chartMode,
-            sessionMs,
-            sessionPnl: 0,
-            pointCount: 0,
+            chartKind: 'equity',
+            pointCount: allPoints.length,
         };
     }
-    const baselineAdj = points[0].adjustedEquity ?? 0;
-    const withPnl = points.map(p => ({
-        ...p,
-        pnl: (p.adjustedEquity ?? 0) - baselineAdj,
-    }));
+
+    const sessionMs = perpsLastCapitalEventMs(data);
+    const sessionBaseline = sessionMs > 0
+        ? perpsSessionBaselineAdjustedEquity(data, sessionMs, allPoints)
+        : (allPoints[0] ? perpsPointAdjustedEquity(allPoints[0], data) : 0);
+    let sessionPoints = sessionMs > 0
+        ? allPoints.filter(p => (perpsParseBucketTime(p.bucket) || p.time || 0) >= sessionMs)
+        : allPoints.slice();
+    if (!sessionPoints.length && allPoints.length) {
+        sessionPoints = [allPoints[allPoints.length - 1]];
+    }
+
+    const withPnl = sessionPoints.map(p => {
+        const adj = perpsPointAdjustedEquity(p, data);
+        const pnl = adj - sessionBaseline;
+        return { ...p, pnl, chartValue: pnl, chartKind: 'pnl' };
+    });
+
     return {
         ...series,
         points: withPnl,
-        chartMode,
+        chartMode: 'session',
+        chartKind: 'pnl',
         sessionMs,
-        baselineAdjustedEquity: baselineAdj,
+        sessionBaseline,
         sessionPnl: withPnl.at(-1)?.pnl ?? 0,
         pointCount: withPnl.length,
     };
@@ -27316,52 +27374,66 @@ function perpsBuildEquitySeries(data) {
 
 function perpsBuildEquityChart(equitySeries) {
     const pts = Array.isArray(equitySeries?.points) ? equitySeries.points : [];
+    const isPnl = equitySeries?.chartKind === 'pnl';
     const width = PERPS_CHART_WIDTH;
     const height = 160;
     const padX = 48;
     const padY = 16;
     const chartW = width - padX - 12;
     const chartH = height - padY * 2;
-    const sessionPnl = equitySeries?.sessionPnl ?? pts.at(-1)?.pnl ?? 0;
+    const totalNow = isPnl
+        ? (equitySeries?.sessionPnl ?? pts.at(-1)?.chartValue ?? 0)
+        : (equitySeries?.totalEquityNow ?? pts.at(-1)?.totalEquity ?? 0);
 
     if (pts.length < 2) {
         const y = padY + chartH / 2;
-        const lonePnl = pts[0]?.pnl ?? sessionPnl ?? 0;
+        const loneVal = pts.length
+            ? (pts[0].chartValue ?? (isPnl ? 0 : pts[0].totalEquity) ?? totalNow)
+            : totalNow;
         return {
             line: `M ${padX} ${y.toFixed(1)} L ${PERPS_CHART_WIDTH - 12} ${y.toFixed(1)}`,
             area: '',
-            total: sessionPnl,
+            total: totalNow,
             insufficient: true,
-            plot: pts.length ? [{ x: padX, y, val: lonePnl, pnl: lonePnl, bucket: pts[0].bucket }] : [],
-            stats: [
-                { label: equitySeries?.chartMode === 'session' ? 'Session PnL' : 'Total PnL', value: perpsFmtUsd(sessionPnl) },
+            isPnl,
+            plot: pts.length ? [{ x: padX, y, val: loneVal, pnl: isPnl ? loneVal : undefined, bucket: pts[0].bucket }] : [],
+            stats: isPnl ? [
+                { label: 'Session PnL', value: perpsFmtUsd(totalNow) },
+                { label: 'Snapshots', value: String(pts.length) },
+                { label: 'Next point', value: 'Every 4h' },
+            ] : [
+                { label: 'Current equity', value: perpsFmtUsd(totalNow) },
                 { label: 'Snapshots', value: String(pts.length) },
                 { label: 'Next point', value: 'Every 4h' },
             ],
         };
     }
 
-    const values = pts.map(p => p.pnl ?? 0);
-    const min = Math.min(...values, 0);
-    const max = Math.max(...values, 0);
+    const values = pts.map(p => p.chartValue ?? (isPnl ? (p.pnl ?? 0) : p.totalEquity) ?? 0);
+    const min = isPnl ? Math.min(...values, 0) : Math.min(...values);
+    const max = isPnl ? Math.max(...values, 0) : Math.max(...values);
     const span = Math.max(max - min, 1);
     const plot = pts.map((p, i) => {
         const x = padX + (i / Math.max(pts.length - 1, 1)) * chartW;
-        const pnl = p.pnl ?? 0;
-        const y = padY + ((max - pnl) / span) * chartH;
-        return { x, y, val: pnl, pnl, bucket: p.bucket };
+        const val = p.chartValue ?? (isPnl ? (p.pnl ?? 0) : p.totalEquity);
+        const y = padY + ((max - val) / span) * chartH;
+        return { x, y, val, pnl: isPnl ? val : undefined, bucket: p.bucket };
     });
     const linePath = plot.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
     const areaPath = `M ${padX} ${height - padY} L ${linePath.slice(2)} L ${PERPS_CHART_WIDTH - 12} ${height - padY} Z`;
-    const modeLabel = equitySeries?.chartMode === 'session' ? 'Session PnL' : 'Total PnL';
     return {
         line: linePath,
         area: areaPath,
-        total: sessionPnl,
+        total: totalNow,
         insufficient: false,
+        isPnl,
         plot,
-        stats: [
-            { label: modeLabel, value: perpsFmtUsd(sessionPnl) },
+        stats: isPnl ? [
+            { label: 'Session PnL', value: perpsFmtUsd(totalNow) },
+            { label: 'Range high', value: perpsFmtUsd(max) },
+            { label: '4h points', value: String(pts.length) },
+        ] : [
+            { label: 'Current equity', value: perpsFmtUsd(totalNow) },
             { label: 'Range high', value: perpsFmtUsd(max) },
             { label: '4h points', value: String(pts.length) },
         ],
@@ -27395,9 +27467,13 @@ function perpsBindEquityChartHover() {
         tip.style.left = `${ev.clientX - wrap.getBoundingClientRect().left + 12}px`;
         tip.style.top = `${ev.clientY - wrap.getBoundingClientRect().top - 40}px`;
         const bucketLabel = hit.bucket === 'live' ? 'Live' : String(hit.bucket || '').replace('T', ' · ') + ':00 UTC';
-        const pnl = hit.pnl ?? hit.val ?? 0;
-        const pnlColor = pnl >= 0 ? '#55d66f' : '#ff5c7a';
-        tip.innerHTML = `<div style="color:#9dacbb;margin-bottom:0.15rem;">${dashEsc(bucketLabel)}</div><div style="font-weight:800;color:${pnlColor};">${perpsFmtUsd(pnl)}</div>`;
+        if (live.isPnl) {
+            const pnl = hit.pnl ?? hit.val ?? 0;
+            const pnlColor = pnl >= 0 ? '#55d66f' : '#ff5c7a';
+            tip.innerHTML = `<div style="color:#9dacbb;margin-bottom:0.15rem;">${dashEsc(bucketLabel)}</div><div style="font-weight:800;color:${pnlColor};">PnL ${perpsFmtUsd(pnl)}</div>`;
+        } else {
+            tip.innerHTML = `<div style="color:#9dacbb;margin-bottom:0.15rem;">${dashEsc(bucketLabel)}</div><div style="font-weight:800;color:#c4b5fd;">${perpsFmtUsd(hit.val)}</div>`;
+        }
         if (dot) {
             dot.style.display = '';
             dot.setAttribute('cx', String(hit.x));
@@ -27423,21 +27499,29 @@ function perpsRenderEquityChart(data) {
     if (areaEl) areaEl.setAttribute('d', chart.area || '');
     if (pointsEl) {
         pointsEl.innerHTML = chart.plot.map(p => {
-            const pnl = p.pnl ?? p.val ?? 0;
-            return `<circle class="perps-equity-point" r="2.8" cx="${p.x}" cy="${p.y}"><title>${dashEsc(String(p.bucket || '').replace('T', ' · ') + ':00 UTC · PnL ' + perpsFmtUsd(pnl))}</title></circle>`;
+            const label = chart.isPnl
+                ? `PnL ${perpsFmtUsd(p.pnl ?? p.val ?? 0)}`
+                : perpsFmtUsd(p.val);
+            return `<circle class="perps-equity-point" r="2.8" cx="${p.x}" cy="${p.y}"><title>${dashEsc(String(p.bucket || '').replace('T', ' · ') + ':00 UTC · ' + label)}</title></circle>`;
         }).join('');
     }
     if (badge) {
-        const pnlLabel = perpsFmtUsd(chart.total);
-        if (chart.insufficient) {
-            badge.textContent = equitySeries.chartMode === 'session' && equitySeries.sessionMs
-                ? `session · ${pnlLabel}`
-                : `live · ${pnlLabel}`;
+        if (equitySeries.chartKind === 'pnl') {
+            const pnlLabel = perpsFmtUsd(chart.total);
+            if (chart.insufficient) {
+                badge.textContent = equitySeries.sessionMs
+                    ? `session · ${pnlLabel}`
+                    : `live · ${pnlLabel}`;
+            } else {
+                const since = equitySeries.sessionMs
+                    ? `since ${new Date(equitySeries.sessionMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · `
+                    : '';
+                badge.textContent = `${since}${equitySeries.pointCount} pts · ${pnlLabel}`;
+            }
+        } else if (chart.insufficient) {
+            badge.textContent = `live · ${perpsFmtUsd(chart.total)}`;
         } else {
-            const since = equitySeries.chartMode === 'session' && equitySeries.sessionMs
-                ? `since ${new Date(equitySeries.sessionMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · `
-                : '';
-            badge.textContent = `${since}${equitySeries.pointCount} pts · ${pnlLabel}`;
+            badge.textContent = `${equitySeries.pointCount} pts · latest ${perpsFmtUsd(chart.plot.at(-1)?.val)}`;
         }
     }
     _perpsEquityChartState = chart;
