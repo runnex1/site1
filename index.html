@@ -8596,6 +8596,14 @@ let _predictionPnlChartCache = { key: '', range: '', ts: 0, points: [], error: '
 const PREDICTION_WALLET_PULSE_MS = 5 * 60 * 1000;
 const PREDICTION_AGGREGATE_PNL_MS = 5 * 60 * 1000;
 const PREDICTION_PNL_CHART_MS = 2 * 60 * 1000;
+const STABLECOIN_MONITOR_PRICE_CACHE = {};
+const STABLECOIN_MONITOR_REFRESH_MS = 30 * 60 * 1000;
+let _stablecoinMonitorPricePromise = null;
+let _stablecoinMonitorPriceFailed = false;
+let _stablecoinMonitorLastFetchAt = 0;
+let _stablecoinMonitorRefreshTimer = null;
+let _stablecoinMonitorOnDefiTab = false;
+let _geckoPickResolver = null;
 function normalizePortfolioData() {
     if (!data || typeof data !== 'object') {
         data = { tokens: [], protocols: [], etfs: [], predictionMarkets: [], opinionMarkets: [], polymarketWallets: [], defiPanelNotes: [], stablecoinMonitors: [], etfRealizedPnl: 0 };
@@ -9187,6 +9195,7 @@ async function loadData() {
     } catch(e) { console.warn('localStorage load failed:', e); }
     data.polymarketWallets = loadStoredPolymarketWallets();
     persistPolymarketWalletsLocal();
+    try { hydrateSessionPriceCaches(); } catch (e) { console.warn('[Vault] session price cache hydrate failed:', e); }
 
     // 2. Paint cached portfolio BEFORE tab/watcher/perps setup (refresh must not blank on throw)
     paintPortfolioFromLocal();
@@ -9575,8 +9584,10 @@ function persistLivePricesCache() {
 function protocolSymbolsMissingLivePrices() {
     return collectDeFiPriceSymbols().some(sym => !Number.isFinite(livePrices[sym]) || livePrices[sym] <= 0);
 }
-hydrateLivePricesCache();
-hydrateStablecoinMonitorCacheFromLivePrices();
+function hydrateSessionPriceCaches() {
+    try { hydrateLivePricesCache(); } catch (e) { console.warn('[Vault] live prices cache:', e); }
+    try { hydrateStablecoinMonitorCacheFromLivePrices(); } catch (e) { console.warn('[Vault] stablecoin cache:', e); }
+}
 let _protocolSelectedSnapshotTs = null; // null = latest snapshot baseline for APR
 let _protocolSnapshotPickerOpen = false;
 
@@ -10139,13 +10150,22 @@ function switchTab(tab, opts = {}) {
     if (_pc) _pc.classList.toggle('tab-perps', tab === 'perps');
     if (_pc) _pc.classList.toggle('tab-news', tab === 'news');
     if (tab === 'terminal') { terminalRenderAlerts(); }
-    if (tab === 'loops') { loopsLoadSnapshotsLocal(); renderLoops(); maybeAutoSyncLoopPositions(); loopsEnsureSnapshotsHydrated({ force: true }); }
+    if (tab === 'loops') {
+        try {
+            loopsLoadSnapshotsLocal();
+            renderLoops();
+            maybeAutoSyncLoopPositions();
+            loopsEnsureSnapshotsHydrated({ force: true });
+        } catch (e) { console.error('[Loops tab]', e); }
+    }
     if (tab === 'prediction') {
-        renderPredSubtabs();
-        renderPredictionMarkets();
-        renderOpinionMarkets();
-        renderPredictionIntelligence();
-        maybeAutoSyncPolymarketPositions();
+        try {
+            renderPredSubtabs();
+            renderPredictionMarkets();
+            renderOpinionMarkets();
+            renderPredictionIntelligence();
+            maybeAutoSyncPolymarketPositions();
+        } catch (e) { console.error('[Prediction tab]', e); }
     } else {
         // Tear down prediction subtabs so they never linger on other tabs
         const c = document.getElementById('predSubContainer');
@@ -12187,15 +12207,6 @@ function defiAlertPositionsHtml(items, level) {
         <div class="defi-mini-sub" style="margin-top:0.12rem">${dashEsc(item.position)}</div>
       </div>`).join('');
 }
-const STABLECOIN_MONITOR_PRICE_CACHE = {};
-const STABLECOIN_MONITOR_REFRESH_MS = 30 * 60 * 1000;
-let _stablecoinMonitorPricePromise = null;
-let _stablecoinMonitorPriceFailed = false;
-let _stablecoinMonitorLastFetchAt = 0;
-let _stablecoinMonitorRefreshTimer = null;
-let _stablecoinMonitorOnDefiTab = false;
-let _geckoPickResolver = null;
-
 function syncStablecoinPriceCache(symbol, geckoId, usd) {
     const sym = String(symbol || '').trim().toUpperCase();
     const id = String(geckoId || '').trim().toLowerCase();
