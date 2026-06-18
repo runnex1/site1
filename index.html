@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Vault — Portfolio Intelligence</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="lib/defi-pnl.js"></script>
@@ -9131,6 +9134,14 @@ function markPortfolioSyncFailed(err) {
     }
 }
 
+function paintPortfolioFromLocal() {
+    if (!portfolioHasEntries()) return false;
+    _dashboardDataLoading = false;
+    updateDashboardDataLoading();
+    try { invokeUpdateUI(); } catch (e) { console.error('[Vault] updateUI paint failed:', e); }
+    return true;
+}
+
 async function loadData() {
     const hasLocalPortfolio = (() => {
         try {
@@ -9158,35 +9169,44 @@ async function loadData() {
     data.polymarketWallets = loadStoredPolymarketWallets();
     persistPolymarketWalletsLocal();
 
-    loadOpportunityMonitors();
+    // 2. Paint cached portfolio BEFORE tab/watcher/perps setup (refresh must not blank on throw)
+    paintPortfolioFromLocal();
+    updateLogoStatus('ready', 'Ready');
 
-    // Perps wallet hydrate must not block first paint — network can hang for seconds
-    try {
-        perpsImportConfigFromPortfolio();
-        perpsLoadConfig();
-    } catch (e) {}
     const perpsBootPromise = (location.protocol !== 'file:'
         ? perpsBootstrapWallet().then(() => { perpsLoadConfig(); }).catch(() => {})
         : Promise.resolve());
 
-    loadWatchlist();
-    try { loadWatcherLinks(); } catch (e) { console.warn('[Vault] loadWatcherLinks failed:', e); }
-    try { loadWatcherWallets(); } catch (e) { console.warn('[Vault] loadWatcherWallets failed:', e); }
-    try { loopsHydrateApiStateFromLocal(); } catch (e) { console.warn('[Vault] loops hydrate failed:', e); }
+    try {
+        loadOpportunityMonitors();
+        perpsImportConfigFromPortfolio();
+        perpsLoadConfig();
+        loadWatchlist();
+        loadWatcherLinks();
+        loadWatcherWallets();
+        loopsHydrateApiStateFromLocal();
+    } catch (e) { console.warn('[Vault] aux local load failed:', e); }
 
-    // 2. Restore tab state FIRST (so tab-specific layout CSS is active), then render
-    document.body.dataset.activeTab = initialTab;
-    switchTab(initialTab, { persist: false });
+    // 3. Restore tab state (non-fatal — fall back to overview)
+    try {
+        document.body.dataset.activeTab = initialTab;
+        switchTab(initialTab, { persist: false });
+    } catch (e) {
+        console.warn('[Vault] switchTab failed:', e);
+        try {
+            document.body.dataset.activeTab = 'overview';
+            switchTab('overview', { persist: false });
+        } catch (e2) { console.warn('[Vault] overview fallback failed:', e2); }
+    }
+    paintPortfolioFromLocal();
     if (location.protocol !== 'file:' && (data.protocols?.length || data.tokens?.length)) {
         const bootTab = document.body.dataset.activeTab || initialTab;
         if (bootTab === 'defi' || bootTab === 'loops') {
             fetchLiveTokenPrices({ force: true }).catch(() => {});
         }
     }
-    try { invokeUpdateUI(); } catch (e) { console.error('[Vault] updateUI after local load failed:', e); }
-    updateLogoStatus('ready', 'Ready');
 
-    // 3. Cloud sync — local cache paints immediately; cold browsers await lightweight portfolio fetch
+    // 4. Cloud sync — local cache paints immediately; cold browsers await lightweight portfolio fetch
     if (location.protocol !== 'file:') {
         if (hasLocalPortfolio) {
             _dashboardDataLoading = false;
@@ -29440,6 +29460,21 @@ function switchWTab(name, btn) {
 // =============================================================================
 // BOOT — must run after all state declarations in this script block
 // =============================================================================
+function recoverPortfolioOnPageShow(event) {
+    if (location.protocol === 'file:') return;
+    const totalEl = document.getElementById('totalNetWorth');
+    const totalRaw = Number(totalEl?.getAttribute('data-raw') || 0);
+    const needsPaint = portfolioHasEntries() && (!Number.isFinite(totalRaw) || totalRaw <= 0);
+    const needsHydrate = !portfolioHasEntries();
+    if (!needsPaint && !needsHydrate && !event?.persisted) return;
+    if (needsPaint) paintPortfolioFromLocal();
+    if (needsHydrate || event?.persisted) {
+        hydratePortfolioFromCloud({ portfolioOnly: true, background: portfolioHasEntries() })
+            .catch(markPortfolioSyncFailed);
+    }
+}
+window.addEventListener('pageshow', recoverPortfolioOnPageShow);
+
 (async () => {
     await loadData();
     syncEtfsServerSide();
