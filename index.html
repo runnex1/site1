@@ -8276,9 +8276,10 @@ const LogoEngine = (() => {
         }, 250);
     }
 
-    function setLogoCache(key, url) {
+    function setLogoCache(key, url, { persist = true } = {}) {
         if (!key || !url) return;
         cache[key] = url;
+        if (!persist || isGeneratedFallbackLogo(url)) return;
         persistedCache[key] = { url, ts: Date.now() };
         savePersistedCacheSoon();
     }
@@ -8394,6 +8395,7 @@ const LogoEngine = (() => {
             `https://icons.llamao.fi/icons/protocols/${slug}`,
             `https://icons.llamao.fi/icons/protocols/${baseSlug}`,
             `https://icons.llamao.fi/icons/protocols/${name.split(' ')[0].toLowerCase()}`,
+            lower === 'fluid' ? 'https://icons.llamao.fi/icons/protocols/fluid-lending' : null,
             `https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/${baseSlug}.png`,
         ].filter(Boolean);
     }
@@ -8434,8 +8436,9 @@ const LogoEngine = (() => {
         if (inflight[key]) return inflight[key];
         inflight[key] = (async () => {
             const manual = MANUAL_LOGOS[String(symbol || '').toUpperCase()];
-            const final = manual || makeSvgFallback(symbol.substring(0, 4).toUpperCase(), symbol);
-            if (!freshLogoUrl(key)) setLogoCache(key, final);
+            const resolved = manual || await resolveFirst(tokenSources(symbol));
+            const final = resolved || makeSvgFallback(symbol.substring(0, 4).toUpperCase(), symbol);
+            setLogoCache(key, final);
             delete inflight[key];
             return final;
         })();
@@ -8449,7 +8452,8 @@ const LogoEngine = (() => {
         if (cache[key]) return cache[key];
         if (inflight[key]) return inflight[key];
         inflight[key] = (async () => {
-            const final = makeSvgFallback(name.charAt(0).toUpperCase(), name);
+            const resolved = await resolveFirst(protocolSources(name));
+            const final = resolved || makeSvgFallback(name.charAt(0).toUpperCase(), name);
             setLogoCache(key, final);
             delete inflight[key];
             return final;
@@ -8461,7 +8465,42 @@ const LogoEngine = (() => {
         if (initDone) return;
         if (initPromise) return initPromise;
         initPromise = (async () => {
-            loadLogoMeta();
+            const hasMeta = loadLogoMeta();
+            if (!hasMeta) {
+                try {
+                    const res = await fetch('https://api.llama.fi/protocols', { signal: AbortSignal.timeout(10000) });
+                    if (res.ok) {
+                        const list = await res.json();
+                        list.forEach(p => {
+                            if (p.name && p.logo) {
+                                const norm = p.name.toLowerCase().trim();
+                                llamaProtocolMap[norm] = p.logo;
+                                llamaProtocolMap[toSlug(p.name)] = p.logo;
+                                setLogoCache(`protocol:${norm}`, p.logo);
+                            }
+                        });
+                    }
+                } catch (e) { console.warn('[LogoEngine] DeFiLlama failed:', e.message); }
+
+                try {
+                    const topRes = await fetch(
+                        'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false',
+                        { signal: AbortSignal.timeout(10000) }
+                    );
+                    if (topRes.ok) {
+                        const topCoins = await topRes.json();
+                        topCoins.forEach(coin => {
+                            const sym = coin.symbol.toUpperCase();
+                            geckoMap[sym] = { id: coin.id, image: coin.image };
+                            if (coin.image && !coin.image.includes('missing')) {
+                                setLogoCache(`token:${sym}`, coin.image);
+                            }
+                        });
+                    }
+                } catch (e) { console.warn('[LogoEngine] CoinGecko failed:', e.message); }
+
+                saveLogoMeta();
+            }
             initDone = true;
             resolveAllPendingLogos();
         })();
@@ -8976,6 +9015,7 @@ async function hydrateLogoCacheFromCloud() {
         const body = await res.json().catch(() => ({}));
         if (!res.ok || !body?.logoCache) return;
         LogoEngine.importCache(body.logoCache);
+        try { resolveAllPendingLogos(); } catch (e) {}
         try { invokeUpdateUI(); } catch (e) {}
     } catch (e) {
         console.warn('[Vault] Logo cache fetch failed:', e);
@@ -9042,6 +9082,7 @@ function applyCloudPortfolioAux(parsed) {
         if (!parsed._logoCache || typeof parsed._logoCache !== 'object') return;
         LogoEngine.importCache(parsed._logoCache);
         delete parsed._logoCache;
+        try { resolveAllPendingLogos(); } catch (e) {}
         try { invokeUpdateUI(); } catch (e) {}
     });
     apply('geckoSymbolIds', () => {
