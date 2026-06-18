@@ -5331,11 +5331,22 @@ body {
 .dash-daily .brief-section-label { border-bottom:none; padding:0; margin-bottom:0.5rem !important; }
 .dash-daily .brief-news-card { background: transparent; border-left: none; border-right:none; border-top:none; border-radius:0; padding:0.55rem 0.15rem; }
 .dash-daily .brief-cards, .dash-daily #tgChannelsList, .dash-daily #tgSharedPanel, .dash-daily .x-accounts-bar { display:none; }
-.dash-protocol-row { display:grid; grid-template-columns: 1.35fr 0.85fr 1.25fr 0.85fr 0.75fr 0.75fr 0.8fr 1fr; gap:0.65rem; align-items:center; }
-.dash-protocol-table { padding: 0 0.75rem 0.75rem; overflow-x:auto; }
-.dash-protocol-inner { min-width: 980px; }
-.dash-protocol-row > div { padding: 0.62rem 0; border-bottom: 1px solid rgba(148,163,184,0.12); font-size:0.8rem; }
-.dash-protocol-row.header > div { font-family:var(--ff-mono); font-size:0.62rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--t3); }
+.dash-protocol-row { display:grid; grid-template-columns: minmax(118px,1.2fr) minmax(68px,0.72fr) minmax(128px,1.3fr) minmax(72px,0.78fr) minmax(62px,0.68fr) minmax(54px,0.62fr) minmax(88px,0.82fr) minmax(96px,1fr); gap:0.5rem 0.7rem; align-items:center; border-bottom:1px solid rgba(148,163,184,0.12); }
+.dash-protocol-table { padding:0 0.85rem 0.65rem; overflow-x:auto; overflow-y:auto; max-height:calc(100% - 38px); }
+.dash-protocol-inner { min-width:860px; }
+.dash-protocol-row > div { padding:0.5rem 0; border-bottom:none; font-size:0.8125rem; line-height:1.35; font-family:var(--ff-body); color:var(--t1); min-width:0; }
+.dash-protocol-row.header { border-bottom:1px solid rgba(148,163,184,0.18); }
+.dash-protocol-row.header > div { font-family:var(--ff-mono); font-size:0.6875rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--t3); font-weight:600; padding:0.42rem 0; }
+.dash-protocol-col-protocol { display:flex; align-items:center; gap:0.5rem; min-width:0; }
+.dash-protocol-col-protocol > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dash-protocol-col-position { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dash-protocol-col-num { text-align:right; font-family:var(--ff-mono); font-variant-numeric:tabular-nums; }
+.dash-protocol-col-center { display:flex; align-items:center; justify-content:flex-start; }
+.dash-protocol-col-alloc { display:flex; align-items:center; gap:0.4rem; font-family:var(--ff-mono); font-size:0.75rem; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.dash-protocol-row .apr-badge { font-size:0.6875rem; line-height:1.2; }
+.dash-protocol-row .dash-pill { font-size:0.6875rem; line-height:1.2; }
+.dash-protocol-row .dash-note-input { font-size:0.75rem; line-height:1.25; min-height:28px; }
+.dash-protocol-row:nth-child(n+6) { display:none; }
 .dash-healthbar { width:72px;height:7px;border-radius:20px;background:rgba(148,163,184,0.18);overflow:hidden;display:inline-block;vertical-align:middle;margin-right:0.4rem; }
 .dash-healthbar span { display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--teal),#85f5d6); }
 .dash-action { border:1px solid rgba(148,163,184,0.24); background: rgba(255,255,255,0.035); color: var(--t1); border-radius:4px; padding:4px 9px; font-size:0.72rem; }
@@ -5515,16 +5526,10 @@ body[data-active-tab="defi"] .page-content,
 .dash-daily .brief-news-card { padding: 0.36rem 0.1rem; }
 .dash-daily .brief-news-card-title { font-size: 0.74rem; line-height: 1.22; }
 .dash-daily .brief-news-card-meta { font-size: 0.65rem; }
-.dash-protocol-table { height: calc(100% - 38px); overflow: hidden; padding: 0 0.7rem 0.42rem; }
-.dash-protocol-inner { min-width: 940px; }
-.dash-protocol-row { grid-template-columns: 1.18fr 0.68fr 1.2fr 0.76fr 0.7fr 0.58fr 0.72fr 1.05fr; gap: 0.46rem; }
-.dash-protocol-row > div { padding: 0.17rem 0; font-size: 0.64rem; line-height: 1.12; }
-.dash-protocol-row.header > div { font-size: 0.48rem; padding-top:0.16rem; padding-bottom:0.16rem; }
-.dash-protocol-row:nth-child(n+6) { display: none; }
-.dash-note-input { width:100%; min-width:0; border:1px solid rgba(148,163,184,0.16); background:rgba(255,255,255,0.035); color:var(--t1); border-radius:4px; padding:4px 6px; font-size:0.68rem; font-family:var(--ff-body); outline:none; }
+.dash-note-input { width:100%; min-width:0; border:1px solid rgba(148,163,184,0.16); background:rgba(255,255,255,0.035); color:var(--t1); border-radius:4px; padding:4px 6px; font-size:0.75rem; font-family:var(--ff-body); outline:none; }
 .dash-note-input:focus { border-color:rgba(0,212,170,0.42); box-shadow:0 0 0 2px rgba(0,212,170,0.08); }
-.dash-healthbar { width: 58px; }
-.dash-health { display:inline-flex;align-items:center;gap:0.38rem;font-family:var(--ff-mono);font-weight:700; }
+.dash-healthbar { width: 64px; }
+.dash-health { display:inline-flex;align-items:center;gap:0.38rem;font-family:var(--ff-mono);font-weight:700;font-size:0.75rem; }
 .dash-health::before { content:'';width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor; }
 .dash-health.good { color:var(--green); }
 .dash-health.warn { color:var(--amber); }
@@ -16394,13 +16399,15 @@ function renderDashboardProtocolPreview() {
         return '-';
     }
     function healthClass(value) {
-        const n = Number(value);
+        const s = String(value || '').trim();
+        if (s.startsWith('>')) return 'good';
+        const n = Number(s);
         if (!Number.isFinite(n)) return '';
         if (n < 1.01) return 'bad';
         if (n < 1.02) return 'warn';
         return 'good';
     }
-    el.innerHTML = '<div class="dash-protocol-row header"><div>Protocol</div><div>Type</div><div>Position</div><div>Net Value</div><div>Avg. APR</div><div>Health</div><div>Allocation</div><div>Notes</div></div>' +
+    el.innerHTML = '<div class="dash-protocol-row header"><div class="dash-protocol-col-protocol">Protocol</div><div>Type</div><div class="dash-protocol-col-position">Position</div><div class="dash-protocol-col-num">Net Value</div><div class="dash-protocol-col-center">Avg. APR</div><div class="dash-protocol-col-center">Health</div><div>Allocation</div><div>Notes</div></div>' +
       [...data.protocols].sort((a,b)=>protocolDisplayValue(b)-protocolDisplayValue(a)).slice(0,4).map(p => {
         const index = data.protocols.indexOf(p);
         const netValue = protocolNetValue(p);
@@ -16408,13 +16415,13 @@ function renderDashboardProtocolPreview() {
         const h = health(p);
         const hc = healthClass(h);
         return `<div class="dash-protocol-row">
-          <div style="display:flex;align-items:center;gap:0.55rem">${makeLogo(p.name, true, 24)}<span>${dashEsc(p.name)}</span></div>
-          <div><span class="dash-pill ${/prediction/i.test(p.type)?'pm':'wallet'}">${dashEsc(p.type || '-')}</span></div>
-          <div>${dashEsc(firstPositionLabel(p))}</div>
-          <div>${dashUsd(netValue || 0)}</div>
-          <div>${protocolDashboardApyHtml(p)}</div>
-          <div>${hc ? `<span class="dash-health ${hc}">${dashEsc(h)}</span>` : dashEsc(h)}</div>
-          <div><span class="dash-healthbar"><span style="width:${alloc}%"></span></span>${alloc.toFixed(1)}%</div>
+          <div class="dash-protocol-col-protocol">${makeLogo(p.name, true, 24)}<span>${dashEsc(p.name)}</span></div>
+          <div class="dash-protocol-col-center"><span class="dash-pill ${/prediction/i.test(p.type)?'pm':'wallet'}">${dashEsc(p.type || '-')}</span></div>
+          <div class="dash-protocol-col-position" title="${dashEsc(firstPositionLabel(p))}">${dashEsc(firstPositionLabel(p))}</div>
+          <div class="dash-protocol-col-num">${dashUsd(netValue || 0)}</div>
+          <div class="dash-protocol-col-center">${protocolDashboardApyHtml(p)}</div>
+          <div class="dash-protocol-col-center">${hc ? `<span class="dash-health ${hc}">${dashEsc(h)}</span>` : dashEsc(h)}</div>
+          <div class="dash-protocol-col-alloc"><span class="dash-healthbar"><span style="width:${alloc}%"></span></span>${alloc.toFixed(1)}%</div>
           <div><input class="dash-note-input" value="${dashEsc(p.dashboardNote || p.notes || '')}" placeholder="Add note..." onchange="updateDashboardProtocolNote(${index}, this.value)"></div>
         </div>`;
       }).join('');
