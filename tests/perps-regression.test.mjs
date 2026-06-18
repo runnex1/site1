@@ -1415,75 +1415,44 @@ assert.match(readFileSync(join(ROOT, 'api', 'prices.js'), 'utf8'), /fetchCoinGec
     if (String(key).includes('T')) return Date.parse(`${key}:00:00.000Z`) || 0;
     return Date.parse(key) || 0;
   }
-  function equityInterpolateAtTime(points, timeMs) {
-    const sorted = points
-      .map(p => ({ ...p, chartTime: parseBucketTime(p.bucket) || p.time || 0 }))
-      .filter(p => Number.isFinite(p.totalEquity) && p.chartTime)
-      .sort((a, b) => a.chartTime - b.chartTime);
-    let before = null;
-    let after = null;
-    for (const p of sorted) {
-      if (p.chartTime <= timeMs) before = p;
-      if (p.chartTime >= timeMs && !after) after = p;
-    }
-    if (before && after && before.chartTime !== after.chartTime) {
-      const w = (timeMs - before.chartTime) / (after.chartTime - before.chartTime);
-      return before.totalEquity + w * (after.totalEquity - before.totalEquity);
-    }
-    return (after || before)?.totalEquity ?? null;
+  function isEquityCapitalPayment(p) {
+    if (!p || !Number.isFinite(p.time) || !Number.isFinite(p.usdc) || p.usdc === 0) return false;
+    const kind = String(p.kind || '').toLowerCase();
+    return kind.includes('deposit') || kind.includes('withdraw') || kind.includes('transfer');
   }
-  function hlStrategyPayments(payments) {
-    return (payments || []).filter(p => p.kind === 'deposit' || p.kind === 'withdraw');
-  }
-  function netDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = [], extendedPayments = []) {
-    const hlP = hlStrategyPayments(hlPayments).filter(p => p.time <= timeMs);
-    const nadoP = (nadoPayments || []).filter(p => p.time <= timeMs);
-    const grvtP = (grvtPayments || []).filter(p => p.time <= timeMs);
-    const extendedP = (extendedPayments || []).filter(p => p.time <= timeMs);
-    return computeCombinedNetDeposits(
-      { payments: hlP },
-      { payments: nadoP },
-      { payments: grvtP },
-      { payments: extendedP },
-    ).combinedNetDeposits;
-  }
-  function adjustedEquityAtPoint(point, data) {
-    const time = parseBucketTime(point.bucket) || point.time || 0;
-    const cf = data.capitalFlows || {};
-    const net = netDepositsAtTime(cf.hl?.payments, cf.nado?.payments, time, cf.grvt?.payments, cf.extended?.payments);
-    return point.totalEquity - net;
-  }
-  function sessionBaselineAdjustedEquity(data, sessionMs, points) {
-    const cf = data.capitalFlows || {};
-    const equityAtSession = equityInterpolateAtTime(points, sessionMs);
-    const netAtSession = netDepositsAtTime(cf.hl?.payments, cf.nado?.payments, sessionMs, cf.grvt?.payments, cf.extended?.payments);
-    return equityAtSession - netAtSession;
+  function lastCapitalEventMs(data) {
+    const cf = data?.capitalFlows || {};
+    const payments = [
+      ...(cf.hl?.payments || []),
+      ...(cf.nado?.payments || []),
+      ...(cf.grvt?.payments || []),
+      ...(cf.extended?.payments || []),
+    ].filter(isEquityCapitalPayment).sort((a, b) => a.time - b.time);
+    return payments.length ? payments[payments.length - 1].time : 0;
   }
 
   const t0 = Date.UTC(2026, 5, 1, 8);
   const t1 = Date.UTC(2026, 5, 5, 12);
+  const t2 = Date.UTC(2026, 5, 6, 8);
   const t3 = Date.UTC(2026, 5, 7, 8);
   const points = [
     { bucket: '2026-06-01T08', time: t0, totalEquity: 10000 },
     { bucket: '2026-06-05T12', time: t1, totalEquity: 15000 },
+    { bucket: '2026-06-06T08', time: t2, totalEquity: 15200 },
     { bucket: '2026-06-07T08', time: t3, totalEquity: 15500 },
   ];
   const data = {
     capitalFlows: {
-      hl: {
-        payments: [
-          { time: t0, kind: 'deposit', usdc: 10000 },
-          { time: t1, kind: 'deposit', usdc: 5000 },
-        ],
-      },
+      hl: { payments: [{ time: t1, kind: 'deposit', usdc: 5000 }] },
       nado: { payments: [] },
     },
   };
-  const baseline = sessionBaselineAdjustedEquity(data, t1, points);
-  const pnlAtEnd = adjustedEquityAtPoint(points[2], data) - baseline;
-  assert.ok(Math.abs(baseline) < 1, 'session baseline should be near zero right after a deposit');
-  assert.ok(Math.abs(pnlAtEnd - 500) < 1, 'session PnL should track trading gains after the last deposit');
-  assert.ok(points.every(p => p.totalEquity > 0), 'all-time chart must keep positive equity values');
+  const sessionMs = lastCapitalEventMs(data);
+  const sessionPoints = points.filter(p => parseBucketTime(p.bucket) >= sessionMs);
+  assert.equal(sessionPoints.length, 3, 'last session must keep equity points after the latest capital event');
+  assert.equal(sessionPoints[0].totalEquity, 15000, 'session chart must start at post-deposit equity');
+  assert.equal(sessionPoints.at(-1).totalEquity, 15500, 'session chart must end at latest equity');
+  assert.ok(sessionPoints.every(p => p.totalEquity > 0), 'session chart must plot equity values, not PnL');
 }
 
 assert.match(indexHtml, /if \(store\[bucket\]\) return false;/, 'browser snapshots must be append-only within each 4h bucket');
@@ -1502,11 +1471,10 @@ assert.match(indexHtml, /const merged = \{ \.\.\.local, \.\.\.\(serverSnaps \|\|
 assert.match(indexHtml, /<g id="perpsEquityPoints"><\/g>/, 'equity chart must render visible sampled-point markers');
 assert.match(indexHtml, /data-perps-equity-mode="session"/, 'equity chart must default to last-session mode');
 assert.match(indexHtml, /function perpsLastCapitalEventMs\(/, 'equity chart session mode must detect last capital flow');
-assert.match(indexHtml, /function perpsApplyEquityChartMode\(/, 'equity chart must map snapshots to session PnL');
-assert.match(indexHtml, /function perpsSessionBaselineAdjustedEquity\(/, 'session chart must baseline PnL at the last capital event');
-assert.match(indexHtml, /chartKind: 'equity'/, 'all-time chart must plot portfolio equity');
-assert.match(indexHtml, /chartKind: 'pnl'/, 'last-session chart must plot PnL values');
-assert.match(indexHtml, /latest \$\{perpsFmtUsd\(chart\.plot\.at\(-1\)\?\.val\)\}/, 'all-time badge must show latest equity');
+assert.match(indexHtml, /function perpsApplyEquityChartMode\(/, 'equity chart must filter snapshots by chart mode');
+assert.doesNotMatch(indexHtml, /chartKind: 'pnl'/, 'equity chart must not plot PnL values');
+assert.match(indexHtml, /chartValue: p\.totalEquity/, 'equity chart must plot total equity in both modes');
+assert.match(indexHtml, /latest \$\{latest\}/, 'equity chart badge must show latest equity');
 assert.match(indexHtml, /perpsPairDisplayLegEntries\(p\)/, 'position cards must order exchange labels with the long leg first');
 assert.match(indexHtml, /perpsVenueWithSideHtml\(entry\.venue, entry\.leg\.size\)/, 'exchange labels must show long/short badges in position cards');
 assert.match(indexHtml, /perpsSetPositionsTab\('closed'/, 'Positions panel must expose a Closed tab');
