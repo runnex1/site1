@@ -12298,11 +12298,19 @@ function stablecoinMonitorPriceForRow(row) {
 }
 function stablecoinMonitorPriceLabel(cgPrice, geckoId) {
     if (Number.isFinite(cgPrice)) {
-        return `$${cgPrice.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })} CG`;
+        return `$${cgPrice.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
     }
-    if (!geckoId) return 'no CG id';
-    if (_stablecoinMonitorPriceFailed) return 'price unavailable';
-    return 'fetching…';
+    if (!geckoId) return '—';
+    if (_stablecoinMonitorPriceFailed) return 'unavail';
+    return '…';
+}
+function stablecoinLooksLikeStableSymbol(sym) {
+    return /(USD|DAI|FRAX|LUSD|GHO|SUSDE|USDE|USDS|USDM|EURC|FDUSD|PYUSD|USD0|USDT0|USDC)/i.test(String(sym || ''));
+}
+function stablecoinParsedPosition(pos) {
+    const parsed = protocolTokenAmountAndSymbol((pos?.tokens || [])[0]);
+    if (!parsed || !stablecoinLooksLikeStableSymbol(parsed.symbol)) return null;
+    return parsed;
 }
 
 function stablecoinMonitorGeckoId(token) {
@@ -12488,7 +12496,7 @@ function stablecoinRowsForDefi() {
         const sym = String(symbol || '').trim().toUpperCase();
         if (!sym || /^(PT|YT)-/.test(sym)) return;
         const isCustom = !!extra.custom;
-        if (!isCustom && !/(USD|DAI|FRAX|LUSD|GHO|SUSDE|USDE|USDS|USDM|EURC|FDUSD|PYUSD|USD0|USDT0|USDC)/i.test(sym)) return;
+        if (!isCustom && !stablecoinLooksLikeStableSymbol(sym)) return;
         const amt = Number(amount || 0), val = Number(value || 0);
         if (!isCustom && (!amt || !val)) return;
         const key = extra.geckoId ? `${sym}::${extra.geckoId}` : sym;
@@ -12501,13 +12509,39 @@ function stablecoinRowsForDefi() {
         if (extra.monitorId) prev.monitorId = extra.monitorId;
         if (extra.geckoId) prev.geckoId = extra.geckoId;
         if (extra.name) prev.name = extra.name;
+        if (extra.loopCollateral) prev.loopCollateral = true;
         by.set(key, prev);
     };
     for (const t of data.tokens || []) add(t.symbol, t.amount, t.value, 'Wallet');
     for (const p of data.protocols || []) {
         for (const sec of p.sections || []) {
+            const isLoop = sectionHasLendingLoop(sec);
+            if (isLoop) {
+                const loopBorrowedStableValue = (sec.positions || []).reduce((sum, pos) => {
+                    if (String(pos.sub || '').toLowerCase() !== 'borrowed') return sum;
+                    if (!stablecoinParsedPosition(pos)) return sum;
+                    return sum + Math.abs(protocolPositionValue(pos));
+                }, 0);
+                const suppliedStables = (sec.positions || []).flatMap(pos => {
+                    if (String(pos.sub || '').toLowerCase() !== 'supplied') return [];
+                    const parsed = stablecoinParsedPosition(pos);
+                    if (!parsed) return [];
+                    const val = Math.abs(protocolPositionValue(pos));
+                    return val > 0 ? [{ pos, parsed, val }] : [];
+                });
+                const totalSuppliedStableValue = suppliedStables.reduce((sum, row) => sum + row.val, 0);
+                for (const { pos, parsed, val } of suppliedStables) {
+                    const share = totalSuppliedStableValue > 0 ? val / totalSuppliedStableValue : 1;
+                    const netVal = val - loopBorrowedStableValue * share;
+                    if (netVal <= 0.01) continue;
+                    const unitPrice = protocolPositionUnitPrice(pos) || (parsed.amount ? val / parsed.amount : 1);
+                    const netAmt = unitPrice > 0 ? netVal / unitPrice : parsed.amount;
+                    add(parsed.symbol, netAmt, netVal, p.name, 1, { loopCollateral: true });
+                }
+                continue;
+            }
             for (const pos of sec.positions || []) {
-                const parsed = protocolTokenAmountAndSymbol((pos.tokens || [])[0]);
+                const parsed = stablecoinParsedPosition(pos);
                 if (!parsed) continue;
                 const dir = String(pos.sub || '').toLowerCase() === 'borrowed' ? -1 : 1;
                 add(parsed.symbol, parsed.amount, protocolPositionValue(pos), p.name, dir);
@@ -12966,27 +13000,25 @@ function renderDefiStablecoinPanel(stableRows) {
     hydrateStablecoinMonitorCacheFromLivePrices();
     const rows = stableRows || stablecoinRowsForDefi();
     stables.innerHTML = rows.length
-        ? `<div class="defi-side-table-head"><div>Stablecoin</div><div>Net Exposure</div><div>Peg</div><div>Status</div></div>`
+        ? `<div class="defi-side-table-head"><div>Stablecoin</div><div>Net Exposure</div><div>Peg</div><div>Price</div></div>`
             + rows.map(x => {
                 const amt = Number(x.amount) || 0;
                 const geckoId = x.geckoId || geckoIdForSymbol(x.symbol);
                 const cgPrice = stablecoinMonitorPriceForRow(x);
-                const displayValue = Number.isFinite(cgPrice) && amt
-                    ? amt * cgPrice
-                    : Number(x.value || 0);
+                const displayValue = stablecoinMonitorExposureValue(x);
                 const pegDiff = Number.isFinite(cgPrice) ? ((cgPrice - 1) * 100) : null;
                 const cls = pegDiff == null ? '' : Math.abs(pegDiff) > 0.2 ? 'negative' : Math.abs(pegDiff) > 0.05 ? '' : 'positive';
-                const offPeg = pegDiff != null && Math.abs(pegDiff) > 0.2;
                 const netCls = displayValue >= 0 ? 'positive' : 'negative';
-                const priceLabel = stablecoinMonitorPriceLabel(cgPrice, geckoId);
+                const priceText = stablecoinMonitorPriceLabel(cgPrice, geckoId);
+                const loopTag = x.loopCollateral ? ' <span style="color:var(--t3);font-weight:500;">· loop net</span>' : '';
                 const removeBtn = x.monitorId
                     ? ` <button type="button" title="Remove monitor" onclick="removeStablecoinMonitor(${JSON.stringify(x.monitorId)})" style="border:none;background:transparent;color:var(--t3);cursor:pointer;padding:0 0.15rem;font-size:0.9rem;line-height:1;">×</button>`
                     : '';
                 return `<div class="defi-mini-row" style="grid-template-columns:1fr auto auto auto">
-                  <div><div class="defi-mini-title">${dashEsc(x.symbol)}${removeBtn}${x.name && x.name !== x.symbol ? ` <span style="color:var(--t3);font-weight:400;">${dashEsc(x.name)}</span>` : ''}</div><div class="defi-mini-sub">${dashEsc(x.source || 'Portfolio')} · net ${amt.toLocaleString('en-US',{maximumFractionDigits:2})} · ${priceLabel}</div></div>
+                  <div><div class="defi-mini-title">${dashEsc(x.symbol)}${removeBtn}${x.name && x.name !== x.symbol ? ` <span style="color:var(--t3);font-weight:400;">${dashEsc(x.name)}</span>` : ''}</div><div class="defi-mini-sub">${dashEsc(x.source || 'Portfolio')}${loopTag}</div></div>
                   <div class="defi-mini-value ${netCls}">${dashUsd(displayValue)}</div>
                   <div class="defi-mini-sub ${cls}" style="text-align:right">${pegDiff == null ? '—' : `${pegDiff >= 0 ? '+' : ''}${pegDiff.toFixed(3)}%`}</div>
-                  <div><span class="defi-peg-status ${offPeg ? 'off' : ''}">${pegDiff == null ? '…' : offPeg ? 'Off Peg' : 'On Peg'}</span></div>
+                  <div class="defi-mini-sub" style="text-align:right;font-family:var(--ff-mono)">${priceText}</div>
                 </div>`;
             }).join('')
         : '<div class="dash-empty">No stablecoin exposure yet. Use <strong>+ Token</strong> to monitor a peg via CoinGecko.</div>';
@@ -16456,7 +16488,13 @@ function renderDashboardProtocolPreview() {
         for (const sec of p.sections || []) {
             const supplied = (sec.positions || []).filter(x => /supplied/i.test(x.sub || ''));
             const borrowed = (sec.positions || []).filter(x => /borrowed/i.test(x.sub || ''));
-            if (supplied.length || borrowed.length) return `${supplied[0]?.pool || 'Assets'}/${borrowed[0]?.pool || 'assets'} loop`;
+            if (supplied.length && borrowed.length) {
+                const supLabel = loopCleanAssetLabel(supplied[0]?.pool) || supplied[0]?.pool || 'Asset';
+                const borLabel = loopCleanAssetLabel(borrowed[0]?.pool) || borrowed[0]?.pool || 'Debt';
+                return `${supLabel}/${borLabel} loop`;
+            }
+            if (supplied.length) return loopCleanAssetLabel(supplied[0]?.pool) || supplied[0]?.pool || 'Supplied';
+            if (borrowed.length) return loopCleanAssetLabel(borrowed[0]?.pool) || borrowed[0]?.pool || 'Borrowed';
             if (sec.positions?.[0]) return sec.positions[0].pool;
         }
         return p.notes || '-';
@@ -17037,7 +17075,13 @@ function protocolSectionSummary(section) {
     const positions = section?.positions || [];
     const supplied = positions.find(x => String(x.sub || '').toLowerCase() === 'supplied');
     const borrowed = positions.find(x => String(x.sub || '').toLowerCase() === 'borrowed');
-    if (supplied || borrowed) return `${supplied?.pool || 'Assets'}/${borrowed?.pool || 'assets'} loop`;
+    if (supplied && borrowed) {
+        const supLabel = loopCleanAssetLabel(supplied.pool) || supplied.pool || 'Asset';
+        const borLabel = loopCleanAssetLabel(borrowed.pool) || borrowed.pool || 'Debt';
+        return `${supLabel}/${borLabel} loop`;
+    }
+    if (supplied?.pool) return loopCleanAssetLabel(supplied.pool) || supplied.pool;
+    if (borrowed?.pool) return loopCleanAssetLabel(borrowed.pool) || borrowed.pool;
     if (positions[0]?.pool) return positions[0].pool;
     return section?.type || '-';
 }

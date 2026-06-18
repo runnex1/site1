@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeFi Positions — Excel Export Preview</title>
+  <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700,800,900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#0b0f14; --shell:#111820; --excel-bg:#fff; --excel-grid:#d4d4d4;
+      --excel-header:#217346; --excel-header-text:#fff; --excel-tab:#f3f3f3;
+      --excel-tab-active:#fff; --excel-tab-border:#bfbfbf; --text:#e8edf4; --muted:#91a4b8;
+      --teal:#00d4aa; --mono:"JetBrains Mono", monospace; --font:"Satoshi", system-ui, sans-serif;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100vh; color:var(--text); font-family:var(--font);
+      background:
+        radial-gradient(circle at 12% 0%, rgba(0,212,170,.07), transparent 32%),
+        var(--bg);
+      padding:18px 20px 28px;
+    }
+    .shell { max-width:1280px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
+    .badge {
+      align-self:flex-start; padding:5px 10px; border-radius:6px;
+      border:1px dashed rgba(0,212,170,.32); background:rgba(0,212,170,.06);
+      color:var(--teal); font:700 .58rem/1 var(--mono); letter-spacing:.08em; text-transform:uppercase;
+    }
+    .note {
+      padding:12px 14px; border-radius:8px; border:1px solid rgba(0,212,170,.14);
+      background:rgba(0,212,170,.04); color:var(--muted); font:650 .74rem/1.55 var(--font); max-width:900px;
+    }
+    .note strong { color:var(--teal); }
+    .toolbar {
+      display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    }
+    .toolbar .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .btn {
+      border:1px solid rgba(148,163,184,.22); background:rgba(255,255,255,.04); color:var(--text);
+      border-radius:6px; padding:7px 12px; font:700 .7rem/1 var(--font); cursor:pointer;
+    }
+    .btn.primary { color:var(--teal); border-color:rgba(0,212,170,.3); background:rgba(0,212,170,.08); }
+
+    /* Excel window chrome */
+    .excel-window {
+      border:1px solid #3a3a3a; border-radius:8px; overflow:hidden;
+      box-shadow:0 24px 60px rgba(0,0,0,.45);
+      background:#2b2b2b;
+    }
+    .excel-titlebar {
+      display:flex; align-items:center; gap:10px; padding:8px 12px;
+      background:linear-gradient(180deg,#3d3d3d,#2f2f2f); border-bottom:1px solid #1f1f1f;
+      font:600 .72rem/1 "Segoe UI", sans-serif; color:#f0f0f0;
+    }
+    .excel-titlebar .dots { display:flex; gap:5px; }
+    .excel-titlebar .dots span { width:10px; height:10px; border-radius:50%; }
+    .excel-titlebar .dots span:nth-child(1){background:#ff5f57}
+    .excel-titlebar .dots span:nth-child(2){background:#febc2e}
+    .excel-titlebar .dots span:nth-child(3){background:#28c840}
+    .excel-ribbon {
+      display:flex; align-items:center; gap:14px; padding:6px 12px;
+      background:#f3f3f3; border-bottom:1px solid #d0d0d0; color:#333;
+      font:600 .68rem/1 "Segoe UI", sans-serif;
+    }
+    .excel-ribbon .file { color:#217346; font-weight:700; }
+    .excel-formula {
+      display:grid; grid-template-columns:42px 1fr; align-items:center;
+      background:#fff; border-bottom:1px solid var(--excel-grid);
+      font:500 .72rem/1 var(--mono); color:#333;
+    }
+    .excel-formula .name {
+      padding:6px 8px; border-right:1px solid var(--excel-grid);
+      background:#f9f9f9; text-align:center; font-weight:700;
+    }
+    .excel-formula .bar { padding:6px 10px; color:#666; }
+
+    .sheet-wrap { background:var(--excel-bg); overflow:auto; max-height:520px; }
+    table.excel {
+      width:100%; border-collapse:collapse; table-layout:fixed;
+      font:500 .72rem/1.35 "Segoe UI", Calibri, sans-serif; color:#111;
+    }
+    table.excel th, table.excel td {
+      border:1px solid var(--excel-grid); padding:4px 7px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      vertical-align:middle;
+    }
+    table.excel th {
+      background:var(--excel-header); color:var(--excel-header-text);
+      font-weight:700; text-align:left; position:sticky; top:0; z-index:1;
+    }
+    table.excel th.num, table.excel td.num { text-align:right; font-family:var(--mono); font-size:.68rem; }
+    table.excel tr:nth-child(even) td { background:#fafafa; }
+    table.excel tr.group td {
+      background:#e8f5ee; font-weight:700; color:#1b5e3a; border-top:2px solid #b7dfc8;
+    }
+    table.excel tr.total td {
+      background:#f2f2f2; font-weight:800; border-top:2px solid #999;
+    }
+    table.excel .pos { color:#107c41; }
+    table.excel .neg { color:#c00000; }
+    table.excel .muted { color:#666; }
+
+    .row-letters {
+      display:grid; grid-template-columns:42px repeat(12, minmax(72px, 1fr));
+      background:#f3f3f3; border-bottom:1px solid var(--excel-grid);
+      font:600 .62rem/1 var(--mono); color:#555;
+    }
+    .row-letters div { padding:3px 6px; border-right:1px solid var(--excel-grid); text-align:center; }
+    .row-letters div:first-child { background:#f9f9f9; }
+
+    .sheet-tabs {
+      display:flex; gap:2px; padding:0 6px 0; background:#e6e6e6; border-top:1px solid #bfbfbf;
+    }
+    .sheet-tab {
+      padding:6px 14px 5px; font:600 .68rem/1 "Segoe UI", sans-serif;
+      color:#333; background:var(--excel-tab); border:1px solid var(--excel-tab-border);
+      border-bottom:none; border-radius:4px 4px 0 0; margin-top:4px; cursor:pointer;
+    }
+    .sheet-tab.active {
+      background:var(--excel-tab-active); border-bottom:1px solid #fff; margin-bottom:-1px; z-index:1;
+    }
+    .sheet-tab.hidden { display:none; }
+
+    .meta-grid {
+      display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:10px;
+    }
+    .meta-card {
+      border:1px solid rgba(148,163,184,.16); border-radius:8px; padding:10px 12px;
+      background:rgba(255,255,255,.03);
+    }
+    .meta-card .k { font:800 .58rem/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+    .meta-card .v { margin-top:6px; font:800 1.1rem/1 var(--mono); }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="badge">Export preview · not wired yet</div>
+    <div class="note">
+      Proposed <strong>.xlsx</strong> export for DeFi positions: one row per leg (supplied / borrowed / yield),
+      with protocol summary sheet and live CoinGecko unit prices where available.
+      File name pattern: <strong>defi-positions-YYYY-MM-DD.xlsx</strong>.
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-card"><div class="k">Protocols</div><div class="v">7</div></div>
+      <div class="meta-card"><div class="k">Leg rows</div><div class="v">14</div></div>
+      <div class="meta-card"><div class="k">Net DeFi value</div><div class="v">$842,391</div></div>
+      <div class="meta-card"><div class="k">Export sheets</div><div class="v">2</div></div>
+    </div>
+
+    <div class="toolbar">
+      <div style="font:800 .82rem/1 var(--font);letter-spacing:.04em;text-transform:uppercase;color:var(--muted)">Workbook mock</div>
+      <div class="actions">
+        <button class="btn primary" type="button">Export .xlsx</button>
+        <button class="btn" type="button">Export .csv (positions only)</button>
+      </div>
+    </div>
+
+    <div class="excel-window">
+      <div class="excel-titlebar">
+        <div class="dots"><span></span><span></span><span></span></div>
+        <span>defi-positions-2026-06-10.xlsx — Excel</span>
+      </div>
+      <div class="excel-ribbon">
+        <span class="file">File</span><span>Home</span><span>Insert</span><span>Data</span><span>Review</span>
+      </div>
+      <div class="excel-formula">
+        <div class="name">fx</div>
+        <div class="bar" id="formulaBar">=SUM(M4:M17)</div>
+      </div>
+
+      <div id="sheetPositions" class="sheet-panel">
+        <div class="row-letters">
+          <div></div><div>A</div><div>B</div><div>C</div><div>D</div><div>E</div><div>F</div><div>G</div><div>H</div><div>I</div><div>J</div><div>K</div><div>L</div>
+        </div>
+        <div class="sheet-wrap">
+          <table class="excel">
+            <thead>
+              <tr>
+                <th style="width:34px">#</th>
+                <th>Protocol</th>
+                <th>Type</th>
+                <th>Position</th>
+                <th>Leg</th>
+                <th>Asset</th>
+                <th class="num">Qty</th>
+                <th class="num">Unit Price</th>
+                <th class="num">USD Value</th>
+                <th class="num">Supply APY</th>
+                <th class="num">Borrow APY</th>
+                <th class="num">Net APY</th>
+                <th>Health</th>
+                <th>Chain</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="group"><td></td><td colspan="14">Fluid · reUSD supply</td></tr>
+              <tr>
+                <td class="muted">1</td><td>Fluid</td><td>Lending</td><td>reUSD</td><td>Supplied</td><td>reUSD</td>
+                <td class="num">5,984.75</td><td class="num">$1.0840</td><td class="num">$6,487.47</td>
+                <td class="num pos">+11.3%</td><td class="num muted">—</td><td class="num pos">+11.3%</td>
+                <td class="muted">—</td><td>Ethereum</td><td></td>
+              </tr>
+
+              <tr class="group"><td></td><td colspan="14">Aave · USDC / USDT loop</td></tr>
+              <tr>
+                <td class="muted">2</td><td>Aave V3</td><td>Lending</td><td>USDC / USDT loop</td><td>Supplied</td><td>USDC</td>
+                <td class="num">412,500.00</td><td class="num">$1.0001</td><td class="num">$412,541.25</td>
+                <td class="num pos">+4.8%</td><td class="num muted">—</td><td class="num pos">+2.1%</td>
+                <td class="num">1.42</td><td>Ethereum</td><td>e-mode</td>
+              </tr>
+              <tr>
+                <td class="muted">3</td><td>Aave V3</td><td>Lending</td><td>USDC / USDT loop</td><td>Borrowed</td><td>USDT</td>
+                <td class="num">385,200.00</td><td class="num">$0.9998</td><td class="num neg">-$385,123.04</td>
+                <td class="num muted">—</td><td class="num neg">-6.2%</td><td class="num pos">+2.1%</td>
+                <td class="num">1.42</td><td>Ethereum</td><td></td>
+              </tr>
+
+              <tr class="group"><td></td><td colspan="14">Morpho · sUSDS / USDC loop</td></tr>
+              <tr>
+                <td class="muted">4</td><td>Morpho</td><td>Lending</td><td>sUSDS / USDC loop</td><td>Supplied</td><td>sUSDS</td>
+                <td class="num">198,400.00</td><td class="num">$1.0214</td><td class="num">$202,645.76</td>
+                <td class="num pos">+8.9%</td><td class="num muted">—</td><td class="num pos">+5.4%</td>
+                <td class="num">1.18</td><td>Base</td><td></td>
+              </tr>
+              <tr>
+                <td class="muted">5</td><td>Morpho</td><td>Lending</td><td>sUSDS / USDC loop</td><td>Borrowed</td><td>USDC</td>
+                <td class="num">176,000.00</td><td class="num">$1.0001</td><td class="num neg">-$176,017.60</td>
+                <td class="num muted">—</td><td class="num neg">-5.1%</td><td class="num pos">+5.4%</td>
+                <td class="num">1.18</td><td>Base</td><td></td>
+              </tr>
+
+              <tr class="group"><td></td><td colspan="14">Pendle · YT positions</td></tr>
+              <tr>
+                <td class="muted">6</td><td>Pendle</td><td>Yield</td><td>YT-sUSDe Sep'26</td><td>Held</td><td>YT-sUSDe</td>
+                <td class="num">42,000.00</td><td class="num">$0.1820</td><td class="num">$7,644.00</td>
+                <td class="num pos">+18.2%</td><td class="num muted">—</td><td class="num pos">+18.2%</td>
+                <td class="muted">—</td><td>Ethereum</td><td>fixed yield</td>
+              </tr>
+
+              <tr class="group"><td></td><td colspan="14">Wallet tokens (included toggle)</td></tr>
+              <tr>
+                <td class="muted">7</td><td>Wallet</td><td>Spot</td><td>USDC</td><td>Held</td><td>USDC</td>
+                <td class="num">84,250.00</td><td class="num">$1.0001</td><td class="num">$84,258.43</td>
+                <td class="num muted">—</td><td class="num muted">—</td><td class="num muted">—</td>
+                <td class="muted">—</td><td>Ethereum</td><td></td>
+              </tr>
+
+              <tr class="total">
+                <td></td><td colspan="8">TOTAL (net)</td>
+                <td class="num">$842,391.04</td>
+                <td colspan="5"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="sheetSummary" class="sheet-panel hidden" style="display:none">
+        <div class="sheet-wrap">
+          <table class="excel" style="max-width:640px">
+            <thead>
+              <tr><th>Metric</th><th class="num">Value</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Export date</td><td class="num">2026-06-10 14:32 UTC</td></tr>
+              <tr><td>Protocols</td><td class="num">7</td></tr>
+              <tr><td>Active loops</td><td class="num">2</td></tr>
+              <tr><td>Total supplied</td><td class="num">$623,718.48</td></tr>
+              <tr><td>Total borrowed</td><td class="num">$561,140.64</td></tr>
+              <tr><td>Net lending value</td><td class="num">$62,577.84</td></tr>
+              <tr><td>Weighted net APY</td><td class="num pos">+4.6%</td></tr>
+              <tr><td>Lowest health factor</td><td class="num">1.18</td></tr>
+              <tr><td>Stablecoin net exposure</td><td class="num">$251,042.51</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="sheet-tabs">
+        <button type="button" class="sheet-tab active" data-sheet="positions">Positions</button>
+        <button type="button" class="sheet-tab" data-sheet="summary">Summary</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    const tabs = document.querySelectorAll('.sheet-tab');
+    const positions = document.getElementById('sheetPositions');
+    const summary = document.getElementById('sheetSummary');
+    const formula = document.getElementById('formulaBar');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const sheet = tab.dataset.sheet;
+        positions.style.display = sheet === 'positions' ? '' : 'none';
+        summary.style.display = sheet === 'summary' ? '' : 'none';
+        formula.textContent = sheet === 'positions' ? '=SUM(M4:M17)' : '=B10';
+      });
+    });
+  </script>
+</body>
+</html>
