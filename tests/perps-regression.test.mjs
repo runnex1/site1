@@ -1862,8 +1862,17 @@ assert.match(indexHtml, /function orderFilledPulseItem\(/, 'market pulse must bu
 assert.match(indexHtml, /function pmPriceMovePulseItem\(/, 'market pulse must build PM price move cards from event log logic');
 assert.doesNotMatch(indexHtml, /\.\.\._predictionWalletCards/, 'market pulse must not merge watched wallet cards');
 assert.match(indexHtml, /CLOUD_SYNC_TIMEOUT_MS = 35000/, 'cloud sync must allow enough time for large portfolio payload');
-assert.match(indexHtml, /slice\(-4\)/, 'wallet suffix must use last 4 wallet characters');
+assert.match(indexHtml, /EVENT_LOG_WALLET_SUFFIX/, 'order fills must support custom wallet suffix labels');
+assert.match(eventLogJs, /WALLET_SUFFIX_OVERRIDES/, 'server event log must support custom wallet suffix labels');
 assert.match(eventLogJs, /walletSuffix4\(g\.wallet\)/, 'server event log must append wallet suffix to order fills');
+
+{
+  const { walletSuffix4 } = require('../lib/event-log.js');
+  assert.equal(walletSuffix4('0x2Ec0aa99D26b703585f58bdEd217a640d09e976b'), ' (6119)');
+  assert.equal(walletSuffix4('0x553a95b3c1B474D6C4b2B48772A8152c25F3177f'), ' (1240)');
+  assert.equal(walletSuffix4('0x975ad39760B5e113229888d2b0FA90fD9111359a'), ' (e480)');
+  assert.equal(walletSuffix4('0x1234567890abcdef1234567890abcdef12345678'), ' (5678)');
+}
 
 try {
   const loopResult = await fetchLoopRates(['0x523c4fD04438aAB5e96CADCcDC92c855390Fb459']);

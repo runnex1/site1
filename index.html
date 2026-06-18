@@ -12158,8 +12158,16 @@ function dashShortAddr(v) {
     const s = String(v || '');
     return s.length > 12 ? s.slice(0,6) + '...' + s.slice(-4) : s;
 }
+const EVENT_LOG_WALLET_SUFFIX = {
+    '0x2ec0aa99d26b703585f58bded217a640d09e976b': '6119',
+    '0x553a95b3c1b474d6c4b2b48772a8152c25f3177f': '1240',
+    '0x975ad39760b5e113229888d2b0fa90fd9111359a': 'e480',
+};
 function dashWalletSuffix4(wallet) {
     const s = String(wallet || '').trim();
+    if (!s) return '';
+    const custom = EVENT_LOG_WALLET_SUFFIX[s.toLowerCase()];
+    if (custom) return ` (${custom})`;
     if (s.length < 4) return '';
     const tail = s.slice(-4);
     return /^[a-zA-Z0-9]{4}$/.test(tail) ? ` (${tail})` : '';
