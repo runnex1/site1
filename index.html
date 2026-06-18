@@ -8956,6 +8956,19 @@ function scheduleCloudPortfolioAux(parsed) {
     else setTimeout(run, 0);
 }
 
+async function hydrateLogoCacheFromCloud() {
+    if (location.protocol === 'file:') return;
+    try {
+        const res = await fetch('/api/sync?logoCache=1', { cache: 'no-store', signal: AbortSignal.timeout(20000) });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !body?.logoCache) return;
+        LogoEngine.importCache(body.logoCache);
+        try { invokeUpdateUI(); } catch (e) {}
+    } catch (e) {
+        console.warn('[Vault] Logo cache fetch failed:', e);
+    }
+}
+
 async function hydratePortfolioAuxHeavy() {
     if (location.protocol === 'file:') return;
     try {
@@ -9016,6 +9029,7 @@ function applyCloudPortfolioAux(parsed) {
         if (!parsed._logoCache || typeof parsed._logoCache !== 'object') return;
         LogoEngine.importCache(parsed._logoCache);
         delete parsed._logoCache;
+        try { invokeUpdateUI(); } catch (e) {}
     });
     apply('geckoSymbolIds', () => {
         if (!parsed._geckoSymbolIds || typeof parsed._geckoSymbolIds !== 'object') return;
@@ -9172,6 +9186,7 @@ async function loadData() {
     // 2. Paint cached portfolio BEFORE tab/watcher/perps setup (refresh must not blank on throw)
     paintPortfolioFromLocal();
     updateLogoStatus('ready', 'Ready');
+    if (location.protocol !== 'file:') hydrateLogoCacheFromCloud().catch(() => {});
 
     const perpsBootPromise = (location.protocol !== 'file:'
         ? perpsBootstrapWallet().then(() => { perpsLoadConfig(); }).catch(() => {})
@@ -9198,6 +9213,8 @@ async function loadData() {
             switchTab('overview', { persist: false });
         } catch (e2) { console.warn('[Vault] overview fallback failed:', e2); }
     }
+    const bootTab = document.body.dataset.activeTab || initialTab;
+    try { ensureMarketTickerBoot(bootTab); } catch (e) { console.warn('[Vault] ticker boot failed:', e); }
     paintPortfolioFromLocal();
     if (location.protocol !== 'file:' && (data.protocols?.length || data.tokens?.length)) {
         const bootTab = document.body.dataset.activeTab || initialTab;
@@ -24134,6 +24151,11 @@ function stopMarketTickerRefresh() {
         _marketTickerTimer = null;
     }
 }
+function ensureMarketTickerBoot(tab) {
+    const active = tab || document.body.dataset.activeTab || 'overview';
+    if (TICKER_VISIBLE_TABS.has(active)) startMarketTickerRefresh();
+    else tickerRenderCustomItems();
+}
 function startWalletFlashPreview() {
     if (_walletFlashTimer) return;
     _walletFlashTimer = setInterval(() => {
@@ -24245,9 +24267,12 @@ function tickerNormalizeEntry(raw) {
 
 function tickerLoadCustomEntries() {
     try {
-        const saved = JSON.parse(localStorage.getItem(TICKER_CUSTOM_V2_KEY) || 'null');
-        if (Array.isArray(saved) && saved.length) {
-            return saved.map(tickerNormalizeEntry).filter(Boolean);
+        const raw = localStorage.getItem(TICKER_CUSTOM_V2_KEY);
+        if (raw != null) {
+            const saved = JSON.parse(raw);
+            if (Array.isArray(saved)) {
+                return saved.map(tickerNormalizeEntry).filter(Boolean);
+            }
         }
     } catch (e) {}
     const legacySymbols = [];
@@ -29468,6 +29493,8 @@ function recoverPortfolioOnPageShow(event) {
     const needsHydrate = !portfolioHasEntries();
     if (!needsPaint && !needsHydrate && !event?.persisted) return;
     if (needsPaint) paintPortfolioFromLocal();
+    try { ensureMarketTickerBoot(); } catch (e) {}
+    hydrateLogoCacheFromCloud().catch(() => {});
     if (needsHydrate || event?.persisted) {
         hydratePortfolioFromCloud({ portfolioOnly: true, background: portfolioHasEntries() })
             .catch(markPortfolioSyncFailed);
