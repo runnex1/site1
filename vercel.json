@@ -19,5 +19,15 @@
     { "source": "/api/cron/tick", "destination": "/api/sync?cronTick=1" },
     { "source": "/api/cron/status", "destination": "/api/sync?cronStatus=1" },
     { "source": "/api/check-alerts", "destination": "/api/sync?checkAlerts=1" }
+  ],
+  "headers": [
+    {
+      "source": "/",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+    },
+    {
+      "source": "/index.html",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+    }
   ]
 }

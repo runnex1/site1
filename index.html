@@ -8572,6 +8572,8 @@ let watcherWallets = [];
 let watcherLinks = [];
 let watcherFilter = 'all';
 let watcherSearchQuery = '';
+let _wlPollTimer = null;
+let _wlCharts = {};
 let _predictionIntelSeq = 0;
 let _predictionPulseCards = [];
 let _predictionCarryCards = [];
@@ -10124,7 +10126,7 @@ function switchTab(tab, opts = {}) {
         if (badge)   badge.textContent   = n + (n === 1 ? ' tracked' : ' tracked');
         if (countEl) countEl.textContent = n + (n === 1 ? ' market' : ' markets');
     } else {
-        wlStopPolling();
+        try { wlStopPolling(); } catch (e) {}
     }
     if (tab === 'perps') {
         perpsLoadConfig();
@@ -20101,8 +20103,6 @@ async function fetchDomePnL() {
 // =============================================================================
 // WATCHLIST
 // =============================================================================
-let _wlPollTimer = null;
-let _wlCharts = {};          // chartjs instances keyed by id
 
 // ── Persist ───────────────────────────────────────────────────────────────────
 function saveWatchlist() {
