@@ -27390,6 +27390,7 @@ function perpsBindEquityChartHover() {
             const d = Math.abs(p.x - x);
             if (d < bestDist) { bestDist = d; hit = p; }
         }
+        const bucketLabel = hit.bucket === 'live' ? 'Live' : String(hit.bucket || '').replace('T', ' · ') + ':00 UTC';
         tip.innerHTML = `<div style="color:#9dacbb;margin-bottom:0.15rem;">${dashEsc(bucketLabel)}</div><div style="font-weight:800;color:#c4b5fd;">${perpsFmtUsd(hit.val)}</div>`;
         perpsPositionFundChartTooltip(ev, tip);
         if (dot) {

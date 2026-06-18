@@ -1475,6 +1475,7 @@ assert.match(indexHtml, /function perpsApplyEquityChartMode\(/, 'equity chart mu
 assert.doesNotMatch(indexHtml, /chartKind: 'pnl'/, 'equity chart must not plot PnL values');
 assert.match(indexHtml, /chartValue: p\.totalEquity/, 'equity chart must plot total equity in both modes');
 assert.match(indexHtml, /\.perps-chart-tooltip \{[\s\S]*?position:fixed/, 'equity chart tooltip must use fixed positioning so it is not clipped');
+assert.match(indexHtml, /const bucketLabel = hit\.bucket === 'live'/, 'equity chart hover must label the active snapshot bucket');
 assert.match(indexHtml, /perpsPositionFundChartTooltip\(ev, tip\)/, 'equity chart tooltip must flip near viewport edges');
 assert.match(indexHtml, /perpsPairDisplayLegEntries\(p\)/, 'position cards must order exchange labels with the long leg first');
 assert.match(indexHtml, /perpsVenueWithSideHtml\(entry\.venue, entry\.leg\.size\)/, 'exchange labels must show long/short badges in position cards');
