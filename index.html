@@ -681,7 +681,9 @@ body[data-active-tab="perps"] .topbar,
   display:flex; align-items:center; justify-content:space-between; gap:0.5rem;
 }
 .perps-panel-title { font-weight:900; letter-spacing:0.08em; text-transform:uppercase; font-size:0.82rem; color:var(--t1); }
-.perps-panel-title-row { display:flex; align-items:center; gap:0.4rem; }
+.perps-panel-title-row { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; }
+.perps-equity-mode-group { display:flex; gap:0.3rem; align-items:center; }
+.perps-equity-mode-btn { font-size:0.58rem; padding:0.16rem 0.42rem; letter-spacing:0.04em; }
 .perps-refresh-btn {
   display:inline-flex; align-items:center; justify-content:center;
   width:1.55rem; height:1.55rem; padding:0;
@@ -7687,12 +7689,18 @@ body[data-active-tab="loops"] .page-content,
 
           <section class="perps-panel">
             <div class="perps-panel-head">
-              <div class="perps-panel-title">Portfolio Equity</div>
+              <div class="perps-panel-title-row">
+                <div class="perps-panel-title">Portfolio Equity</div>
+                <div class="perps-equity-mode-group">
+                  <button type="button" class="perps-range-btn perps-equity-mode-btn active" data-perps-equity-mode="session" onclick="perpsSetEquityChartMode('session',this)">Last session</button>
+                  <button type="button" class="perps-range-btn perps-equity-mode-btn" data-perps-equity-mode="all" onclick="perpsSetEquityChartMode('all',this)">All-time</button>
+                </div>
+              </div>
               <span class="perps-pill" style="border-color:rgba(167,139,250,0.35);color:#c4b5fd;background:rgba(167,139,250,0.1);" id="perpsEquityChartBadge">—</span>
             </div>
             <div class="perps-panel-body perps-panel-body--chart">
               <div class="perps-pnl-chart hoverable" id="perpsEquityChartWrap">
-                <svg id="perpsEquityChart" viewBox="0 0 760 160" preserveAspectRatio="none" role="img" aria-label="Portfolio equity chart">
+                <svg id="perpsEquityChart" viewBox="0 0 760 160" preserveAspectRatio="none" role="img" aria-label="Portfolio PnL chart">
                   <path class="perps-equity-area" id="perpsEquityArea" d=""></path>
                   <path class="perps-equity-line" id="perpsEquityLine" d=""></path>
                   <g id="perpsEquityPoints"></g>
@@ -8752,6 +8760,7 @@ let _perpsLiveAprUpdatedAt = null;
 let _perpsLastRefreshAt = null;
 let _perpsRefreshError = null;
 let _perpsStatRange = '7d';
+let _perpsEquityChartMode = 'session';
 let _perpsPositionsTab = 'live';
 let _perpsLastData = null;
 let _perpsVenueEquity = null;
@@ -26219,6 +26228,15 @@ function perpsSetStatRange(range, btn) {
     }
 }
 
+function perpsSetEquityChartMode(mode, btn) {
+    _perpsEquityChartMode = mode === 'all' ? 'all' : 'session';
+    document.querySelectorAll('[data-perps-equity-mode]').forEach(b => {
+        b.classList.toggle('active', b === btn);
+    });
+    perpsSaveConfig({ statRangeOnly: true });
+    if (_perpsLastData) perpsRenderEquityChart(_perpsLastData);
+}
+
 function perpsHasValidWallet() {
     return perpsIsValidEthAddress(perpsResolveHlWallet());
 }
@@ -26470,6 +26488,7 @@ function perpsConfigPayload(cfg) {
         nado: norm.nado || '',
         grvtSubAccount: norm.grvtSubAccount || '4860249204328359',
         statRange: norm.statRange || _perpsStatRange,
+        equityChartMode: norm.equityChartMode === 'all' ? 'all' : 'session',
         configured: true,
     };
 }
@@ -27000,12 +27019,18 @@ function perpsLoadConfig() {
             grvtEl.value = grvt;
         }
         if (saved.statRange) _perpsStatRange = saved.statRange;
+        if (saved.equityChartMode === 'all' || saved.equityChartMode === 'session') {
+            _perpsEquityChartMode = saved.equityChartMode;
+        }
         if (perpsIsValidEthAddress(saved.hyperliquid) && !saved.configured) {
             perpsPersistConfig(saved);
         }
     } catch (e) {}
     document.querySelectorAll('[data-perps-stat-range]').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.perpsStatRange === _perpsStatRange);
+    });
+    document.querySelectorAll('[data-perps-equity-mode]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.perpsEquityMode === _perpsEquityChartMode);
     });
     const feesBtn = document.getElementById('perpsFundShowFeesBtn');
     if (feesBtn) feesBtn.classList.toggle('active', _perpsDailyFundShowFees);
@@ -27056,7 +27081,7 @@ function perpsSaveConfig(opts = {}) {
 
     if (!perpsIsValidEthAddress(hl)) {
         if (opts.statRangeOnly && perpsIsValidEthAddress(prev.hyperliquid)) {
-            perpsPersistConfig({ ...prev, statRange: _perpsStatRange });
+            perpsPersistConfig({ ...prev, statRange: _perpsStatRange, equityChartMode: _perpsEquityChartMode });
         }
         perpsUpdateConfigVisibility();
         return;
@@ -27064,7 +27089,7 @@ function perpsSaveConfig(opts = {}) {
 
     const nado = perpsReadConfigField('perpsNadoWallet', 'nado');
     const grvtSubAccount = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || prev.grvtSubAccount || '4860249204328359';
-    perpsPersistConfig({ hyperliquid: hl, nado, grvtSubAccount, statRange: _perpsStatRange });
+    perpsPersistConfig({ hyperliquid: hl, nado, grvtSubAccount, statRange: _perpsStatRange, equityChartMode: _perpsEquityChartMode });
     perpsUpdateConfigVisibility();
 }
 
@@ -27161,6 +27186,78 @@ function perpsIsEquitySnapshotEligible(data) {
 }
 
 
+function perpsIsEquityCapitalPayment(p) {
+    if (!p || !Number.isFinite(p.time) || !Number.isFinite(p.usdc) || p.usdc === 0) return false;
+    const kind = String(p.kind || '').toLowerCase();
+    return kind.includes('deposit') || kind.includes('withdraw') || kind.includes('transfer');
+}
+
+function perpsCollectCapitalPayments(data) {
+    const cf = data?.capitalFlows || {};
+    const groups = [
+        cf.hl?.payments,
+        cf.nado?.payments,
+        cf.grvt?.payments,
+        cf.extended?.payments,
+    ];
+    return groups
+        .flatMap(rows => (rows || []).filter(perpsIsEquityCapitalPayment))
+        .sort((a, b) => a.time - b.time);
+}
+
+function perpsLastCapitalEventMs(data) {
+    const payments = perpsCollectCapitalPayments(data);
+    return payments.length ? payments[payments.length - 1].time : 0;
+}
+
+function perpsPointAdjustedEquity(point, data) {
+    if (point?.adjustedEquity != null && Number.isFinite(point.adjustedEquity)) return point.adjustedEquity;
+    const total = point?.totalEquity;
+    if (!Number.isFinite(total)) return 0;
+    const time = perpsParseBucketTime(point.bucket) || point.time || 0;
+    const cf = data?.capitalFlows || {};
+    const netDeposits = time
+        ? perpsNetDepositsAtTime(cf.hl?.payments, cf.nado?.payments, time, cf.grvt?.payments, cf.extended?.payments)
+        : (data?.summary?.combinedNetDeposits ?? cf.combinedNetDeposits ?? 0);
+    return total - netDeposits;
+}
+
+function perpsApplyEquityChartMode(series, data, mode) {
+    let points = (series?.points || []).map(p => ({
+        ...p,
+        adjustedEquity: perpsPointAdjustedEquity(p, data),
+    }));
+    const sessionMs = perpsLastCapitalEventMs(data);
+    const chartMode = mode === 'all' ? 'all' : 'session';
+    if (chartMode === 'session' && sessionMs > 0) {
+        points = points.filter(p => (perpsParseBucketTime(p.bucket) || p.time || 0) >= sessionMs);
+    }
+    if (!points.length) {
+        return {
+            ...series,
+            points: [],
+            chartMode,
+            sessionMs,
+            sessionPnl: 0,
+            pointCount: 0,
+        };
+    }
+    const baselineAdj = points[0].adjustedEquity ?? 0;
+    const withPnl = points.map(p => ({
+        ...p,
+        pnl: (p.adjustedEquity ?? 0) - baselineAdj,
+    }));
+    return {
+        ...series,
+        points: withPnl,
+        chartMode,
+        sessionMs,
+        baselineAdjustedEquity: baselineAdj,
+        sessionPnl: withPnl.at(-1)?.pnl ?? 0,
+        pointCount: withPnl.length,
+    };
+}
+
 function perpsBuildEquitySeries(data) {
     const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
     const byBucket = {};
@@ -27168,7 +27265,8 @@ function perpsBuildEquitySeries(data) {
         const time = Number(snap.fetchedAt) || perpsParseBucketTime(key);
         if (!time || snap.totalEquity == null) continue;
         const bucket = snap.bucket || (String(key).includes('T') ? key : perpsEquityBucketKey(time));
-        const row = { time, bucket, totalEquity: snap.totalEquity, source: 'snapshot' };
+        const adjustedEquity = snap.adjustedEquity ?? (snap.totalEquity - (snap.cumulativeNetDeposits ?? 0));
+        const row = { time, bucket, totalEquity: snap.totalEquity, adjustedEquity, source: 'snapshot' };
         if (!byBucket[bucket] || row.time >= byBucket[bucket].time) byBucket[bucket] = row;
     }
 
@@ -27179,9 +27277,17 @@ function perpsBuildEquitySeries(data) {
     const extendedNow = s.extendedAccountValue ?? data.equityNow?.extended ?? 0;
     const totalNow = hlNow + nadoNow + grvtNow + extendedNow;
     const fetchedAt = data.fetchedAt || Date.now();
+    const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
+    const adjustedNow = s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalNow - combinedNetDeposits;
     const liveBucket = perpsEquityBucketKey(fetchedAt);
     if (!byBucket[liveBucket] && perpsIsEquitySnapshotEligible(data)) {
-        byBucket[liveBucket] = { time: fetchedAt, bucket: liveBucket, totalEquity: totalNow, source: 'live' };
+        byBucket[liveBucket] = {
+            time: fetchedAt,
+            bucket: liveBucket,
+            totalEquity: totalNow,
+            adjustedEquity: adjustedNow,
+            source: 'live',
+        };
     }
 
     let points = Object.values(byBucket)
@@ -27191,11 +27297,18 @@ function perpsBuildEquitySeries(data) {
         })
         .sort((a, b) => a.time - b.time);
     if (!points.length && totalNow > 0) {
-        points = [{ time: fetchedAt, bucket: liveBucket, totalEquity: totalNow, source: 'live' }];
+        points = [{
+            time: fetchedAt,
+            bucket: liveBucket,
+            totalEquity: totalNow,
+            adjustedEquity: adjustedNow,
+            source: 'live',
+        }];
     }
     return {
         points,
         totalEquityNow: totalNow,
+        adjustedEquityNow: adjustedNow,
         pointCount: points.length,
         firstBucket: points[0]?.bucket ?? null,
     };
@@ -27209,43 +27322,46 @@ function perpsBuildEquityChart(equitySeries) {
     const padY = 16;
     const chartW = width - padX - 12;
     const chartH = height - padY * 2;
-    const totalNow = equitySeries?.totalEquityNow ?? pts.at(-1)?.totalEquity ?? 0;
+    const sessionPnl = equitySeries?.sessionPnl ?? pts.at(-1)?.pnl ?? 0;
 
     if (pts.length < 2) {
         const y = padY + chartH / 2;
+        const lonePnl = pts[0]?.pnl ?? sessionPnl ?? 0;
         return {
             line: `M ${padX} ${y.toFixed(1)} L ${PERPS_CHART_WIDTH - 12} ${y.toFixed(1)}`,
             area: '',
-            total: totalNow,
+            total: sessionPnl,
             insufficient: true,
-            plot: pts.length ? [{ x: padX, y, val: pts[0].totalEquity, bucket: pts[0].bucket }] : [],
+            plot: pts.length ? [{ x: padX, y, val: lonePnl, pnl: lonePnl, bucket: pts[0].bucket }] : [],
             stats: [
-                { label: 'Current equity', value: perpsFmtUsd(totalNow) },
+                { label: equitySeries?.chartMode === 'session' ? 'Session PnL' : 'Total PnL', value: perpsFmtUsd(sessionPnl) },
                 { label: 'Snapshots', value: String(pts.length) },
                 { label: 'Next point', value: 'Every 4h' },
             ],
         };
     }
 
-    const values = pts.map(p => p.totalEquity);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
+    const values = pts.map(p => p.pnl ?? 0);
+    const min = Math.min(...values, 0);
+    const max = Math.max(...values, 0);
     const span = Math.max(max - min, 1);
     const plot = pts.map((p, i) => {
         const x = padX + (i / Math.max(pts.length - 1, 1)) * chartW;
-        const y = padY + ((max - p.totalEquity) / span) * chartH;
-        return { x, y, val: p.totalEquity, bucket: p.bucket };
+        const pnl = p.pnl ?? 0;
+        const y = padY + ((max - pnl) / span) * chartH;
+        return { x, y, val: pnl, pnl, bucket: p.bucket };
     });
     const linePath = plot.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
     const areaPath = `M ${padX} ${height - padY} L ${linePath.slice(2)} L ${PERPS_CHART_WIDTH - 12} ${height - padY} Z`;
+    const modeLabel = equitySeries?.chartMode === 'session' ? 'Session PnL' : 'Total PnL';
     return {
         line: linePath,
         area: areaPath,
-        total: totalNow,
+        total: sessionPnl,
         insufficient: false,
         plot,
         stats: [
-            { label: 'Current equity', value: perpsFmtUsd(totalNow) },
+            { label: modeLabel, value: perpsFmtUsd(sessionPnl) },
             { label: 'Range high', value: perpsFmtUsd(max) },
             { label: '4h points', value: String(pts.length) },
         ],
@@ -27279,7 +27395,9 @@ function perpsBindEquityChartHover() {
         tip.style.left = `${ev.clientX - wrap.getBoundingClientRect().left + 12}px`;
         tip.style.top = `${ev.clientY - wrap.getBoundingClientRect().top - 40}px`;
         const bucketLabel = hit.bucket === 'live' ? 'Live' : String(hit.bucket || '').replace('T', ' · ') + ':00 UTC';
-        tip.innerHTML = `<div style="color:#9dacbb;margin-bottom:0.15rem;">${dashEsc(bucketLabel)}</div><div style="font-weight:800;color:#c4b5fd;">${perpsFmtUsd(hit.val)}</div>`;
+        const pnl = hit.pnl ?? hit.val ?? 0;
+        const pnlColor = pnl >= 0 ? '#55d66f' : '#ff5c7a';
+        tip.innerHTML = `<div style="color:#9dacbb;margin-bottom:0.15rem;">${dashEsc(bucketLabel)}</div><div style="font-weight:800;color:${pnlColor};">${perpsFmtUsd(pnl)}</div>`;
         if (dot) {
             dot.style.display = '';
             dot.setAttribute('cx', String(hit.x));
@@ -27293,7 +27411,8 @@ function perpsBindEquityChartHover() {
 }
 
 function perpsRenderEquityChart(data) {
-    const equitySeries = perpsBuildEquitySeries(data);
+    const rawSeries = perpsBuildEquitySeries(data);
+    const equitySeries = perpsApplyEquityChartMode(rawSeries, data, _perpsEquityChartMode);
     data._equitySeries = equitySeries;
     const chart = perpsBuildEquityChart(equitySeries);
     const lineEl = document.getElementById('perpsEquityLine');
@@ -27302,8 +27421,25 @@ function perpsRenderEquityChart(data) {
     const badge = document.getElementById('perpsEquityChartBadge');
     if (lineEl) lineEl.setAttribute('d', chart.line);
     if (areaEl) areaEl.setAttribute('d', chart.area || '');
-    if (pointsEl) pointsEl.innerHTML = chart.plot.map(p => `<circle class="perps-equity-point" r="2.8" cx="${p.x}" cy="${p.y}"><title>${dashEsc(String(p.bucket || '').replace('T', ' · ') + ':00 UTC · ' + perpsFmtUsd(p.val))}</title></circle>`).join('');
-    if (badge) badge.textContent = chart.insufficient ? `live · ${perpsFmtUsd(chart.total)}` : `${equitySeries.pointCount} pts · latest ${perpsFmtUsd(chart.plot.at(-1)?.val)}`;
+    if (pointsEl) {
+        pointsEl.innerHTML = chart.plot.map(p => {
+            const pnl = p.pnl ?? p.val ?? 0;
+            return `<circle class="perps-equity-point" r="2.8" cx="${p.x}" cy="${p.y}"><title>${dashEsc(String(p.bucket || '').replace('T', ' · ') + ':00 UTC · PnL ' + perpsFmtUsd(pnl))}</title></circle>`;
+        }).join('');
+    }
+    if (badge) {
+        const pnlLabel = perpsFmtUsd(chart.total);
+        if (chart.insufficient) {
+            badge.textContent = equitySeries.chartMode === 'session' && equitySeries.sessionMs
+                ? `session · ${pnlLabel}`
+                : `live · ${pnlLabel}`;
+        } else {
+            const since = equitySeries.chartMode === 'session' && equitySeries.sessionMs
+                ? `since ${new Date(equitySeries.sessionMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · `
+                : '';
+            badge.textContent = `${since}${equitySeries.pointCount} pts · ${pnlLabel}`;
+        }
+    }
     _perpsEquityChartState = chart;
     perpsBindEquityChartHover();
     return equitySeries;
