@@ -8,6 +8,7 @@
 <meta http-equiv="Expires" content="0">
 <title>Vault — Portfolio Intelligence</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="lib/defi-pnl.js"></script>
 <script src="lib/etf-dca.js"></script>
 <script src="lib/loop-token-logos.js"></script>
@@ -1525,6 +1526,14 @@ body::after {
 }
 .import-btn:hover {
   background: rgba(108,114,255,0.2); border-color: var(--indigo);
+}
+.export-btn {
+  background: rgba(33,115,70,0.12); color: #4ade80;
+  border-color: rgba(74,222,128,0.28);
+}
+.export-btn:hover {
+  background: rgba(33,115,70,0.22); border-color: #4ade80;
+  box-shadow: 0 0 16px rgba(74,222,128,0.15);
 }
 .pm-btn {
     background: var(--fuchsia-10); color: var(--fuchsia);
@@ -7045,6 +7054,10 @@ body[data-active-tab="loops"] .page-content,
                 <button class="btn-base import-btn" onclick="openModal('importProtocols')">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
                   Import Text
+                </button>
+                <button class="btn-base export-btn" onclick="exportDefiPositionsExcel()" title="Download .xlsx workbook">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+                  Export Excel
                 </button>
                 <button class="btn-base danger-btn protocol-positions-clear-btn" onclick="deleteAllData('protocols')">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
@@ -17192,6 +17205,188 @@ function protocolUnlockSummary(p) {
     const m = text.match(/\b(?:unlock(?:s|ing)?|vest(?:s|ing)?|locked until|unlock time)\D{0,24}((?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:,\s*20\d{2})?|20\d{2}[\/-]\d{1,2}[\/-]\d{1,2})/i);
     if (m) return `Unlocking ${m[1].replace(/\//g, '-')}`;
     return p?.dashboardNote || p?.notes || '-';
+}
+function defiExportLegLabel(sub) {
+    const s = String(sub || '').toLowerCase();
+    if (s === 'supplied') return 'Supplied';
+    if (s === 'borrowed') return 'Borrowed';
+    return 'Held';
+}
+function defiExportAprNumber(apr) {
+    return Number.isFinite(Number(apr)) ? Number(apr) : '';
+}
+function defiExportBuildRows(opts = {}) {
+    const includeWallet = opts.includeWallet !== false;
+    const protocols = (data.protocols || []).filter(p => !/prediction/i.test(p.type || ''));
+    const rows = [];
+    for (const p of protocols) {
+        if (!p.sections?.length) {
+            const usdValue = Number(p.value || 0);
+            if (!usdValue && !p.manualValue) continue;
+            rows.push({
+                protocol: p.name || '',
+                type: p.type || 'Yield',
+                position: protocolPositionSummary(p),
+                leg: 'Held',
+                asset: p.name || '',
+                qty: '',
+                unitPrice: '',
+                usdValue,
+                supplyApy: '',
+                borrowApy: '',
+                netApy: defiExportAprNumber(dashboardProtocolApr(p)),
+                health: '',
+                chain: p.chain || '',
+                notes: p.dashboardNote || p.notes || '',
+            });
+            continue;
+        }
+        const typeCounts = {};
+        for (const sec of p.sections || []) {
+            const secType = sec.type || 'Yield';
+            typeCounts[secType] = (typeCounts[secType] || 0) + 1;
+            const secIdx = typeCounts[secType] > 1 ? `[${typeCounts[secType]}]` : '';
+            const prefix = protocolSectionKeyPrefix(p, sec);
+            const breakdown = lendingSectionApyBreakdown(p, sec);
+            const positionLabel = protocolSectionSummary(sec);
+            const health = Number.isFinite(Number(sec.health)) ? Number(sec.health).toFixed(2) : '';
+            for (const pos of sec.positions || []) {
+                const sub = String(pos.sub || '').toLowerCase();
+                const leg = defiExportLegLabel(pos.sub);
+                const key = `${prefix}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+                let { apr } = calcPositionAPR(key);
+                const parsed = protocolPositionSingleToken(pos);
+                const asset = parsed?.symbol || pos.pool || '';
+                const qty = parsed?.amount ?? '';
+                const unitPrice = protocolPositionUnitPrice(pos);
+                let usdValue = protocolPositionValue(pos);
+                if (sub === 'borrowed') {
+                    usdValue = -Math.abs(usdValue);
+                    if (apr !== null) apr = -Math.abs(apr);
+                }
+                rows.push({
+                    protocol: p.name || '',
+                    type: secType,
+                    position: positionLabel,
+                    leg,
+                    asset,
+                    qty,
+                    unitPrice: Number.isFinite(unitPrice) ? unitPrice : '',
+                    usdValue,
+                    supplyApy: sub === 'supplied' ? defiExportAprNumber(apr) : '',
+                    borrowApy: sub === 'borrowed' ? defiExportAprNumber(apr !== null ? Math.abs(apr) : null) : '',
+                    netApy: defiExportAprNumber(breakdown?.totalApr),
+                    health,
+                    chain: p.chain || '',
+                    notes: pos.notes || p.dashboardNote || p.notes || '',
+                });
+            }
+        }
+    }
+    if (includeWallet) {
+        for (const t of data.tokens || []) {
+            const qty = Number(t.amount) || 0;
+            const usdValue = Number(t.value) || 0;
+            if (!usdValue && !qty) continue;
+            const sym = String(t.symbol || '').trim();
+            const live = livePrices[sym.toUpperCase()];
+            const unitPrice = qty > 0 ? usdValue / qty : (Number.isFinite(live) ? live : '');
+            rows.push({
+                protocol: 'Wallet',
+                type: 'Spot',
+                position: sym,
+                leg: 'Held',
+                asset: sym,
+                qty: qty || '',
+                unitPrice,
+                usdValue,
+                supplyApy: '',
+                borrowApy: '',
+                netApy: '',
+                health: '',
+                chain: tokenNetworkLabel(t),
+                notes: '',
+            });
+        }
+    }
+    return rows;
+}
+function defiExportSummaryRows(rows) {
+    const rd = defiRiskDetails();
+    let weightedSum = 0, totalWeight = 0;
+    for (const p of (data.protocols || []).filter(x => !/prediction/i.test(x.type || ''))) {
+        const st = protocolAprStats(p);
+        if (st.apr !== null && st.weight > 0) {
+            weightedSum += st.apr * st.weight;
+            totalWeight += st.weight;
+        }
+    }
+    const avgApy = totalWeight ? weightedSum / totalWeight : null;
+    const stableExposure = stablecoinRowsForDefi().reduce((sum, x) => sum + stablecoinMonitorExposureValue(x), 0);
+    const protocolCount = (data.protocols || []).filter(p => !/prediction/i.test(p.type || '')).length;
+    const netUsd = rows.reduce((sum, r) => sum + (Number(r.usdValue) || 0), 0);
+    return [
+        ['Metric', 'Value'],
+        ['Export date', new Date().toISOString()],
+        ['Protocols', protocolCount],
+        ['Active loops', rd.loops],
+        ['Position legs', rows.length],
+        ['Total supplied', rd.lent],
+        ['Total borrowed', rd.borrowed],
+        ['Net lending value', rd.lent - rd.borrowed],
+        ['Net export value', netUsd],
+        ['Weighted net APY %', defiExportAprNumber(avgApy)],
+        ['Lowest health factor', rd.portfolioHealth ?? ''],
+        ['Stablecoin net exposure', stableExposure],
+    ];
+}
+function exportDefiPositionsExcel() {
+    if (typeof XLSX === 'undefined') {
+        alert('Excel export library is still loading. Try again in a moment.');
+        return;
+    }
+    normalizePortfolioData();
+    const rows = defiExportBuildRows({ includeWallet: true });
+    if (!rows.length) {
+        alert('No DeFi positions to export.');
+        return;
+    }
+    const posHeader = ['#', 'Protocol', 'Type', 'Position', 'Leg', 'Asset', 'Qty', 'Unit Price', 'USD Value', 'Supply APY %', 'Borrow APY %', 'Net APY %', 'Health', 'Chain', 'Notes'];
+    const posAoA = [posHeader];
+    rows.forEach((r, i) => {
+        posAoA.push([
+            i + 1,
+            r.protocol,
+            r.type,
+            r.position,
+            r.leg,
+            r.asset,
+            r.qty,
+            r.unitPrice,
+            r.usdValue,
+            r.supplyApy,
+            r.borrowApy,
+            r.netApy,
+            r.health,
+            r.chain,
+            r.notes,
+        ]);
+    });
+    const totalUsd = rows.reduce((sum, r) => sum + (Number(r.usdValue) || 0), 0);
+    posAoA.push(['', '', '', '', '', '', '', 'TOTAL (net)', totalUsd, '', '', '', '', '', '']);
+    const wsPos = XLSX.utils.aoa_to_sheet(posAoA);
+    wsPos['!cols'] = [
+        { wch: 4 }, { wch: 14 }, { wch: 12 }, { wch: 22 }, { wch: 10 }, { wch: 12 },
+        { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 11 },
+        { wch: 8 }, { wch: 14 }, { wch: 24 },
+    ];
+    const wsSum = XLSX.utils.aoa_to_sheet(defiExportSummaryRows(rows));
+    wsSum['!cols'] = [{ wch: 24 }, { wch: 28 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, wsPos, 'Positions');
+    XLSX.utils.book_append_sheet(wb, wsSum, 'Summary');
+    const date = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `defi-positions-${date}.xlsx`);
 }
 
 function renderProtocols() {
