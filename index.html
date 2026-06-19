@@ -7833,6 +7833,10 @@ body[data-active-tab="loops"] .page-content,
                 <button type="button" class="perps-btn secondary" onclick="perpsCloseVariationalModal()">Close</button>
               </div>
               <div style="display:grid;gap:0.75rem;margin-top:0.5rem;">
+                <div id="perpsVariationalTrackedEntryWrap" style="display:none;">
+                  <label id="perpsVariationalTrackedEntryLabel" style="display:block;font-size:0.78rem;color:var(--muted);margin-bottom:0.35rem;">Exchange avg entry</label>
+                  <div id="perpsVariationalTrackedEntryVal" style="font-family:var(--ff-mono);font-size:0.92rem;font-weight:800;color:#9dacbb;padding:0.45rem 0.55rem;border-radius:8px;border:1px solid rgba(134,159,179,0.18);background:rgba(255,255,255,0.03);"></div>
+                </div>
                 <div>
                   <label for="perpsVariationalPxInput" id="perpsVariationalPxLabel" style="display:block;font-size:0.78rem;color:var(--muted);margin-bottom:0.35rem;">Avg entry price</label>
                   <input type="text" id="perpsVariationalPxInput" inputmode="decimal" placeholder="0.00" style="width:100%;">
@@ -27258,7 +27262,9 @@ function perpsPersistCachedClosedPairs(rows) {
 function perpsLoadVariationalHedges() {
     try {
         const rows = JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_HEDGES_KEY) || '[]');
-        return Array.isArray(rows) ? rows : [];
+        const list = Array.isArray(rows) ? rows : [];
+        const VH = window.VariationalHedge;
+        return VH?.dedupeActiveVariationalHedges ? VH.dedupeActiveVariationalHedges(list) : list;
     } catch (e) {
         return [];
     }
@@ -27328,14 +27334,27 @@ function perpsOpenVariationalModal(opts = {}) {
     const label = document.getElementById('perpsVariationalPxLabel');
     const input = document.getElementById('perpsVariationalPxInput');
     const hint = document.getElementById('perpsVariationalModalHint');
+    const trackedWrap = document.getElementById('perpsVariationalTrackedEntryWrap');
+    const trackedLabel = document.getElementById('perpsVariationalTrackedEntryLabel');
+    const trackedVal = document.getElementById('perpsVariationalTrackedEntryVal');
     if (!modal || !input) return;
     _perpsVariationalModalMode = opts.mode || 'entry';
     _perpsVariationalModalHedgeId = opts.hedgeId || null;
     _perpsVariationalModalUnhedgedIdx = opts.unhedgedIdx ?? null;
     if (title) title.textContent = opts.mode === 'exit' ? 'Variational exit price' : 'Hedge with Variational';
     if (meta) meta.textContent = opts.meta || '';
-    if (label) label.textContent = opts.mode === 'exit' ? 'Avg exit price' : 'Avg entry price';
+    if (label) label.textContent = opts.mode === 'exit' ? 'Avg exit price' : 'Variational avg entry price';
     input.value = opts.value != null && Number.isFinite(Number(opts.value)) ? String(opts.value) : '';
+    const trackedEntry = Number(opts.trackedEntryPx);
+    if (trackedWrap) {
+        const showTracked = opts.mode === 'entry' && Number.isFinite(trackedEntry) && trackedEntry > 0;
+        trackedWrap.style.display = showTracked ? '' : 'none';
+        if (showTracked) {
+            const venueLabel = perpsVenueShort(opts.trackedVenue || 'grvt');
+            if (trackedLabel) trackedLabel.textContent = `${venueLabel} avg entry (view only)`;
+            if (trackedVal) trackedVal.textContent = perpsFmtPx(trackedEntry);
+        }
+    }
     if (hint) {
         hint.textContent = opts.mode === 'exit'
             ? 'Enter the average exit price on Variational. Tracked leg already closed on exchange.'
@@ -27359,7 +27378,8 @@ function perpsSaveVariationalModal() {
         const leg = unhedged[_perpsVariationalModalUnhedgedIdx];
         if (!leg) return;
         const hedge = VH.createHedgeFromUnhedged(leg, px);
-        const hedges = perpsLoadVariationalHedges();
+        const hedges = perpsLoadVariationalHedges().filter(h =>
+            !(h.status !== 'closed' && h.symbol === leg.symbol && h.trackedVenue === leg.venue));
         hedges.push(hedge);
         perpsPersistVariationalHedges(hedges);
     } else if (_perpsVariationalModalHedgeId) {
@@ -27408,6 +27428,8 @@ function perpsHedgeWithVariational(unhedgedIdx) {
         mode: 'entry',
         unhedgedIdx,
         value: mark,
+        trackedEntryPx: leg.entryPx ?? leg.entry,
+        trackedVenue: leg.venue,
         meta: `${leg.symbol} · ${perpsVenueShort(leg.venue)} ${leg.side} ${perpsFmtSize(leg.size)}`,
     });
 }
@@ -27415,10 +27437,16 @@ function perpsHedgeWithVariational(unhedgedIdx) {
 function perpsEditVariationalEntry(hedgeId) {
     const hedge = perpsLoadVariationalHedges().find(h => h.id === hedgeId);
     if (!hedge) return;
+    const pair = (_perpsLastData?.paired || []).find(p => p.variationalHedgeId === hedgeId);
+    const trackedLeg = pair?.crossLegA?.venue === hedge.trackedVenue
+        ? pair.crossLegA
+        : pair?.crossLegB;
     perpsOpenVariationalModal({
         mode: 'entry',
         hedgeId,
         value: hedge.variationalEntryPx,
+        trackedEntryPx: trackedLeg?.entryPx ?? trackedLeg?.entry ?? hedge.trackedLastSnapshot?.entryPx,
+        trackedVenue: hedge.trackedVenue,
         meta: `${hedge.symbol} · ${perpsVenueShort(hedge.trackedVenue)} + Var (open)`,
     });
 }
@@ -28538,6 +28566,7 @@ function perpsApplyLiveRates(rateSpread, fetchedAt = null) {
         );
         if (nextSpread != null) p.currentSpread8h = nextSpread;
     }
+    perpsApplyVariationalHedgesToData(_perpsLastData);
     perpsRenderPositionsPanel(_perpsLastData);
 }
 
@@ -29439,7 +29468,7 @@ function perpsRenderPortfolioPositions(paired) {
                         ? ` <button type="button" class="perps-btn secondary" style="padding:0.1rem 0.4rem;font-size:0.65rem;margin-left:0.25rem;" onclick="perpsEditVariationalEntry('${hedgeId}'); event.stopPropagation();">Edit</button>`
                         : '';
                     const fundEst = entry.leg.fundingEstimated ? ' ~est.' : '';
-                    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}${varEdit}</span><span class="perps-pos-metric-val ${perpsSignedCls(entry.leg.upnl ?? 0)}">${perpsFmtUsd(entry.leg.upnl ?? 0)}</span></div>`;
+                    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}${varEdit}</span><span class="perps-pos-metric-val ${entry.leg.upnl != null ? perpsSignedCls(entry.leg.upnl) : ''}">${entry.leg.upnl != null ? perpsFmtUsd(entry.leg.upnl) : '—'}</span></div>`;
                 }).join('')}
             </div>
             ${perpsPositionLiqStackHtml(p, displayLegs)}

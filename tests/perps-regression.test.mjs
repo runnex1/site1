@@ -1896,6 +1896,8 @@ const {
   parseVariationalListings,
   createHedgeFromUnhedged,
   applyVariationalHedges,
+  stripVariationalPairs,
+  dedupeActiveVariationalHedges,
   buildVariationalOpenPair,
   buildVariationalClosedPair,
   estimateVariationalFundingUsd,
@@ -1907,12 +1909,22 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
   const listing = parseVariationalListing({
     ticker: 'BTC',
     mark_price: '100000',
-    funding_rate: '0.01',
+    funding_rate: '1',
     funding_interval_s: 28800,
   });
   assert.equal(listing.symbol, 'BTC');
   assert.equal(listing.fundingRate8h, 0.01);
   assert.equal(listing.markPx, 100000);
+}
+
+{
+  const listing = parseVariationalListing({
+    ticker: 'XLM',
+    mark_price: '0.21675',
+    funding_rate: '0.1095',
+    funding_interval_s: 28800,
+  });
+  assert.ok(Math.abs(listing.fundingRate8h - 0.001095) < 1e-9, 'Variational API funding_rate must be parsed as percent');
 }
 
 {
@@ -1944,6 +1956,41 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
 }
 
 {
+  const duped = applyVariationalHedges({
+    paired: [{ symbol: 'XLM', pairType: 'grvt_variational', variationalHedgeId: 'old' }],
+    unhedged: [],
+    rateSpread: [],
+    grvt: { state: { positions: [{ symbol: 'XLM', size: 90000, side: 'long', entryPx: 0.22, markPx: 0.217, notional: 19500, unrealizedPnl: -89 }] } },
+    hyperliquid: { state: { positions: [] } },
+    nado: { state: { positions: [] } },
+    extended: { state: { positions: [] } },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  }, [{
+    id: 'h1',
+    symbol: 'XLM',
+    trackedVenue: 'grvt',
+    trackedSize: 90000,
+    variationalSize: -90000,
+    variationalEntryPx: 0.218,
+    status: 'open',
+    openedAt: 1,
+  }], { XLM: { symbol: 'XLM', markPx: 0.217, fundingRateInterval: 0.001095, fundingIntervalS: 28800, fundingRate8h: 0.001095 } });
+  assert.equal(duped.paired.length, 1, 're-applying variational hedges must not duplicate open pairs');
+}
+
+{
+  const deduped = dedupeActiveVariationalHedges([
+    { id: 'a', symbol: 'XLM', trackedVenue: 'grvt', status: 'open', openedAt: 1 },
+    { id: 'b', symbol: 'XLM', trackedVenue: 'grvt', status: 'open', openedAt: 2 },
+    { id: 'c', symbol: 'XLM', trackedVenue: 'grvt', status: 'closed', openedAt: 0 },
+  ]);
+  assert.equal(deduped.filter(h => h.status !== 'closed').length, 1);
+  assert.equal(deduped.find(h => h.status !== 'closed')?.id, 'b');
+  assert.equal(stripVariationalPairs([{ pairType: 'grvt_variational' }, { pairType: 'hl_nado' }]).length, 1);
+}
+
+{
   const rows = buildRateSpreadRows(
     new Set(['BTC']),
     { BTC: { fundingRate8h: 0.01, markPx: 100000 } },
@@ -1963,6 +2010,8 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
 }
 
 assert.ok(indexHtml.includes('PERPS_VARIATIONAL_HEDGES_KEY'), 'index must persist variational hedges');
+assert.ok(indexHtml.includes('perpsVariationalTrackedEntryWrap'), 'variational modal must show tracked exchange entry read-only');
+assert.ok(indexHtml.includes('trackedEntryPx'), 'variational modal must pass tracked exchange entry into edit flow');
 assert.ok(indexHtml.includes('Hedge with Variational'), 'index must expose hedge action');
 assert.ok(indexHtml.includes('lib/variational-hedge.js'), 'index must load variational hedge module');
 assert.ok(perpsJs.includes('fetchVariationalRates'), 'perps.js must fetch variational rates');
