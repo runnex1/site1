@@ -12,6 +12,7 @@
 <script src="lib/defi-pnl.js"></script>
 <script src="lib/etf-dca.js"></script>
 <script src="lib/loop-token-logos.js"></script>
+<script src="lib/defi-export.js"></script>
 <script src="lib/variational-hedge.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
@@ -5734,6 +5735,17 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .pred-kpi-sub.good { color:var(--green); }
 .pred-kpi-value.bad,
 .pred-kpi-sub.bad { color:var(--red); }
+.pred-kpi-stable-wrap { position:relative; display:inline-block; cursor:help; }
+.pred-kpi-stable-tip {
+  display:none; position:absolute; left:0; top:calc(100% + 6px); z-index:40;
+  min-width:180px; padding:0.45rem 0.55rem; border-radius:6px;
+  border:1px solid rgba(134,159,179,0.22); background:rgba(8,14,22,0.98);
+  box-shadow:0 10px 28px rgba(0,0,0,0.35); font-family:var(--ff-mono); font-size:0.62rem;
+  font-weight:600; line-height:1.45; white-space:nowrap;
+}
+.pred-kpi-stable-wrap:hover .pred-kpi-stable-tip { display:block; }
+.pred-kpi-stable-tip-row { display:flex; justify-content:space-between; gap:0.75rem; padding:0.1rem 0; color:#9dacbb; }
+.pred-kpi-stable-tip-row strong { color:var(--t1); font-weight:800; }
 .pred-status-pill {
   display:inline-flex;
   align-items:center;
@@ -10619,6 +10631,7 @@ async function fetchPolymarketPositions(options = {}) {
         saveData();
         maybeSaveSnapshot();
         refreshPredictionAggregatePnl({ force: true });
+        refreshPredictionWalletBalances({ force: true });
         if (!skipUpdateUI) {
             updateUI();
             renderPredictionMarkets(); // Explicit re-render for chart
@@ -12235,6 +12248,15 @@ function dashWalletSuffix4(wallet) {
     if (s.length < 4) return '';
     const tail = s.slice(-4);
     return /^[a-zA-Z0-9]{4}$/.test(tail) ? ` (${tail})` : '';
+}
+function dashWalletLabel4(wallet) {
+    const s = String(wallet || '').trim().toLowerCase();
+    if (!s) return '—';
+    const custom = EVENT_LOG_WALLET_SUFFIX[s];
+    if (custom) return custom;
+    if (s.length < 4) return s;
+    const tail = s.slice(-4);
+    return /^[a-zA-Z0-9]{4}$/.test(tail) ? tail : s.slice(-4);
 }
 function orderFilledEventText(g, maxTitle = 55) {
     const avgPrice = g.totalShares > 0 ? g.totalCost / g.totalShares : 0;
@@ -17253,18 +17275,64 @@ function defiExportLegLabel(sub) {
     if (s === 'borrowed') return 'Borrowed';
     return 'Held';
 }
-function defiExportAprNumber(apr) {
+function defiExportAprRaw(apr) {
     return Number.isFinite(Number(apr)) ? Number(apr) : '';
 }
-function defiExportBuildRows(opts = {}) {
+function defiExportGroupLabel(p, entry) {
+    const summary = (window.DefiExport?.defiExportPositionLabel || (x => x))(protocolEntrySummary(entry));
+    if (entry.kind === 'lending' && entry.sections?.length === 1) {
+        const pos = entry.sections[0].positions || [];
+        const hasSupplied = pos.some(x => String(x.sub || '').toLowerCase() === 'supplied');
+        const hasBorrowed = pos.some(x => String(x.sub || '').toLowerCase() === 'borrowed');
+        if (hasSupplied && !hasBorrowed) return `${p.name} · ${summary} supply`;
+        if (hasBorrowed && !hasSupplied) return `${p.name} · ${summary} borrow`;
+    }
+    return `${p.name} · ${summary}`;
+}
+function defiExportBuildLegRow(p, sec, secType, pos, breakdown) {
+    const sub = String(pos.sub || '').toLowerCase();
+    const leg = defiExportLegLabel(pos.sub);
+    const key = `${protocolSectionKeyPrefix(p, sec)}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+    let { apr } = calcPositionAPR(key);
+    const parsed = protocolPositionSingleToken(pos);
+    const asset = parsed?.symbol || pos.pool || '';
+    const qty = parsed?.amount ?? '';
+    const unitPrice = protocolPositionUnitPrice(pos);
+    let usdValue = protocolPositionValue(pos);
+    if (sub === 'borrowed') {
+        usdValue = -Math.abs(usdValue);
+        if (apr !== null) apr = Math.abs(apr);
+    }
+    return {
+        protocol: p.name || '',
+        type: secType,
+        position: protocolSectionSummary(sec),
+        leg,
+        asset,
+        qty,
+        unitPrice: Number.isFinite(unitPrice) ? unitPrice : '',
+        usdValue,
+        supplyApy: sub === 'supplied' ? defiExportAprRaw(apr) : '',
+        borrowApy: sub === 'borrowed' ? defiExportAprRaw(apr) : '',
+        netApy: defiExportAprRaw(breakdown?.totalApr),
+        health: Number.isFinite(Number(sec.health)) ? Number(sec.health).toFixed(2) : '',
+        chain: p.chain || '',
+        notes: pos.notes || p.dashboardNote || p.notes || '',
+    };
+}
+function defiExportBuildGroups(opts = {}) {
     const includeWallet = opts.includeWallet !== false;
-    const protocols = (data.protocols || []).filter(p => !/prediction/i.test(p.type || ''));
-    const rows = [];
-    for (const p of protocols) {
-        if (!p.sections?.length) {
+    const protocols = defiProtocolsForDisplay(data.protocols).filter(p => !/prediction/i.test(p.type || ''));
+    const groups = [];
+
+    for (const entry of protocolDisplayEntries(protocols)) {
+        const p = entry.protocol;
+        const groupRows = [];
+
+        if (!entry.sections?.length) {
             const usdValue = Number(p.value || 0);
             if (!usdValue && !p.manualValue) continue;
-            rows.push({
+            groupRows.push({
                 protocol: p.name || '',
                 type: p.type || 'Yield',
                 position: protocolPositionSummary(p),
@@ -17275,56 +17343,31 @@ function defiExportBuildRows(opts = {}) {
                 usdValue,
                 supplyApy: '',
                 borrowApy: '',
-                netApy: defiExportAprNumber(dashboardProtocolApr(p)),
+                netApy: defiExportAprRaw(dashboardProtocolApr(p)),
                 health: '',
                 chain: p.chain || '',
                 notes: p.dashboardNote || p.notes || '',
             });
-            continue;
-        }
-        const typeCounts = {};
-        for (const sec of p.sections || []) {
-            const secType = sec.type || 'Yield';
-            typeCounts[secType] = (typeCounts[secType] || 0) + 1;
-            const secIdx = typeCounts[secType] > 1 ? `[${typeCounts[secType]}]` : '';
-            const prefix = protocolSectionKeyPrefix(p, sec);
-            const breakdown = lendingSectionApyBreakdown(p, sec);
-            const positionLabel = protocolSectionSummary(sec);
-            const health = Number.isFinite(Number(sec.health)) ? Number(sec.health).toFixed(2) : '';
-            for (const pos of sec.positions || []) {
-                const sub = String(pos.sub || '').toLowerCase();
-                const leg = defiExportLegLabel(pos.sub);
-                const key = `${prefix}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
-                let { apr } = calcPositionAPR(key);
-                const parsed = protocolPositionSingleToken(pos);
-                const asset = parsed?.symbol || pos.pool || '';
-                const qty = parsed?.amount ?? '';
-                const unitPrice = protocolPositionUnitPrice(pos);
-                let usdValue = protocolPositionValue(pos);
-                if (sub === 'borrowed') {
-                    usdValue = -Math.abs(usdValue);
-                    if (apr !== null) apr = -Math.abs(apr);
+        } else {
+            for (const sec of entry.sections) {
+                const secType = sec.type || 'Yield';
+                const breakdown = lendingSectionApyBreakdown(p, sec);
+                for (const pos of sec.positions || []) {
+                    groupRows.push(defiExportBuildLegRow(p, sec, secType, pos, breakdown));
                 }
-                rows.push({
-                    protocol: p.name || '',
-                    type: secType,
-                    position: positionLabel,
-                    leg,
-                    asset,
-                    qty,
-                    unitPrice: Number.isFinite(unitPrice) ? unitPrice : '',
-                    usdValue,
-                    supplyApy: sub === 'supplied' ? defiExportAprNumber(apr) : '',
-                    borrowApy: sub === 'borrowed' ? defiExportAprNumber(apr !== null ? Math.abs(apr) : null) : '',
-                    netApy: defiExportAprNumber(breakdown?.totalApr),
-                    health,
-                    chain: p.chain || '',
-                    notes: pos.notes || p.dashboardNote || p.notes || '',
-                });
             }
         }
+
+        if (groupRows.length) {
+            groups.push({
+                label: defiExportGroupLabel(p, entry),
+                rows: groupRows,
+            });
+        }
     }
+
     if (includeWallet) {
+        const walletRows = [];
         for (const t of data.tokens || []) {
             const qty = Number(t.amount) || 0;
             const usdValue = Number(t.value) || 0;
@@ -17332,7 +17375,7 @@ function defiExportBuildRows(opts = {}) {
             const sym = String(t.symbol || '').trim();
             const live = livePrices[sym.toUpperCase()];
             const unitPrice = qty > 0 ? usdValue / qty : (Number.isFinite(live) ? live : '');
-            rows.push({
+            walletRows.push({
                 protocol: 'Wallet',
                 type: 'Spot',
                 position: sym,
@@ -17349,12 +17392,20 @@ function defiExportBuildRows(opts = {}) {
                 notes: '',
             });
         }
+        if (walletRows.length) {
+            groups.push({
+                label: 'Wallet tokens (included)',
+                rows: walletRows,
+            });
+        }
     }
-    return rows;
+
+    return groups;
 }
-function defiExportSummaryRows(rows) {
+function defiExportSummaryPayload(groups) {
     const rd = defiRiskDetails();
-    let weightedSum = 0, totalWeight = 0;
+    let weightedSum = 0;
+    let totalWeight = 0;
     for (const p of (data.protocols || []).filter(x => !/prediction/i.test(x.type || ''))) {
         const st = protocolAprStats(p);
         if (st.apr !== null && st.weight > 0) {
@@ -17365,63 +17416,41 @@ function defiExportSummaryRows(rows) {
     const avgApy = totalWeight ? weightedSum / totalWeight : null;
     const stableExposure = stablecoinRowsForDefi().reduce((sum, x) => sum + stablecoinMonitorExposureValue(x), 0);
     const protocolCount = (data.protocols || []).filter(p => !/prediction/i.test(p.type || '')).length;
-    const netUsd = rows.reduce((sum, r) => sum + (Number(r.usdValue) || 0), 0);
-    return [
-        ['Metric', 'Value'],
-        ['Export date', new Date().toISOString()],
-        ['Protocols', protocolCount],
-        ['Active loops', rd.loops],
-        ['Position legs', rows.length],
-        ['Total supplied', rd.lent],
-        ['Total borrowed', rd.borrowed],
-        ['Net lending value', rd.lent - rd.borrowed],
-        ['Net export value', netUsd],
-        ['Weighted net APY %', defiExportAprNumber(avgApy)],
-        ['Lowest health factor', rd.portfolioHealth ?? ''],
-        ['Stablecoin net exposure', stableExposure],
-    ];
+    const DE = window.DefiExport || {};
+    return {
+        exportDate: (DE.defiExportExportDate || (() => new Date().toISOString()))(),
+        protocols: protocolCount,
+        activeLoops: rd.loops,
+        totalSupplied: rd.lent,
+        totalBorrowed: rd.borrowed,
+        netLendingValue: rd.lent - rd.borrowed,
+        weightedNetApy: avgApy,
+        lowestHealth: rd.portfolioHealth ?? '',
+        stablecoinNetExposure: stableExposure,
+    };
 }
 function exportDefiPositionsExcel() {
     if (typeof XLSX === 'undefined') {
         alert('Excel export library is still loading. Try again in a moment.');
         return;
     }
+    const DE = window.DefiExport;
+    if (!DE?.buildDefiPositionsSheetAoA) {
+        alert('Export formatter failed to load.');
+        return;
+    }
     normalizePortfolioData();
-    const rows = defiExportBuildRows({ includeWallet: true });
-    if (!rows.length) {
+    const groups = defiExportBuildGroups({ includeWallet: true });
+    const legCount = groups.reduce((sum, g) => sum + (g.rows?.length || 0), 0);
+    if (!legCount) {
         alert('No DeFi positions to export.');
         return;
     }
-    const posHeader = ['#', 'Protocol', 'Type', 'Position', 'Leg', 'Asset', 'Qty', 'Unit Price', 'USD Value', 'Supply APY %', 'Borrow APY %', 'Net APY %', 'Health', 'Chain', 'Notes'];
-    const posAoA = [posHeader];
-    rows.forEach((r, i) => {
-        posAoA.push([
-            i + 1,
-            r.protocol,
-            r.type,
-            r.position,
-            r.leg,
-            r.asset,
-            r.qty,
-            r.unitPrice,
-            r.usdValue,
-            r.supplyApy,
-            r.borrowApy,
-            r.netApy,
-            r.health,
-            r.chain,
-            r.notes,
-        ]);
-    });
-    const totalUsd = rows.reduce((sum, r) => sum + (Number(r.usdValue) || 0), 0);
-    posAoA.push(['', '', '', '', '', '', '', 'TOTAL (net)', totalUsd, '', '', '', '', '', '']);
-    const wsPos = XLSX.utils.aoa_to_sheet(posAoA);
-    wsPos['!cols'] = [
-        { wch: 4 }, { wch: 14 }, { wch: 12 }, { wch: 22 }, { wch: 10 }, { wch: 12 },
-        { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 11 },
-        { wch: 8 }, { wch: 14 }, { wch: 24 },
-    ];
-    const wsSum = XLSX.utils.aoa_to_sheet(defiExportSummaryRows(rows));
+    const { aoa, merges } = DE.buildDefiPositionsSheetAoA(groups);
+    const wsPos = XLSX.utils.aoa_to_sheet(aoa);
+    wsPos['!cols'] = DE.EXPORT_POS_COL_WIDTHS;
+    if (merges?.length) wsPos['!merges'] = merges;
+    const wsSum = XLSX.utils.aoa_to_sheet(DE.buildDefiSummarySheetAoA(defiExportSummaryPayload(groups)));
     wsSum['!cols'] = [{ wch: 24 }, { wch: 28 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, wsPos, 'Positions');
@@ -18054,6 +18083,100 @@ function renderPredSubtabs() {
 
 // Prediction Markets cockpit layout. This overrides the older two-subtab scaffold
 // above while reusing the existing position, activity, and opportunity data paths.
+let _predictionWalletBalancesCache = { key: '', ts: 0, total: null, balances: [], loading: false, error: '' };
+const PREDICTION_BALANCES_MS = 2 * 60 * 1000;
+
+async function fetchServerPolymarketBalances(wallets) {
+    if (location.protocol === 'file:') return null;
+    const clean = mergeWalletAddresses(wallets || []);
+    if (!clean.length) return { wallets: 0, total: 0, balances: [] };
+    const qs = new URLSearchParams({ polymarketBalances: '1', wallets: clean.join(',') });
+    const response = await fetch('/api/sync?' + qs.toString(), { signal: AbortSignal.timeout(25000) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Polymarket balances returned HTTP ${response.status}`);
+    return payload;
+}
+
+function predictionWalletBalancesKey(wallets) {
+    return mergeWalletAddresses(wallets || []).map(w => w.toLowerCase()).sort().join('|');
+}
+
+function predictionRenderStableBalanceTip(balances) {
+    const tip = document.getElementById('predictionStableTip');
+    if (!tip) return;
+    const rows = (balances || []).filter(row => row?.wallet);
+    if (!rows.length) {
+        tip.innerHTML = '<div class="pred-kpi-stable-tip-row"><span>No PM wallets</span></div>';
+        return;
+    }
+    tip.innerHTML = rows.map(row => {
+        const label = dashEsc(dashWalletLabel4(row.wallet));
+        const val = Number.isFinite(Number(row.usdc)) ? dashUsd(Number(row.usdc), 2) : '—';
+        return `<div class="pred-kpi-stable-tip-row"><span>${label}</span><strong>${val}</strong></div>`;
+    }).join('') + `<div class="pred-kpi-stable-tip-row" style="margin-top:0.25rem;border-top:1px solid rgba(134,159,179,0.15);padding-top:0.25rem"><span>Total idle</span><strong>${dashUsd(rows.reduce((s, r) => s + (Number(r.usdc) || 0), 0), 2)}</strong></div>`;
+}
+
+function predictionApplyStableBalanceKpi(payload) {
+    const kpi = document.getElementById('predictionStableKpi');
+    const sub = document.getElementById('predictionStableSub');
+    const wrap = document.getElementById('predictionStableWrap');
+    const balances = Array.isArray(payload?.balances) ? payload.balances : [];
+    const total = Number.isFinite(Number(payload?.total)) ? Number(payload.total) : balances.reduce((s, r) => s + (Number(r.usdc) || 0), 0);
+    if (kpi) kpi.textContent = dashUsd(total, 2);
+    if (sub) {
+        const withBalance = balances.filter(r => Number(r.usdc) > 0.005).length;
+        sub.textContent = withBalance
+            ? `${withBalance} wallet${withBalance === 1 ? '' : 's'} · idle USDC`
+            : 'not deployed';
+    }
+    if (wrap) wrap.classList.toggle('loading', false);
+    predictionRenderStableBalanceTip(balances);
+}
+
+async function refreshPredictionWalletBalances(opts = {}) {
+    const wallets = mergeWalletAddresses(data.polymarketWallets || []);
+    const key = predictionWalletBalancesKey(wallets);
+    if (!key) {
+        _predictionWalletBalancesCache = { key: '', ts: Date.now(), total: 0, balances: [], loading: false, error: '' };
+        predictionApplyStableBalanceKpi({ total: 0, balances: [] });
+        return;
+    }
+    const fresh = !opts.force && _predictionWalletBalancesCache.key === key
+        && (Date.now() - Number(_predictionWalletBalancesCache.ts || 0)) < PREDICTION_BALANCES_MS
+        && Array.isArray(_predictionWalletBalancesCache.balances);
+    if (fresh) {
+        predictionApplyStableBalanceKpi(_predictionWalletBalancesCache);
+        return;
+    }
+    if (_predictionWalletBalancesCache.loading) return;
+    _predictionWalletBalancesCache.loading = true;
+    const sub = document.getElementById('predictionStableSub');
+    if (sub) sub.textContent = 'loading…';
+    try {
+        const payload = await fetchServerPolymarketBalances(wallets);
+        _predictionWalletBalancesCache = {
+            key,
+            ts: Date.now(),
+            total: Number(payload?.total) || 0,
+            balances: payload?.balances || [],
+            loading: false,
+            error: payload?.error || '',
+        };
+        predictionApplyStableBalanceKpi(_predictionWalletBalancesCache);
+    } catch (e) {
+        _predictionWalletBalancesCache = {
+            ..._predictionWalletBalancesCache,
+            key,
+            ts: Date.now(),
+            loading: false,
+            error: e.message || 'Balance fetch failed',
+        };
+        const subEl = document.getElementById('predictionStableSub');
+        if (subEl) subEl.textContent = 'unavailable';
+    }
+}
+
+window._predictionWalletBalancesCache = _predictionWalletBalancesCache;
 window._predSideFilter = window._predSideFilter || 'all';
 window._predPlatform = window._predPlatform || 'polymarket';
 window._predInsightTab = window._predInsightTab || 'smart';
@@ -18081,8 +18204,14 @@ function renderPredSubtabs() {
             <div class="pred-kpi-value" id="predictionPnlKpi">$0</div>
           </div>
           <div class="pred-kpi">
-            <div class="pred-label">NO Carry</div>
-            <div class="pred-kpi-value good" id="predictionCarryKpi">-- <span class="pred-kpi-sub" id="predictionCarrySub">Scanning</span></div>
+            <div class="pred-label">Stablecoin Balance</div>
+            <div class="pred-kpi-value" id="predictionStableKpiWrap">
+              <span class="pred-kpi-stable-wrap" id="predictionStableWrap">
+                <span id="predictionStableKpi">—</span>
+                <span class="pred-kpi-sub" id="predictionStableSub">not deployed</span>
+                <div class="pred-kpi-stable-tip" id="predictionStableTip"></div>
+              </span>
+            </div>
           </div>
           <div class="pred-kpi">
             <div class="pred-label">System</div>
@@ -18708,6 +18837,7 @@ function predictionRenderSummary() {
     }
     if (pmCount) pmCount.textContent = (data.predictionMarkets || []).length + ' positions';
     if (opCount) opCount.textContent = (data.opinionMarkets || []).length + ' positions';
+    refreshPredictionWalletBalances();
     refreshPredictionAggregatePnl();
 }
 
@@ -18860,20 +18990,11 @@ function predictionRenderPulse() {
 
 async function predictionRenderCarry(seq) {
     const el = document.getElementById('predictionMixedRows');
-    const kpi = document.getElementById('predictionCarryKpi');
-    const sub = document.getElementById('predictionCarrySub');
     if (!el) return;
     if (!_predictionPulseCards.length) el.innerHTML = '<div class="pred-empty">Scanning carry and market pulse...</div>';
     try {
         const rows = orderOpportunityRows(await dashPmNoApyRows()).slice(0, 4);
         if (seq !== _predictionIntelSeq) return;
-        const apys = rows.map(r => parseFloat(r.edge)).filter(Number.isFinite);
-        const topApy = apys.length ? Math.max(...apys) : 0;
-        if (kpi) {
-            kpi.firstChild.nodeValue = topApy ? topApy.toFixed(1) + '% ' : '-- ';
-            kpi.classList.toggle('good', topApy > 0);
-        }
-        if (sub) sub.textContent = rows.length ? rows.length + (rows.length === 1 ? ' above 10% APY' : ' above 10% APY') : 'No carry';
         if (!rows.length) {
             _predictionCarryCards = [];
             predictionRenderMixedRows();
@@ -18898,8 +19019,6 @@ async function predictionRenderCarry(seq) {
             ts: Date.now()
         })];
         predictionRenderMixedRows();
-        if (kpi) kpi.firstChild.nodeValue = '-- ';
-        if (sub) sub.textContent = 'Unavailable';
     }
 }
 
@@ -18984,6 +19103,7 @@ function setupPredictionWalletPulseRefresh() {
             }
         }
         predictionRefreshMarketMoves({ force:true });
+        refreshPredictionWalletBalances();
     }, PREDICTION_WALLET_PULSE_MS);
     if (!document._predictionVisibilityBound) {
         document._predictionVisibilityBound = true;

@@ -15,7 +15,7 @@
 const { kvGet, kvSet } = require('../lib/kv');
 const { mergeLoopSnapshotStores, ensureUsdeUsdmSnapshotsPurged } = require('../lib/loop-snapshots');
 const { collectEvents } = require('../lib/event-log');
-const { fetchCoinGeckoWithFailover } = require('../lib/coingecko-fetch');
+const { fetchPolymarketWalletBalances } = require('../lib/polymarket-balance');
 const https = require('https');
 
 const SYNC_SECRET = process.env.SYNC_SECRET || '';
@@ -26,9 +26,11 @@ const MARKET_MOVES_CACHE_MS = 5 * 60 * 1000;
 const MARKET_MOVES_ASSET_LIMIT = 40;
 const MARKET_MOVES_CONCURRENCY = 8;
 const PM_POSITIONS_CACHE_MS = 5 * 60 * 1000;
+const PM_BALANCES_CACHE_MS = 2 * 60 * 1000;
 const PM_METADATA_CONCURRENCY = 4;
 const marketMovesCache = new Map();
 const polymarketPositionsCache = new Map();
+const polymarketBalancesCache = new Map();
 
 async function statusFetch(url, timeout=6000) {
   const start = Date.now();
@@ -387,6 +389,36 @@ async function enrichPolymarketPositions(positions) {
   });
 }
 
+async function getPolymarketBalances(query) {
+  const wallets = pnlWalletList(query.wallets);
+  if (!wallets.length) return { status: 400, body: { error: 'No valid Polymarket wallet addresses provided' } };
+  const key = wallets.map(w => w.toLowerCase()).sort().join('|');
+  const cached = polymarketBalancesCache.get(key);
+  if (cached && Date.now() - cached.ts < PM_BALANCES_CACHE_MS) {
+    return { status: 200, body: { ok: true, cached: true, ...cached.body } };
+  }
+  try {
+    const result = await fetchPolymarketWalletBalances(wallets);
+    const body = { ok: true, cached: false, ...result };
+    polymarketBalancesCache.set(key, { ts: Date.now(), body });
+    return { status: 200, body };
+  } catch (e) {
+    if (cached?.body) {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          cached: true,
+          stale: true,
+          ...cached.body,
+          error: e.message || 'Polymarket balances refresh failed',
+        },
+      };
+    }
+    return { status: 502, body: { error: e.message || 'Polymarket balances refresh failed' } };
+  }
+}
+
 async function getPolymarketPositions(query) {
   const wallets = pnlWalletList(query.wallets);
   if (!wallets.length) return { status: 400, body: { error: 'No valid Polymarket wallet addresses provided' } };
@@ -630,6 +662,10 @@ module.exports = async function handler(req, res) {
       }
       if (req.query?.polymarketPositions === '1') {
         const result = await getPolymarketPositions(req.query || {});
+        return res.status(result.status).json(result.body);
+      }
+      if (req.query?.polymarketBalances === '1') {
+        const result = await getPolymarketBalances(req.query || {});
         return res.status(result.status).json(result.body);
       }
       if (req.query?.marketMoves === '1') {
