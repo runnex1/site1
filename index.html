@@ -18129,16 +18129,23 @@ function predictionApplyStableBalanceKpi(payload) {
     if (kpi) kpi.textContent = dashUsd(total, 2);
     if (sub) {
         const withBalance = balances.filter(r => Number(r.usdc) > 0.005).length;
-        sub.textContent = withBalance
-            ? `${withBalance} wallet${withBalance === 1 ? '' : 's'} · idle USDC`
-            : 'not deployed';
+        const pmExposure = (data.predictionMarkets || []).reduce((s, p) => s + (Number(p.currentValue) || 0), 0);
+        if (withBalance) {
+            sub.textContent = `${withBalance} wallet${withBalance === 1 ? '' : 's'} · idle cash`;
+        } else if (pmExposure > 0.005) {
+            sub.textContent = 'fully deployed';
+        } else {
+            sub.textContent = 'no idle cash';
+        }
     }
     if (wrap) wrap.classList.toggle('loading', false);
     predictionRenderStableBalanceTip(balances);
 }
 
 async function refreshPredictionWalletBalances(opts = {}) {
-    const wallets = mergeWalletAddresses(data.polymarketWallets || []);
+    const wallets = typeof loadStoredPolymarketWallets === 'function'
+        ? loadStoredPolymarketWallets()
+        : mergeWalletAddresses(data.polymarketWallets || []);
     const key = predictionWalletBalancesKey(wallets);
     if (!key) {
         _predictionWalletBalancesCache = { key: '', ts: Date.now(), total: 0, balances: [], loading: false, error: '' };
@@ -18191,6 +18198,7 @@ function renderPredSubtabs() {
     if (!c) return;
     if (c.querySelector('.pred-cockpit')) return;
     setupPredictionWalletPulseRefresh();
+    refreshPredictionWalletBalances();
 
     c.innerHTML = `
       <div class="pred-cockpit">
@@ -18212,7 +18220,7 @@ function renderPredSubtabs() {
             <div class="pred-kpi-value" id="predictionStableKpiWrap">
               <span class="pred-kpi-stable-wrap" id="predictionStableWrap">
                 <span id="predictionStableKpi">—</span>
-                <span class="pred-kpi-sub" id="predictionStableSub">not deployed</span>
+                <span class="pred-kpi-sub" id="predictionStableSub">no idle cash</span>
                 <div class="pred-kpi-stable-tip" id="predictionStableTip"></div>
               </span>
             </div>
@@ -27423,11 +27431,10 @@ function perpsHedgeWithVariational(unhedgedIdx) {
     const unhedged = _perpsLastData?.unhedged || [];
     const leg = unhedged[unhedgedIdx];
     if (!leg) return;
-    const mark = perpsLegCurrentPx(leg.symbol, leg.venue, leg);
     perpsOpenVariationalModal({
         mode: 'entry',
         unhedgedIdx,
-        value: mark,
+        value: null,
         trackedEntryPx: leg.entryPx ?? leg.entry,
         trackedVenue: leg.venue,
         meta: `${leg.symbol} · ${perpsVenueShort(leg.venue)} ${leg.side} ${perpsFmtSize(leg.size)}`,
@@ -28345,8 +28352,6 @@ function perpsSaveGrvtStateCache(state) {
 }
 
 function perpsPairHasSizeMismatch(p) {
-    if (p?.pairType?.includes('variational')) return false;
-    if (p?.crossLegA?.venue === 'variational' || p?.crossLegB?.venue === 'variational') return false;
     return Boolean(p?.alerts?.includes('size_mismatch'));
 }
 

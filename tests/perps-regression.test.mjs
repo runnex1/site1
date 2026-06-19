@@ -2013,6 +2013,42 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
   assert.equal(variationalLegPnl(1, 100, 110), 10);
 }
 
+{
+  const { findTrackedCloseLeg } = require('../lib/variational-hedge.js');
+  const hedge = {
+    symbol: 'ETH',
+    trackedVenue: 'grvt',
+    openedAt: Date.now() - 86400000,
+    trackedSize: 1,
+    trackedLastSnapshot: null,
+  };
+  const staleClose = findTrackedCloseLeg({
+    closedPairs: [{
+      symbol: 'ETH',
+      closeTime: Date.now() - 7 * 86400000,
+      longLeg: { venue: 'grvt', side: 'long', size: 1, realizedPnl: 999 },
+      shortLeg: { venue: 'hyperliquid', side: 'short', size: 1, realizedPnl: 0 },
+    }],
+  }, hedge);
+  assert.equal(staleClose, null, 'close leg from before hedge open must be ignored');
+  const snapClose = findTrackedCloseLeg({ closedPairs: [] }, {
+    ...hedge,
+    trackedLastSnapshot: { side: 'long', size: 1, entryPx: 100, unrealizedPnl: 42, funding: 1, fees: 0 },
+  });
+  assert.equal(snapClose?.realizedPnl, null, 'snapshot fallback must not treat uPnL as realized');
+  assert.equal(snapClose?.closeLegEstimated, true);
+}
+
+{
+  const trackedLeg = { venue: 'grvt', size: 90000, side: 'long', entryPx: 0.21, unrealizedPnl: -89, fundingSinceOpen: 1, fees: 0, notional: 18900 };
+  const hedge = { id: 'h1', symbol: 'XLM', trackedVenue: 'grvt', trackedSize: 90000, variationalSize: -80000, variationalEntryPx: 0.218, openedAt: Date.now() - 2 * 86400000 };
+  const pair = buildVariationalOpenPair(trackedLeg, hedge, { markPx: 0.22, fundingRate8h: 0.0001, fundingRateInterval: 0.0001, fundingIntervalS: 28800 }, null);
+  assert.ok(pair.alerts.includes('size_mismatch'), 'variational pair must flag tracked vs synthetic size drift');
+  assert.ok(pair.sizeMismatchPct > 0);
+  assert.ok(pair.daysOpen != null && pair.daysOpen >= 1);
+  assert.equal(pair.combinedUpnl != null, true);
+}
+
 assert.ok(indexHtml.includes('PERPS_VARIATIONAL_HEDGES_KEY'), 'index must persist variational hedges');
 assert.ok(indexHtml.includes('perpsVariationalTrackedEntryWrap'), 'variational modal must show tracked exchange entry read-only');
 assert.ok(indexHtml.includes('trackedEntryPx'), 'variational modal must pass tracked exchange entry into edit flow');
