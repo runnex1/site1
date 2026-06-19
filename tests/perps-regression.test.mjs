@@ -1909,11 +1909,13 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
   const listing = parseVariationalListing({
     ticker: 'BTC',
     mark_price: '100000',
-    funding_rate: '1',
+    funding_rate: '0.1095',
     funding_interval_s: 28800,
   });
   assert.equal(listing.symbol, 'BTC');
-  assert.equal(listing.fundingRate8h, 0.01);
+  assert.equal(listing.fundingRateAnnual, 0.1095);
+  assert.ok(Math.abs(listing.fundingRate8h - 0.1095 / 1095) < 1e-12, 'annual Variational rate must normalize to 8h equivalent');
+  assert.ok(Math.abs(listing.fundingRateInterval - 0.1095 / 1095) < 1e-12, 'annual Variational rate must normalize to native interval');
   assert.equal(listing.markPx, 100000);
 }
 
@@ -1924,7 +1926,9 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
     funding_rate: '0.1095',
     funding_interval_s: 28800,
   });
-  assert.ok(Math.abs(listing.fundingRate8h - 0.001095) < 1e-9, 'Variational API funding_rate must be parsed as percent');
+  const annualApr = listing.fundingRateAnnual * 100;
+  assert.ok(Math.abs(annualApr - 10.95) < 0.01, 'Variational stats funding_rate must be treated as annual APY');
+  assert.ok(listing.fundingRate8h * 3 * 365 * 100 < 200, '8h-normalized Variational rate must not explode Current APR');
 }
 
 {
@@ -1939,7 +1943,7 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
   const data = {
     paired: [],
     unhedged: [{ symbol: 'ETH', venue: 'extended', size: 2.5, side: 'long', notional: 8000, unrealizedPnl: 50, funding: 3, fees: 1 }],
-    rateSpread: [{ symbol: 'ETH', variational8h: 0.008, variationalMarkPx: 3180, variationalIntervalRate: 0.008, variationalIntervalHours: 8 }],
+    rateSpread: [{ symbol: 'ETH', variational8h: 0.008 / 1095, variationalMarkPx: 3180, variationalIntervalRate: 0.008 / 1095, variationalIntervalHours: 8 }],
     hyperliquid: { state: { positions: [] } },
     nado: { state: { positions: [] } },
     grvt: { state: { positions: [] } },
@@ -1947,7 +1951,7 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
     closedPairs: [],
     closedPairRefreshes: [],
   };
-  const result = applyVariationalHedges(data, [hedge], { ETH: { symbol: 'ETH', markPx: 3180, fundingRateInterval: 0.008, fundingIntervalS: 28800, fundingRate8h: 0.008 } });
+  const result = applyVariationalHedges(data, [hedge], { ETH: { symbol: 'ETH', markPx: 3180, fundingRateInterval: 0.008 / 1095, fundingIntervalS: 28800, fundingRate8h: 0.008 / 1095, fundingRateAnnual: 0.008 } });
   assert.equal(result.paired.length, 1);
   assert.equal(result.unhedged.length, 0);
   assert.equal(result.paired[0].pairLabel, 'Ext + Var');
@@ -1975,7 +1979,7 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
     variationalEntryPx: 0.218,
     status: 'open',
     openedAt: 1,
-  }], { XLM: { symbol: 'XLM', markPx: 0.217, fundingRateInterval: 0.001095, fundingIntervalS: 28800, fundingRate8h: 0.001095 } });
+  }], { XLM: { symbol: 'XLM', markPx: 0.217, fundingRateInterval: 0.1095 / 1095, fundingIntervalS: 28800, fundingRate8h: 0.1095 / 1095, fundingRateAnnual: 0.1095 } });
   assert.equal(duped.paired.length, 1, 're-applying variational hedges must not duplicate open pairs');
 }
 
@@ -1997,11 +2001,11 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
     {},
     {},
     {},
-    { BTC: { fundingRate8h: 0.008, markPx: 100000, fundingRateInterval: 0.008, fundingIntervalHours: 8 } },
+    { BTC: { fundingRate8h: 0.008 / 1095, markPx: 100000, fundingRateInterval: 0.008 / 1095, fundingIntervalHours: 8, fundingRateAnnual: 0.008 } },
   );
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].variational8h, 0.008);
-  assert.equal(rows[0].spreadHlVariational8h, 0.01 - 0.008);
+  assert.ok(Math.abs(rows[0].variational8h - 0.008 / 1095) < 1e-12);
+  assert.ok(Math.abs(rows[0].spreadHlVariational8h - (0.01 - 0.008 / 1095)) < 1e-12);
 }
 
 {

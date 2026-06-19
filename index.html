@@ -28513,7 +28513,32 @@ function perpsPairFeeApr(p, range) {
 
 /** Current APR: live funding spread only (no trading fees). */
 function perpsPairLiveApy(p) {
+    const native = perpsPairLiveApyFromNativeLegs(p);
+    if (native != null) return native;
     return perpsPairGrossFundingApr(p);
+}
+
+function perpsPairLiveApyFromNativeLegs(p) {
+    const row = perpsRateSpreadRow(p.symbol);
+    const { sizeA, sizeB, venueA, venueB } = perpsPairLegSizes(p);
+    const legs = [
+        { size: sizeA, venue: venueA, rate8h: p.fundingRate8hA },
+        { size: sizeB, venue: venueB, rate8h: p.fundingRate8hB },
+    ];
+    let netAnnual = 0;
+    let used = 0;
+    for (const leg of legs) {
+        if (!leg.venue || !leg.size) continue;
+        let native = perpsVenueNativeFundingRate(leg.venue, row);
+        if (native.rateDecimal == null && leg.rate8h != null && Number.isFinite(leg.rate8h)) {
+            native = { rateDecimal: leg.rate8h, intervalHours: 8 };
+        }
+        if (native.rateDecimal == null || !native.intervalHours) continue;
+        const periodsPerYear = (365 * 24) / native.intervalHours;
+        netAnnual += -Math.sign(leg.size) * native.rateDecimal * periodsPerYear * 100;
+        used += 1;
+    }
+    return used ? netAnnual : null;
 }
 
 function perpsVenueRate8hFromSpread(spread, venue) {
