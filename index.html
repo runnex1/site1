@@ -1527,14 +1527,29 @@ body::after {
 .import-btn:hover {
   background: rgba(108,114,255,0.2); border-color: var(--indigo);
 }
-.export-btn {
-  background: rgba(33,115,70,0.12); color: #4ade80;
-  border-color: rgba(74,222,128,0.28);
+.protocol-export-xlsx-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 5px 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: var(--ff-body);
+  cursor: pointer;
+  border-radius: 6px;
+  border: 1px solid rgba(0,212,170,0.3);
+  background: rgba(0,212,170,0.08);
+  color: var(--teal);
+  transition: all 0.15s;
+  white-space: nowrap;
 }
-.export-btn:hover {
-  background: rgba(33,115,70,0.22); border-color: #4ade80;
-  box-shadow: 0 0 16px rgba(74,222,128,0.15);
+.protocol-export-xlsx-btn:hover {
+  background: var(--teal-10);
+  border-color: var(--teal);
+  box-shadow: 0 0 16px rgba(0,212,170,0.15);
 }
+.protocol-export-xlsx-btn svg { flex-shrink: 0; }
 .pm-btn {
     background: var(--fuchsia-10); color: var(--fuchsia);
     border-color: rgba(217,70,239,0.25);
@@ -7055,10 +7070,6 @@ body[data-active-tab="loops"] .page-content,
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
                   Import Text
                 </button>
-                <button class="btn-base export-btn" onclick="exportDefiPositionsExcel()" title="Download .xlsx workbook">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
-                  Export Excel
-                </button>
                 <button class="btn-base danger-btn protocol-positions-clear-btn" onclick="deleteAllData('protocols')">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                   Clear
@@ -7082,7 +7093,11 @@ body[data-active-tab="loops"] .page-content,
                 📸 Snapshot
               </button>
             </div>
-            <div id="protocolSnapshotPickerWrap" style="display:none;position:relative;margin-left:auto;">
+            <button type="button" class="protocol-export-xlsx-btn" onclick="exportDefiPositionsExcel()" title="Download .xlsx workbook">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+              Export .xlsx
+            </button>
+            <div id="protocolSnapshotPickerWrap" style="display:none;position:relative;">
               <button type="button" id="protocolSnapshotSelectBtn" onclick="toggleProtocolSnapshotPicker()"
                 style="padding:5px 12px;font-size:0.72rem;font-weight:700;cursor:pointer;border:1px solid var(--border-mid);border-radius:6px;background:var(--surf-2);color:var(--t2);font-family:var(--ff-body);">
                 Select
@@ -12335,10 +12350,13 @@ function stablecoinMonitorKey(token) {
     return geckoId ? `${sym}::${geckoId}` : sym;
 }
 function stablecoinMonitorExposureValue(row) {
+    const stored = Number(row?.value);
     const amt = Number(row?.amount) || 0;
+    // Prefer aggregated import USD (wallet + protocol legs, incl. loop net collateral).
+    if (Number.isFinite(stored) && stored !== 0) return stored;
     const cgPrice = stablecoinMonitorPriceForRow(row);
     if (Number.isFinite(cgPrice) && amt) return amt * cgPrice;
-    return Number(row?.value || 0);
+    return Number.isFinite(stored) ? stored : 0;
 }
 function stablecoinLooksLikeContract(input) {
     const raw = String(input || '').trim();
@@ -12586,6 +12604,7 @@ function stablecoinRowsForDefi() {
         return {
             ...x,
             geckoId,
+            loopCollateral: !!x.loopCollateral,
             source: [...x.sources].slice(0, 2).join(', '),
             cgPrice: geckoId ? STABLECOIN_MONITOR_PRICE_CACHE[geckoId] ?? null : null,
         };
@@ -13177,9 +13196,15 @@ function protocolPositionImportUnitPrice(pos) {
     return rawValue / parsed.amount;
 }
 function protocolPositionUnitPrice(pos, unitPrices = null) {
-    const cgUnit = protocolTokenCoingeckoUnitPrice(pos, unitPrices);
-    if (cgUnit !== null) return cgUnit;
-    return protocolPositionImportUnitPrice(pos);
+    const parsed = protocolPositionSingleToken(pos);
+    if (!parsed) return null;
+    if (unitPrices) {
+        const unit = unitPrices[parsed.symbol.toUpperCase()];
+        if (Number.isFinite(unit) && unit > 0) return unit;
+    }
+    const rawValue = Number(pos.value || 0);
+    if (!rawValue || !parsed.amount) return null;
+    return rawValue / parsed.amount;
 }
 function protocolStablePriceTagHtml(pos, tokenText, unitPrices = null) {
     const parsed = protocolTokenAmountAndSymbol(tokenText);
@@ -13188,13 +13213,10 @@ function protocolStablePriceTagHtml(pos, tokenText, unitPrices = null) {
     if ((pos.tokens || []).length !== 1) return '';
     const unit = protocolPositionUnitPrice(pos, unitPrices);
     if (unit === null) return '';
-    if (stableUnitPriceInPegBand(unit)) {
-        return ` <span style="color:var(--green);font-size:0.68rem;font-family:var(--ff-mono)">$1.0000 fixed</span>`;
-    }
-    if (protocolTokenCoingeckoUnitPrice(pos, unitPrices) !== null) {
-        return ` <span style="color:var(--t3);font-size:0.68rem;font-family:var(--ff-mono)">$${unit.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:4})} CG</span>`;
-    }
-    return '';
+    const txt = stableUnitPriceInPegBand(unit)
+        ? '$1.0000'
+        : '$' + unit.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+    return ` <span style="color:var(--t3);font-size:0.68rem;font-family:var(--ff-mono)">${txt}</span>`;
 }
 function protocolTokenDisplayText(pos, tokenText, unitPrices = null) {
     const parsed = protocolTokenAmountAndSymbol(tokenText);
@@ -13203,20 +13225,14 @@ function protocolTokenDisplayText(pos, tokenText, unitPrices = null) {
     const amountStr = amountMatch
         ? amountMatch[1]
         : parsed.amount.toLocaleString('en-US', { maximumFractionDigits: 10 });
-    if (fixedStablePositionValue(pos, unitPrices) !== null) return amountStr;
+    const unit = protocolPositionUnitPrice(pos, unitPrices);
+    if (unit !== null && stableUnitPriceInPegBand(unit)) return amountStr;
     const poolSym = String(pos?.pool || '').trim().toUpperCase();
     const tokenSym = parsed.symbol.toUpperCase();
     if (poolSym && (poolSym === tokenSym || poolSym.startsWith(tokenSym) || tokenSym.startsWith(poolSym))) {
         return amountStr;
     }
     return tokenText;
-}
-function fixedStablePositionValue(pos, unitPrices = null) {
-    const parsed = protocolPositionSingleToken(pos);
-    if (!parsed) return null;
-    const unit = protocolPositionUnitPrice(pos, unitPrices);
-    if (unit === null || !stableUnitPriceInPegBand(unit)) return null;
-    return parsed.amount;
 }
 function protocolImportPositionMap(entry) {
     if (!entry) return null;
@@ -13228,12 +13244,10 @@ function protocolImportPositionMap(entry) {
 }
 function protocolPositionValue(pos, unitPrices = null) {
     if (pos?.manualUsd) return Number(pos?.value || 0);
-    const pegged = fixedStablePositionValue(pos, unitPrices);
-    if (pegged !== null) return pegged;
     const parsed = protocolPositionSingleToken(pos);
-    if (parsed) {
-        const cgUnit = protocolTokenCoingeckoUnitPrice(pos, unitPrices);
-        if (cgUnit !== null) return parsed.amount * cgUnit;
+    if (parsed && unitPrices) {
+        const unit = unitPrices[parsed.symbol.toUpperCase()];
+        if (Number.isFinite(unit) && unit > 0) return parsed.amount * unit;
     }
     return Number(pos?.value || 0);
 }
@@ -13248,16 +13262,7 @@ function loopPositionValue(pos, unitPrices = null) {
 }
 function protocolDisplayValue(p, unitPrices = null) {
     if (p?.manualValue) return Number(p?.value || 0);
-    const base = Number(p?.value || 0);
-    if (!p?.sections?.length) return base;
-    let delta = 0;
-    for (const sec of p.sections || []) {
-        for (const pos of sec.positions || []) {
-            const fixed = fixedStablePositionValue(pos, unitPrices);
-            if (fixed !== null) delta += fixed - Number(pos.value || 0);
-        }
-    }
-    return base + delta;
+    return protocolNetValue(p, unitPrices);
 }
 function protocolAprStats(p) {
     if (!p?.sections?.length) return { apr: null, weight: 0 };
@@ -17392,7 +17397,6 @@ function exportDefiPositionsExcel() {
 function renderProtocols() {
     const table = document.getElementById('protocolsTable');
     if (!table) return;
-    if (protocolSymbolsMissingLivePrices()) fetchLiveTokenPrices({ force: true });
     if (!defiProtocolsForDisplay(data.protocols).length) {
         table.innerHTML = '<div class="empty-state"><div class="empty-icon">🏦</div><div>No protocols added yet</div></div>';
         return;
