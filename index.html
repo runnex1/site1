@@ -13,6 +13,7 @@
 <script src="lib/etf-dca.js"></script>
 <script src="lib/loop-token-logos.js"></script>
 <script src="lib/defi-export.js"></script>
+<script src="lib/protocol-apr.js"></script>
 <script src="lib/variational-hedge.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
@@ -5688,7 +5689,9 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
   display:grid;
   grid-template-columns:1.45fr 1.12fr 1.12fr 1.12fr 1.3fr;
   min-height:56px;
-  overflow:hidden;
+  overflow:visible;
+  position:relative;
+  z-index:4;
   border:1px solid rgba(110,231,216,0.17);
   border-radius:6px;
   background:linear-gradient(180deg, rgba(7,18,26,0.98), rgba(4,12,18,0.99));
@@ -5735,14 +5738,15 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .pred-kpi-sub.good { color:var(--green); }
 .pred-kpi-value.bad,
 .pred-kpi-sub.bad { color:var(--red); }
-.pred-kpi-stable-wrap { position:relative; display:inline-block; cursor:help; }
+.pred-kpi-stable-wrap { position:relative; display:inline-block; cursor:help; z-index:6; }
 .pred-kpi-stable-tip {
-  display:none; position:absolute; left:0; top:calc(100% + 6px); z-index:40;
+  display:none; position:absolute; left:0; bottom:calc(100% + 8px); top:auto; z-index:120;
   min-width:180px; padding:0.45rem 0.55rem; border-radius:6px;
   border:1px solid rgba(134,159,179,0.22); background:rgba(8,14,22,0.98);
   box-shadow:0 10px 28px rgba(0,0,0,0.35); font-family:var(--ff-mono); font-size:0.62rem;
-  font-weight:600; line-height:1.45; white-space:nowrap;
+  font-weight:600; line-height:1.45; white-space:nowrap; pointer-events:none;
 }
+.pred-kpi-stable-wrap:hover { z-index:130; }
 .pred-kpi-stable-wrap:hover .pred-kpi-stable-tip { display:block; }
 .pred-kpi-stable-tip-row { display:flex; justify-content:space-between; gap:0.75rem; padding:0.1rem 0; color:#9dacbb; }
 .pred-kpi-stable-tip-row strong { color:var(--t1); font-weight:800; }
@@ -5770,6 +5774,8 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .pred-ticker {
   min-height:54px;
   overflow:hidden;
+  position:relative;
+  z-index:1;
   border:1px solid rgba(110,231,216,0.15);
   border-radius:6px;
   background:linear-gradient(180deg, rgba(8,20,28,0.96), rgba(5,13,19,0.98));
@@ -9957,11 +9963,9 @@ function protocolAprRawDays(baselineTs, newerTs) {
 
 /** Below 8h between imports: floor to 24h. At or above 8h: use exact elapsed time. */
 function protocolAprDaysDiff(baselineTs, newerTs) {
-    const rawDiff = protocolAprRawDays(baselineTs, newerTs);
-    if (rawDiff === null) return null;
-    const rawHours = rawDiff * 24;
-    if (rawHours >= PROTO_APR_EXACT_AFTER_HOURS) return rawDiff;
-    return PROTO_APR_FLOOR_DAYS;
+    return ProtocolApr?.protocolAprDaysDiff
+        ? ProtocolApr.protocolAprDaysDiff(baselineTs, newerTs)
+        : null;
 }
 
 /** APR between selected snapshot baseline and current live positions. */
@@ -9969,7 +9973,11 @@ function calcPositionAPR(posKey) {
     const baseline = getAprBaselineSnapshot();
     if (!baseline) return { apr: null };
 
-    const newerPositions = buildPositionMap(data.protocols);
+    const latestEntry = getProtocolRegularImports().at(-1) || null;
+    const newerPositions = buildPositionMap(
+        data.protocols,
+        latestEntry?.unitPrices || baseline.unitPrices || null,
+    );
     const newerTs = getLatestProtocolImportTs();
     const daysDiff = protocolAprDaysDiff(baseline.ts, newerTs);
     if (daysDiff === null) return { apr: null };
@@ -9978,10 +9986,8 @@ function calcPositionAPR(posKey) {
     const olderVal = getPositionMapValue(protocolImportPositionMap(baseline), posKey);
     if (!olderVal || newerVal === null) return { apr: null };
 
-    if (Math.abs(newerVal - olderVal) > PROTO_VALUE_CHANGE_MAX) return { apr: null };
-
-    const apr = ((newerVal - olderVal) / olderVal) * (365 / daysDiff) * 100;
-    if (Math.abs(apr) >= PROTO_APR_MAX_ABS) return { apr: null };
+    const apr = ProtocolApr.calcPositionAprFromValues(newerVal, olderVal, daysDiff, PROTO_VALUE_CHANGE_MAX);
+    if (apr === null) return { apr: null };
 
     return { apr, daysDiff, oldTs: baseline.ts, newTs: newerTs };
 }
@@ -10001,9 +10007,8 @@ function calcSnapshotPositionAPR(posKey, newerSnap, olderSnap) {
     const newerVal = getPositionMapValue(protocolImportPositionMap(newerSnap), posKey);
     const olderVal = getPositionMapValue(protocolImportPositionMap(olderSnap), posKey);
     if (!olderVal || newerVal === null) return { apr: null };
-    if (Math.abs(newerVal - olderVal) > PROTO_VALUE_CHANGE_MAX) return { apr: null };
-    const apr = ((newerVal - olderVal) / olderVal) * (365 / daysDiff) * 100;
-    if (Math.abs(apr) >= PROTO_APR_MAX_ABS) return { apr: null };
+    const apr = ProtocolApr.calcPositionAprFromValues(newerVal, olderVal, daysDiff, PROTO_VALUE_CHANGE_MAX);
+    if (apr === null) return { apr: null };
     return { apr, daysDiff };
 }
 
