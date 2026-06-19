@@ -12,6 +12,7 @@
 <script src="lib/defi-pnl.js"></script>
 <script src="lib/etf-dca.js"></script>
 <script src="lib/loop-token-logos.js"></script>
+<script src="lib/variational-hedge.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -7810,12 +7811,40 @@ body[data-active-tab="loops"] .page-content,
             </div>
           </div>
 
+          <div id="perpsVariationalModal" class="modal" onclick="if(event.target===this) perpsCloseVariationalModal()">
+            <div class="modal-content perps-pos-chart-modal" style="max-width:420px;" onclick="event.stopPropagation()">
+              <div class="perps-pos-chart-modal-head">
+                <div>
+                  <div class="perps-pos-chart-modal-title" id="perpsVariationalModalTitle">Variational hedge</div>
+                  <div class="perps-pos-chart-modal-meta" id="perpsVariationalModalMeta"></div>
+                </div>
+                <button type="button" class="perps-btn secondary" onclick="perpsCloseVariationalModal()">Close</button>
+              </div>
+              <div style="display:grid;gap:0.75rem;margin-top:0.5rem;">
+                <div>
+                  <label for="perpsVariationalPxInput" id="perpsVariationalPxLabel" style="display:block;font-size:0.78rem;color:var(--muted);margin-bottom:0.35rem;">Avg entry price</label>
+                  <input type="text" id="perpsVariationalPxInput" inputmode="decimal" placeholder="0.00" style="width:100%;">
+                </div>
+                <div class="perps-status" id="perpsVariationalModalHint" style="margin:0;"></div>
+                <button type="button" class="perps-btn" id="perpsVariationalModalSave" onclick="perpsSaveVariationalModal()">Save</button>
+              </div>
+            </div>
+          </div>
+
           <section class="perps-panel" id="perpsUnhedgedSection" style="display:none">
             <div class="perps-panel-head">
               <div class="perps-panel-title">Unhedged / Directional</div>
               <span class="perps-pill" style="border-color:rgba(255,179,71,0.35);color:#ffb347;background:rgba(255,179,71,0.08);">not delta-neutral</span>
             </div>
             <div class="perps-table-wrap" id="perpsUnhedgedTable"></div>
+          </section>
+
+          <section class="perps-panel" id="perpsVariationalPendingSection" style="display:none">
+            <div class="perps-panel-head">
+              <div class="perps-panel-title">Variational — pending close</div>
+              <span class="perps-pill" style="border-color:rgba(255,179,71,0.35);color:#ffb347;background:rgba(255,179,71,0.08);">exit price needed</span>
+            </div>
+            <div class="perps-table-wrap" id="perpsVariationalPendingTable"></div>
           </section>
 
           <div style="display:flex;justify-content:flex-end;padding:0 0.15rem;">
@@ -8763,6 +8792,7 @@ const PERPS_CONFIG_BACKUP_KEY = 'vault-perps-config-backup';
 const PERPS_SESSION_KEY = 'vault-perps-wallets-session';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
 const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pairs';
+const PERPS_VARIATIONAL_HEDGES_KEY = 'vault-perps-variational-hedges';
 const PERPS_DAILY_FUND_CACHE_KEY = 'vault-perps-daily-fund-cache';
 const PERPS_GRVT_STATE_CACHE_KEY = 'vault-grvt-state-cache';
 const TICKER_VISIBLE_TABS = new Set(['overview', 'etf', 'terminal', 'history']);
@@ -9170,6 +9200,11 @@ function applyCloudPortfolioAux(parsed) {
         perpsMergeClosedPairsFromServer(parsed._perpsClosedPairs);
         delete parsed._perpsClosedPairs;
     });
+    apply('perpsVariationalHedges', () => {
+        if (!Array.isArray(parsed._perpsVariationalHedges)) return;
+        perpsMergeVariationalHedgesFromServer(parsed._perpsVariationalHedges);
+        delete parsed._perpsVariationalHedges;
+    });
 }
 
 function mergeCloudPortfolio(parsed) {
@@ -9416,6 +9451,7 @@ async function saveData() {
             })(),
             perpsSnapshots: _ls(PERPS_SNAPSHOTS_KEY, '{}'),
             perpsClosedPairs: _ls(PERPS_CLOSED_PAIRS_KEY, '[]'),
+            perpsVariationalHedges: _ls(PERPS_VARIATIONAL_HEDGES_KEY, '[]'),
             // Dismissed opportunities (market IDs)
             dismissedMarkets: _dismissedMarkets || [],
         };
@@ -27099,6 +27135,185 @@ function perpsPersistCachedClosedPairs(rows) {
     } catch (e) {}
 }
 
+function perpsLoadVariationalHedges() {
+    try {
+        const rows = JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_HEDGES_KEY) || '[]');
+        return Array.isArray(rows) ? rows : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function perpsPersistVariationalHedges(rows) {
+    try {
+        const list = Array.isArray(rows) ? rows : [];
+        localStorage.setItem(PERPS_VARIATIONAL_HEDGES_KEY, JSON.stringify(list));
+        if (typeof saveData === 'function') saveData();
+    } catch (e) {}
+}
+
+function perpsVariationalHedgeKey(hedge) {
+    return String(hedge?.id || '');
+}
+
+function perpsMergeVariationalHedgesFromServer(serverRows) {
+    const incoming = Array.isArray(serverRows) ? serverRows : [];
+    if (!incoming.length) return perpsLoadVariationalHedges();
+    const byKey = new Map(perpsLoadVariationalHedges().map(h => [perpsVariationalHedgeKey(h), h]));
+    let changed = false;
+    for (const hedge of incoming) {
+        const key = perpsVariationalHedgeKey(hedge);
+        if (!key) continue;
+        const prev = byKey.get(key);
+        byKey.set(key, prev ? { ...prev, ...hedge } : hedge);
+        changed = true;
+    }
+    const merged = [...byKey.values()].sort((a, b) => (b.openedAt || 0) - (a.openedAt || 0));
+    if (changed) perpsPersistVariationalHedges(merged);
+    return merged;
+}
+
+function perpsVariationalBySymbolFromSpread(rateSpread) {
+    const bySymbol = {};
+    for (const row of rateSpread || []) {
+        if (row.variational8h == null && row.variationalMarkPx == null) continue;
+        bySymbol[row.symbol] = {
+            symbol: row.symbol,
+            markPx: row.variationalMarkPx,
+            fundingRateInterval: row.variationalIntervalRate,
+            fundingIntervalS: (row.variationalIntervalHours || 8) * 3600,
+            fundingRate8h: row.variational8h,
+            fundingIntervalHours: row.variationalIntervalHours || 8,
+        };
+    }
+    return bySymbol;
+}
+
+let _perpsVariationalModalMode = null;
+let _perpsVariationalModalHedgeId = null;
+let _perpsVariationalModalUnhedgedIdx = null;
+
+function perpsCloseVariationalModal() {
+    const modal = document.getElementById('perpsVariationalModal');
+    if (modal) modal.style.display = 'none';
+    _perpsVariationalModalMode = null;
+    _perpsVariationalModalHedgeId = null;
+    _perpsVariationalModalUnhedgedIdx = null;
+}
+
+function perpsOpenVariationalModal(opts = {}) {
+    const modal = document.getElementById('perpsVariationalModal');
+    const title = document.getElementById('perpsVariationalModalTitle');
+    const meta = document.getElementById('perpsVariationalModalMeta');
+    const label = document.getElementById('perpsVariationalPxLabel');
+    const input = document.getElementById('perpsVariationalPxInput');
+    const hint = document.getElementById('perpsVariationalModalHint');
+    if (!modal || !input) return;
+    _perpsVariationalModalMode = opts.mode || 'entry';
+    _perpsVariationalModalHedgeId = opts.hedgeId || null;
+    _perpsVariationalModalUnhedgedIdx = opts.unhedgedIdx ?? null;
+    if (title) title.textContent = opts.mode === 'exit' ? 'Variational exit price' : 'Hedge with Variational';
+    if (meta) meta.textContent = opts.meta || '';
+    if (label) label.textContent = opts.mode === 'exit' ? 'Avg exit price' : 'Avg entry price';
+    input.value = opts.value != null && Number.isFinite(Number(opts.value)) ? String(opts.value) : '';
+    if (hint) {
+        hint.textContent = opts.mode === 'exit'
+            ? 'Enter the average exit price on Variational. Tracked leg already closed on exchange.'
+            : 'Opposite side is inferred from your open leg. Size matches tracked leg. Variational fees = 0%. Funding shown as ~est.';
+    }
+    modal.style.display = 'flex';
+    input.focus();
+}
+
+function perpsSaveVariationalModal() {
+    const input = document.getElementById('perpsVariationalPxInput');
+    const px = Number(String(input?.value || '').replace(/,/g, ''));
+    if (!Number.isFinite(px) || px <= 0) {
+        alert('Enter a valid price.');
+        return;
+    }
+    const VH = window.VariationalHedge;
+    if (!VH) return;
+    if (_perpsVariationalModalMode === 'entry' && _perpsVariationalModalUnhedgedIdx != null) {
+        const unhedged = _perpsLastData?.unhedged || [];
+        const leg = unhedged[_perpsVariationalModalUnhedgedIdx];
+        if (!leg) return;
+        const hedge = VH.createHedgeFromUnhedged(leg, px);
+        const hedges = perpsLoadVariationalHedges();
+        hedges.push(hedge);
+        perpsPersistVariationalHedges(hedges);
+    } else if (_perpsVariationalModalHedgeId) {
+        const hedges = perpsLoadVariationalHedges();
+        const hedge = hedges.find(h => h.id === _perpsVariationalModalHedgeId);
+        if (!hedge) return;
+        if (_perpsVariationalModalMode === 'exit') {
+            hedge.variationalExitPx = px;
+            hedge.closedAt = Date.now();
+        } else {
+            hedge.variationalEntryPx = px;
+        }
+        perpsPersistVariationalHedges(hedges);
+    }
+    perpsCloseVariationalModal();
+    if (_perpsLastData) perpsApplyVariationalHedgesToData(_perpsLastData);
+    perpsRenderDashboard(_perpsLastData || _perpsCache || {});
+}
+
+function perpsApplyVariationalHedgesToData(data) {
+    const VH = window.VariationalHedge;
+    if (!VH || !data) return data;
+    const hedges = perpsLoadVariationalHedges();
+    if (!hedges.length) return data;
+    const variationalBySymbol = perpsVariationalBySymbolFromSpread(data.rateSpread || []);
+    const result = VH.applyVariationalHedges(data, hedges, variationalBySymbol);
+    data.paired = result.paired;
+    data.unhedged = result.unhedged;
+    perpsPersistVariationalHedges(result.hedges);
+    if (result.newClosedPairs?.length) {
+        data.closedPairs = perpsCacheNewClosedPairs([
+            ...(data.closedPairs || []),
+            ...result.newClosedPairs,
+        ]);
+    }
+    data.variationalPendingClose = result.pendingClose || [];
+    return data;
+}
+
+function perpsHedgeWithVariational(unhedgedIdx) {
+    const unhedged = _perpsLastData?.unhedged || [];
+    const leg = unhedged[unhedgedIdx];
+    if (!leg) return;
+    const mark = perpsLegCurrentPx(leg.symbol, leg.venue, leg);
+    perpsOpenVariationalModal({
+        mode: 'entry',
+        unhedgedIdx,
+        value: mark,
+        meta: `${leg.symbol} · ${perpsVenueShort(leg.venue)} ${leg.side} ${perpsFmtSize(leg.size)}`,
+    });
+}
+
+function perpsEditVariationalEntry(hedgeId) {
+    const hedge = perpsLoadVariationalHedges().find(h => h.id === hedgeId);
+    if (!hedge) return;
+    perpsOpenVariationalModal({
+        mode: 'entry',
+        hedgeId,
+        value: hedge.variationalEntryPx,
+        meta: `${hedge.symbol} · ${perpsVenueShort(hedge.trackedVenue)} + Var (open)`,
+    });
+}
+
+function perpsEditVariationalExit(hedgeId) {
+    const hedge = perpsLoadVariationalHedges().find(h => h.id === hedgeId);
+    if (!hedge) return;
+    perpsOpenVariationalModal({
+        mode: 'exit',
+        hedgeId,
+        value: hedge.variationalExitPx,
+        meta: `${hedge.symbol} · ${perpsVenueShort(hedge.trackedVenue)} leg closed — enter Variational exit`,
+    });
+}
+
 function perpsMergeClosedPairRecord(prev, fresh) {
     if (!prev) return fresh;
     if (!fresh) return prev;
@@ -27982,6 +28197,8 @@ function perpsSaveGrvtStateCache(state) {
 }
 
 function perpsPairHasSizeMismatch(p) {
+    if (p?.pairType?.includes('variational')) return false;
+    if (p?.crossLegA?.venue === 'variational' || p?.crossLegB?.venue === 'variational') return false;
     return Boolean(p?.alerts?.includes('size_mismatch'));
 }
 
@@ -28018,6 +28235,9 @@ function perpsRenderAlerts(paired, unhedged, summary) {
         if (p.alerts?.includes('basis_drift')) pills.push(`${p.symbol}: basis drift ${perpsFmtUsd(p.combinedUpnl)}`);
         if (p.alerts?.includes('spread_below_breakeven')) pills.push(`${p.symbol}: spread below break-even`);
     }
+    for (const h of _perpsLastData?.variationalPendingClose || []) {
+        pills.push(`${h.symbol}: Variational hedge needs exit price (${perpsVenueShort(h.trackedVenue)} leg closed)`);
+    }
     for (const u of unhedged) pills.push(`${u.symbol}: unhedged on ${u.venue}`);
     const hasSizeMismatch = (paired || []).some(perpsPairHasSizeMismatch);
     if (!pills.length) {
@@ -28037,6 +28257,7 @@ function perpsVenueLabel(venue) {
         nado: 'NADO',
         grvt: 'GRVT',
         extended: 'Extended',
+        variational: 'Variational',
     }[venue] || venue;
 }
 
@@ -28149,7 +28370,7 @@ function perpsPairLiveApy(p) {
 
 function perpsVenueRate8hFromSpread(spread, venue) {
     if (!spread || !venue) return null;
-    const key = { hyperliquid: 'hyperliquid8h', nado: 'nado8h', grvt: 'grvt8h', extended: 'extended8h' }[venue];
+    const key = { hyperliquid: 'hyperliquid8h', nado: 'nado8h', grvt: 'grvt8h', extended: 'extended8h', variational: 'variational8h' }[venue];
     const val = key ? spread[key] : null;
     return val != null && Number.isFinite(val) ? val : null;
 }
@@ -28318,6 +28539,12 @@ function perpsVenueNativeFundingRate(venue, row) {
     if (venue === 'extended') {
         const hourly = row.extendedHourly ?? (row.extended8h != null ? row.extended8h / 8 : null);
         return { rateDecimal: hourly, intervalHours: 1 };
+    }
+    if (venue === 'variational') {
+        return {
+            rateDecimal: row.variationalIntervalRate ?? row.variational8h ?? null,
+            intervalHours: row.variationalIntervalHours ?? 8,
+        };
     }
     return { rateDecimal: null, intervalHours: 8 };
 }
@@ -29086,7 +29313,14 @@ function perpsRenderPortfolioPositions(paired) {
                 </div>
             </div>
             <div class="perps-pos-legs">
-                ${displayLegs.map(entry => `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="perps-pos-metric-val ${perpsSignedCls(entry.leg.upnl ?? 0)}">${perpsFmtUsd(entry.leg.upnl ?? 0)}</span></div>`).join('')}
+                ${displayLegs.map(entry => {
+                    const hedgeId = p.variationalHedgeId;
+                    const varEdit = entry.venue === 'variational' && hedgeId
+                        ? ` <button type="button" class="perps-btn secondary" style="padding:0.1rem 0.4rem;font-size:0.65rem;margin-left:0.25rem;" onclick="perpsEditVariationalEntry('${hedgeId}'); event.stopPropagation();">Edit</button>`
+                        : '';
+                    const fundEst = entry.leg.fundingEstimated ? ' ~est.' : '';
+                    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}${varEdit}</span><span class="perps-pos-metric-val ${perpsSignedCls(entry.leg.upnl ?? 0)}">${perpsFmtUsd(entry.leg.upnl ?? 0)}</span></div>`;
+                }).join('')}
             </div>
             ${perpsPositionLiqStackHtml(p, displayLegs)}
             ${perpsPositionTpSlStackHtml(p, displayLegs)}
@@ -29264,7 +29498,7 @@ function perpsRenderClosedPositions(closedPairs) {
 }
 
 function perpsVenueShort(venue) {
-    return { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext' }[venue] || venue;
+    return { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext', variational: 'Var' }[venue] || venue;
 }
 
 function perpsPairLegs(p) {
@@ -29317,7 +29551,7 @@ function perpsLegCurrentPx(symbol, venue, leg) {
     const direct = perpsNumOrNull(leg?.markPx);
     if (direct != null) return direct;
     const row = perpsRateSpreadRow(symbol);
-    const key = { hyperliquid: 'hyperliquidMarkPx', nado: 'nadoMarkPx', grvt: 'grvtMarkPx', extended: 'extendedMarkPx' }[venue];
+    const key = { hyperliquid: 'hyperliquidMarkPx', nado: 'nadoMarkPx', grvt: 'grvtMarkPx', extended: 'extendedMarkPx', variational: 'variationalMarkPx' }[venue];
     return key ? perpsNumOrNull(row?.[key]) : null;
 }
 
@@ -29537,8 +29771,8 @@ function perpsRenderUnhedged(unhedged) {
     section.style.display = unhedged.length ? '' : 'none';
     if (!unhedged.length) return;
     el.innerHTML = `<table class="perps-table"><thead><tr>
-        <th>Asset</th><th>Venue</th><th>Side</th><th>Size</th><th>Notional</th><th>uPnL</th><th>PnL w/ fund</th><th>Funding</th>
-    </tr></thead><tbody>${unhedged.map(u => {
+        <th>Asset</th><th>Venue</th><th>Side</th><th>Size</th><th>Notional</th><th>uPnL</th><th>PnL w/ fund</th><th>Funding</th><th></th>
+    </tr></thead><tbody>${unhedged.map((u, idx) => {
         const pnlWithFund = (u.unrealizedPnl ?? 0) + (u.funding ?? 0);
         return `<tr>
         <td>${makeLogo(u.symbol, false, 22)} ${dashEsc(u.symbol)}</td>
@@ -29549,9 +29783,27 @@ function perpsRenderUnhedged(unhedged) {
         <td class="${perpsSignedCls(u.unrealizedPnl)}">${perpsFmtUsd(u.unrealizedPnl)}</td>
         <td class="${perpsSignedCls(pnlWithFund)}">${perpsFmtUsd(pnlWithFund)}</td>
         <td class="${perpsSignedCls(u.funding)}">${perpsFmtUsd(u.funding)}</td>
+        <td><button type="button" class="perps-btn secondary" style="padding:0.2rem 0.55rem;font-size:0.72rem;" onclick="perpsHedgeWithVariational(${idx})">Hedge with Variational</button></td>
     </tr>`;
     }).join('')}</tbody></table>`;
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
+}
+
+function perpsRenderVariationalPending(pending) {
+    const section = document.getElementById('perpsVariationalPendingSection');
+    const el = document.getElementById('perpsVariationalPendingTable');
+    if (!section || !el) return;
+    section.style.display = pending.length ? '' : 'none';
+    if (!pending.length) return;
+    el.innerHTML = `<table class="perps-table"><thead><tr>
+        <th>Asset</th><th>Tracked venue</th><th>Var entry</th><th>Status</th><th></th>
+    </tr></thead><tbody>${pending.map(h => `<tr>
+        <td>${dashEsc(h.symbol)}</td>
+        <td>${dashEsc(perpsVenueShort(h.trackedVenue))}</td>
+        <td>${h.variationalEntryPx != null ? perpsFmtPx(h.variationalEntryPx) : '—'}</td>
+        <td>Tracked leg closed — enter Variational exit</td>
+        <td><button type="button" class="perps-btn secondary" style="padding:0.2rem 0.55rem;font-size:0.72rem;" onclick="perpsEditVariationalExit('${h.id}')">Enter exit price</button></td>
+    </tr>`).join('')}</tbody></table>`;
 }
 
 function perpsRenderFundingChart(data) {
@@ -29612,7 +29864,7 @@ function perpsRenderSpread(rows) {
         return;
     }
     el.innerHTML = `<table class="perps-table"><thead><tr>
-        <th>Asset</th><th>HL 8h</th><th>Nado 8h</th><th>GRVT 8h</th><th>Ext 8h</th>
+        <th>Asset</th><th>HL 8h</th><th>Nado 8h</th><th>GRVT 8h</th><th>Ext 8h</th><th>Var 8h</th>
         <th>HL−Nado</th><th>HL−GRVT</th><th>HL−Ext</th><th>Nado−Ext</th><th>Nado−GRVT</th><th>GRVT−Ext</th>
     </tr></thead><tbody>${rows.map(r => `<tr>
         <td>${dashEsc(r.symbol)}</td>
@@ -29620,6 +29872,7 @@ function perpsRenderSpread(rows) {
         <td>${perpsFmtRate(r.nado8h)}</td>
         <td>${perpsFmtRate(r.grvt8h)}</td>
         <td>${perpsFmtRate(r.extended8h)}</td>
+        <td>${perpsFmtRate(r.variational8h)}</td>
         <td>${perpsFmtRate(r.spread8h)}</td>
         <td>${perpsFmtRate(r.spreadHlGrvt8h)}</td>
         <td>${perpsFmtRate(r.spreadHlExtended8h)}</td>
@@ -29709,6 +29962,7 @@ function perpsRenderCrossMarginLeverage(data) {
 function perpsRenderDashboard(data, opts = {}) {
     _perpsCache = data;
     _perpsLastData = data;
+    perpsApplyVariationalHedgesToData(data);
     try {
         localStorage.setItem(PERPS_DAILY_FUND_CACHE_KEY, JSON.stringify({
             series: data.dailyFundingSeries || [],
@@ -29735,6 +29989,7 @@ function perpsRenderDashboard(data, opts = {}) {
     perpsRenderFundingForTimeWindow(data);
     perpsRenderPositionsPanel(data);
     perpsRenderUnhedged(data.unhedged || []);
+    perpsRenderVariationalPending(data.variationalPendingClose || []);
     perpsRenderAlerts(data.paired || [], data.unhedged || [], data.summary || {});
     perpsRenderCrossMarginLeverage(data);
     _perpsLastRefreshAt = data.fetchedAt || Date.now();

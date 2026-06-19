@@ -1891,4 +1891,80 @@ try {
   throw new Error(`loop net value live check failed: ${e.message || e}`);
 }
 
+const {
+  parseVariationalListing,
+  parseVariationalListings,
+  createHedgeFromUnhedged,
+  applyVariationalHedges,
+  buildVariationalOpenPair,
+  buildVariationalClosedPair,
+  estimateVariationalFundingUsd,
+  variationalLegPnl,
+} = require('../lib/variational-hedge.js');
+const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js');
+
+{
+  const listing = parseVariationalListing({
+    ticker: 'BTC',
+    mark_price: '100000',
+    funding_rate: '0.01',
+    funding_interval_s: 28800,
+  });
+  assert.equal(listing.symbol, 'BTC');
+  assert.equal(listing.fundingRate8h, 0.01);
+  assert.equal(listing.markPx, 100000);
+}
+
+{
+  const hedge = createHedgeFromUnhedged({
+    symbol: 'ETH',
+    venue: 'extended',
+    size: 2.5,
+    side: 'long',
+  }, 3200);
+  assert.equal(hedge.variationalSize, -2.5);
+  assert.equal(hedge.trackedVenue, 'extended');
+  const data = {
+    paired: [],
+    unhedged: [{ symbol: 'ETH', venue: 'extended', size: 2.5, side: 'long', notional: 8000, unrealizedPnl: 50, funding: 3, fees: 1 }],
+    rateSpread: [{ symbol: 'ETH', variational8h: 0.008, variationalMarkPx: 3180, variationalIntervalRate: 0.008, variationalIntervalHours: 8 }],
+    hyperliquid: { state: { positions: [] } },
+    nado: { state: { positions: [] } },
+    grvt: { state: { positions: [] } },
+    extended: { state: { positions: [{ symbol: 'ETH', size: 2.5, side: 'long', entryPx: 3100, markPx: 3180, notional: 7950, unrealizedPnl: 50 }] } },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  };
+  const result = applyVariationalHedges(data, [hedge], { ETH: { symbol: 'ETH', markPx: 3180, fundingRateInterval: 0.008, fundingIntervalS: 28800, fundingRate8h: 0.008 } });
+  assert.equal(result.paired.length, 1);
+  assert.equal(result.unhedged.length, 0);
+  assert.equal(result.paired[0].pairLabel, 'Ext + Var');
+  assert.ok(!result.paired[0].alerts.includes('size_mismatch'));
+  assert.equal(result.paired[0].crossLegB.venue, 'variational');
+}
+
+{
+  const rows = buildRateSpreadRows(
+    new Set(['BTC']),
+    { BTC: { fundingRate8h: 0.01, markPx: 100000 } },
+    {},
+    {},
+    {},
+    { BTC: { fundingRate8h: 0.008, markPx: 100000, fundingRateInterval: 0.008, fundingIntervalHours: 8 } },
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].variational8h, 0.008);
+  assert.equal(rows[0].spreadHlVariational8h, 0.01 - 0.008);
+}
+
+{
+  assert.equal(variationalLegPnl(-1, 100, 95), 5);
+  assert.equal(variationalLegPnl(1, 100, 110), 10);
+}
+
+assert.ok(indexHtml.includes('PERPS_VARIATIONAL_HEDGES_KEY'), 'index must persist variational hedges');
+assert.ok(indexHtml.includes('Hedge with Variational'), 'index must expose hedge action');
+assert.ok(indexHtml.includes('lib/variational-hedge.js'), 'index must load variational hedge module');
+assert.ok(perpsJs.includes('fetchVariationalRates'), 'perps.js must fetch variational rates');
+
 console.log('PASS: perps accounting and dashboard regression checks');
