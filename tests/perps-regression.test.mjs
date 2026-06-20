@@ -791,6 +791,11 @@ assert.match(loopRatesJs, /merkl-user-rewards-unclaimed/, 'loop coverage must re
 assert.match(loopRatesJs, /fetchDefillamaYieldApyIndex/, 'yield-bearing collateral must use DeFiLlama APY when protocol supply APY is zero');
 assert.match(loopRatesJs, /function canonicalNativeYieldApy\(/, 'native yield tokens like reUSD must use a shared DeFiLlama APY across protocols');
 assert.match(loopRatesJs, /canonicalNativeYieldApy\(chainId, leg, index\)/, 'defillama leg lookup must prefer canonical native yield before address pools');
+assert.match(loopRatesJs, /function shouldEnrichLegWithDefillama\(/, 'DeFiLlama enrichment must skip plain collateral like WBTC');
+assert.match(loopRatesJs, /const dlApy = percent\(dlApyRaw\)/, 'DeFiLlama APY must normalize to protocol percent units');
+assert.match(indexHtml, /id="loopsLendingSection"/, 'Loops tab must render a separate lending-only section');
+assert.match(indexHtml, /function loopImportedLendingPositions\(/, 'Loops must include imported supply-only lending positions');
+assert.match(indexHtml, /function buildLoopCardHtml\(/, 'Loops must share one card renderer for loops and lending rows');
 assert.match(indexHtml, /function protocolDisplayEntries\(protocols, unitPrices = null\)/, 'protocol positions must split leveraged loops into separate rows');
 assert.match(indexHtml, /DEFI_POSITION_MIN_DISPLAY_USD = 50/, 'DeFi positions table must hide positions at or below $50');
 assert.match(indexHtml, /function buildSimpleDrawerTableHtml\(sec, ctx\)/, 'deposit-only protocol drawers must use aligned table layout');
@@ -930,6 +935,31 @@ assert.match(indexHtml, /predictionRenderFilledGroups\(groupFilledTradesByWindow
 assert.doesNotMatch(indexHtml, /Wallet activity timed out/, 'Prediction Markets must not use a separate timed fill fetch');
 assert.match(watcherPreviewHtml, /Dashboard theme tokens/, 'Watcher preview must use the Dashboard theme token set');
 assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\), rgba\(5,13,19,\.97\)\)/, 'Watcher preview panels must match the Dashboard dark surface treatment');
+
+{
+  const { enrichPositionWithDefillamaYield, shouldEnrichLegWithDefillama } = require('../lib/loop-rates.js');
+  const index = {
+    bySymbolChain: new Map([['1:WBTC', { apy: 8.2, score: 8.2 }]]),
+    byAddress: new Map(),
+  };
+  const wbtcLeg = { symbol: 'WBTC', role: 'collateral', apy: 0, value: 100000, address: '0x2260' };
+  assert.equal(shouldEnrichLegWithDefillama(1, wbtcLeg, index), false, 'WBTC collateral must not be DeFiLlama enriched');
+  const position = {
+    chainId: 1,
+    totalSupplied: 100000,
+    totalBorrowed: 50000,
+    supplied: [wbtcLeg],
+    borrowed: [{ symbol: 'USDe', value: 50000, apy: 4.2 }],
+    suppliedYieldUsd: 0,
+    borrowedCostUsd: 2100,
+    supplyApy: 0,
+    borrowApy: 4.2,
+    netApy: -2.1,
+  };
+  enrichPositionWithDefillamaYield(position, index);
+  assert.equal(position.supplied[0].apy, 0, 'WBTC collateral APY must stay at zero after enrichment');
+  assert.ok(!position.defillamaBoost, 'WBTC/USDe loop must not be marked defillama-boosted from collateral');
+}
 
 {
   const {

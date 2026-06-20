@@ -6477,6 +6477,10 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loops-value { margin-top:0.25rem; display:flex; align-items:baseline; gap:0.68rem; font-family:var(--ff-mono); font-size:clamp(0.95rem, 1.1vw, 1.28rem); line-height:1.02; font-weight:850; color:var(--t1); white-space:nowrap; }
 .loops-sub { margin-top:0.08rem; color:var(--t3); font-family:var(--ff-mono); font-size:0.56rem; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .loops-panel { min-height:610px; overflow:hidden; border:1px solid rgba(95,205,190,0.18); border-radius:7px; background:linear-gradient(180deg, rgba(6,18,26,.98), rgba(3,10,15,.99)); }
+.loops-lending-panel { min-height:0; margin-top:12px; border-color:rgba(56,189,248,0.16); }
+.loops-lending-panel .loops-panel-title { color:var(--t1); }
+.loops-lending-note { color:var(--t3); font-size:0.62rem; letter-spacing:0.04em; text-transform:uppercase; }
+.loops-lending-panel[hidden] { display:none !important; }
 .loops-panel-head { min-height:56px; display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.86rem 1.08rem; border-bottom:1px solid rgba(148,163,184,0.13); background:rgba(7,18,26,0.72); }
 .loops-panel-title { display:flex; align-items:baseline; gap:0.72rem; font-family:var(--ff-display); font-size:1.02rem; line-height:1; font-weight:850; letter-spacing:0.1em; text-transform:uppercase; color:var(--t1); }
 .loops-count { padding:0.18rem 0.56rem; border:1px solid rgba(56,189,248,0.24); border-radius:5px; background:rgba(56,189,248,0.08); color:var(--sky); font-family:var(--ff-mono); font-size:0.66rem; font-weight:850; letter-spacing:0; text-transform:none; }
@@ -7240,6 +7244,15 @@ body[data-active-tab="loops"] .page-content,
               </div>
             </div>
             <div id="loopsGrid" class="loops-grid"></div>
+          </div>
+          <div id="loopsLendingSection" class="loops-panel loops-lending-panel" hidden>
+            <div class="loops-panel-head">
+              <div class="loops-panel-title">Lending <span class="loops-count" id="loopsLendingCount">0 positions</span></div>
+              <div class="loops-head-actions">
+                <div class="loops-updated loops-lending-note">Supply-only · no borrowed side</div>
+              </div>
+            </div>
+            <div id="loopsLendingGrid" class="loops-grid"></div>
           </div>
         </div>
       </div>
@@ -14701,6 +14714,43 @@ function loopApiToDisplayPosition(pos) {
     };
 }
 
+function loopImportedLendingPositions() {
+    const rows = [];
+    for (const p of data.protocols || []) {
+        if (!p.sections) continue;
+        const lendingSections = p.sections.filter(s => s.type === 'Lending' || s.type === 'Leveraged Farming');
+        lendingSections.forEach((sec, secIndex) => {
+            let totalSupplied = 0;
+            const suppliedPositions = [];
+            for (const pos of (sec.positions || [])) {
+                if (String(pos.sub || '').toLowerCase() !== 'supplied') continue;
+                totalSupplied += loopPositionValue(pos);
+                suppliedPositions.push(pos);
+            }
+            const borrowedPositions = (sec.positions || []).filter(pos => String(pos.sub || '').toLowerCase() === 'borrowed');
+            if (!suppliedPositions.length || borrowedPositions.length) return;
+            const sectionLabel = lendingSections.length > 1
+                ? `${sec.type || 'Lending'} ${secIndex + 1}`
+                : (sec.type || 'Lending');
+            rows.push({
+                p,
+                sectionLabel,
+                netValue: totalSupplied,
+                totalSupplied,
+                totalBorrowed: 0,
+                suppliedPositions,
+                borrowedPositions: [],
+                health: null,
+                apy: lendingSectionApyBreakdown(p, sec, loopPositionValue),
+                network: protocolNetworkLabel(p),
+                live: false,
+                lendingOnly: true,
+            });
+        });
+    }
+    return rows;
+}
+
 function loopImportedPositions() {
     const loops = [];
     for (const p of data.protocols || []) {
@@ -17650,9 +17700,95 @@ function renderProtocols() {
 // LOOPS — Lending positions that include a Borrowed side
 // =============================================================================
 // ── Protocol view toggle (current vs. snapshot) ────────────────────────────
+function buildLoopCardHtml(loop, fmtV, { lendingOnly = false } = {}) {
+    const { p, sectionLabel, totalSupplied, totalBorrowed, suppliedPositions, borrowedPositions, health, apy } = loop;
+    const h = Number(health);
+    const hCls = !Number.isFinite(h) ? '' : h >= 1.5 ? 'safe' : h >= 1.1 ? 'warn' : 'danger';
+    const statusCls = Number.isFinite(h) ? (hCls === 'danger' ? 'danger' : hCls === 'warn' ? 'warn' : 'safe') : '';
+    const manualKey = loop.live && loop.raw ? loopManualKey(loop.raw) : '';
+    const manualSupplyApy = manualKey ? loopManualSupplyApyAt(manualKey, Date.now()) : null;
+    const borrowedApr = Number(apy?.borrowedApr);
+    const suppliedAprRaw = Number(apy?.suppliedApr);
+    const hasManualSupplyApy = Number.isFinite(manualSupplyApy);
+    const suppliedApr = hasManualSupplyApy ? manualSupplyApy : suppliedAprRaw;
+    let totalApr = Number(apy?.totalApr);
+    if (Number.isFinite(manualSupplyApy)) {
+        const netBase = Math.max(Math.abs(Number(totalSupplied || 0) - Number(totalBorrowed || 0)), 1);
+        totalApr = ((Number(totalSupplied || 0) * suppliedApr) - (Number(totalBorrowed || 0) * (Number.isFinite(borrowedApr) ? borrowedApr : 0))) / netBase;
+    } else if (lendingOnly && Number.isFinite(suppliedApr)) {
+        totalApr = suppliedApr;
+    }
+    const apyCls = Number.isFinite(totalApr) ? (totalApr > 0 ? '' : totalApr < 0 ? 'neg' : 'neu') : 'neu';
+    const apyText = Number.isFinite(totalApr) ? totalApr.toFixed(2) + '%' : '-';
+    const rawHistoryPoints = loop.live && loop.raw ? loopHistoryPoints(loop.raw) : [];
+    const displayNetValue = loopEffectiveNetValue(loop);
+    const liveEndValue = loop.live && loop.raw ? displayNetValue : null;
+    const liveEndTs = loopApiState.updatedAt || Date.now();
+    const historyPoints = loop.live && loop.raw
+        ? loopTrimHistoryToLatestSession(rawHistoryPoints)
+        : [];
+    const chartPoints = loop.live && loop.raw
+        ? loopBuildChartHistoryPoints(historyPoints, loop.raw, liveEndValue, liveEndTs)
+        : [];
+    const adjustedHistoryPoints = manualKey
+        ? historyPoints.map(point => loopApplyManualSupplyApy(point, manualKey))
+        : historyPoints;
+    const adjustedChartPoints = manualKey
+        ? chartPoints.map(point => loopApplyManualSupplyApy(point, manualKey))
+        : chartPoints;
+    const marketChip = loop.raw?.marketName || sectionLabel;
+    const networkChip = loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions);
+    const walletChip = loop.live && loop.raw?.wallet
+        ? `<span class="loop-tag">${dashEsc(loopApiShortWallet(loop.raw.wallet))}</span>`
+        : '';
+    const healthBadgeCls = statusCls || '';
+    const hasApyHistory = adjustedHistoryPoints.length >= 2
+        && adjustedHistoryPoints.every(p => Number.isFinite(Number(p.netApy)));
+    const chartMode = hasApyHistory ? 'apy' : 'val';
+    const realizedHtml = loop.live && loop.raw
+        ? loopSnapshotApyRowHtml(chartMode, adjustedHistoryPoints, liveEndValue, liveEndTs)
+        : '';
+    const chartHtml = loop.live && loop.raw
+        ? loopHistoryChartHtml(adjustedChartPoints, { endValue: liveEndValue, endTs: liveEndTs, manualKey })
+        : `<div class="loop-history-chart empty"><span>${lendingOnly ? 'Sync live to track supply-only lending' : 'Sync live to build 2h snapshot history'}</span></div>`;
+    const aaveNetValue = loop.live && loop.raw ? Number(loop.raw.netValue ?? displayNetValue) : displayNetValue;
+    const merklUnclaimed = loop.live && loop.raw ? Number(loop.raw.merklRewardsUsd || 0) : 0;
+    const merklClaimed = loop.live && loop.raw ? Number(loop.raw.merklClaimedUsd || 0) : 0;
+    const netBreakdown = merklUnclaimed > 0.01
+        ? { aave: aaveNetValue, merkl: merklUnclaimed, claimed: merklClaimed, total: displayNetValue }
+        : null;
+    const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey, hasManualSupplyApy);
+    const headApyLabel = lendingOnly ? 'Supply APY' : 'Net APY';
+    const headStatsHtml = lendingOnly
+        ? `<div class="loop-head-stats"><div class="loop-head-stat apy ${apyCls}"><div class="loop-head-stat-label">${headApyLabel}</div><div class="loop-head-stat-val">${apyText}</div></div></div>`
+        : loopHeadStatsHtml(apyText, apyCls, Number.isFinite(h) ? h.toFixed(2) : '-', healthBadgeCls);
+
+    return `
+        <div class="loop-card${lendingOnly ? ' lending-only' : ''}">
+            <div class="loop-card-head">
+                <div class="loop-head-body">
+                    <div class="loop-head-top">
+                        <div class="loop-head-titles">
+                            <div class="loop-head-pair">${loopPairHtml(suppliedPositions, borrowedPositions)}</div>
+                        </div>
+                        ${headStatsHtml}
+                    </div>
+                    <div class="loop-head-meta"><span class="loop-protocol-mark" title="${dashEsc(p.name)}">${makeLoopLogo(p.name, true, 26)}</span>${loopOfficialLinkHtml(loop)}${networkChip}${walletChip}</div>
+                </div>
+            </div>
+            <div class="loop-card-main">
+                <div class="loop-chart-pane">${chartHtml}</div>
+                ${summaryHtml}
+            </div>
+        </div>`;
+}
+
 function renderLoops() {
     const grid = document.getElementById('loopsGrid');
+    const lendingGrid = document.getElementById('loopsLendingGrid');
+    const lendingSection = document.getElementById('loopsLendingSection');
     const countEl = document.getElementById('loopsCount');
+    const lendingCountEl = document.getElementById('loopsLendingCount');
     if (!grid) return;
     loopsLoadSnapshotsLocal();
     loopsLoadManualSettings();
@@ -17665,24 +17801,30 @@ function renderLoops() {
         if (cls) el.classList.add(cls);
     };
     const healthClass = health => !Number.isFinite(health) ? '' : health >= 1.5 ? 'safe' : health >= 1.1 ? 'warn' : 'danger';
-    const livePositions = Array.isArray(loopApiState.positions)
-        ? loopApiState.positions.filter(p => Number(p.totalBorrowed || 0) > 0.01)
-        : [];
+    const allLivePositions = Array.isArray(loopApiState.positions) ? loopApiState.positions : [];
+    const livePositions = allLivePositions.filter(p => Number(p.totalBorrowed || 0) > 0.01);
+    const liveLendingPositions = allLivePositions.filter(p => (
+        Number(p.totalBorrowed || 0) <= 0.01 && Number(p.totalSupplied || 0) > 0.01
+    ));
     const liveLoops = livePositions.map(loopApiToDisplayPosition);
+    const liveLending = liveLendingPositions.map(loopApiToDisplayPosition);
     const liveProtocols = new Set(livePositions.map(p => String(p.protocol || '').toLowerCase()));
     const fluidLiveMissing = !liveProtocols.has('fluid');
     const morphoLiveMissing = !liveProtocols.has('morpho');
     const fluidUnavailable = (loopApiState.errors || []).some(e => String(e.provider || '').toLowerCase() === 'fluid');
-    const usingLive = liveLoops.length > 0;
+    const usingLive = liveLoops.length > 0 || liveLending.length > 0;
     const supplementalImported = usingLive ? [] : loopImportedPositions().filter(imp => {
         const name = String(imp.p?.name || '').toLowerCase();
         if (fluidLiveMissing && fluidUnavailable && name.includes('fluid')) return true;
         if (morphoLiveMissing && name.includes('morpho')) return true;
         return false;
     });
-    const loops = usingLive || supplementalImported.length
+    const importedLoops = usingLive ? [] : loopImportedPositions();
+    const importedLending = usingLive ? [] : loopImportedLendingPositions();
+    const loops = liveLoops.length || supplementalImported.length
         ? [...liveLoops, ...supplementalImported]
-        : loopImportedPositions();
+        : importedLoops;
+    const lendingRows = liveLending.length ? liveLending : importedLending;
 
     if (!loops.length) {
         if (countEl) countEl.textContent = '0 positions';
@@ -17696,120 +17838,51 @@ function renderLoops() {
         const hasWallets = loopYieldWalletAddresses().length > 0;
         setText('loopsUpdated', hasWallets ? 'no live loops found' : 'waiting for data');
         grid.innerHTML = `<div class="empty-state"><div class="empty-icon">...</div><div>No loops detected.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">${hasWallets ? 'Synced yield wallets did not return borrowed positions. Imported Lending positions are still used as fallback when available.' : 'Add Yield wallets or import Lending protocol positions that include Supplied and Borrowed sides.'}</small></div></div>`;
-        return;
+    } else {
+        loops.sort((a, b) => loopEffectiveNetValue(b) - loopEffectiveNetValue(a));
+        const totalNet = loops.reduce((sum, l) => sum + loopEffectiveNetValue(l), 0);
+        const totalSuppliedAll = loops.reduce((sum, l) => sum + l.totalSupplied, 0);
+        const totalBorrowedAll = loops.reduce((sum, l) => sum + l.totalBorrowed, 0);
+        const weightedApy = loops.reduce((acc, l) => {
+            const apr = Number(l.apy?.totalApr);
+            const w = Math.abs(loopEffectiveNetValue(l)) || Math.abs(l.totalSupplied - l.totalBorrowed) || 0;
+            if (Number.isFinite(apr) && w) { acc.sum += apr * w; acc.weight += w; }
+            return acc;
+        }, { sum:0, weight:0 });
+        const weakest = loops
+            .filter(l => Number.isFinite(Number(l.health)))
+            .sort((a,b) => Number(a.health) - Number(b.health))[0] || null;
+        const weakestCls = weakest ? healthClass(Number(weakest.health)) : '';
+        const healthEl = document.getElementById('loopsKpiHealth');
+
+        if (countEl) countEl.textContent = loops.length + (loops.length === 1 ? ' position' : ' positions');
+        setText('loopsKpiNet', fmtV(totalNet));
+        setText('loopsKpiActive', loops.length + (loops.length === 1 ? ' active loop' : ' active loops'));
+        setText('loopsKpiSupplied', fmtV(totalSuppliedAll));
+        setText('loopsKpiBorrowed', fmtV(totalBorrowedAll));
+        setText('loopsKpiApy', weightedApy.weight ? (weightedApy.sum / weightedApy.weight).toFixed(2) + '%' : '-');
+        setText('loopsKpiHealth', weakest ? Number(weakest.health).toFixed(2) : '-');
+        setText('loopsKpiHealthSub', weakest ? `${weakest.p.name} - ${weakest.sectionLabel}` : 'No health ratio');
+        setHealthClass(healthEl, weakestCls);
+        const liveStamp = loopApiState.updatedAt ? new Date(loopApiState.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const bucketCount = loopsSnapshotBucketCount();
+        const bucketHint = bucketCount ? ` · ${bucketCount} snapshot bucket${bucketCount === 1 ? '' : 's'}` : '';
+        setText('loopsUpdated', (usingLive ? `live ${liveStamp}` : 'import fallback') + bucketHint);
+        grid.innerHTML = loops.map(loop => buildLoopCardHtml(loop, fmtV)).join('');
     }
 
-    loops.sort((a, b) => loopEffectiveNetValue(b) - loopEffectiveNetValue(a));
-    const totalNet = loops.reduce((sum, l) => sum + loopEffectiveNetValue(l), 0);
-    const totalSuppliedAll = loops.reduce((sum, l) => sum + l.totalSupplied, 0);
-    const totalBorrowedAll = loops.reduce((sum, l) => sum + l.totalBorrowed, 0);
-    const weightedApy = loops.reduce((acc, l) => {
-        const apr = Number(l.apy?.totalApr);
-        const w = Math.abs(loopEffectiveNetValue(l)) || Math.abs(l.totalSupplied - l.totalBorrowed) || 0;
-        if (Number.isFinite(apr) && w) { acc.sum += apr * w; acc.weight += w; }
-        return acc;
-    }, { sum:0, weight:0 });
-    const weakest = loops
-        .filter(l => Number.isFinite(Number(l.health)))
-        .sort((a,b) => Number(a.health) - Number(b.health))[0] || null;
-    const weakestCls = weakest ? healthClass(Number(weakest.health)) : '';
-    const healthEl = document.getElementById('loopsKpiHealth');
-
-    if (countEl) countEl.textContent = loops.length + (loops.length === 1 ? ' position' : ' positions');
-    setText('loopsKpiNet', fmtV(totalNet));
-    setText('loopsKpiActive', loops.length + (loops.length === 1 ? ' active loop' : ' active loops'));
-    setText('loopsKpiSupplied', fmtV(totalSuppliedAll));
-    setText('loopsKpiBorrowed', fmtV(totalBorrowedAll));
-    setText('loopsKpiApy', weightedApy.weight ? (weightedApy.sum / weightedApy.weight).toFixed(2) + '%' : '-');
-    setText('loopsKpiHealth', weakest ? Number(weakest.health).toFixed(2) : '-');
-    setText('loopsKpiHealthSub', weakest ? `${weakest.p.name} - ${weakest.sectionLabel}` : 'No health ratio');
-    setHealthClass(healthEl, weakestCls);
-    const liveStamp = loopApiState.updatedAt ? new Date(loopApiState.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-    const bucketCount = loopsSnapshotBucketCount();
-    const bucketHint = bucketCount ? ` · ${bucketCount} snapshot bucket${bucketCount === 1 ? '' : 's'}` : '';
-    setText('loopsUpdated', (usingLive ? `live ${liveStamp}` : 'import fallback') + bucketHint);
-
-    grid.innerHTML = loops.map((loop) => {
-        const { p, sectionLabel, netValue, totalSupplied, totalBorrowed, suppliedPositions, borrowedPositions, health, apy } = loop;
-        const h = Number(health);
-        const hCls = healthClass(h);
-        const statusCls = Number.isFinite(h) ? (hCls === 'danger' ? 'danger' : hCls === 'warn' ? 'warn' : 'safe') : '';
-        const manualKey = loop.live && loop.raw ? loopManualKey(loop.raw) : '';
-        const manualSupplyApy = manualKey ? loopManualSupplyApyAt(manualKey, Date.now()) : null;
-        const borrowedApr = Number(apy?.borrowedApr);
-        const suppliedAprRaw = Number(apy?.suppliedApr);
-        const hasManualSupplyApy = Number.isFinite(manualSupplyApy);
-        const suppliedApr = hasManualSupplyApy ? manualSupplyApy : suppliedAprRaw;
-        let totalApr = Number(apy?.totalApr);
-        if (Number.isFinite(manualSupplyApy)) {
-            const netBase = Math.max(Math.abs(Number(totalSupplied || 0) - Number(totalBorrowed || 0)), 1);
-            totalApr = ((Number(totalSupplied || 0) * suppliedApr) - (Number(totalBorrowed || 0) * (Number.isFinite(borrowedApr) ? borrowedApr : 0))) / netBase;
+    if (lendingGrid && lendingSection) {
+        if (!lendingRows.length) {
+            lendingSection.hidden = true;
+            lendingGrid.innerHTML = '';
+            if (lendingCountEl) lendingCountEl.textContent = '0 positions';
+        } else {
+            lendingSection.hidden = false;
+            lendingRows.sort((a, b) => loopEffectiveNetValue(b) - loopEffectiveNetValue(a));
+            if (lendingCountEl) lendingCountEl.textContent = lendingRows.length + (lendingRows.length === 1 ? ' position' : ' positions');
+            lendingGrid.innerHTML = lendingRows.map(loop => buildLoopCardHtml(loop, fmtV, { lendingOnly: true })).join('');
         }
-        const apyCls = Number.isFinite(totalApr) ? (totalApr > 0 ? '' : totalApr < 0 ? 'neg' : 'neu') : 'neu';
-        const apyText = Number.isFinite(totalApr) ? totalApr.toFixed(2) + '%' : '-';
-        const rawHistoryPoints = loop.live && loop.raw ? loopHistoryPoints(loop.raw) : [];
-        const displayNetValue = loopEffectiveNetValue(loop);
-        const liveEndValue = loop.live && loop.raw ? displayNetValue : null;
-        const liveEndTs = loopApiState.updatedAt || Date.now();
-        const historyPoints = loop.live && loop.raw
-            ? loopTrimHistoryToLatestSession(rawHistoryPoints)
-            : [];
-        const chartPoints = loop.live && loop.raw
-            ? loopBuildChartHistoryPoints(historyPoints, loop.raw, liveEndValue, liveEndTs)
-            : [];
-        const adjustedHistoryPoints = manualKey
-            ? historyPoints.map(point => loopApplyManualSupplyApy(point, manualKey))
-            : historyPoints;
-        const adjustedChartPoints = manualKey
-            ? chartPoints.map(point => loopApplyManualSupplyApy(point, manualKey))
-            : chartPoints;
-        const marketChip = loop.raw?.marketName || sectionLabel;
-        const networkChip = loopMarketChipHtml(marketChip, suppliedPositions, borrowedPositions);
-        const walletChip = loop.live && loop.raw?.wallet
-            ? `<span class="loop-tag">${dashEsc(loopApiShortWallet(loop.raw.wallet))}</span>`
-            : '';
-        const healthBadgeCls = statusCls || '';
-        const hasApyHistory = adjustedHistoryPoints.length >= 2
-            && adjustedHistoryPoints.every(p => Number.isFinite(Number(p.netApy)));
-        const chartMode = hasApyHistory ? 'apy' : 'val';
-        const realizedHtml = loop.live && loop.raw
-            ? loopSnapshotApyRowHtml(chartMode, adjustedHistoryPoints, liveEndValue, liveEndTs)
-            : '';
-        const chartHtml = loop.live && loop.raw
-            ? loopHistoryChartHtml(adjustedChartPoints, { endValue: liveEndValue, endTs: liveEndTs, manualKey })
-            : '<div class="loop-history-chart empty"><span>Sync live to build 2h snapshot history</span></div>';
-        const aaveNetValue = loop.live && loop.raw ? Number(loop.raw.netValue ?? displayNetValue) : displayNetValue;
-        const merklUnclaimed = loop.live && loop.raw ? Number(loop.raw.merklRewardsUsd || 0) : 0;
-        const merklClaimed = loop.live && loop.raw ? Number(loop.raw.merklClaimedUsd || 0) : 0;
-        const netBreakdown = merklUnclaimed > 0.01
-            ? { aave: aaveNetValue, merkl: merklUnclaimed, claimed: merklClaimed, total: displayNetValue }
-            : null;
-        const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey, hasManualSupplyApy);
-
-        return `
-        <div class="loop-card">
-            <div class="loop-card-head">
-                <div class="loop-head-body">
-                    <div class="loop-head-top">
-                        <div class="loop-head-titles">
-                            <div class="loop-head-pair">${loopPairHtml(suppliedPositions, borrowedPositions)}</div>
-                        </div>
-                        ${loopHeadStatsHtml(
-                            apyText,
-                            apyCls,
-                            Number.isFinite(h) ? h.toFixed(2) : '-',
-                            healthBadgeCls,
-                        )}
-                    </div>
-                    <div class="loop-head-meta"><span class="loop-protocol-mark" title="${dashEsc(p.name)}">${makeLoopLogo(p.name, true, 26)}</span>${loopOfficialLinkHtml(loop)}${networkChip}${walletChip}</div>
-                </div>
-            </div>
-            <div class="loop-card-main">
-                <div class="loop-chart-pane">${chartHtml}</div>
-                ${summaryHtml}
-            </div>
-        </div>`;
-    }).join('');
+    }
 }
 
 let _protocolView = 'current'; // 'current' | 'snapshot'
