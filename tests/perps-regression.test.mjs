@@ -2076,6 +2076,22 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
 }
 
 {
+  const { mirrorVariationalUpnl, resolveHedgeMarkPx } = require('../lib/variational-hedge.js');
+  const trackedLeg = {
+    size: 90000,
+    side: 'long',
+    entryPx: 0.218775,
+    markPx: 0.213705,
+    unrealizedPnl: -456.34,
+  };
+  const varLeg = { size: -90000, side: 'short' };
+  assert.equal(mirrorVariationalUpnl(trackedLeg, varLeg), 456.34);
+  assert.equal(resolveHedgeMarkPx(trackedLeg, { markPx: 0.21 }), 0.213705);
+  const mismatched = mirrorVariationalUpnl(trackedLeg, { size: -80000 });
+  assert.equal(mismatched, null, 'size mismatch must not mirror variational uPnL');
+}
+
+{
   const { findTrackedCloseLeg } = require('../lib/variational-hedge.js');
   const hedge = {
     symbol: 'ETH',

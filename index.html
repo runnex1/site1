@@ -27404,7 +27404,7 @@ function perpsOpenVariationalModal(opts = {}) {
     if (hint) {
         hint.textContent = opts.mode === 'exit'
             ? 'Enter the average exit price on Variational. Tracked leg already closed on exchange.'
-            : 'Opposite side is inferred from your open leg. Size matches tracked leg. Variational fees = 0%. Funding shown as ~est.';
+            : 'Opposite side is inferred from your open leg. Size matches tracked leg. Entry defaults to tracked avg entry — edit if your Variational fill differed. Funding shown as ~est.';
     }
     modal.style.display = 'flex';
     input.focus();
@@ -27719,7 +27719,7 @@ function perpsHedgeWithVariational(unhedgedIdx) {
     perpsOpenVariationalModal({
         mode: 'entry',
         unhedgedIdx,
-        value: null,
+        value: leg.entryPx ?? leg.entry ?? null,
         trackedEntryPx: leg.entryPx ?? leg.entry,
         trackedVenue: leg.venue,
         meta: `${leg.symbol} · ${perpsVenueShort(leg.venue)} ${leg.side} ${perpsFmtSize(leg.size)}`,
