@@ -9574,10 +9574,6 @@ const PROTO_HISTORY_KEY = 'protocol-import-history';
 const PROTO_HISTORY_VERSION = 3; // bump when key format changes
 const MAX_HISTORY_ENTRIES = 30; // keep last 30 imports
 const MAX_PROTOCOL_SNAPSHOTS = 5;
-const PROTO_APR_EXACT_AFTER_HOURS = 8; // at or above this gap, use exact elapsed time for APR
-const PROTO_APR_FLOOR_HOURS = 24;     // below 8h gap, assume a full 24h for APR
-const PROTO_APR_FLOOR_DAYS = PROTO_APR_FLOOR_HOURS / 24;
-const PROTO_APR_MAX_ABS = 80;
 const PROTO_VALUE_CHANGE_MAX = 700;
 const PROTO_STABLE_PEG_MIN = 0.998;
 const PROTO_STABLE_PEG_MAX = 1.004;
@@ -16979,7 +16975,7 @@ function protocolAprPeriodLabel() {
     const latestTs = getLatestProtocolImportTs();
     const rawHours = (latestTs - Number(baseline.ts)) / 3600000;
     if (!Number.isFinite(rawHours) || rawHours <= 0) return '';
-    if (rawHours < PROTO_APR_EXACT_AFTER_HOURS) return 'since 24h';
+    if (rawHours < ProtocolApr.PROTO_APR_EXACT_AFTER_HOURS) return 'since 24h';
     if (rawHours < 24) return `since ${Math.round(rawHours)}h`;
     const days = Math.floor(rawHours / 24);
     return `since ${days} day${days === 1 ? '' : 's'}`;
