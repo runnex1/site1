@@ -7851,10 +7851,6 @@ body[data-active-tab="loops"] .page-content,
                   <label for="perpsVariationalPxInput" id="perpsVariationalPxLabel" style="display:block;font-size:0.78rem;color:var(--muted);margin-bottom:0.35rem;">Avg entry price</label>
                   <input type="text" id="perpsVariationalPxInput" inputmode="decimal" placeholder="0.00" style="width:100%;">
                 </div>
-                <div id="perpsVariationalMarkAtOpenWrap" style="display:none;">
-                  <label for="perpsVariationalMarkAtOpenInput" style="display:block;font-size:0.78rem;color:var(--muted);margin-bottom:0.35rem;">Variational mark at open</label>
-                  <input type="text" id="perpsVariationalMarkAtOpenInput" inputmode="decimal" placeholder="0.00" style="width:100%;">
-                </div>
                 <div class="perps-status" id="perpsVariationalModalHint" style="margin:0;"></div>
                 <button type="button" class="perps-btn" id="perpsVariationalModalSave" onclick="perpsSaveVariationalModal()">Save</button>
               </div>
@@ -27387,8 +27383,6 @@ function perpsOpenVariationalModal(opts = {}) {
     const trackedWrap = document.getElementById('perpsVariationalTrackedEntryWrap');
     const trackedLabel = document.getElementById('perpsVariationalTrackedEntryLabel');
     const trackedVal = document.getElementById('perpsVariationalTrackedEntryVal');
-    const markAtOpenWrap = document.getElementById('perpsVariationalMarkAtOpenWrap');
-    const markAtOpenInput = document.getElementById('perpsVariationalMarkAtOpenInput');
     if (!modal || !input) return;
     _perpsVariationalModalMode = opts.mode || 'entry';
     _perpsVariationalModalHedgeId = opts.hedgeId || null;
@@ -27407,20 +27401,10 @@ function perpsOpenVariationalModal(opts = {}) {
             if (trackedVal) trackedVal.textContent = perpsFmtPx(trackedEntry);
         }
     }
-    if (markAtOpenWrap && markAtOpenInput) {
-        const needsMarkAtOpen = opts.mode === 'entry' && opts.needsMarkAtOpen;
-        markAtOpenWrap.style.display = needsMarkAtOpen ? '' : 'none';
-        if (needsMarkAtOpen) {
-            const seed = opts.markAtOpen ?? opts.variationalMarkPx ?? null;
-            markAtOpenInput.value = seed != null && Number.isFinite(Number(seed)) ? String(seed) : '';
-        } else {
-            markAtOpenInput.value = '';
-        }
-    }
     if (hint) {
         hint.textContent = opts.mode === 'exit'
             ? 'Enter the average exit price on Variational. Tracked leg already closed on exchange.'
-            : 'Enter your actual Variational fill (includes size slippage). Open uPnL uses Variational mark at open vs live mark — not size-tier quotes. Funding shown as ~est.';
+            : 'Enter your average Variational fill. uPnL = fill vs live Variational mark (not size-tier quotes). Funding shown as ~est.';
     }
     modal.style.display = 'flex';
     input.focus();
@@ -27428,7 +27412,6 @@ function perpsOpenVariationalModal(opts = {}) {
 
 function perpsSaveVariationalModal() {
     const input = document.getElementById('perpsVariationalPxInput');
-    const markAtOpenInput = document.getElementById('perpsVariationalMarkAtOpenInput');
     const px = Number(String(input?.value || '').replace(/,/g, ''));
     if (!Number.isFinite(px) || px <= 0) {
         alert('Enter a valid price.');
@@ -27440,8 +27423,7 @@ function perpsSaveVariationalModal() {
         const unhedged = _perpsLastData?.unhedged || [];
         const leg = unhedged[_perpsVariationalModalUnhedgedIdx];
         if (!leg) return;
-        const markAtOpen = perpsVariationalMarkPx(leg.symbol);
-        const hedge = VH.createHedgeFromUnhedged(leg, px, markAtOpen);
+        const hedge = VH.createHedgeFromUnhedged(leg, px);
         const hedges = perpsLoadVariationalHedges().filter(h =>
             !(h.status !== 'closed' && h.symbol === leg.symbol && h.trackedVenue === leg.venue));
         hedges.push(hedge);
@@ -27455,12 +27437,6 @@ function perpsSaveVariationalModal() {
             hedge.closedAt = Date.now();
         } else {
             hedge.variationalEntryPx = px;
-            if (!hedge.variationalMarkAtOpen && markAtOpenInput) {
-                const markAtOpen = Number(String(markAtOpenInput.value || '').replace(/,/g, ''));
-                if (Number.isFinite(markAtOpen) && markAtOpen > 0) {
-                    hedge.variationalMarkAtOpen = markAtOpen;
-                }
-            }
         }
         perpsPersistVariationalHedges(hedges);
     }
@@ -27763,9 +27739,6 @@ function perpsEditVariationalEntry(hedgeId) {
         value: hedge.variationalEntryPx,
         trackedEntryPx: trackedLeg?.entryPx ?? trackedLeg?.entry ?? hedge.trackedLastSnapshot?.entryPx,
         trackedVenue: hedge.trackedVenue,
-        needsMarkAtOpen: !hedge.variationalMarkAtOpen,
-        markAtOpen: hedge.variationalMarkAtOpen,
-        variationalMarkPx: perpsVariationalMarkPx(hedge.symbol),
         meta: `${hedge.symbol} · ${perpsVenueShort(hedge.trackedVenue)} + Var (open)`,
     });
 }

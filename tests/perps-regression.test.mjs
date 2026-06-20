@@ -2076,17 +2076,14 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
 }
 
 {
-  const { buildVariationalSyntheticLeg, variationalUpnlEntryPx } = require('../lib/variational-hedge.js');
+  const { buildVariationalSyntheticLeg } = require('../lib/variational-hedge.js');
   const hedge = {
     variationalSize: -90000,
     variationalEntryPx: 0.217785,
-    variationalMarkAtOpen: 0.218775,
   };
   const leg = buildVariationalSyntheticLeg(hedge, { markPx: 0.213705, fundingRateInterval: 0.0001, fundingIntervalS: 28800 });
-  assert.ok(Math.abs(leg.unrealizedPnl - 456.3) < 0.15, 'uPnL must use mark-at-open vs live Variational mark');
-  assert.ok(Math.abs(leg.entrySlippageUsd + 89.1) < 0.15, 'entry slippage must be fill vs mark-at-open only');
-  assert.equal(variationalUpnlEntryPx(hedge), 0.218775);
-  assert.equal(variationalUpnlEntryPx({ variationalEntryPx: 0.21 }), 0.21, 'legacy hedges fall back to fill');
+  assert.ok(Math.abs(leg.unrealizedPnl - 367.2) < 0.15, 'uPnL must use avg fill vs live Variational mark');
+  assert.equal(leg.markPx, 0.213705);
 }
 
 {
