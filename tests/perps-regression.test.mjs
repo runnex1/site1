@@ -1624,6 +1624,8 @@ assert.match(perpsJs, /liquidationPx: liquidationPriceFrom\(p, grvtPx\)/, 'GRVT 
 assert.match(perpsJs, /grvtTradesPost\('positions'/, 'GRVT state must fetch the dedicated positions endpoint for liquidation prices');
 assert.match(perpsJs, /type: 'frontendOpenOrders'/, 'Hyperliquid state must fetch position TP/SL from frontendOpenOrders');
 assert.match(perpsJs, /grvtTradesPost\('open_orders'/, 'GRVT state must fetch TP/SL trigger orders from open_orders');
+assert.match(perpsJs, /metadata\.trigger \?\? metadata\.t/, 'GRVT TP/SL parser must read trigger metadata from order.metadata');
+assert.match(perpsJs, /function enrichGrvtStateWithTpsl\(/, 'GRVT fallback state must still attach TP/SL from open_orders');
 assert.match(perpsJs, /tpPx: tpslPxFrom\(p\.tpTriggerPrice\)/, 'Extended positions must map API tpTriggerPrice');
 assert.match(perpsJs, /slPx: tpslPxFrom\(p\.slTriggerPrice\)/, 'Extended positions must map API slTriggerPrice');
 assert.doesNotMatch(perpsJs, /NADO TP\/SL unavailable/, 'NADO TP/SL lookup is skipped silently');
@@ -1750,14 +1752,21 @@ assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketI
   const grvtTpsl = parseGrvtTpslOrders({
     result: [{
       l: [{ i: 'BTC_USDT_Perp' }],
-      t: { tt: 'TAKE_PROFIT', t: { tp: '70000000000' } },
+      m: { t: { tt: 1, t: { tp: '70000000000' } } },
     }, {
       l: [{ i: 'BTC_USDT_Perp' }],
-      t: { tt: 'STOP_LOSS', t: { tp: '60000000000' } },
+      m: { t: { tt: 2, t: { tp: '60000000000' } } },
     }],
   });
-  assert.equal(grvtTpsl.get('BTC')?.tpPx, 70, 'GRVT TP/SL parser must decode trigger prices');
-  assert.equal(grvtTpsl.get('BTC')?.slPx, 60, 'GRVT TP/SL parser must decode stop-loss triggers');
+  assert.equal(grvtTpsl.get('BTC')?.tpPx, 70, 'GRVT TP/SL parser must decode metadata.trigger prices');
+  assert.equal(grvtTpsl.get('BTC')?.slPx, 60, 'GRVT TP/SL parser must decode stop-loss triggers from order metadata');
+
+  const { normalizeGrvtOrderRow } = require('../lib/perps.js');
+  const normalized = normalizeGrvtOrderRow({
+    l: [{ i: 'ETH_USDT_Perp' }],
+    m: { trigger: { trigger_type: 'TAKE_PROFIT', tpsl: { trigger_price: '3500000000000' } } },
+  });
+  assert.equal(normalized.trigger?.trigger_type, 'TAKE_PROFIT', 'GRVT order normalization must read full-format metadata.trigger');
 
   const nadoTp = classifyNadoTriggerSide({
     price_trigger: { price_requirement: { oracle_price_above: String(70_000 * 1e18) } },
