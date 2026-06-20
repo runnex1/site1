@@ -1986,6 +1986,34 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
 }
 
 {
+  const openedAt = Date.now() - 3 * 86400000;
+  const hedge = {
+    id: 'h1',
+    symbol: 'XLM',
+    trackedVenue: 'grvt',
+    trackedSize: 90000,
+    variationalEntryPx: 0.218,
+    status: 'open',
+    openedAt,
+  };
+  const result = applyVariationalHedges({
+    paired: [],
+    unhedged: [],
+    rateSpread: [{ symbol: 'XLM', grvt8h: 0.001, variational8h: 0.0005 }],
+    grvt: { state: { positions: [{ symbol: 'XLM', size: 90000, side: 'long', entryPx: 0.22, markPx: 0.217, notional: 19500, unrealizedPnl: -89, cumulativeFundingSinceOpen: 12.34 }] } },
+    hyperliquid: { state: { positions: [] } },
+    nado: { state: { positions: [] } },
+    extended: { state: { positions: [] } },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  }, [hedge], { XLM: { symbol: 'XLM', markPx: 0.217, fundingRateInterval: 0.1095 / 1095, fundingIntervalS: 28800, fundingRate8h: 0.1095 / 1095, fundingRateAnnual: 0.1095 } });
+  assert.equal(result.paired[0].legAFundingSinceOpen, 12.34, 'GRVT cumulative funding must flow into variational tracked leg');
+}
+
+assert.match(indexHtml, /function perpsEnrichVariationalPairFunding\(pair, data\)/, 'variational pairs must reattach exchange funding events after client-side merge');
+assert.match(indexHtml, /perpsFundingPaymentsForVenue\(data, trackedVenue\)/, 'variational funding enrichment must read GRVT/HL payment history from dashboard payload');
+
+{
   const deduped = dedupeActiveVariationalHedges([
     { id: 'a', symbol: 'XLM', trackedVenue: 'grvt', status: 'open', openedAt: 1 },
     { id: 'b', symbol: 'XLM', trackedVenue: 'grvt', status: 'open', openedAt: 2 },

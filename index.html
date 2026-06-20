@@ -27425,7 +27425,157 @@ function perpsApplyVariationalHedgesToData(data) {
         ]);
     }
     data.variationalPendingClose = result.pendingClose || [];
+    for (const pair of data.paired || []) {
+        if (VH.isVariationalPair?.(pair)) perpsEnrichVariationalPairFunding(pair, data);
+    }
     return data;
+}
+
+function perpsSymbolBase(symbol) {
+    return String(symbol || '').trim().toUpperCase().replace(/-PERP$/i, '');
+}
+
+function perpsFundingPaymentsForVenue(data, venue) {
+    const sources = {
+        hyperliquid: data?.hyperliquid?.funding?.payments,
+        nado: data?.nado?.funding?.payments,
+        grvt: data?.grvt?.funding?.payments,
+        extended: data?.extended?.funding?.payments,
+    };
+    return sources[venue] || [];
+}
+
+function perpsFillItemsForVenue(data, venue) {
+    const sources = {
+        hyperliquid: data?.hyperliquid?.fills?.fills,
+        nado: data?.nado?.matches?.matches,
+        grvt: data?.grvt?.fills?.fills,
+        extended: data?.extended?.fills?.fills,
+    };
+    return sources[venue] || [];
+}
+
+function perpsVariationalFundingSinceMs(pair, data) {
+    const trackedVenue = pair.venueA || pair.crossLegA?.venue;
+    const base = pair.symbol;
+    let earliest = Number.isFinite(Number(pair.pairOpenedAtMs)) ? Number(pair.pairOpenedAtMs) : null;
+    for (const p of perpsFundingPaymentsForVenue(data, trackedVenue)) {
+        if (perpsSymbolBase(p.symbol) !== base) continue;
+        const t = Number(p.time) || 0;
+        if (!t) continue;
+        if (earliest == null || t < earliest) earliest = t;
+    }
+    for (const f of perpsFillItemsForVenue(data, trackedVenue)) {
+        if (perpsSymbolBase(f.symbol) !== base) continue;
+        const t = Number(f.time) || 0;
+        if (!t) continue;
+        if (earliest == null || t < earliest) earliest = t;
+    }
+    return earliest || (Date.now() - 365 * 86400000);
+}
+
+function perpsBuildVariationalDailySeries(pair, data, sinceMs) {
+    const trackedVenue = pair.venueA || pair.crossLegA?.venue;
+    const base = pair.symbol;
+    const fundingByDay = {};
+    const feesByDay = {};
+    const venueByDay = {};
+    const fundingEventsByDay = {};
+    const feeEventsByDay = {};
+    const start = sinceMs || (Date.now() - 365 * 86400000);
+
+    for (const p of perpsFundingPaymentsForVenue(data, trackedVenue)) {
+        if (perpsSymbolBase(p.symbol) !== base) continue;
+        const time = Number(p.time) || 0;
+        if (!time || time < start) continue;
+        const day = new Date(time).toISOString().slice(0, 10);
+        const usdc = p.usdc || 0;
+        fundingByDay[day] = (fundingByDay[day] || 0) + usdc;
+        if (!venueByDay[day]) venueByDay[day] = {};
+        venueByDay[day][trackedVenue] = (venueByDay[day][trackedVenue] || 0) + usdc;
+        if (!fundingEventsByDay[day]) fundingEventsByDay[day] = [];
+        fundingEventsByDay[day].push({ time, usdc, venue: trackedVenue, intervalHours: p.intervalHours ?? null });
+    }
+
+    for (const f of perpsFillItemsForVenue(data, trackedVenue)) {
+        if (perpsSymbolBase(f.symbol) !== base) continue;
+        const time = Number(f.time) || 0;
+        if (!time || time < start) continue;
+        const day = new Date(time).toISOString().slice(0, 10);
+        const fee = f.fee || 0;
+        feesByDay[day] = (feesByDay[day] || 0) + fee;
+        if (!feeEventsByDay[day]) feeEventsByDay[day] = [];
+        feeEventsByDay[day].push({ time, fee });
+    }
+
+    const endDay = new Date().toISOString().slice(0, 10);
+    const startDay = new Date(start).toISOString().slice(0, 10);
+    const points = [];
+    let cumFunding = 0;
+    let cumFees = 0;
+    let cumNet = 0;
+    for (let d = new Date(startDay + 'T00:00:00Z'); d <= new Date(endDay + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) {
+        const day = d.toISOString().slice(0, 10);
+        const dailyFunding = fundingByDay[day] || 0;
+        const dailyFees = feesByDay[day] || 0;
+        const dailyNet = dailyFunding - dailyFees;
+        cumFunding += dailyFunding;
+        cumFees += dailyFees;
+        cumNet += dailyNet;
+        points.push({
+            ts: d.getTime() + 43200000,
+            day,
+            dailyFunding,
+            dailyFees,
+            dailyNet,
+            cumFunding,
+            cumFees,
+            cumNet,
+            byVenue: venueByDay[day] || {},
+            fundingEvents: fundingEventsByDay[day] || [],
+            feeEvents: feeEventsByDay[day] || [],
+        });
+    }
+    return points;
+}
+
+function perpsEnrichVariationalPairFunding(pair, data) {
+    const trackedVenue = pair.venueA || pair.crossLegA?.venue;
+    const base = pair.symbol;
+    if (!trackedVenue || !base) return pair;
+
+    const sinceMs = perpsVariationalFundingSinceMs(pair, data);
+    if (sinceMs && (!Number.isFinite(Number(pair.pairOpenedAtMs)) || sinceMs < Number(pair.pairOpenedAtMs))) {
+        pair.pairOpenedAtMs = sinceMs;
+        pair.daysOpen = Math.max(1 / 24, (Date.now() - sinceMs) / 86400000);
+    }
+
+    const recentFundingEvents = [];
+    let paymentSum = 0;
+    for (const p of perpsFundingPaymentsForVenue(data, trackedVenue)) {
+        if (perpsSymbolBase(p.symbol) !== base) continue;
+        const time = Number(p.time) || 0;
+        if (sinceMs && time < sinceMs) continue;
+        paymentSum += p.usdc || 0;
+        recentFundingEvents.push({
+            venue: trackedVenue,
+            time,
+            usdc: p.usdc || 0,
+            symbol: p.symbol,
+            intervalHours: p.intervalHours ?? null,
+        });
+    }
+    pair.recentFundingEvents = recentFundingEvents.sort((a, b) => (b.time || 0) - (a.time || 0));
+
+    const trackedLeg = pair.crossLegA?.venue === trackedVenue ? pair.crossLegA : pair.crossLegB;
+    const cumFunding = Number(trackedLeg?.cumFundingSinceOpen ?? trackedLeg?.cumulativeFundingSinceOpen);
+    pair.legAFundingSinceOpen = Number.isFinite(cumFunding) && Math.abs(cumFunding) >= Math.abs(paymentSum)
+        ? cumFunding
+        : paymentSum;
+    pair.fundingSinceOpen = (pair.legAFundingSinceOpen ?? 0) + (pair.legBFundingSinceOpen ?? 0);
+    pair.fundingWindow = pair.fundingSinceOpen;
+    pair.dailyPerformanceSeries = perpsBuildVariationalDailySeries(pair, data, sinceMs);
+    return pair;
 }
 
 function perpsHedgeWithVariational(unhedgedIdx) {
