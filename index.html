@@ -15,6 +15,7 @@
 <script src="lib/defi-export.js"></script>
 <script src="lib/protocol-apr.js"></script>
 <script src="lib/variational-hedge.js"></script>
+<script src="lib/variational-equity.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -7739,12 +7740,15 @@ body[data-active-tab="loops"] .page-content,
               <div class="perps-panel-title-row">
                 <div class="perps-panel-title">Portfolio Equity</div>
                 <div class="perps-equity-mode-group">
+                  <button type="button" class="perps-range-btn perps-equity-mode-btn active" data-perps-equity-value-mode="neutral" onclick="perpsSetEquityValueMode('neutral',this)">Hedge-neutral</button>
+                  <button type="button" class="perps-range-btn perps-equity-mode-btn" data-perps-equity-value-mode="raw" onclick="perpsSetEquityValueMode('raw',this)">Exchange</button>
                   <button type="button" class="perps-range-btn perps-equity-mode-btn active" data-perps-equity-mode="session" onclick="perpsSetEquityChartMode('session',this)">Last session</button>
                   <button type="button" class="perps-range-btn perps-equity-mode-btn" data-perps-equity-mode="all" onclick="perpsSetEquityChartMode('all',this)">All-time</button>
                 </div>
               </div>
               <span class="perps-pill" style="border-color:rgba(167,139,250,0.35);color:#c4b5fd;background:rgba(167,139,250,0.1);" id="perpsEquityChartBadge">—</span>
             </div>
+            <div class="perps-pnl-note" id="perpsEquityChartNote" style="padding:0 1rem 0.35rem;font-size:0.68rem;">Hedge-neutral · strips Variational tracked-leg uPnL + closed Variational PnL</div>
             <div class="perps-panel-body perps-panel-body--chart">
               <div class="perps-pnl-chart hoverable" id="perpsEquityChartWrap">
                 <svg id="perpsEquityChart" viewBox="0 0 760 160" preserveAspectRatio="none" role="img" aria-label="Portfolio PnL chart">
@@ -8841,6 +8845,7 @@ let _perpsLastRefreshAt = null;
 let _perpsRefreshError = null;
 let _perpsStatRange = '7d';
 let _perpsEquityChartMode = 'session';
+let _perpsEquityValueMode = 'neutral';
 let _perpsPositionsTab = 'live';
 let _perpsLastData = null;
 let _perpsVenueEquity = null;
@@ -26657,6 +26662,34 @@ function perpsSetEquityChartMode(mode, btn) {
     if (_perpsLastData) perpsRenderEquityChart(_perpsLastData);
 }
 
+function perpsSetEquityValueMode(mode, btn) {
+    _perpsEquityValueMode = mode === 'raw' ? 'raw' : 'neutral';
+    document.querySelectorAll('[data-perps-equity-value-mode]').forEach(b => {
+        b.classList.toggle('active', b === btn);
+    });
+    perpsSaveConfig({ statRangeOnly: true });
+    if (_perpsLastData) perpsRenderEquityChart(_perpsLastData);
+}
+
+function perpsEquityPointChartValue(point, valueMode = _perpsEquityValueMode) {
+    const VE = window.VariationalEquity;
+    if (VE?.equityPointChartValue) return VE.equityPointChartValue(point, valueMode);
+    return valueMode === 'raw' ? (point?.totalEquity ?? 0) : (point?.variationalNeutralEquity ?? point?.totalEquity ?? 0);
+}
+
+function perpsComputeVariationalEquityAdjustments(data) {
+    const VH = window.VariationalHedge;
+    const VE = window.VariationalEquity;
+    const isVar = (p) => VH?.isVariationalPair?.(p) ?? String(p?.pairType || '').endsWith('_variational');
+    const closedAdj = VE?.variationalClosedEquityAdjust?.(data?.closedPairs) ?? 0;
+    const openAdj = VE?.variationalOpenEquityAdjust?.(data?.paired, isVar) ?? 0;
+    return {
+        closedAdj,
+        openAdj,
+        totalAdj: closedAdj + openAdj,
+    };
+}
+
 function perpsHasValidWallet() {
     return perpsIsValidEthAddress(perpsResolveHlWallet());
 }
@@ -26909,6 +26942,7 @@ function perpsConfigPayload(cfg) {
         grvtSubAccount: norm.grvtSubAccount || '4860249204328359',
         statRange: norm.statRange || _perpsStatRange,
         equityChartMode: norm.equityChartMode === 'all' ? 'all' : 'session',
+        equityValueMode: norm.equityValueMode === 'raw' ? 'raw' : 'neutral',
         configured: true,
     };
 }
@@ -27891,6 +27925,12 @@ function perpsLoadConfig() {
         if (saved.equityChartMode === 'all' || saved.equityChartMode === 'session') {
             _perpsEquityChartMode = saved.equityChartMode;
         }
+        if (saved.equityValueMode === 'raw' || saved.equityValueMode === 'neutral') {
+            _perpsEquityValueMode = saved.equityValueMode;
+        }
+        document.querySelectorAll('[data-perps-equity-value-mode]').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.perpsEquityValueMode === _perpsEquityValueMode);
+        });
         if (perpsIsValidEthAddress(saved.hyperliquid) && !saved.configured) {
             perpsPersistConfig(saved);
         }
@@ -27950,7 +27990,7 @@ function perpsSaveConfig(opts = {}) {
 
     if (!perpsIsValidEthAddress(hl)) {
         if (opts.statRangeOnly && perpsIsValidEthAddress(prev.hyperliquid)) {
-            perpsPersistConfig({ ...prev, statRange: _perpsStatRange, equityChartMode: _perpsEquityChartMode });
+            perpsPersistConfig({ ...prev, statRange: _perpsStatRange, equityChartMode: _perpsEquityChartMode, equityValueMode: _perpsEquityValueMode });
         }
         perpsUpdateConfigVisibility();
         return;
@@ -27958,7 +27998,7 @@ function perpsSaveConfig(opts = {}) {
 
     const nado = perpsReadConfigField('perpsNadoWallet', 'nado');
     const grvtSubAccount = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || prev.grvtSubAccount || '4860249204328359';
-    perpsPersistConfig({ hyperliquid: hl, nado, grvtSubAccount, statRange: _perpsStatRange, equityChartMode: _perpsEquityChartMode });
+    perpsPersistConfig({ hyperliquid: hl, nado, grvtSubAccount, statRange: _perpsStatRange, equityChartMode: _perpsEquityChartMode, equityValueMode: _perpsEquityValueMode });
     perpsUpdateConfigVisibility();
 }
 
@@ -28016,6 +28056,7 @@ function perpsSaveSnapshot(data) {
         const extendedAccountValue = s.extendedAccountValue ?? data.equityNow?.extended ?? 0;
         const totalEquity = hlAccountValue + nadoAccountValue + grvtAccountValue + extendedAccountValue;
         const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
+        const variationalAdj = perpsComputeVariationalEquityAdjustments(data);
         const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
         if (store[bucket]) return false;
         const fetchedAt = data.fetchedAt || Date.now();
@@ -28029,6 +28070,9 @@ function perpsSaveSnapshot(data) {
             totalEquity,
             adjustedEquity: s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalEquity - combinedNetDeposits,
             cumulativeNetDeposits: combinedNetDeposits,
+            variationalEquityAdjust: variationalAdj.totalAdj,
+            variationalOpenEquityAdjust: variationalAdj.openAdj,
+            variationalClosedEquityAdjust: variationalAdj.closedAdj,
             fetchedAt,
         };
         const keys = Object.keys(store).sort((a, b) => perpsParseBucketTime(a) - perpsParseBucketTime(b));
@@ -28079,22 +28123,24 @@ function perpsLastCapitalEventMs(data) {
     return payments.length ? payments[payments.length - 1].time : 0;
 }
 
-function perpsApplyEquityChartMode(series, data, mode) {
+function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityValueMode) {
     const allPoints = (series?.points || []).slice().sort((a, b) => {
         const ta = perpsParseBucketTime(a.bucket) || a.time || 0;
         const tb = perpsParseBucketTime(b.bucket) || b.time || 0;
         return ta - tb;
     });
     const chartMode = mode === 'all' ? 'all' : 'session';
+    const mapPoint = (p) => ({
+        ...p,
+        chartValue: perpsEquityPointChartValue(p, valueMode),
+    });
 
     if (chartMode === 'all') {
         return {
             ...series,
-            points: allPoints.map(p => ({
-                ...p,
-                chartValue: p.totalEquity,
-            })),
+            points: allPoints.map(mapPoint),
             chartMode,
+            valueMode,
             pointCount: allPoints.length,
         };
     }
@@ -28109,11 +28155,9 @@ function perpsApplyEquityChartMode(series, data, mode) {
 
     return {
         ...series,
-        points: sessionPoints.map(p => ({
-            ...p,
-            chartValue: p.totalEquity,
-        })),
+        points: sessionPoints.map(mapPoint),
         chartMode: 'session',
+        valueMode,
         sessionMs,
         pointCount: sessionPoints.length,
     };
@@ -28121,13 +28165,28 @@ function perpsApplyEquityChartMode(series, data, mode) {
 
 function perpsBuildEquitySeries(data) {
     const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
+    const { closedAdj, totalAdj: liveTotalAdj } = perpsComputeVariationalEquityAdjustments(data);
+    const VE = window.VariationalEquity;
     const byBucket = {};
     for (const [key, snap] of Object.entries(store)) {
         const time = Number(snap.fetchedAt) || perpsParseBucketTime(key);
         if (!time || snap.totalEquity == null) continue;
         const bucket = snap.bucket || (String(key).includes('T') ? key : perpsEquityBucketKey(time));
         const adjustedEquity = snap.adjustedEquity ?? (snap.totalEquity - (snap.cumulativeNetDeposits ?? 0));
-        const row = { time, bucket, totalEquity: snap.totalEquity, adjustedEquity, source: 'snapshot' };
+        const variationalEquityAdjust = Number.isFinite(Number(snap.variationalEquityAdjust))
+            ? Number(snap.variationalEquityAdjust)
+            : closedAdj;
+        const variationalNeutralEquity = VE?.variationalNeutralEquity?.(snap.totalEquity, variationalEquityAdjust)
+            ?? (snap.totalEquity + variationalEquityAdjust);
+        const row = {
+            time,
+            bucket,
+            totalEquity: snap.totalEquity,
+            adjustedEquity,
+            variationalEquityAdjust,
+            variationalNeutralEquity,
+            source: 'snapshot',
+        };
         if (!byBucket[bucket] || row.time >= byBucket[bucket].time) byBucket[bucket] = row;
     }
 
@@ -28141,13 +28200,27 @@ function perpsBuildEquitySeries(data) {
     const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
     const adjustedNow = s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalNow - combinedNetDeposits;
     const liveBucket = perpsEquityBucketKey(fetchedAt);
+    const liveVariationalAdjust = liveTotalAdj;
+    const liveNeutral = VE?.variationalNeutralEquity?.(totalNow, liveVariationalAdjust)
+        ?? (totalNow + liveVariationalAdjust);
     if (!byBucket[liveBucket] && perpsIsEquitySnapshotEligible(data)) {
         byBucket[liveBucket] = {
             time: fetchedAt,
             bucket: liveBucket,
             totalEquity: totalNow,
             adjustedEquity: adjustedNow,
+            variationalEquityAdjust: liveVariationalAdjust,
+            variationalNeutralEquity: liveNeutral,
             source: 'live',
+        };
+    } else if (byBucket[liveBucket]) {
+        byBucket[liveBucket] = {
+            ...byBucket[liveBucket],
+            totalEquity: totalNow,
+            adjustedEquity: adjustedNow,
+            variationalEquityAdjust: liveVariationalAdjust,
+            variationalNeutralEquity: liveNeutral,
+            source: byBucket[liveBucket].source || 'live',
         };
     }
 
@@ -28163,6 +28236,8 @@ function perpsBuildEquitySeries(data) {
             bucket: liveBucket,
             totalEquity: totalNow,
             adjustedEquity: adjustedNow,
+            variationalEquityAdjust: liveVariationalAdjust,
+            variationalNeutralEquity: liveNeutral,
             source: 'live',
         }];
     }
@@ -28170,6 +28245,8 @@ function perpsBuildEquitySeries(data) {
         points,
         totalEquityNow: totalNow,
         adjustedEquityNow: adjustedNow,
+        variationalEquityAdjustNow: liveVariationalAdjust,
+        variationalNeutralEquityNow: liveNeutral,
         pointCount: points.length,
         firstBucket: points[0]?.bucket ?? null,
     };
@@ -28210,7 +28287,7 @@ function perpsBuildEquityChart(equitySeries) {
         const x = padX + (i / Math.max(pts.length - 1, 1)) * chartW;
         const val = p.chartValue ?? p.totalEquity;
         const y = padY + ((max - val) / span) * chartH;
-        return { x, y, val, bucket: p.bucket };
+        return { x, y, val, bucket: p.bucket, rawEquity: p.totalEquity, variationalAdjust: p.variationalEquityAdjust };
     });
     const linePath = plot.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
     const areaPath = `M ${padX} ${height - padY} L ${linePath.slice(2)} L ${PERPS_CHART_WIDTH - 12} ${height - padY} Z`;
@@ -28252,7 +28329,16 @@ function perpsBindEquityChartHover() {
             if (d < bestDist) { bestDist = d; hit = p; }
         }
         const bucketLabel = hit.bucket === 'live' ? 'Live' : String(hit.bucket || '').replace('T', ' · ') + ':00 UTC';
-        tip.innerHTML = `<div style="color:#9dacbb;margin-bottom:0.15rem;">${dashEsc(bucketLabel)}</div><div style="font-weight:800;color:#c4b5fd;">${perpsFmtUsd(hit.val)}</div>`;
+        const rawEquity = hit.rawEquity ?? hit.val;
+        const adjust = hit.variationalAdjust;
+        const modeLabel = _perpsEquityValueMode === 'raw' ? 'Exchange equity' : 'Hedge-neutral equity';
+        let body = `<div style="color:#9dacbb;margin-bottom:0.15rem;">${dashEsc(bucketLabel)}</div>` +
+            `<div style="font-weight:800;color:#c4b5fd;">${perpsFmtUsd(hit.val)}</div>` +
+            `<div style="color:#9dacbb;font-size:0.68rem;margin-top:0.2rem;">${dashEsc(modeLabel)}</div>`;
+        if (_perpsEquityValueMode === 'neutral' && Number.isFinite(rawEquity) && Math.abs(rawEquity - hit.val) > 0.005) {
+            body += `<div style="color:#9dacbb;font-size:0.68rem;margin-top:0.15rem;">Exchange: ${perpsFmtUsd(rawEquity)} · adj ${perpsFmtUsd(adjust ?? (hit.val - rawEquity))}</div>`;
+        }
+        tip.innerHTML = body;
         perpsPositionFundChartTooltip(ev, tip);
         if (dot) {
             dot.style.display = '';
@@ -28268,13 +28354,19 @@ function perpsBindEquityChartHover() {
 
 function perpsRenderEquityChart(data) {
     const rawSeries = perpsBuildEquitySeries(data);
-    const equitySeries = perpsApplyEquityChartMode(rawSeries, data, _perpsEquityChartMode);
+    const equitySeries = perpsApplyEquityChartMode(rawSeries, data, _perpsEquityChartMode, _perpsEquityValueMode);
     data._equitySeries = equitySeries;
     const chart = perpsBuildEquityChart(equitySeries);
     const lineEl = document.getElementById('perpsEquityLine');
     const areaEl = document.getElementById('perpsEquityArea');
     const pointsEl = document.getElementById('perpsEquityPoints');
     const badge = document.getElementById('perpsEquityChartBadge');
+    const noteEl = document.getElementById('perpsEquityChartNote');
+    if (noteEl) {
+        noteEl.textContent = _perpsEquityValueMode === 'raw'
+            ? 'Exchange equity · raw HL + Nado + GRVT + Extended account values'
+            : 'Hedge-neutral · strips Variational tracked-leg uPnL + adds closed Variational PnL';
+    }
     if (lineEl) lineEl.setAttribute('d', chart.line);
     if (areaEl) areaEl.setAttribute('d', chart.area || '');
     if (pointsEl) {
@@ -28284,13 +28376,14 @@ function perpsRenderEquityChart(data) {
     }
     if (badge) {
         const latest = perpsFmtUsd(chart.plot.at(-1)?.val ?? chart.total);
+        const modeTag = _perpsEquityValueMode === 'raw' ? 'exchange' : 'hedge-neutral';
         if (chart.insufficient) {
-            badge.textContent = `live · ${latest}`;
+            badge.textContent = `${modeTag} · live · ${latest}`;
         } else if (equitySeries.chartMode === 'session' && equitySeries.sessionMs) {
             const since = new Date(equitySeries.sessionMs).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            badge.textContent = `since ${since} · ${equitySeries.pointCount} pts · latest ${latest}`;
+            badge.textContent = `${modeTag} · since ${since} · ${equitySeries.pointCount} pts · ${latest}`;
         } else {
-            badge.textContent = `${equitySeries.pointCount} pts · latest ${latest}`;
+            badge.textContent = `${modeTag} · ${equitySeries.pointCount} pts · ${latest}`;
         }
     }
     _perpsEquityChartState = chart;

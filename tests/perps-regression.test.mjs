@@ -1472,8 +1472,11 @@ assert.match(indexHtml, /<g id="perpsEquityPoints"><\/g>/, 'equity chart must re
 assert.match(indexHtml, /data-perps-equity-mode="session"/, 'equity chart must default to last-session mode');
 assert.match(indexHtml, /function perpsLastCapitalEventMs\(/, 'equity chart session mode must detect last capital flow');
 assert.match(indexHtml, /function perpsApplyEquityChartMode\(/, 'equity chart must filter snapshots by chart mode');
+assert.match(indexHtml, /function perpsEquityPointChartValue\(/, 'equity chart must support hedge-neutral and exchange value modes');
+assert.match(indexHtml, /variationalNeutralEquity/, 'equity series must carry hedge-neutral values');
+assert.match(indexHtml, /variationalEquityAdjust:/, 'equity snapshots must persist variational hedge adjustment');
+assert.match(indexHtml, /data-perps-equity-value-mode="neutral"/, 'equity chart must default to hedge-neutral mode');
 assert.doesNotMatch(indexHtml, /chartKind: 'pnl'/, 'equity chart must not plot PnL values');
-assert.match(indexHtml, /chartValue: p\.totalEquity/, 'equity chart must plot total equity in both modes');
 assert.match(indexHtml, /\.perps-chart-tooltip \{[\s\S]*?position:fixed/, 'equity chart tooltip must use fixed positioning so it is not clipped');
 assert.match(indexHtml, /const bucketLabel = hit\.bucket === 'live'/, 'equity chart hover must label the active snapshot bucket');
 assert.match(indexHtml, /perpsPositionFundChartTooltip\(ev, tip\)/, 'equity chart tooltip must flip near viewport edges');
@@ -2114,5 +2117,46 @@ assert.ok(indexHtml.includes('trackedEntryPx'), 'variational modal must pass tra
 assert.ok(indexHtml.includes('Hedge with Variational'), 'index must expose hedge action');
 assert.ok(indexHtml.includes('lib/variational-hedge.js'), 'index must load variational hedge module');
 assert.ok(perpsJs.includes('fetchVariationalRates'), 'perps.js must fetch variational rates');
+
+const {
+  variationalOpenEquityAdjust,
+  variationalClosedEquityAdjust,
+  variationalTotalEquityAdjust,
+  variationalNeutralEquity,
+  equityPointChartValue,
+} = require('../lib/variational-equity.js');
+
+{
+  const openAdj = variationalOpenEquityAdjust([{
+    pairType: 'grvt_variational',
+    venueA: 'grvt',
+    crossLegA: { venue: 'grvt', unrealizedPnl: -286 },
+    crossLegB: { venue: 'variational', unrealizedPnl: 294 },
+  }], (p) => p.pairType === 'grvt_variational');
+  assert.equal(openAdj, 286, 'open hedge adjust must neutralize tracked-leg uPnL');
+  assert.equal(
+    variationalNeutralEquity(10000, openAdj),
+    10286,
+    'hedge-neutral equity must add -trackedUpnl when tracked leg is underwater',
+  );
+}
+
+{
+  const closedAdj = variationalClosedEquityAdjust([{
+    pairType: 'grvt_variational',
+    manualVariationalClose: true,
+    longLeg: { venue: 'grvt', realizedPnl: -12, funding: 4, fees: 1 },
+    shortLeg: { venue: 'variational', realizedPnl: 18, funding: 2, fees: 0 },
+  }]);
+  assert.equal(closedAdj, 20, 'closed hedge adjust must add variational realized + funding');
+}
+
+{
+  const point = { totalEquity: 10000, variationalEquityAdjust: 286, variationalNeutralEquity: 10286 };
+  assert.equal(equityPointChartValue(point, 'neutral'), 10286);
+  assert.equal(equityPointChartValue(point, 'raw'), 10000);
+}
+
+assert.ok(indexHtml.includes('lib/variational-equity.js'), 'index must load variational equity module');
 
 console.log('PASS: perps accounting and dashboard regression checks');
