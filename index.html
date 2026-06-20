@@ -934,6 +934,22 @@ body[data-active-tab="perps"] .topbar,
   color:#ffb347 !important;
   text-shadow:0 0 8px rgba(255,179,71,0.35) !important;
 }
+.perps-pos-tpsl-val-wrap { position:relative; display:inline-block; max-width:100%; }
+.perps-tpsl-tooltip {
+  display:none; position:absolute; left:0; top:calc(100% + 6px); z-index:24;
+  min-width:10.5rem; padding:0.45rem 0.55rem; border-radius:7px;
+  border:1px solid rgba(134,159,179,0.24); background:rgba(8,18,26,0.98);
+  box-shadow:0 10px 24px rgba(0,0,0,0.38); pointer-events:none;
+}
+.perps-pos-tpsl-val-wrap:hover .perps-tpsl-tooltip { display:block; }
+.perps-tpsl-tooltip-row {
+  display:flex; align-items:baseline; justify-content:space-between; gap:0.65rem;
+  font-family:var(--ff-mono); font-size:0.62rem; line-height:1.35; color:#9dacbb; white-space:nowrap;
+}
+.perps-tpsl-tooltip-row + .perps-tpsl-tooltip-row { margin-top:0.18rem; }
+.perps-tpsl-tooltip-row strong { color:var(--t1); font-weight:800; }
+.perps-tpsl-tooltip-row .tp { color:#55d66f; }
+.perps-tpsl-tooltip-row .sl { color:#ff8fa3; }
 .perps-pos-apr-col { text-align:right; }
 .perps-pos-apr-val { font-family:var(--ff-mono); font-size:0.92rem; font-weight:900; white-space:nowrap; }
 .perps-pos-apr-val.pos { color:#55d66f; }
@@ -30227,29 +30243,14 @@ function perpsPositionLiqStackHtml(p, displayLegs) {
     }).join('')}</div>`;
 }
 
+const PERPS_TPSL_HEDGE_CLOSE_PCT = 1;
+
 function perpsTpSlDiffPct(a, b) {
     const left = perpsNumOrNull(a);
     const right = perpsNumOrNull(b);
     if (left == null || right == null) return null;
     const avg = (left + right) / 2;
     return avg > 0 ? (Math.abs(left - right) / avg) * 100 : null;
-}
-
-function perpsFmtTpSlStackHtml(tpPx, slPx, currentPx, legCtx = {}) {
-    const tp = perpsNumOrNull(tpPx);
-    const sl = perpsNumOrNull(slPx);
-    if (tp == null && sl == null) return '<div class="perps-pos-liq-val">—</div>';
-    const side = Number(legCtx.size) < 0 ? 'short' : 'long';
-    const rows = [];
-    if (tp != null) rows.push(`<div class="perps-pos-liq-val" ${perpsPriceRiskStyle(currentPx, tp)}>${perpsFmtPx(tp)}</div>`);
-    if (sl != null) {
-        const slLiqWarn = perpsSlLiqProximityWarn(side, sl, legCtx.liquidationPx);
-        const slWarnCls = slLiqWarn ? ' perps-pos-sl-liq-warn' : '';
-        const slWarnTitle = slLiqWarn ? ` title="${dashEsc(perpsSlLiqWarnTitle(side))}"` : '';
-        const slStyle = slLiqWarn ? '' : perpsPriceRiskStyle(currentPx, sl);
-        rows.push(`<div class="perps-pos-liq-val${slWarnCls}"${slWarnTitle} ${slStyle}>${slLiqWarn ? '⚠ ' : ''}${perpsFmtPx(sl)}</div>`);
-    }
-    return `<div class="perps-pos-tpsl-pair">${rows.join('')}</div>`;
 }
 
 function perpsComparableTpSlLegs(displayLegs) {
@@ -30259,45 +30260,149 @@ function perpsComparableTpSlLegs(displayLegs) {
     });
 }
 
+function perpsTpSlHedgeLegs(entries) {
+    const legs = (entries || []).map(entry => ({
+        venue: entry?.venue || entry?.leg?.venue,
+        leg: entry?.leg || entry,
+    }));
+    const longEntry = legs.find(e => Number(e.leg?.size) > 0) || legs[0] || null;
+    const shortEntry = legs.find(e => Number(e.leg?.size) < 0)
+        || legs.find(e => e !== longEntry)
+        || legs[1]
+        || null;
+    return { longEntry, shortEntry, legs };
+}
+
+function perpsTpSlHedgePairAnalysis(longPx, shortPx, thresholdPct = PERPS_TPSL_HEDGE_CLOSE_PCT) {
+    const longVal = perpsNumOrNull(longPx);
+    const shortVal = perpsNumOrNull(shortPx);
+    if (longVal == null && shortVal == null) return { kind: 'none' };
+    if (longVal == null || shortVal == null) return { kind: 'missing', longPx: longVal, shortPx: shortVal };
+    const diffPct = perpsTpSlDiffPct(longVal, shortVal);
+    if (diffPct != null && diffPct <= thresholdPct) {
+        return {
+            kind: 'merged',
+            avg: (longVal + shortVal) / 2,
+            longPx: longVal,
+            shortPx: shortVal,
+            diffPct,
+        };
+    }
+    return { kind: 'mismatch', longPx: longVal, shortPx: shortVal, diffPct };
+}
+
+function perpsTpSlCrossTooltipHtml(longEntry, shortEntry) {
+    if (!longEntry || !shortEntry) return '';
+    const row = (entry, sideLabel) => {
+        const leg = entry.leg || {};
+        const venue = dashEsc(perpsVenueShort(entry.venue || leg.venue));
+        const tp = perpsNumOrNull(leg.tpPx);
+        const sl = perpsNumOrNull(leg.slPx);
+        return `<div class="perps-tpsl-tooltip-row"><span>${venue}</span><span><span class="tp">TP ${tp != null ? perpsFmtPx(tp) : '—'}</span> · <span class="sl">SL ${sl != null ? perpsFmtPx(sl) : '—'}</span></span></div>`;
+    };
+    return `<div class="perps-tpsl-tooltip">${row(longEntry, 'long')}${row(shortEntry, 'short')}</div>`;
+}
+
+function perpsTpSlValWrapHtml(innerHtml, tooltipHtml = '') {
+    if (!tooltipHtml) return innerHtml;
+    return `<span class="perps-pos-tpsl-val-wrap">${innerHtml}${tooltipHtml}</span>`;
+}
+
+function perpsFmtTpSlStackHtml(tpPx, slPx, currentPx, legCtx = {}) {
+    const tp = perpsNumOrNull(tpPx);
+    const sl = perpsNumOrNull(slPx);
+    if (tp == null && sl == null) return '<div class="perps-pos-liq-val">—</div>';
+    const side = Number(legCtx.size) < 0 ? 'short' : 'long';
+    const tooltipHtml = legCtx.tooltipHtml || '';
+    const rows = [];
+    if (tp != null) {
+        const prefix = legCtx.approxTp ? '~' : '';
+        const inner = `<div class="perps-pos-liq-val" ${perpsPriceRiskStyle(currentPx, tp)}>${prefix}${perpsFmtPx(tp)}</div>`;
+        rows.push(perpsTpSlValWrapHtml(inner, tooltipHtml));
+    }
+    if (sl != null) {
+        const slLiqWarn = perpsSlLiqProximityWarn(side, sl, legCtx.liquidationPx);
+        const slWarnCls = slLiqWarn ? ' perps-pos-sl-liq-warn' : '';
+        const slWarnTitle = slLiqWarn && !tooltipHtml ? ` title="${dashEsc(perpsSlLiqWarnTitle(side))}"` : '';
+        const slStyle = slLiqWarn ? '' : perpsPriceRiskStyle(currentPx, sl);
+        const prefix = legCtx.approxSl ? '~' : '';
+        const inner = `<div class="perps-pos-liq-val${slWarnCls}"${slWarnTitle} ${slStyle}>${slLiqWarn ? '⚠ ' : ''}${prefix}${perpsFmtPx(sl)}</div>`;
+        rows.push(perpsTpSlValWrapHtml(inner, tooltipHtml));
+    }
+    return `<div class="perps-pos-tpsl-pair">${rows.join('')}</div>`;
+}
+
+function perpsPairTpSlAnalysis(displayLegs) {
+    const comparable = perpsComparableTpSlLegs(displayLegs);
+    if (comparable.length < 2) {
+        const entry = comparable.find(e => {
+            const leg = e?.leg || e;
+            return perpsNumOrNull(leg?.tpPx) != null || perpsNumOrNull(leg?.slPx) != null;
+        }) || comparable[0] || (displayLegs || []).find(e => {
+            const leg = e?.leg || e;
+            return perpsNumOrNull(leg?.tpPx) != null || perpsNumOrNull(leg?.slPx) != null;
+        }) || (displayLegs || [])[0] || null;
+        return { mode: 'single', entry, comparable };
+    }
+    const { longEntry, shortEntry } = perpsTpSlHedgeLegs(comparable);
+    const longLeg = longEntry?.leg || {};
+    const shortLeg = shortEntry?.leg || {};
+    const tp = perpsTpSlHedgePairAnalysis(longLeg.tpPx, shortLeg.slPx);
+    const sl = perpsTpSlHedgePairAnalysis(longLeg.slPx, shortLeg.tpPx);
+    const mismatch = tp.kind === 'mismatch' || sl.kind === 'mismatch'
+        || tp.kind === 'missing' || sl.kind === 'missing';
+    return {
+        mode: mismatch ? 'split' : 'merged',
+        tp,
+        sl,
+        longEntry,
+        shortEntry,
+        comparable,
+    };
+}
+
 function perpsPairTpSlMismatch(displayLegs) {
-    const entries = perpsComparableTpSlLegs(displayLegs);
-    if (entries.length < 2) return false;
-    const legs = entries.map(entry => entry.leg || entry);
-    const tps = legs.map(leg => perpsNumOrNull(leg.tpPx)).filter(v => v != null);
-    const sls = legs.map(leg => perpsNumOrNull(leg.slPx)).filter(v => v != null);
-    const tpMismatch = tps.length >= 2 && perpsTpSlDiffPct(tps[0], tps[1]) > 0.5;
-    const slMismatch = sls.length >= 2 && perpsTpSlDiffPct(sls[0], sls[1]) > 0.5;
-    const tpMissing = tps.length > 0 && tps.length < legs.length;
-    const slMissing = sls.length > 0 && sls.length < legs.length;
-    return tpMismatch || slMismatch || tpMissing || slMissing;
+    return perpsPairTpSlAnalysis(displayLegs).mode === 'split';
 }
 
 function perpsPositionTpSlStackHtml(p, displayLegs) {
-    const legs = (displayLegs || []).map(entry => entry.leg || entry);
-    const comparable = perpsComparableTpSlLegs(displayLegs);
-    const mismatch = perpsPairTpSlMismatch(displayLegs);
-    const warn = mismatch
-        ? '<div class="perps-pos-tpsl-warn" title="TP/SL differ across venues or are missing on one leg">⚠ Mismatch</div>'
-        : '';
-    const tpSlEntry = (entry) => {
+    const analysis = perpsPairTpSlAnalysis(displayLegs);
+    const tpSlEntry = (entry, opts = {}) => {
         const leg = entry?.leg || entry;
         const venue = entry?.venue || leg?.venue;
         const currentPx = perpsLegCurrentPx(p.symbol, venue, leg);
         return perpsFmtTpSlStackHtml(leg?.tpPx, leg?.slPx, currentPx, {
             size: leg?.size,
             liquidationPx: leg?.liquidationPx,
+            ...opts,
         });
     };
-    if (!mismatch) {
-        const pool = comparable.length ? comparable : (displayLegs || []);
-        const entry = pool.find(e => {
-            const leg = e?.leg || e;
-            return perpsNumOrNull(leg?.tpPx) != null || perpsNumOrNull(leg?.slPx) != null;
-        }) || pool[0];
-        return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${tpSlEntry(entry)}</div>`;
+    if (analysis.mode === 'single') {
+        if (!analysis.entry) return '<div class="perps-pos-liq-val">—</div>';
+        return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${tpSlEntry(analysis.entry)}</div>`;
     }
-    return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${warn}${comparable.map(entry =>
-        tpSlEntry(entry)
+    const tooltipHtml = perpsTpSlCrossTooltipHtml(analysis.longEntry, analysis.shortEntry);
+    if (analysis.mode === 'merged') {
+        const longLeg = analysis.longEntry?.leg || {};
+        const shortLeg = analysis.shortEntry?.leg || {};
+        const tpPx = analysis.tp.kind === 'merged'
+            ? analysis.tp.avg
+            : (analysis.tp.longPx ?? analysis.tp.shortPx ?? longLeg.tpPx ?? shortLeg.slPx);
+        const slPx = analysis.sl.kind === 'merged'
+            ? analysis.sl.avg
+            : (analysis.sl.longPx ?? analysis.sl.shortPx ?? longLeg.slPx ?? shortLeg.tpPx);
+        const midPx = perpsPositionMidPx(p, analysis.comparable);
+        return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${perpsFmtTpSlStackHtml(tpPx, slPx, midPx, {
+            size: longLeg.size,
+            liquidationPx: longLeg.liquidationPx,
+            approxTp: analysis.tp.kind === 'merged',
+            approxSl: analysis.sl.kind === 'merged',
+            tooltipHtml,
+        })}</div>`;
+    }
+    const warn = '<div class="perps-pos-tpsl-warn" title="TP/SL differ across venues or are missing on one leg">⚠ Mismatch</div>';
+    return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${warn}${analysis.comparable.map(entry =>
+        tpSlEntry(entry, { tooltipHtml })
     ).join('')}</div>`;
 }
 

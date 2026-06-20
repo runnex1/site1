@@ -1595,7 +1595,10 @@ assert.match(indexHtml, /perps-pos-tpsl-warn.*Mismatch/, 'open positions must wa
 assert.match(indexHtml, /function perpsSlLiqProximityWarn\(/, 'open positions must warn when SL is too close to liquidation');
 assert.match(indexHtml, /perps-pos-sl-liq-warn/, 'SL near liquidation must use a visible warning style');
 assert.match(indexHtml, /perpsSlLiqProximityWarn\(side, sl, legCtx\.liquidationPx\)/, 'TP/SL stack must compare SL against leg liquidation price');
-assert.match(indexHtml, /perpsTpSlDiffPct\(tps\[0\], tps\[1\]\) > 0\.5/, 'TP/SL mismatch warning must use a 0.5% threshold');
+assert.match(indexHtml, /PERPS_TPSL_HEDGE_CLOSE_PCT = 1/, 'hedged TP/SL merge must use a 1% threshold');
+assert.match(indexHtml, /function perpsTpSlHedgePairAnalysis\(/, 'TP/SL must compare long TP vs short SL (hedge pairs)');
+assert.match(indexHtml, /perps-tpsl-tooltip/, 'TP/SL hover must show per-exchange TP and SL');
+assert.match(indexHtml, /approxTp: analysis\.tp\.kind === 'merged'/, 'merged hedge TP must show ~ prefix on averaged price');
 assert.match(indexHtml, /function perpsPositionMidPx\(p, displayLegs\)/, 'open positions must calculate a mid price from both exchange marks');
 assert.ok(indexHtml.includes('<span class="perps-pos-live-px">${perpsFmtPx(midPx)}</span>'), 'open positions must show live price next to OPEN without a mid pill');
 assert.doesNotMatch(indexHtml, /perps-pos-mid-pill/, 'open positions must not wrap live price in a mid pill');
@@ -1778,13 +1781,13 @@ assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketI
   assert.equal(nadoSl?.kind, 'sl', 'NADO trigger classifier must map below-oracle triggers to SL on longs');
 
   assert.equal(perpsTpslMismatch([
-    { tpPx: 100, slPx: 90 },
-    { tpPx: 100.4, slPx: 90.2 },
-  ]), false, 'TP/SL mismatch must stay quiet within 0.5%');
+    { size: 1, tpPx: 100, slPx: 90 },
+    { size: -1, tpPx: 90.2, slPx: 100.4 },
+  ]), false, 'hedged TP/SL within 1% must not mismatch (long TP vs short SL)');
   assert.equal(perpsTpslMismatch([
-    { tpPx: 100, slPx: 90 },
-    { tpPx: 101, slPx: 90 },
-  ]), true, 'TP/SL mismatch must warn when TP differs by more than 0.5%');
+    { size: 1, tpPx: 100, slPx: 90 },
+    { size: -1, tpPx: 88, slPx: 102 },
+  ]), true, 'hedged TP pair must mismatch when long TP vs short SL differ > 1%');
 
   const grvtLiq = liquidationPriceFrom(normalizeGrvtPositionRow({
     i: 'IP_USDT_Perp',
