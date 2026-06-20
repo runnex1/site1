@@ -2120,6 +2120,7 @@ assert.ok(perpsJs.includes('fetchVariationalRates'), 'perps.js must fetch variat
 
 const {
   variationalOpenEquityAdjust,
+  variationalPendingCloseEquityAdjust,
   variationalClosedEquityAdjust,
   variationalTotalEquityAdjust,
   variationalNeutralEquity,
@@ -2157,6 +2158,23 @@ const {
   assert.equal(equityPointChartValue(point, 'raw'), 10000);
 }
 
-assert.ok(indexHtml.includes('lib/variational-equity.js'), 'index must load variational equity module');
+{
+  const pendingAdj = variationalPendingCloseEquityAdjust([{
+    symbol: 'XLM',
+    trackedVenue: 'grvt',
+    lockedEquityAdjust: 286,
+    trackedLastSnapshot: { unrealizedPnl: -999 },
+  }]);
+  assert.equal(pendingAdj, 286, 'pending close must prefer locked equity adjust over stale snapshot');
+  assert.equal(
+    variationalTotalEquityAdjust([], [], () => false, [{
+      lockedEquityAdjust: 286,
+    }]),
+    286,
+  );
+}
+
+assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'equity adjust must include pending Variational closes');
+assert.match(indexHtml, /lockedEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
 
 console.log('PASS: perps accounting and dashboard regression checks');

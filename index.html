@@ -26683,10 +26683,12 @@ function perpsComputeVariationalEquityAdjustments(data) {
     const isVar = (p) => VH?.isVariationalPair?.(p) ?? String(p?.pairType || '').endsWith('_variational');
     const closedAdj = VE?.variationalClosedEquityAdjust?.(data?.closedPairs) ?? 0;
     const openAdj = VE?.variationalOpenEquityAdjust?.(data?.paired, isVar) ?? 0;
+    const pendingAdj = VE?.variationalPendingCloseEquityAdjust?.(data?.variationalPendingClose) ?? 0;
     return {
         closedAdj,
         openAdj,
-        totalAdj: closedAdj + openAdj,
+        pendingAdj,
+        totalAdj: closedAdj + openAdj + pendingAdj,
     };
 }
 
