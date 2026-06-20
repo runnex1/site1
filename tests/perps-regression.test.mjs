@@ -2076,19 +2076,17 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
 }
 
 {
-  const { mirrorVariationalUpnl, resolveHedgeMarkPx } = require('../lib/variational-hedge.js');
-  const trackedLeg = {
-    size: 90000,
-    side: 'long',
-    entryPx: 0.218775,
-    markPx: 0.213705,
-    unrealizedPnl: -456.34,
+  const { buildVariationalSyntheticLeg, variationalUpnlEntryPx } = require('../lib/variational-hedge.js');
+  const hedge = {
+    variationalSize: -90000,
+    variationalEntryPx: 0.217785,
+    variationalMarkAtOpen: 0.218775,
   };
-  const varLeg = { size: -90000, side: 'short' };
-  assert.equal(mirrorVariationalUpnl(trackedLeg, varLeg), 456.34);
-  assert.equal(resolveHedgeMarkPx(trackedLeg, { markPx: 0.21 }), 0.213705);
-  const mismatched = mirrorVariationalUpnl(trackedLeg, { size: -80000 });
-  assert.equal(mismatched, null, 'size mismatch must not mirror variational uPnL');
+  const leg = buildVariationalSyntheticLeg(hedge, { markPx: 0.213705, fundingRateInterval: 0.0001, fundingIntervalS: 28800 });
+  assert.ok(Math.abs(leg.unrealizedPnl - 456.3) < 0.15, 'uPnL must use mark-at-open vs live Variational mark');
+  assert.ok(Math.abs(leg.entrySlippageUsd + 89.1) < 0.15, 'entry slippage must be fill vs mark-at-open only');
+  assert.equal(variationalUpnlEntryPx(hedge), 0.218775);
+  assert.equal(variationalUpnlEntryPx({ variationalEntryPx: 0.21 }), 0.21, 'legacy hedges fall back to fill');
 }
 
 {
