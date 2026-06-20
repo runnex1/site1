@@ -8,7 +8,7 @@
 <meta http-equiv="Expires" content="0">
 <title>Vault — Portfolio Intelligence</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.min.js"></script>
 <script src="lib/defi-pnl.js"></script>
 <script src="lib/etf-dca.js"></script>
 <script src="lib/loop-token-logos.js"></script>
@@ -17445,7 +17445,7 @@ function exportDefiPositionsExcel() {
         return;
     }
     const DE = window.DefiExport;
-    if (!DE?.buildDefiPositionsSheetAoA) {
+    if (!DE?.buildDefiPositionsWorksheet) {
         alert('Export formatter failed to load.');
         return;
     }
@@ -17456,17 +17456,18 @@ function exportDefiPositionsExcel() {
         alert('No DeFi positions to export.');
         return;
     }
-    const { aoa, merges } = DE.buildDefiPositionsSheetAoA(groups);
-    const wsPos = XLSX.utils.aoa_to_sheet(aoa);
-    wsPos['!cols'] = DE.EXPORT_POS_COL_WIDTHS;
-    if (merges?.length) wsPos['!merges'] = merges;
-    const wsSum = XLSX.utils.aoa_to_sheet(DE.buildDefiSummarySheetAoA(defiExportSummaryPayload(groups)));
-    wsSum['!cols'] = [{ wch: 24 }, { wch: 28 }];
+    const summary = defiExportSummaryPayload(groups);
+    const wsPos = DE.buildDefiPositionsWorksheet(XLSX, groups, {
+        exportDate: summary.exportDate,
+        protocolCount: summary.protocols,
+    });
+    const wsSum = DE.buildDefiSummaryWorksheet(XLSX, summary);
     const wb = XLSX.utils.book_new();
+    wb.Props = DE.buildDefiWorkbookProps();
     XLSX.utils.book_append_sheet(wb, wsPos, 'Positions');
     XLSX.utils.book_append_sheet(wb, wsSum, 'Summary');
     const date = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `defi-positions-${date}.xlsx`);
+    XLSX.writeFile(wb, `defi-positions-${date}.xlsx`, { cellStyles: true });
 }
 
 function renderProtocols() {
