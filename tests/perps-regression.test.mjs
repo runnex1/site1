@@ -1903,6 +1903,7 @@ const {
   buildVariationalOpenPair,
   buildVariationalClosedPair,
   estimateVariationalFundingUsd,
+  buildVariationalFundingEventsAligned,
   variationalLegPnl,
 } = require('../lib/variational-hedge.js');
 const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js');
@@ -2011,7 +2012,34 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
 }
 
 assert.match(indexHtml, /function perpsEnrichVariationalPairFunding\(pair, data\)/, 'variational pairs must reattach exchange funding events after client-side merge');
-assert.match(indexHtml, /perpsFundingPaymentsForVenue\(data, trackedVenue\)/, 'variational funding enrichment must read GRVT/HL payment history from dashboard payload');
+assert.match(indexHtml, /buildVariationalFundingEventsAligned/, 'variational enrichment must align estimated funding to tracked exchange payment timestamps');
+assert.match(indexHtml, /Variational shows ~estimated from live rates/, 'recent funding UI must label Variational estimates');
+
+{
+  const hedge = {
+    id: 'h1',
+    symbol: 'XLM',
+    trackedVenue: 'grvt',
+    trackedSize: 90000,
+    variationalSize: -90000,
+    variationalEntryPx: 0.218,
+    openedAt: Date.now() - 9 * 3600000,
+    status: 'open',
+  };
+  const listing = {
+    symbol: 'XLM',
+    markPx: 0.217,
+    fundingRateInterval: 0.1095 / 1095,
+    fundingIntervalS: 28800,
+    fundingIntervalHours: 8,
+  };
+  const trackedEvents = [{ time: Date.now() - 3600000, usdc: 1.25, intervalHours: 8 }];
+  const aligned = buildVariationalFundingEventsAligned(hedge, listing, trackedEvents, { sinceMs: hedge.openedAt });
+  assert.equal(aligned.length, 1, 'aligned variational funding must mirror tracked payment count');
+  assert.equal(aligned[0].venue, 'variational');
+  assert.ok(aligned[0].fundingEstimated);
+  assert.notEqual(aligned[0].usdc, 0);
+}
 
 {
   const deduped = dedupeActiveVariationalHedges([

@@ -27474,7 +27474,7 @@ function perpsVariationalFundingSinceMs(pair, data) {
     return earliest || (Date.now() - 365 * 86400000);
 }
 
-function perpsBuildVariationalDailySeries(pair, data, sinceMs) {
+function perpsBuildVariationalDailySeries(pair, data, sinceMs, extraEvents = []) {
     const trackedVenue = pair.venueA || pair.crossLegA?.venue;
     const base = pair.symbol;
     const fundingByDay = {};
@@ -27484,18 +27484,26 @@ function perpsBuildVariationalDailySeries(pair, data, sinceMs) {
     const feeEventsByDay = {};
     const start = sinceMs || (Date.now() - 365 * 86400000);
 
+    const addFundingEvent = (ev) => {
+        const time = Number(ev.time) || 0;
+        if (!time || time < start) return;
+        const day = new Date(time).toISOString().slice(0, 10);
+        const usdc = ev.usdc || 0;
+        const venue = ev.venue;
+        fundingByDay[day] = (fundingByDay[day] || 0) + usdc;
+        if (venue) {
+            if (!venueByDay[day]) venueByDay[day] = {};
+            venueByDay[day][venue] = (venueByDay[day][venue] || 0) + usdc;
+        }
+        if (!fundingEventsByDay[day]) fundingEventsByDay[day] = [];
+        fundingEventsByDay[day].push({ time, usdc, venue, intervalHours: ev.intervalHours ?? null, fundingEstimated: ev.fundingEstimated === true });
+    };
+
     for (const p of perpsFundingPaymentsForVenue(data, trackedVenue)) {
         if (perpsSymbolBase(p.symbol) !== base) continue;
-        const time = Number(p.time) || 0;
-        if (!time || time < start) continue;
-        const day = new Date(time).toISOString().slice(0, 10);
-        const usdc = p.usdc || 0;
-        fundingByDay[day] = (fundingByDay[day] || 0) + usdc;
-        if (!venueByDay[day]) venueByDay[day] = {};
-        venueByDay[day][trackedVenue] = (venueByDay[day][trackedVenue] || 0) + usdc;
-        if (!fundingEventsByDay[day]) fundingEventsByDay[day] = [];
-        fundingEventsByDay[day].push({ time, usdc, venue: trackedVenue, intervalHours: p.intervalHours ?? null });
+        addFundingEvent({ ...p, venue: trackedVenue });
     }
+    for (const ev of extraEvents || []) addFundingEvent(ev);
 
     for (const f of perpsFillItemsForVenue(data, trackedVenue)) {
         if (perpsSymbolBase(f.symbol) !== base) continue;
@@ -27565,16 +27573,33 @@ function perpsEnrichVariationalPairFunding(pair, data) {
             intervalHours: p.intervalHours ?? null,
         });
     }
-    pair.recentFundingEvents = recentFundingEvents.sort((a, b) => (b.time || 0) - (a.time || 0));
+
+    const VH = window.VariationalHedge;
+    const hedge = pair.variationalHedgeId
+        ? perpsLoadVariationalHedges().find(h => h.id === pair.variationalHedgeId)
+        : null;
+    const listing = perpsVariationalBySymbolFromSpread(data.rateSpread || [])[base] || null;
+    const variationalEvents = VH?.buildVariationalFundingEventsAligned
+        ? VH.buildVariationalFundingEventsAligned(hedge, listing, recentFundingEvents, { sinceMs })
+        : [];
+    const varPaymentSum = variationalEvents.reduce((sum, ev) => sum + (ev.usdc || 0), 0);
+    const varTotal = VH?.estimateVariationalFundingUsd?.(hedge, listing) ?? varPaymentSum;
+
+    pair.recentFundingEvents = [...recentFundingEvents, ...variationalEvents]
+        .sort((a, b) => (b.time || 0) - (a.time || 0));
 
     const trackedLeg = pair.crossLegA?.venue === trackedVenue ? pair.crossLegA : pair.crossLegB;
     const cumFunding = Number(trackedLeg?.cumFundingSinceOpen ?? trackedLeg?.cumulativeFundingSinceOpen);
     pair.legAFundingSinceOpen = Number.isFinite(cumFunding) && Math.abs(cumFunding) >= Math.abs(paymentSum)
         ? cumFunding
         : paymentSum;
+    pair.legBFundingSinceOpen = varTotal;
+    if (pair.crossLegB?.venue === 'variational') {
+        pair.crossLegB.fundingSinceOpen = varTotal;
+    }
     pair.fundingSinceOpen = (pair.legAFundingSinceOpen ?? 0) + (pair.legBFundingSinceOpen ?? 0);
     pair.fundingWindow = pair.fundingSinceOpen;
-    pair.dailyPerformanceSeries = perpsBuildVariationalDailySeries(pair, data, sinceMs);
+    pair.dailyPerformanceSeries = perpsBuildVariationalDailySeries(pair, data, sinceMs, variationalEvents);
     return pair;
 }
 
@@ -28778,12 +28803,13 @@ function perpsPairLatestSessionFundingByVenue(p) {
             byVenue[venue] = (byVenue[venue] || 0) + (amt || 0);
         }
     }
-    if (Object.keys(byVenue).length) return byVenue;
     const entries = perpsPairLegEntries(p);
     for (const entry of entries) {
+        const key = String(entry.venue || '').toLowerCase();
+        if (byVenue[key] != null && Math.abs(byVenue[key]) > 1e-9) continue;
         const fund = entry.key === 'a' ? p.legAFundingSinceOpen : p.legBFundingSinceOpen;
         if (fund == null || !Number.isFinite(fund)) continue;
-        byVenue[entry.venue] = (byVenue[entry.venue] || 0) + fund;
+        byVenue[key] = fund;
     }
     return byVenue;
 }
@@ -29277,7 +29303,9 @@ function perpsRenderRecentFundingPayments(p) {
             const key = String(entry.venue || '').toLowerCase();
             const hasValue = byVenue.has(key);
             const value = hasValue ? byVenue.get(key) : 0;
-            return `<div class="perps-pos-funding-breakdown-row"><span>${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="${hasValue ? perpsSignedCls(value) : ''}">${hasValue ? perpsFmtUsd(value) : '—'}</span></div>`;
+            const est = entry.venue === 'variational' || entry.leg?.fundingEstimated;
+            const label = hasValue && est ? `~${perpsFmtUsd(value)}` : (hasValue ? perpsFmtUsd(value) : '—');
+            return `<div class="perps-pos-funding-breakdown-row"><span>${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="${hasValue ? perpsSignedCls(value) : ''}">${label}</span></div>`;
         }).join('')}</div>`;
         return `<div class="perps-pos-funding-card net">` +
             `<div class="perps-pos-funding-time">${perpsFormatEventTime(group.time)}</div>` +
@@ -29288,7 +29316,7 @@ function perpsRenderRecentFundingPayments(p) {
     }).join('');
     return `<div class="perps-pos-funding-recent-head">` +
         `<div class="perps-pos-funding-recent-title">Recent funding payments</div>` +
-        `<div class="perps-pos-funding-recent-note">One card per hour · per-exchange amount and net · exchanges without a payment show —</div>` +
+        `<div class="perps-pos-funding-recent-note">One card per hour · per-exchange amount and net · Variational shows ~estimated from live rates</div>` +
         `</div><div class="perps-pos-funding-strip">${cards}</div>`;
 }
 
