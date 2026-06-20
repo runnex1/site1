@@ -2013,7 +2013,8 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
 
 assert.match(indexHtml, /function perpsEnrichVariationalPairFunding\(pair, data\)/, 'variational pairs must reattach exchange funding events after client-side merge');
 assert.match(indexHtml, /buildVariationalFundingEventsAligned/, 'variational enrichment must align estimated funding to tracked exchange payment timestamps');
-assert.match(indexHtml, /Variational shows ~estimated from live rates/, 'recent funding UI must label Variational estimates');
+assert.match(indexHtml, /perpsMergeVariationalIntoDailyFundingSeries\(data\)/, 'variational estimated funding must merge into portfolio daily funding series');
+assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose variational estimates');
 
 {
   const hedge = {

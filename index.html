@@ -7767,7 +7767,7 @@ body[data-active-tab="loops"] .page-content,
               </div>
             </div>
             <div class="perps-panel-fund-head">
-              <div class="perps-pnl-note" id="perpsDailyFundNote" style="margin-top:0;font-size:0.68rem;">7D gross funding · HL, Nado, GRVT, Extended payment history</div>
+              <div class="perps-pnl-note" id="perpsDailyFundNote" style="margin-top:0;font-size:0.68rem;">7D gross funding · HL, Nado, GRVT, Extended + ~Variational est.</div>
               <div class="perps-pnl-total" id="perpsDailyFundTotal">—</div>
             </div>
             <div class="perps-panel-body perps-panel-body--chart">
@@ -27428,6 +27428,78 @@ function perpsApplyVariationalHedgesToData(data) {
     for (const pair of data.paired || []) {
         if (VH.isVariationalPair?.(pair)) perpsEnrichVariationalPairFunding(pair, data);
     }
+    perpsMergeVariationalIntoDailyFundingSeries(data);
+    return data;
+}
+
+function perpsEnsureDailyFundingBase(data) {
+    const fetchedAt = Number(data?.fetchedAt || 0);
+    if (data._dailyFundingSeriesBaseFetchedAt !== fetchedAt) {
+        data._dailyFundingSeriesBase = JSON.parse(JSON.stringify(data.dailyFundingSeries || []));
+        data._dailyFundingSeriesBaseFetchedAt = fetchedAt;
+    }
+    return data._dailyFundingSeriesBase || [];
+}
+
+function perpsCollectVariationalFundingEvents(data) {
+    const VH = window.VariationalHedge;
+    const events = [];
+    for (const p of data.paired || []) {
+        if (!VH?.isVariationalPair?.(p)) continue;
+        for (const row of p.dailyPerformanceSeries || []) {
+            for (const ev of row.fundingEvents || []) {
+                if (ev.venue !== 'variational') continue;
+                events.push(ev);
+            }
+        }
+    }
+    return events;
+}
+
+function perpsMergeVariationalIntoDailyFundingSeries(data) {
+    const events = perpsCollectVariationalFundingEvents(data);
+    if (!events.length) return data;
+
+    const baseRows = perpsEnsureDailyFundingBase(data);
+    const rows = baseRows.map(r => ({
+        ...r,
+        byVenue: { ...(r.byVenue || {}) },
+        fundingEvents: [...(r.fundingEvents || [])],
+        feeEvents: [...(r.feeEvents || [])],
+    }));
+    const byDay = new Map(rows.map(r => [r.day, r]));
+
+    for (const ev of events) {
+        const time = Number(ev.time) || 0;
+        if (!time) continue;
+        const day = new Date(time).toISOString().slice(0, 10);
+        let row = byDay.get(day);
+        if (!row) {
+            row = {
+                day,
+                ts: Date.parse(`${day}T12:00:00Z`),
+                dailyFunding: 0,
+                dailyFees: 0,
+                dailyNet: 0,
+                cumFunding: 0,
+                cumFees: 0,
+                cumNet: 0,
+                byVenue: {},
+                fundingEvents: [],
+                feeEvents: [],
+            };
+            byDay.set(day, row);
+            rows.push(row);
+        }
+        const usdc = ev.usdc || 0;
+        row.dailyFunding = (row.dailyFunding || 0) + usdc;
+        row.dailyNet = row.dailyFunding - (row.dailyFees || 0);
+        row.byVenue.variational = (row.byVenue.variational || 0) + usdc;
+        row.fundingEvents.push({ ...ev, venue: 'variational', fundingEstimated: true });
+    }
+
+    rows.sort((a, b) => String(a.day).localeCompare(String(b.day)));
+    data.dailyFundingSeries = perpsRecomputeDailySeriesCumulative(rows);
     return data;
 }
 
@@ -28408,8 +28480,8 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
     }
     if (noteEl) {
         noteEl.textContent = _perpsDailyFundShowFees
-            ? `${label} net funding minus fees · HL, Nado, GRVT, Extended payment history`
-            : `${label} gross funding · HL, Nado, GRVT, Extended payment history`;
+            ? `${label} net funding minus fees · HL, Nado, GRVT, Extended + ~Variational est.`
+            : `${label} gross funding · HL, Nado, GRVT, Extended + ~Variational est.`;
     }
     if (badge) badge.textContent = label;
     if (statsEl) {
@@ -29587,7 +29659,7 @@ function perpsRenderStatsBar(data) {
     const equitySub = document.getElementById('perpsStatEquitySub');
     if (equitySub) equitySub.textContent = 'Hover for exchange breakdown';
     const fundSub = document.getElementById('perpsStatFundingSub');
-    if (fundSub) fundSub.textContent = `${stats.rangeLabel} · gross funding`;
+    if (fundSub) fundSub.textContent = `${stats.rangeLabel} · gross funding incl. ~Variational est.`;
     const aprSub = document.getElementById('perpsStatAprSub');
     if (aprSub) {
         if (stats.apr != null) {
