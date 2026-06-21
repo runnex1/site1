@@ -5297,6 +5297,70 @@ body {
 .dash-dismiss-btn { border:none; background:transparent; color: var(--t3); border-radius:3px; padding:2px 5px; font-size:0.75rem; cursor:pointer; line-height:1; opacity:0.6; }
 .dash-dismiss-btn:hover { background:rgba(239,68,68,0.12); color:var(--red); opacity:1; }
 .dash-empty { color: var(--t3); font-size:0.82rem; padding: 1rem; }
+
+@media (max-width: 1180px) {
+  .dash-grid { grid-template-columns: 1fr; }
+  .dash-grid > .dash-panel { grid-column: 1 / -1 !important; }
+  .topbar-metrics { grid-template-columns: 1fr; }
+  .topbar { flex-direction: column; }
+  .topbar-metric { border-left: 0; border-top: 1px solid rgba(148,163,184,0.14); padding: 0.75rem 0; }
+}
+
+/* Desktop dashboard cockpit — min-width 769px only (phones use mobile block below) */
+@media (min-width: 769px) {
+  .main-area { height: 100%; overflow: hidden; }
+  .topbar { min-height: 66px; padding: 0.42rem 0.9rem; }
+  .topbar-hero { min-width: 232px; }
+  .topbar-hero-label, .topbar-metric-label { font-size: 0.6rem; }
+  .topbar-hero-value { font-size: clamp(1.36rem, 1.65vw, 1.88rem); line-height: 1; }
+  .topbar-metric { padding: 0 0.82rem; }
+  .topbar-metric-value { font-size: 0.98rem; line-height: 1.04; }
+  .topbar-metric-sub { font-size: 0.62rem; line-height: 1.08; }
+  .dash-all-ok { padding: 0.27rem 0.58rem; font-size: 0.72rem; }
+  .market-ticker-strip { min-height: 40px; }
+  .ticker-strip-inner,
+  .ticker-strip-sequence { min-height: 40px; padding: 0 0.95rem; }
+  .ticker-asset { min-width: 162px; gap: 0.62rem; padding-right: 1.65rem; }
+  .ticker-asset-icon { width: 22px !important; height: 22px !important; }
+  .ticker-asset-price { font-size: 0.72rem; }
+  .ticker-change { font-size: 0.6rem; padding: 0 3px; }
+  .ticker-strip-sep { height: 26px; margin-right: 1.35rem; }
+  .ticker-strip-refresh { font-size: 0.6rem; }
+  .page-content { height: calc(100vh - 118px); overflow: auto; padding: 10px; }
+  .page-content.tab-overview { overflow: hidden; }
+  #overviewTab { min-height: 100%; overflow: visible; }
+  .page-content.tab-overview #overviewTab { height: 100%; min-height: 0; overflow: hidden; }
+  .dash-grid {
+    height: 100%;
+    min-height: 0;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1.24fr) minmax(0, 0.58fr) minmax(0, 0.54fr);
+    align-items: stretch;
+  }
+  .dash-grid > .dash-panel:nth-child(1) { grid-column: 1 / span 5; grid-row: 1; }
+  .dash-grid > .dash-panel:nth-child(2) { grid-column: 6 / span 3; grid-row: 1; }
+  .dash-grid > .dash-panel:nth-child(3) { grid-column: 9 / span 4; grid-row: 1; }
+  .dash-grid > .dash-panel:nth-child(4) { grid-column: 1 / -1; grid-row: 2; }
+  .dash-grid > .dash-panel:nth-child(5) { grid-column: 1 / -1; grid-row: 3; }
+  .dash-panel { overflow: hidden; min-height: 0; }
+  .dash-panel-head { padding: 0.62rem 0.9rem 0.42rem; min-height: 38px; }
+  .dash-panel-title { font-size: 0.66rem; }
+  .dash-title-loading { margin-left:0.4rem; color:var(--amber); font-size:0.62rem; font-family:var(--ff-mono); letter-spacing:0.03em; text-transform:none; opacity:0.9; }
+  .dash-panel-link { font-size: 0.72rem; }
+  .dash-chart-panel { min-height: 0; }
+  .dash-chart-wrap { height: calc(100% - 38px); min-height: 0; padding: 0.38rem 0.78rem 0.7rem; background: radial-gradient(circle at 70% 78%, rgba(0,212,170,0.09), transparent 42%); }
+  .dash-allocation-wrap { height: calc(100% - 38px); display:grid; grid-template-rows: minmax(0, 0.52fr) minmax(0, 0.48fr); gap:0.5rem; padding:0.38rem 0.72rem 0.62rem; }
+  .dash-info-pane { display:none; height:calc(100% - 38px); overflow:auto; }
+  .dash-info-pane.active { display:block; }
+  .dash-event-list { height: calc(100% - 38px); overflow: auto; padding: 0.15rem 0.65rem 0.5rem; }
+  .dash-table-wrap { height: calc(100% - 38px); overflow: auto; padding: 0 0.7rem 0.48rem; }
+  .dash-info-pane .dash-event-list { height: calc(100% - 32px); }
+  .dash-daily .daily-brief { height: 100%; overflow: auto; }
+  .dash-info-pane.dash-daily .brief-news-section { height: 100%; }
+  .dash-daily .brief-news-section { height: calc(100% - 38px); overflow: auto; padding: 0.48rem 0.78rem; }
+  .dash-protocol-table { max-height: calc(100% - 38px); }
+}
+
 .page-content.tab-defi { padding: 10px 12px; }
 .page-content.tab-defi .topbar,
 .page-content.tab-defi .market-ticker-strip { display: none; }
@@ -5375,13 +5439,6 @@ body[data-active-tab="defi"] .page-content,
   font-size: 0.85rem;
   line-height: 1.2;
 }
-.dash-panel-head { padding: 0.62rem 0.9rem 0.42rem; min-height: 38px; }
-.dash-panel-title { font-size: 0.66rem; }
-.dash-title-loading { margin-left:0.4rem; color:var(--amber); font-size:0.62rem; font-family:var(--ff-mono); letter-spacing:0.03em; text-transform:none; opacity:0.9; }
-.dash-panel-link { font-size: 0.72rem; }
-.dash-chart-panel { min-height: 0; }
-.dash-chart-wrap { height: 220px; min-height: 220px; padding: 0.38rem 0.78rem 0.7rem; background: radial-gradient(circle at 70% 78%, rgba(0,212,170,0.09), transparent 42%); }
-.dash-allocation-wrap { display:grid; grid-template-rows: auto auto; gap:0.5rem; padding:0.38rem 0.72rem 0.62rem; }
 .dash-allocation-main { min-height:0; display:grid; grid-template-columns: minmax(92px, 0.74fr) minmax(0, 1fr); gap:0.62rem; align-items:start; }
 .dash-allocation-chart { position:relative; height:100%; min-height:106px; max-height:148px; align-self:start; }
 .dash-allocation-legend { display:flex; flex-direction:column; gap:0.45rem; min-width:0; }
@@ -6593,9 +6650,9 @@ body[data-active-tab="loops"] .page-content,
 }
 
 /* ══════════════════════════════════════════════════════
-   MOBILE-FIRST OVERRIDES — ≤ 1024px (phones + tablets)
+   MOBILE-FIRST OVERRIDES — ≤ 768px only (phones)
 ══════════════════════════════════════════════════════ */
-@media (max-width: 1024px) {
+@media (max-width: 768px) {
   :root {
     --mobile-nav-h: calc(58px + env(safe-area-inset-bottom, 0px));
     --mobile-touch: 44px;
@@ -10877,7 +10934,7 @@ document.addEventListener('click', event => {
 });
 
 function mobileChartsResize() {
-    if (!window.matchMedia('(max-width: 1024px)').matches) return;
+    if (!window.matchMedia('(max-width: 768px)').matches) return;
     requestAnimationFrame(() => {
         try {
             charts.portfolio?.resize?.();
@@ -10899,7 +10956,7 @@ function switchTab(tab, opts = {}) {
         mobileTitle.textContent = item?.dataset?.navShort
             || (item ? item.textContent.replace(/\s+/g, ' ').trim() : tab);
     }
-    if (window.matchMedia('(max-width: 1024px)').matches) {
+    if (window.matchMedia('(max-width: 768px)').matches) {
         document.querySelector('.main-area')?.scrollTo({ top: 0, behavior: 'auto' });
         item?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
         if (tab === 'overview') setTimeout(mobileChartsResize, 100);
