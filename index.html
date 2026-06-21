@@ -6735,7 +6735,8 @@ body[data-active-tab="loops"] .page-content,
 
 /* Mobile-only chrome — never shown on desktop */
 .mobile-header,
-.mobile-search-overlay {
+.mobile-search-overlay,
+.mobile-fab-search {
   display: none !important;
 }
 
@@ -6867,24 +6868,35 @@ body[data-active-tab="loops"] .page-content,
   .nav-item {
     flex: 0 0 auto;
     flex-direction: column;
-    gap: 4px;
-    min-width: 56px;
-    max-width: 72px;
+    gap: 3px;
+    min-width: 52px;
+    max-width: 64px;
     min-height: 46px;
-    padding: 6px 8px;
+    padding: 5px 6px;
     margin: 0;
-    font-size: 0.58rem;
-    font-weight: 600;
-    line-height: 1.15;
+    font-size: 0;
+    line-height: 0;
     text-align: center;
     justify-content: center;
     border-radius: 10px;
     scroll-snap-align: center;
     -webkit-tap-highlight-color: transparent;
-    white-space: normal;
-    word-break: break-word;
+    color: var(--t2);
   }
-  .nav-item svg { width: 22px; height: 22px; }
+  .nav-item::after {
+    content: attr(data-nav-short);
+    font-size: 0.52rem;
+    line-height: 1.1;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    color: inherit;
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nav-item svg { width: 21px; height: 21px; flex-shrink: 0; color: inherit; }
   .nav-item::before, .nav-item.active { border-left: none !important; }
   .nav-item.active {
     background: rgba(89,240,200,0.14) !important;
@@ -6911,6 +6923,26 @@ body[data-active-tab="loops"] .page-content,
     padding: 10px var(--mobile-pad-r) 12px var(--mobile-pad) !important;
     overflow: visible !important;
     min-height: 0;
+    height: auto !important;
+  }
+  .page-content.tab-overview,
+  .page-content.tab-defi,
+  .page-content.tab-prediction,
+  .page-content.tab-loops,
+  .page-content.tab-watcher,
+  .page-content.tab-news,
+  .page-content.tab-terminal {
+    overflow: visible !important;
+    height: auto !important;
+  }
+  #overviewTab,
+  .page-content.tab-overview #overviewTab,
+  body[data-active-tab="defi"] #defiTab,
+  #loopsTab.active,
+  #perpsTab.active {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
   }
   body[data-active-tab="news"] .page-content,
   body[data-active-tab="watcher"] .page-content,
@@ -6921,22 +6953,151 @@ body[data-active-tab="loops"] .page-content,
     padding-right: var(--mobile-pad-r) !important;
   }
 
-  /* Dashboard */
-  .dash-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
-  .dash-chart-panel { min-height: 240px; }
-  .dash-chart-wrap { height: 220px; }
-  .dash-panel-head { flex-wrap: wrap; gap: 0.5rem; }
-  .dash-chart-controls { width: 100%; justify-content: flex-start; }
-  .dash-chart-btn, .dash-panel-link { min-height: 36px; padding: 6px 10px; }
+  /* Floating search — overview & perps (no sticky header there) */
+  .mobile-fab-search {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    right: calc(14px + env(safe-area-inset-right, 0px));
+    bottom: calc(var(--mobile-nav-h) + 14px);
+    z-index: 110;
+    width: 48px;
+    height: 48px;
+    border: 1px solid rgba(89,240,200,0.28);
+    border-radius: 14px;
+    background: rgba(8,20,28,0.94);
+    color: var(--teal);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-fab-search svg { width: 20px; height: 20px; }
+  .mobile-fab-search:active { transform: scale(0.96); background: rgba(89,240,200,0.12); }
+  body:not([data-active-tab="overview"]):not([data-active-tab="perps"]) .mobile-fab-search {
+    display: none !important;
+  }
+
+  /* ── Dashboard: fix grid overlap, stack panels ── */
+  .dash-grid {
+    height: auto !important;
+    min-height: 0 !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: none !important;
+    gap: 12px !important;
+    align-items: stretch !important;
+  }
+  .dash-grid > .dash-panel {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  .dash-panel { overflow: visible !important; }
+  .dash-chart-panel { min-height: 0; }
+  .dash-chart-wrap {
+    height: 220px !important;
+    min-height: 220px !important;
+    max-height: none !important;
+  }
+  .dash-panel-head { flex-wrap: wrap; gap: 0.5rem; align-items: flex-start; }
+  .dash-panel-title { font-size: 0.82rem !important; }
+  .dash-chart-controls {
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 2px;
+  }
+  .dash-chart-btn, .dash-panel-link, .dash-info-tab, .dash-action {
+    min-height: 36px;
+    padding: 8px 12px;
+    flex-shrink: 0;
+  }
+  .dash-allocation-wrap {
+    height: auto !important;
+    grid-template-rows: auto auto !important;
+    padding: 0.5rem 0.72rem 0.75rem !important;
+  }
+  .dash-allocation-main {
+    grid-template-columns: 108px minmax(0, 1fr) !important;
+    gap: 0.75rem !important;
+    align-items: center !important;
+  }
+  .dash-allocation-chart {
+    height: 108px !important;
+    min-height: 108px !important;
+    max-height: 108px !important;
+    position: relative !important;
+  }
+  .dash-allocation-legend { gap: 0.35rem; max-height: 160px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .dash-attribution { min-height: 0; padding-top: 0.65rem; }
+  .dash-info-pane {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+  .dash-info-pane.active { display: block !important; }
+  .dash-event-list {
+    height: auto !important;
+    max-height: min(52dvh, 380px);
+    min-height: 180px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .dash-event-filters { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding: 0 0.65rem; }
+  .dash-split-panel {
+    display: flex !important;
+    flex-direction: column !important;
+    grid-template-columns: unset !important;
+    gap: 0 !important;
+  }
+  .dash-split-panel .dash-subpanel {
+    min-height: 0;
+    overflow: visible !important;
+  }
+  .dash-split-panel .dash-subpanel + .dash-subpanel {
+    border-left: none !important;
+    border-top: 1px solid rgba(148,163,184,0.15);
+  }
   .dash-table-wrap {
-    margin: 0 calc(-1 * var(--mobile-pad));
-    padding: 0 var(--mobile-pad);
+    height: auto !important;
+    max-height: min(48dvh, 340px);
+    margin: 0;
+    padding: 0 0.65rem 0.65rem;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    scroll-snap-type: x proximity;
   }
-  .dash-table { min-width: 560px; }
+  .dash-table { min-width: 520px; }
+  .dash-protocol-table {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 0.65rem 0.75rem !important;
+  }
+  .dash-protocol-inner { min-width: 0 !important; }
+  .dash-protocol-row.header { display: none !important; }
+  .dash-protocol-row:not(.header) {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem 0.75rem;
+    align-items: start;
+    padding: 0.85rem;
+    margin-bottom: 10px;
+    border: 1px solid rgba(110,231,216,0.14);
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(8,20,29,0.97), rgba(4,11,16,0.98));
+  }
+  .dash-protocol-row:not(.header):last-child { margin-bottom: 0; }
+  .dash-protocol-row > div { padding: 0 !important; font-size: 0.78rem !important; }
+  .dash-protocol-row > div:nth-child(1) { grid-column: 1 / -1; font-weight: 700; }
+  .dash-protocol-row > div:nth-child(3) { grid-column: 1 / -1; color: var(--t3); font-size: 0.72rem !important; }
+  .dash-protocol-col-num { text-align: left !important; font-weight: 700; }
+  .dash-protocol-row:nth-child(n+6) { display: grid !important; }
   .dash-all-ok::after { width: min(92vw, 360px); right: var(--mobile-pad-r); }
+  .dash-daily .brief-news-section { height: auto !important; max-height: min(52dvh, 400px); overflow-y: auto; }
 
   /* Touch targets globally */
   button, .btn, .perps-btn, .perps-range-btn, .perps-position-tab,
@@ -6990,8 +7151,22 @@ body[data-active-tab="loops"] .page-content,
   .perps-pos-leg { flex-wrap: wrap; gap: 0.5rem; }
   .perps-pos-chart-col { justify-content: flex-start; }
   .perps-equity-tip { max-width: calc(100vw - 2rem); }
-  .perps-stat-equity-wrap:active .perps-stat-tip,
-  .perps-stat-equity-wrap:focus-within .perps-stat-tip { display: block; }
+  .perps-pos-row > div {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem 0.5rem;
+    width: 100%;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid rgba(134,159,179,0.08);
+  }
+  .perps-pos-row > div:last-child { border-bottom: none; }
+  .perps-fund-chart-wrap, .perps-pnl-chart { min-height: 180px; }
+  .perps-panel { min-height: 0 !important; }
+  body[data-active-tab="perps"] .page-content {
+    padding-top: 6px !important;
+  }
 
   /* Loops */
   .loops-cockpit { max-width: none; margin: 0; padding: 0 0 1rem; }
@@ -7003,13 +7178,66 @@ body[data-active-tab="loops"] .page-content,
   .loops-head-actions { justify-content: flex-start; flex-wrap: wrap; }
   .loops-grid { grid-template-columns: 1fr !important; padding: 8px; gap: 10px; }
 
+  /* DeFi */
+  #defiTab.active { grid-template-columns: 1fr !important; gap: 12px !important; }
+  #defiTab > .section > .data-table { max-height: none !important; margin-left: 0.65rem !important; margin-right: 0.65rem !important; }
+  #defiTab .defi-kpi-grid { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+  #defiTab .defi-side-stack { grid-column: 1 !important; grid-row: auto !important; }
+  #defiTab .tokens-header, #defiTab .tokens-row,
+  #defiTab .protocols-header, #defiTab .protocols-row {
+    min-width: 720px;
+  }
+  #defiTab > .section .section-header { flex-direction: column; align-items: stretch; gap: 0.55rem; }
+  #defiTab .button-group { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+
   /* Prediction */
   .pred-kpi-strip, .pred-ticker-inner { grid-template-columns: 1fr 1fr !important; }
-  .pred-cockpit, .pred-workbench { padding: 0; }
-  .pred-panel-head { gap: 0.55rem; }
-  .pred-search { font-size: 16px; }
+  .pred-cockpit, .pred-workbench { padding: 0; height: auto !important; min-height: 0 !important; }
+  .pred-panel-head { gap: 0.55rem; flex-wrap: wrap; }
+  .pred-search { font-size: 16px; width: 100% !important; }
+  .pred-positions-panel, .pred-intelligence-panel, .pred-smart-panel, .pred-insights-panel {
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+  .pred-subtabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+  .pm-header, .pm-row { min-width: 680px; }
 
-  /* DeFi / ETF / tables */
+  /* News feed */
+  .news-feed-root {
+    max-width: none !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+  .news-feed-layout {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    height: auto !important;
+  }
+  .news-feed-panel.saved-panel,
+  .news-feed-panel.context-panel { min-height: 0; max-height: 220px; }
+  .news-feed-center-head { flex-direction: column; align-items: stretch; gap: 10px; padding: 0.85rem !important; }
+  .news-feed-center-head h1 { font-size: 1.25rem !important; }
+  .news-feed-scroll { padding: 12px !important; max-height: none !important; }
+  .news-feed-settings-drawer { width: 100% !important; max-width: none !important; }
+
+  /* Alert terminal */
+  .term-shell { height: auto !important; min-height: 0 !important; grid-template-rows: auto auto !important; }
+  .term-left { min-height: 320px !important; max-height: 55dvh; }
+  .term-right { max-height: 42dvh !important; }
+
+  /* ETF */
+  .etf-kpi-strip { grid-template-columns: 1fr 1fr !important; }
+  .etf-main { grid-template-columns: 1fr !important; min-height: 0 !important; }
+  .etf-holdings-panel { min-height: 0 !important; max-height: none !important; }
+  .etf-header, .etf-row { min-width: 640px; }
+
+  /* History / weekly */
+  .charts-grid { grid-template-columns: 1fr !important; }
+  .pnl-config-bar { flex-direction: column; align-items: stretch; gap: 0.55rem; }
+  .pnl-config-bar input, .pnl-config-bar select { min-width: 0; width: 100%; font-size: 16px; }
+
+  /* DeFi / ETF / tables — horizontal scroll with padding */
   .table-header, .table-row, .pm-header, .pm-row,
   .protocols-header, .protocols-row, .etf-header, .etf-row {
     min-width: 0;
@@ -7018,13 +7246,14 @@ body[data-active-tab="loops"] .page-content,
   .pnl-table-wrap, .data-table {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
-    margin-left: calc(-1 * var(--mobile-pad));
-    margin-right: calc(-1 * var(--mobile-pad-r));
-    padding-left: var(--mobile-pad);
-    padding-right: var(--mobile-pad-r);
   }
-  .etf-kpi-strip { grid-template-columns: 1fr !important; }
-  .etf-main { grid-template-columns: 1fr !important; }
+  #defiTab > .section > .data-table,
+  .etf-holdings-body {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    padding-left: 0;
+    padding-right: 0;
+  }
 
   /* Watcher */
   .watcher-v2-pm-row { grid-template-columns: 38px minmax(0,1fr) auto !important; }
@@ -7109,13 +7338,20 @@ body[data-active-tab="loops"] .page-content,
   .overview-strip { grid-template-columns: 1fr !important; }
   .loops-kpi-strip { grid-template-columns: 1fr !important; }
   .pred-kpi-strip, .pred-ticker-inner { grid-template-columns: 1fr !important; }
-  .nav-item { min-width: 52px; font-size: 0.54rem; }
+  #defiTab .defi-kpi-grid { grid-template-columns: 1fr !important; }
+  .dash-allocation-main { grid-template-columns: 1fr !important; }
+  .dash-allocation-chart { margin: 0 auto; width: 140px !important; }
+  .nav-item { min-width: 48px; max-width: 58px; }
+  .nav-item::after { font-size: 0.48rem; }
 }
 </style>
 </head>
 
 <body>
 <div id="wl-toast-container"></div>
+<button type="button" class="mobile-fab-search" onclick="mobileSearchOpen()" aria-label="Search features">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+</button>
 <div class="app-shell">
 
   <aside class="sidebar">
@@ -7138,7 +7374,7 @@ body[data-active-tab="loops"] .page-content,
 
     <div class="sidebar-section">
       <div class="sidebar-label">Overview</div>
-      <div class="nav-item active" data-tab="overview" onclick="switchTab('overview')">
+      <div class="nav-item active" data-tab="overview" data-nav-short="Home" onclick="switchTab('overview')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
         Dashboard
       </div>
@@ -7146,23 +7382,23 @@ body[data-active-tab="loops"] .page-content,
 
     <div class="sidebar-section">
       <div class="sidebar-label">Positions</div>
-      <div class="nav-item" data-tab="defi" onclick="switchTab('defi')">
+      <div class="nav-item" data-tab="defi" data-nav-short="DeFi" onclick="switchTab('defi')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
         DeFi Positions
       </div>
-      <div class="nav-item" data-tab="prediction" onclick="switchTab('prediction')">
+      <div class="nav-item" data-tab="prediction" data-nav-short="Predict" onclick="switchTab('prediction')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l3-9 5 18 3-9h5"/></svg>
         Prediction Markets
       </div>
-      <div class="nav-item" data-tab="perps" onclick="switchTab('perps')">
+      <div class="nav-item" data-tab="perps" data-nav-short="Perps" onclick="switchTab('perps')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 5 5-9"/></svg>
         Perps DEXs
       </div>
-      <div class="nav-item" data-tab="loops" onclick="switchTab('loops')">
+      <div class="nav-item" data-tab="loops" data-nav-short="Loops" onclick="switchTab('loops')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="M15 5l4 4"/></svg>
         Loops
       </div>
-      <div class="nav-item" data-tab="etf" onclick="switchTab('etf')">
+      <div class="nav-item" data-tab="etf" data-nav-short="ETF" onclick="switchTab('etf')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
         ETF &amp; Stocks
       </div>
@@ -7170,15 +7406,15 @@ body[data-active-tab="loops"] .page-content,
 
     <div class="sidebar-section">
       <div class="sidebar-label">Tools</div>
-      <div class="nav-item" data-tab="terminal" onclick="switchTab('terminal')">
+      <div class="nav-item" data-tab="terminal" data-nav-short="Alerts" onclick="switchTab('terminal')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
         Alert Terminal
       </div>
-      <div class="nav-item" data-tab="watcher" onclick="switchTab('watcher')">
+      <div class="nav-item" data-tab="watcher" data-nav-short="Watch" onclick="switchTab('watcher')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         Watcher
       </div>
-      <div class="nav-item" data-tab="news" onclick="switchTab('news')">
+      <div class="nav-item" data-tab="news" data-nav-short="News" onclick="switchTab('news')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="16" y2="11"/></svg>
         News Feed
       </div>
@@ -7186,7 +7422,7 @@ body[data-active-tab="loops"] .page-content,
 
     <div class="sidebar-section">
       <div class="sidebar-label">Reports</div>
-      <div class="nav-item" data-tab="history" onclick="switchTab('history')">
+      <div class="nav-item" data-tab="history" data-nav-short="History" onclick="switchTab('history')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
         Weekly Snapshots
       </div>
@@ -10733,6 +10969,16 @@ document.addEventListener('click', event => {
     if (root && !root.contains(event.target)) root.classList.remove('open');
 });
 
+function mobileChartsResize() {
+    if (!window.matchMedia('(max-width: 768px)').matches) return;
+    requestAnimationFrame(() => {
+        try {
+            charts.portfolio?.resize?.();
+            charts.allocation?.resize?.();
+        } catch (e) {}
+    });
+}
+
 function switchTab(tab, opts = {}) {
     if (opts.persist !== false) {
         try { localStorage.setItem('vault-active-tab', tab); } catch(e) {}
@@ -10743,13 +10989,13 @@ function switchTab(tab, opts = {}) {
     if (item) item.classList.add('active');
     const mobileTitle = document.getElementById('mobileHeaderTitle');
     if (mobileTitle) {
-        mobileTitle.textContent = item
-            ? item.textContent.replace(/\s+/g, ' ').trim()
-            : tab;
+        mobileTitle.textContent = item?.dataset?.navShort
+            || (item ? item.textContent.replace(/\s+/g, ' ').trim() : tab);
     }
     if (window.matchMedia('(max-width: 768px)').matches) {
         document.querySelector('.main-area')?.scrollTo({ top: 0, behavior: 'auto' });
         item?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+        if (tab === 'overview') setTimeout(mobileChartsResize, 100);
     }
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
     const pane = document.getElementById(tab + 'Tab');
@@ -26265,6 +26511,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const inp = document.getElementById('xHandleInput');
     if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') xHandleAdd(); });
     xHandleRender();
+    let mobileChartResizeT;
+    window.addEventListener('resize', () => {
+        clearTimeout(mobileChartResizeT);
+        mobileChartResizeT = setTimeout(mobileChartsResize, 150);
+    });
+    window.addEventListener('orientationchange', () => setTimeout(mobileChartsResize, 200));
 });
 
 // =============================================================================
