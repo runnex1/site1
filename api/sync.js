@@ -69,6 +69,20 @@ function parseJson(raw, fallback) {
   try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { return fallback; }
 }
 
+function mergeVariationalHedgeRows(existing, incoming) {
+  const byKey = new Map((existing || []).map((h) => {
+    const key = String(h?.id || `${h?.symbol}|${h?.trackedVenue}`);
+    return [key, h];
+  }));
+  for (const hedge of incoming || []) {
+    const key = String(hedge?.id || `${hedge?.symbol}|${hedge?.trackedVenue}`);
+    if (!key) continue;
+    const prev = byKey.get(key);
+    byKey.set(key, prev ? { ...prev, ...hedge } : hedge);
+  }
+  return [...byKey.values()].sort((a, b) => (Number(b?.openedAt) || 0) - (Number(a?.openedAt) || 0));
+}
+
 const GECKO_SERVER_SAVE_MIN_USD = 10000;
 
 async function mergeGeckoSymbolIds(incoming) {
@@ -864,6 +878,13 @@ module.exports = async function handler(req, res) {
     if (body.portfolio) {
       await kvSet('vault:portfolio', JSON.stringify(body.portfolio));
       saved.portfolio = true;
+      const portfolioHedges = body.portfolio?.perpsArb?.variationalHedges;
+      if (Array.isArray(portfolioHedges) && portfolioHedges.length) {
+        const existing = parseJson(await kvGet('vault:perps_variational_hedges'), []);
+        const merged = mergeVariationalHedgeRows(existing, portfolioHedges);
+        await kvSet('vault:perps_variational_hedges', JSON.stringify(merged));
+        saved.perpsVariationalHedges = true;
+      }
     }
 
     // Watchlist
@@ -971,12 +992,32 @@ module.exports = async function handler(req, res) {
       await kvSet('vault:perps_snapshots', JSON.stringify(body.perpsSnapshots));
       saved.perpsSnapshots = true;
     }
-    if (Array.isArray(body.perpsVariationalHedges)) {
-      await kvSet('vault:perps_variational_hedges', JSON.stringify(body.perpsVariationalHedges));
+    if (Array.isArray(body.perpsVariationalHedges) && body.perpsVariationalHedges.length) {
+      const existing = parseJson(await kvGet('vault:perps_variational_hedges'), []);
+      const merged = mergeVariationalHedgeRows(existing, body.perpsVariationalHedges);
+      await kvSet('vault:perps_variational_hedges', JSON.stringify(merged));
       saved.perpsVariationalHedges = true;
     }
-    if (Array.isArray(body.perpsClosedPairs)) {
-      await kvSet('vault:perps_closed_pairs', JSON.stringify(body.perpsClosedPairs));
+    if (Array.isArray(body.perpsClosedPairs) && body.perpsClosedPairs.length) {
+      const existing = parseJson(await kvGet('vault:perps_closed_pairs'), []);
+      const byKey = new Map((existing || []).map((p) => {
+        const symbol = String(p?.symbol || '').trim().toUpperCase();
+        const closeTime = Number(p?.closeTime || 0);
+        const longVenue = p?.longLeg?.venue || '';
+        const shortVenue = p?.shortLeg?.venue || '';
+        return [`${symbol}|${closeTime}|${longVenue}|${shortVenue}`, p];
+      }));
+      for (const pair of body.perpsClosedPairs) {
+        const symbol = String(pair?.symbol || '').trim().toUpperCase();
+        const closeTime = Number(pair?.closeTime || 0);
+        const longVenue = pair?.longLeg?.venue || '';
+        const shortVenue = pair?.shortLeg?.venue || '';
+        const key = `${symbol}|${closeTime}|${longVenue}|${shortVenue}`;
+        if (!key || key === '||0||') continue;
+        const prev = byKey.get(key);
+        byKey.set(key, prev ? { ...prev, ...pair } : pair);
+      }
+      await kvSet('vault:perps_closed_pairs', JSON.stringify([...byKey.values()].sort((a, b) => (Number(b?.closeTime) || 0) - (Number(a?.closeTime) || 0))));
       saved.perpsClosedPairs = true;
     }
     if (body.grvtStateCache?.subAccountId && Array.isArray(body.grvtStateCache.positions) && body.grvtStateCache.positions.length) {

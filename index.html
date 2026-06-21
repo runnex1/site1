@@ -9506,8 +9506,18 @@ async function saveData() {
                 return perpsIsValidEthAddress(cfg.hyperliquid) ? cfg : undefined;
             })(),
             perpsSnapshots: _ls(PERPS_SNAPSHOTS_KEY, '{}'),
-            perpsClosedPairs: _ls(PERPS_CLOSED_PAIRS_KEY, '[]'),
-            perpsVariationalHedges: _ls(PERPS_VARIATIONAL_HEDGES_KEY, '[]'),
+            perpsClosedPairs: (() => {
+                try {
+                    const rows = JSON.parse(_ls(PERPS_CLOSED_PAIRS_KEY, '[]'));
+                    return Array.isArray(rows) && rows.length ? rows : undefined;
+                } catch (e) { return undefined; }
+            })(),
+            perpsVariationalHedges: (() => {
+                try {
+                    const rows = JSON.parse(_ls(PERPS_VARIATIONAL_HEDGES_KEY, '[]'));
+                    return Array.isArray(rows) && rows.length ? rows : undefined;
+                } catch (e) { return undefined; }
+            })(),
             // Dismissed opportunities (market IDs)
             dismissedMarkets: _dismissedMarkets || [],
         };
@@ -26634,11 +26644,20 @@ function perpsResolveHlWallet() {
 function perpsApplyArbToDataObject() {
     const cfg = perpsGetSavedConfig();
     if (!perpsIsValidEthAddress(cfg.hyperliquid)) return;
+    let variationalHedges = [];
+    try {
+        const raw = JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_HEDGES_KEY) || '[]');
+        if (Array.isArray(raw) && raw.length) variationalHedges = raw;
+    } catch (e) {}
+    if (!variationalHedges.length && Array.isArray(data?.perpsArb?.variationalHedges)) {
+        variationalHedges = data.perpsArb.variationalHedges;
+    }
     data.perpsArb = {
         hyperliquid: cfg.hyperliquid.trim(),
         nado: cfg.nado || '',
         grvtSubAccount: cfg.grvtSubAccount || '4860249204328359',
         statRange: cfg.statRange || _perpsStatRange,
+        variationalHedges,
     };
 }
 
@@ -27068,8 +27087,59 @@ function perpsSyncConfigToPortfolio(payload) {
 
 function perpsImportConfigFromPortfolio() {
     const fromPortfolio = perpsReadPortfolioArbConfig();
-    if (fromPortfolio) return perpsPersistConfig(fromPortfolio, { skipCloudSync: true });
-    return false;
+    const importedCfg = fromPortfolio ? perpsPersistConfig(fromPortfolio, { skipCloudSync: true }) : false;
+    const importedHedges = perpsImportVariationalHedgesFromPortfolio();
+    return importedCfg || importedHedges;
+}
+
+function perpsReadPortfolioVariationalHedges() {
+    try {
+        if (Array.isArray(data?.perpsArb?.variationalHedges) && data.perpsArb.variationalHedges.length) {
+            return data.perpsArb.variationalHedges;
+        }
+        const portfolio = JSON.parse(localStorage.getItem('portfolio-data-pro') || '{}');
+        const hedges = portfolio?.perpsArb?.variationalHedges;
+        return Array.isArray(hedges) ? hedges : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function perpsImportVariationalHedgesFromPortfolio() {
+    const fromPortfolio = perpsReadPortfolioVariationalHedges();
+    if (!fromPortfolio.length) return false;
+    const local = perpsLoadVariationalHedgesRaw();
+    if (!local.length) {
+        perpsPersistVariationalHedges(fromPortfolio, { skipCloudSync: true, skipPortfolioSync: true });
+        return true;
+    }
+    perpsMergeVariationalHedgesFromServer(fromPortfolio);
+    return true;
+}
+
+function perpsLoadVariationalHedgesRaw() {
+    try {
+        const rows = JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_HEDGES_KEY) || '[]');
+        return Array.isArray(rows) ? rows : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+async function perpsPushVariationalHedgesToServer(rows) {
+    const hedges = Array.isArray(rows) ? rows : perpsLoadVariationalHedgesRaw();
+    if (!hedges.length || location.protocol === 'file:') return false;
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ perpsVariationalHedges: hedges }),
+            keepalive: true,
+        });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
 }
 
 function perpsGetSavedConfig() {
@@ -27160,6 +27230,9 @@ async function perpsHydratePerpsAuxFromCloud() {
         if (Array.isArray(body?.perpsVariationalHedges) && body.perpsVariationalHedges.length) {
             perpsMergeVariationalHedgesFromServer(body.perpsVariationalHedges);
             changed = true;
+        } else {
+            const local = perpsLoadVariationalHedgesRaw();
+            if (local.length) await perpsPushVariationalHedgesToServer(local);
         }
         if (Array.isArray(body?.perpsClosedPairs) && body.perpsClosedPairs.length) {
             perpsMergeClosedPairsFromServer(body.perpsClosedPairs);
@@ -27417,10 +27490,13 @@ function perpsPersistCachedClosedPairs(rows, opts = {}) {
 
 function perpsLoadVariationalHedges() {
     try {
-        const rows = JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_HEDGES_KEY) || '[]');
-        const list = Array.isArray(rows) ? rows : [];
+        let rows = perpsLoadVariationalHedgesRaw();
+        if (!rows.length) {
+            perpsImportVariationalHedgesFromPortfolio();
+            rows = perpsLoadVariationalHedgesRaw();
+        }
         const VH = window.VariationalHedge;
-        return VH?.dedupeActiveVariationalHedges ? VH.dedupeActiveVariationalHedges(list) : list;
+        return VH?.dedupeActiveVariationalHedges ? VH.dedupeActiveVariationalHedges(rows) : rows;
     } catch (e) {
         return [];
     }
@@ -27430,7 +27506,11 @@ function perpsPersistVariationalHedges(rows, opts = {}) {
     try {
         const list = Array.isArray(rows) ? rows : [];
         localStorage.setItem(PERPS_VARIATIONAL_HEDGES_KEY, JSON.stringify(list));
-        if (!opts.skipCloudSync && typeof saveData === 'function') saveData();
+        if (!opts.skipPortfolioSync) perpsWritePortfolioLocal();
+        if (!opts.skipCloudSync) {
+            if (typeof saveData === 'function') saveData();
+            perpsPushVariationalHedgesToServer(list);
+        }
     } catch (e) {}
 }
 
@@ -27441,7 +27521,7 @@ function perpsVariationalHedgeKey(hedge) {
 function perpsMergeVariationalHedgesFromServer(serverRows) {
     const incoming = Array.isArray(serverRows) ? serverRows : [];
     if (!incoming.length) return perpsLoadVariationalHedges();
-    const local = perpsLoadVariationalHedges();
+    const local = perpsLoadVariationalHedgesRaw();
     if (!local.length) {
         perpsPersistVariationalHedges(incoming, { skipCloudSync: true });
         return incoming;

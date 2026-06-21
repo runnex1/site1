@@ -1500,7 +1500,11 @@ assert.match(syncJs, /req\.query\?\.perpsSnapshots === '1'/, 'sync endpoint must
 assert.match(syncJs, /req\.query\?\.perpsAux === '1'/, 'sync endpoint must expose combined Perps aux hydration');
 assert.match(syncJs, /vault:perps_variational_hedges/, 'sync must persist Variational hedges server-side');
 assert.match(syncJs, /vault:perps_closed_pairs/, 'sync must persist closed Perps pairs server-side');
-assert.match(syncJs, /body\.perpsVariationalHedges/, 'sync POST must save Variational hedges');
+assert.match(syncJs, /mergeVariationalHedgeRows/, 'sync must merge Variational hedges instead of overwriting with empty');
+assert.match(syncJs, /portfolio\?\.perpsArb\?\.variationalHedges/, 'portfolio sync must extract Variational hedges to server KV');
+assert.match(indexHtml, /function perpsImportVariationalHedgesFromPortfolio\(/, 'Perps must import Variational hedges from synced portfolio');
+assert.match(indexHtml, /function perpsPushVariationalHedgesToServer\(/, 'Perps must push local hedges to server when server copy is missing');
+assert.match(indexHtml, /variationalHedges/, 'portfolio perpsArb must carry Variational hedges for cross-device sync');
 assert.match(indexHtml, /await perpsHydratePerpsAuxFromCloud\(\)/, 'Perps refresh must hydrate server aux before rendering');
 assert.match(indexHtml, /function perpsMergeEquitySnapshotRecord\(/, 'equity snapshots must merge variational fields per bucket');
 assert.match(indexHtml, /function perpsSnapshotVariationalAdjust\(/, 'equity series must resolve snapshot variational adjust from components');
