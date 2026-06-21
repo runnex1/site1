@@ -687,6 +687,19 @@ module.exports = async function handler(req, res) {
         const perpsSnapshots = parseJson(await kvGet('vault:perps_snapshots'), {});
         return res.status(200).json({ ok: true, perpsSnapshots });
       }
+      if (req.query?.perpsAux === '1') {
+        const [perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw] = await Promise.all([
+          kvGet('vault:perps_snapshots'),
+          kvGet('vault:perps_variational_hedges'),
+          kvGet('vault:perps_closed_pairs'),
+        ]);
+        return res.status(200).json({
+          ok: true,
+          perpsSnapshots: parseJson(perpsSnapshotsRaw, {}),
+          perpsVariationalHedges: parseJson(perpsVariationalHedgesRaw, []),
+          perpsClosedPairs: parseJson(perpsClosedPairsRaw, []),
+        });
+      }
       if (req.query?.loopSnapshots === '1') {
         await ensureUsdeUsdmSnapshotsPurged({ kvGet, kvSet, parseJson });
         const loopSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
@@ -709,15 +722,19 @@ module.exports = async function handler(req, res) {
       // Heavy aux only (~500KB): snapshots, logos, perps history, event log cache.
       // Fetched in background after portfolio-first paint.
       if (req.query?.auxHeavy === '1') {
-        const [snapshotsRaw, perpsSnapshotsRaw, logoCacheRaw, eventHistoryRaw] = await Promise.all([
+        const [snapshotsRaw, perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, logoCacheRaw, eventHistoryRaw] = await Promise.all([
           kvGet('vault:snapshots'),
           kvGet('vault:perps_snapshots'),
+          kvGet('vault:perps_variational_hedges'),
+          kvGet('vault:perps_closed_pairs'),
           kvGet('vault:logo_cache'),
           kvGet('vault:event_history'),
         ]);
         const result = {
           _snapshots:      parse(snapshotsRaw, {}),
           _perpsSnapshots: parse(perpsSnapshotsRaw, {}),
+          _perpsVariationalHedges: parse(perpsVariationalHedgesRaw, []),
+          _perpsClosedPairs: parse(perpsClosedPairsRaw, []),
           _logoCache:      parse(logoCacheRaw, {}),
           _eventHistory:   parse(eventHistoryRaw, []),
         };
@@ -729,7 +746,8 @@ module.exports = async function handler(req, res) {
         portfolioRaw, watchlistRaw, watcherWalletsRaw, watcherLinksRaw,
         snapshotsRaw, aaveMarketsRaw, customTokensRaw,
         opinionWalletsRaw, tgChannelsRaw, pmWalletsRaw, opportunityMonitorsRaw,
-        eventHistoryRaw, dismissedMarketsRaw, perpsConfigRaw, perpsSnapshotsRaw, logoCacheRaw,
+        eventHistoryRaw, dismissedMarketsRaw, perpsConfigRaw, perpsSnapshotsRaw,
+        perpsVariationalHedgesRaw, perpsClosedPairsRaw, logoCacheRaw,
         geckoSymbolIdsRaw,
       ] = await Promise.all([
         kvGet('vault:portfolio'),
@@ -747,6 +765,8 @@ module.exports = async function handler(req, res) {
         kvGet('vault:dismissed_markets'),
         kvGet('vault:perps_config'),
         portfolioOnly ? null : kvGet('vault:perps_snapshots'),
+        portfolioOnly ? null : kvGet('vault:perps_variational_hedges'),
+        portfolioOnly ? null : kvGet('vault:perps_closed_pairs'),
         portfolioOnly ? null : kvGet('vault:logo_cache'),
         kvGet('vault:gecko_symbol_ids'),
       ]);
@@ -766,6 +786,8 @@ module.exports = async function handler(req, res) {
       const dismissedMarkets    = parse(dismissedMarketsRaw, []);
       const perpsConfig         = parse(perpsConfigRaw, {});
       const perpsSnapshots      = parse(perpsSnapshotsRaw, {});
+      const perpsVariationalHedges = parse(perpsVariationalHedgesRaw, []);
+      const perpsClosedPairs    = parse(perpsClosedPairsRaw, []);
       const logoCache           = parse(logoCacheRaw, {});
       const geckoSymbolIds      = parse(geckoSymbolIdsRaw, {});
 
@@ -804,6 +826,8 @@ module.exports = async function handler(req, res) {
         result._snapshots = snapshots;
         result._eventHistory = eventHistory;
         result._perpsSnapshots = perpsSnapshots;
+        result._perpsVariationalHedges = perpsVariationalHedges;
+        result._perpsClosedPairs = perpsClosedPairs;
         result._logoCache = logoCache;
       }
 
@@ -946,6 +970,14 @@ module.exports = async function handler(req, res) {
     if (body.perpsSnapshots) {
       await kvSet('vault:perps_snapshots', JSON.stringify(body.perpsSnapshots));
       saved.perpsSnapshots = true;
+    }
+    if (Array.isArray(body.perpsVariationalHedges)) {
+      await kvSet('vault:perps_variational_hedges', JSON.stringify(body.perpsVariationalHedges));
+      saved.perpsVariationalHedges = true;
+    }
+    if (Array.isArray(body.perpsClosedPairs)) {
+      await kvSet('vault:perps_closed_pairs', JSON.stringify(body.perpsClosedPairs));
+      saved.perpsClosedPairs = true;
     }
     if (body.grvtStateCache?.subAccountId && Array.isArray(body.grvtStateCache.positions) && body.grvtStateCache.positions.length) {
       await kvSet(`vault:grvt_state:${String(body.grvtStateCache.subAccountId).trim()}`, JSON.stringify({

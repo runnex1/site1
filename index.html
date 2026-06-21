@@ -27143,14 +27143,29 @@ async function perpsFetchCloudPerpsConfig() {
 }
 
 async function perpsHydrateSnapshotsFromCloud() {
+    return perpsHydratePerpsAuxFromCloud();
+}
+
+async function perpsHydratePerpsAuxFromCloud() {
     if (location.protocol === 'file:') return false;
     try {
-        const res = await fetch('/api/sync?perpsSnapshots=1', { signal: AbortSignal.timeout(5000) });
+        const res = await fetch('/api/sync?perpsAux=1', { signal: AbortSignal.timeout(5000) });
         if (!res.ok) return false;
         const body = await res.json();
-        if (!body?.perpsSnapshots || typeof body.perpsSnapshots !== 'object') return false;
-        perpsMergeSnapshotsFromServer(body.perpsSnapshots);
-        return true;
+        let changed = false;
+        if (body?.perpsSnapshots && typeof body.perpsSnapshots === 'object') {
+            perpsMergeSnapshotsFromServer(body.perpsSnapshots);
+            changed = true;
+        }
+        if (Array.isArray(body?.perpsVariationalHedges) && body.perpsVariationalHedges.length) {
+            perpsMergeVariationalHedgesFromServer(body.perpsVariationalHedges);
+            changed = true;
+        }
+        if (Array.isArray(body?.perpsClosedPairs) && body.perpsClosedPairs.length) {
+            perpsMergeClosedPairsFromServer(body.perpsClosedPairs);
+            changed = true;
+        }
+        return changed;
     } catch (e) {
         return false;
     }
@@ -27169,9 +27184,15 @@ async function perpsHydrateConfigFromCloud() {
 async function perpsBootstrapWallet() {
     perpsImportConfigFromPortfolio();
     perpsRepairSavedConfig();
+    if (location.protocol !== 'file:') {
+        await perpsHydratePerpsAuxFromCloud();
+    }
     if (perpsHasValidWallet()) return true;
     if (location.protocol === 'file:') return false;
     await perpsHydrateConfigFromCloud();
+    if (location.protocol !== 'file:') {
+        await perpsHydratePerpsAuxFromCloud();
+    }
     perpsImportConfigFromPortfolio();
     perpsRepairSavedConfig();
     return perpsHasValidWallet();
@@ -27386,11 +27407,11 @@ function perpsLoadCachedClosedPairs() {
     }
 }
 
-function perpsPersistCachedClosedPairs(rows) {
+function perpsPersistCachedClosedPairs(rows, opts = {}) {
     try {
         const list = Array.isArray(rows) ? rows : [];
         localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, JSON.stringify(list));
-        if (typeof saveData === 'function') saveData();
+        if (!opts.skipCloudSync && typeof saveData === 'function') saveData();
     } catch (e) {}
 }
 
@@ -27405,11 +27426,11 @@ function perpsLoadVariationalHedges() {
     }
 }
 
-function perpsPersistVariationalHedges(rows) {
+function perpsPersistVariationalHedges(rows, opts = {}) {
     try {
         const list = Array.isArray(rows) ? rows : [];
         localStorage.setItem(PERPS_VARIATIONAL_HEDGES_KEY, JSON.stringify(list));
-        if (typeof saveData === 'function') saveData();
+        if (!opts.skipCloudSync && typeof saveData === 'function') saveData();
     } catch (e) {}
 }
 
@@ -27420,7 +27441,12 @@ function perpsVariationalHedgeKey(hedge) {
 function perpsMergeVariationalHedgesFromServer(serverRows) {
     const incoming = Array.isArray(serverRows) ? serverRows : [];
     if (!incoming.length) return perpsLoadVariationalHedges();
-    const byKey = new Map(perpsLoadVariationalHedges().map(h => [perpsVariationalHedgeKey(h), h]));
+    const local = perpsLoadVariationalHedges();
+    if (!local.length) {
+        perpsPersistVariationalHedges(incoming, { skipCloudSync: true });
+        return incoming;
+    }
+    const byKey = new Map(local.map(h => [perpsVariationalHedgeKey(h), h]));
     let changed = false;
     for (const hedge of incoming) {
         const key = perpsVariationalHedgeKey(hedge);
@@ -27430,7 +27456,7 @@ function perpsMergeVariationalHedgesFromServer(serverRows) {
         changed = true;
     }
     const merged = [...byKey.values()].sort((a, b) => (b.openedAt || 0) - (a.openedAt || 0));
-    if (changed) perpsPersistVariationalHedges(merged);
+    if (changed) perpsPersistVariationalHedges(merged, { skipCloudSync: true });
     return merged;
 }
 
@@ -27874,7 +27900,12 @@ function perpsMergeClosedPairRecord(prev, fresh) {
 function perpsMergeClosedPairsFromServer(serverRows) {
     const incoming = Array.isArray(serverRows) ? serverRows : [];
     if (!incoming.length) return perpsLoadCachedClosedPairs();
-    const byKey = new Map(perpsLoadCachedClosedPairs().map(p => [perpsClosedPairKey(p), p]));
+    const local = perpsLoadCachedClosedPairs();
+    if (!local.length) {
+        perpsPersistCachedClosedPairs(incoming, { skipCloudSync: true });
+        return incoming;
+    }
+    const byKey = new Map(local.map(p => [perpsClosedPairKey(p), p]));
     let changed = false;
     for (const pair of incoming) {
         const key = perpsClosedPairKey(pair);
@@ -27883,7 +27914,7 @@ function perpsMergeClosedPairsFromServer(serverRows) {
         changed = true;
     }
     const merged = [...byKey.values()].sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
-    if (changed) perpsPersistCachedClosedPairs(merged);
+    if (changed) perpsPersistCachedClosedPairs(merged, { skipCloudSync: true });
     return merged;
 }
 
@@ -27901,10 +27932,41 @@ function perpsCacheNewClosedPairs(freshPairs) {
     return merged;
 }
 
+function perpsMergeEquitySnapshotRecord(localSnap = {}, serverSnap = {}) {
+    const newerIsServer = (Number(serverSnap.fetchedAt) || 0) >= (Number(localSnap.fetchedAt) || 0);
+    const merged = newerIsServer ? { ...localSnap, ...serverSnap } : { ...serverSnap, ...localSnap };
+    const localHasVar = Number.isFinite(Number(localSnap.variationalEquityAdjust));
+    const serverHasVar = Number.isFinite(Number(serverSnap.variationalEquityAdjust));
+    const pickVar = (field) => {
+        if (Number.isFinite(Number(localSnap[field]))) return Number(localSnap[field]);
+        if (Number.isFinite(Number(serverSnap[field]))) return Number(serverSnap[field]);
+        return undefined;
+    };
+    if (localHasVar || serverHasVar) {
+        merged.variationalEquityAdjust = pickVar('variationalEquityAdjust');
+        merged.variationalOpenEquityAdjust = pickVar('variationalOpenEquityAdjust');
+        merged.variationalPendingCloseEquityAdjust = pickVar('variationalPendingCloseEquityAdjust');
+        merged.variationalClosedEquityAdjust = pickVar('variationalClosedEquityAdjust');
+    }
+    return merged;
+}
+
+function perpsSnapshotVariationalAdjust(snap, closedAdjFallback = 0) {
+    const VE = window.VariationalEquity;
+    if (VE?.snapshotVariationalAdjust) return VE.snapshotVariationalAdjust(snap, closedAdjFallback);
+    if (Number.isFinite(Number(snap?.variationalEquityAdjust))) return Number(snap.variationalEquityAdjust);
+    return Number.isFinite(Number(closedAdjFallback)) ? Number(closedAdjFallback) : 0;
+}
+
 function perpsMergeSnapshotsFromServer(serverSnaps) {
     try {
         const local = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
-        const merged = { ...local, ...(serverSnaps || {}) };
+        const merged = { ...local };
+        for (const [key, serverSnap] of Object.entries(serverSnaps || {})) {
+            merged[key] = merged[key]
+                ? perpsMergeEquitySnapshotRecord(merged[key], serverSnap)
+                : serverSnap;
+        }
         localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(merged));
     } catch (e) {}
 }
@@ -28150,8 +28212,24 @@ function perpsSaveSnapshot(data) {
         const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
         const variationalAdj = perpsComputeVariationalEquityAdjustments(data);
         const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
-        if (store[bucket]) return false;
         const fetchedAt = data.fetchedAt || Date.now();
+        const variationalFields = {
+            variationalEquityAdjust: variationalAdj.totalAdj,
+            variationalOpenEquityAdjust: variationalAdj.openAdj,
+            variationalClosedEquityAdjust: variationalAdj.closedAdj,
+            variationalPendingCloseEquityAdjust: variationalAdj.pendingAdj,
+        };
+        if (store[bucket]) {
+            const existing = store[bucket];
+            if (Number.isFinite(Number(existing.variationalEquityAdjust))) return false;
+            store[bucket] = { ...existing, ...variationalFields, fetchedAt: Math.max(Number(existing.fetchedAt) || 0, fetchedAt) };
+            const keys = Object.keys(store).sort((a, b) => perpsParseBucketTime(a) - perpsParseBucketTime(b));
+            const pruned = {};
+            keys.slice(-180).forEach(k => { pruned[k] = store[k]; });
+            localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(pruned));
+            if (typeof saveData === 'function') saveData();
+            return true;
+        }
         store[bucket] = {
             date: new Date(fetchedAt).toISOString().slice(0, 10),
             bucket,
@@ -28162,9 +28240,7 @@ function perpsSaveSnapshot(data) {
             totalEquity,
             adjustedEquity: s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalEquity - combinedNetDeposits,
             cumulativeNetDeposits: combinedNetDeposits,
-            variationalEquityAdjust: variationalAdj.totalAdj,
-            variationalOpenEquityAdjust: variationalAdj.openAdj,
-            variationalClosedEquityAdjust: variationalAdj.closedAdj,
+            ...variationalFields,
             fetchedAt,
         };
         const keys = Object.keys(store).sort((a, b) => perpsParseBucketTime(a) - perpsParseBucketTime(b));
@@ -28265,9 +28341,7 @@ function perpsBuildEquitySeries(data) {
         if (!time || snap.totalEquity == null) continue;
         const bucket = snap.bucket || (String(key).includes('T') ? key : perpsEquityBucketKey(time));
         const adjustedEquity = snap.adjustedEquity ?? (snap.totalEquity - (snap.cumulativeNetDeposits ?? 0));
-        const variationalEquityAdjust = Number.isFinite(Number(snap.variationalEquityAdjust))
-            ? Number(snap.variationalEquityAdjust)
-            : closedAdj;
+        const variationalEquityAdjust = perpsSnapshotVariationalAdjust(snap, closedAdj);
         const variationalNeutralEquity = VE?.variationalNeutralEquity?.(snap.totalEquity, variationalEquityAdjust)
             ?? (snap.totalEquity + variationalEquityAdjust);
         const row = {
@@ -30788,7 +30862,7 @@ async function perpsRefresh(silent = false) {
 
     try {
         const bucketsBefore = perpsCountEquityBuckets();
-        await perpsHydrateSnapshotsFromCloud();
+        await perpsHydratePerpsAuxFromCloud();
         const cloudSnapshotsAdded = perpsCountEquityBuckets() > bucketsBefore;
         const knownClosedKeys = perpsLoadCachedClosedPairs().map(perpsClosedPairKey).filter(Boolean);
         const params = new URLSearchParams({ wallet: hl, days: String(perpsStatRangeToApiDays(_perpsStatRange)) });

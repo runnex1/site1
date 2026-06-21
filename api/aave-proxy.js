@@ -5,7 +5,7 @@
 
 const {
   fetchPerpsDashboard,
-  fetchPerpsEquitySnapshot,
+  fetchPerpsEquitySnapshotWithVariational,
   fetchPerpsLiveRates,
   appendEquitySnapshotStore,
   buildEquitySnapshotFromDashboard,
@@ -184,12 +184,14 @@ async function handlePerpsCronSnapshot(req, res) {
     const previousSnapshot = Object.values(savedSnapshots)
       .sort((a, b) => (Number(a?.fetchedAt) || 0) - (Number(b?.fetchedAt) || 0))
       .at(-1);
-    const data = await fetchPerpsEquitySnapshot({
+    const hedges = parseJson(await kvGet('vault:perps_variational_hedges'), []);
+    const closedPairs = parseJson(await kvGet('vault:perps_closed_pairs'), []);
+    const data = await fetchPerpsEquitySnapshotWithVariational({
       hyperliquid: wallet,
       nado: nadoWallet,
       grvtSubAccount,
       cumulativeNetDeposits: Number(previousSnapshot?.cumulativeNetDeposits) || 0,
-    });
+    }, { hedges, closedPairs });
     const store = appendEquitySnapshotStore(savedSnapshots, data);
     await kvSet('vault:perps_snapshots', JSON.stringify(store));
     const { key, record } = buildEquitySnapshotFromDashboard(data);
@@ -197,6 +199,7 @@ async function handlePerpsCronSnapshot(req, res) {
       ok: true,
       bucket: key,
       totalEquity: record.totalEquity,
+      variationalEquityAdjust: record.variationalEquityAdjust ?? null,
       fetchedAt: record.fetchedAt,
       equityCollectionSpanMs: record.equityCollectionSpanMs,
       equityFetchedAts: record.equityFetchedAts,

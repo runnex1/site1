@@ -47,6 +47,7 @@ const perpsJs = readFileSync(join(ROOT, 'lib', 'perps.js'), 'utf8');
 const loopSnapshotsJs = readFileSync(join(ROOT, 'lib', 'loop-snapshots.js'), 'utf8');
 const aaveProxyJs = readFileSync(join(ROOT, 'api', 'aave-proxy.js'), 'utf8');
 const syncJs = readFileSync(join(ROOT, 'api', 'sync.js'), 'utf8');
+const variationalHedgeJs = readFileSync(join(ROOT, 'lib', 'variational-hedge.js'), 'utf8');
 const vercelJson = readFileSync(join(ROOT, 'vercel.json'), 'utf8');
 const watcherPreviewHtml = readFileSync(join(ROOT, 'ui-previews', 'watcher-preview.html'), 'utf8');
 const now = Date.now();
@@ -1485,19 +1486,27 @@ assert.match(readFileSync(join(ROOT, 'api', 'prices.js'), 'utf8'), /fetchCoinGec
   assert.ok(sessionPoints.every(p => p.totalEquity > 0), 'session chart must plot equity values, not PnL');
 }
 
-assert.match(indexHtml, /if \(store\[bucket\]\) return false;/, 'browser snapshots must be append-only within each 4h bucket');
+assert.match(indexHtml, /if \(store\[bucket\]\) \{[\s\S]*?variationalEquityAdjust/, 'browser snapshots must patch variational fields into existing cron buckets');
 assert.match(indexHtml, /if \(!perpsIsEquitySnapshotEligible\(data\)\) return false;/, 'browser snapshots must reject incomplete reads');
 assert.match(aaveProxyJs, /portfolio\?\.perpsArb/, 'cron snapshots must recover wallet config from the saved portfolio');
 assert.match(aaveProxyJs, /kvSet\('vault:perps_config'/, 'cron snapshots must persist recovered wallet config');
-assert.match(aaveProxyJs, /fetchPerpsEquitySnapshot\(\{/, 'cron snapshots must use the lightweight concurrent balance sampler');
+assert.match(aaveProxyJs, /fetchPerpsEquitySnapshotWithVariational\(\{/, 'cron snapshots must sample balances and compute variational adjust');
 assert.doesNotMatch(aaveProxyJs.slice(aaveProxyJs.indexOf('async function handlePerpsCronSnapshot'), aaveProxyJs.indexOf('async function handlePerps(req')), /fetchPerpsDashboard\(\{/, 'cron snapshots must not run the heavy dashboard pipeline');
 assert.match(perpsJs, /equitySampleMode: 'concurrent_balance_only'/, 'balance-only snapshots must identify their sampling mode');
 assert.match(perpsJs, /await Promise\.all\(\[\s*fetchHyperliquidEquity/, 'venue equity endpoints must be sampled concurrently');
 assert.match(syncJs, /const savedConfig = parseJson\(await kvGet\('vault:perps_config'\), \{\}\);/, 'fast config endpoint must use the initialized parser');
 assert.doesNotMatch(syncJs, /const perpsConfig = parse\(await kvGet\('vault:perps_config'\), \{\}\);/, 'fast config endpoint must not call a parser before initialization');
 assert.match(syncJs, /req\.query\?\.perpsSnapshots === '1'/, 'sync endpoint must expose lightweight Perps snapshot hydration');
-assert.match(indexHtml, /await perpsHydrateSnapshotsFromCloud\(\);/, 'Perps refresh must hydrate cron snapshots before rendering the chart');
-assert.match(indexHtml, /const merged = \{ \.\.\.local, \.\.\.\(serverSnaps \|\| \{\}\) \};/, 'scheduled server snapshots must replace same-bucket browser snapshots');
+assert.match(syncJs, /req\.query\?\.perpsAux === '1'/, 'sync endpoint must expose combined Perps aux hydration');
+assert.match(syncJs, /vault:perps_variational_hedges/, 'sync must persist Variational hedges server-side');
+assert.match(syncJs, /vault:perps_closed_pairs/, 'sync must persist closed Perps pairs server-side');
+assert.match(syncJs, /body\.perpsVariationalHedges/, 'sync POST must save Variational hedges');
+assert.match(indexHtml, /await perpsHydratePerpsAuxFromCloud\(\)/, 'Perps refresh must hydrate server aux before rendering');
+assert.match(indexHtml, /function perpsMergeEquitySnapshotRecord\(/, 'equity snapshots must merge variational fields per bucket');
+assert.match(indexHtml, /function perpsSnapshotVariationalAdjust\(/, 'equity series must resolve snapshot variational adjust from components');
+assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'equity snapshots must persist pending-close variational adjust');
+assert.match(perpsJs, /fetchPerpsEquitySnapshotWithVariational/, 'cron snapshots must compute variational equity adjust server-side');
+assert.match(perpsJs, /variationalEquityAdjust: record\.variationalEquityAdjust/, 'equity snapshot records must store variational adjust');
 assert.match(indexHtml, /<g id="perpsEquityPoints"><\/g>/, 'equity chart must render visible sampled-point markers');
 assert.match(indexHtml, /data-perps-equity-mode="session"/, 'equity chart must default to last-session mode');
 assert.match(indexHtml, /function perpsLastCapitalEventMs\(/, 'equity chart session mode must detect last capital flow');
@@ -2178,6 +2187,8 @@ const {
   variationalTotalEquityAdjust,
   variationalNeutralEquity,
   equityPointChartValue,
+  computeVariationalEquityAdjustFromHedges,
+  snapshotVariationalAdjust,
 } = require('../lib/variational-equity.js');
 
 {
@@ -2227,7 +2238,42 @@ const {
   );
 }
 
-assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'equity adjust must include pending Variational closes');
-assert.match(indexHtml, /lockedEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
+{
+  const adjust = computeVariationalEquityAdjustFromHedges({
+    hedges: [{
+      id: 'xlm-grvt',
+      symbol: 'XLM',
+      trackedVenue: 'grvt',
+      status: 'open',
+    }],
+    closedPairs: [],
+    states: {
+      grvt: { state: { positions: [{ symbol: 'XLM', unrealizedPnl: -120 }] } },
+    },
+  });
+  assert.equal(adjust.openAdj, 120, 'server hedge adjust must strip tracked-leg uPnL from open hedges');
+  assert.equal(adjust.totalAdj, 120, 'total hedge adjust must include open leg');
+}
+
+{
+  const snap = {
+    variationalOpenEquityAdjust: 120,
+    variationalClosedEquityAdjust: 20,
+  };
+  assert.equal(snapshotVariationalAdjust(snap, 0), 140, 'snapshot adjust must sum stored components');
+}
+
+{
+  const { record } = buildEquitySnapshotFromDashboard({
+    fetchedAt: Date.now(),
+    summary: { hlAccountValue: 1000, nadoAccountValue: 500, grvtConfigured: false, extendedConfigured: false, combinedNetDeposits: 0 },
+    variationalEquityAdjust: { openAdj: 120, pendingAdj: 0, closedAdj: 20, totalAdj: 140 },
+  });
+  assert.equal(record.variationalEquityAdjust, 140, 'equity snapshot record must persist variational total adjust');
+  assert.equal(record.variationalOpenEquityAdjust, 120, 'equity snapshot record must persist open adjust');
+}
+
+assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
+assert.match(variationalHedgeJs, /lockedEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
 
 console.log('PASS: perps accounting and dashboard regression checks');
