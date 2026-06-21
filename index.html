@@ -6733,6 +6733,12 @@ body[data-active-tab="loops"] .page-content,
   .loop-card-main { grid-template-columns:minmax(0,1.6fr) minmax(200px,0.84fr); }
 }
 
+/* Mobile-only chrome — never shown on desktop */
+.mobile-header,
+.mobile-search-overlay {
+  display: none !important;
+}
+
 /* ══════════════════════════════════════════════════════
    MOBILE-FIRST OVERRIDES — ≤ 768px (wins cascade)
 ══════════════════════════════════════════════════════ */
@@ -6778,7 +6784,7 @@ body[data-active-tab="loops"] .page-content,
 
   /* Sticky mobile page header (non-overview / non-perps tabs) */
   .mobile-header {
-    display: none;
+    display: none !important;
     position: sticky;
     top: 0;
     z-index: 95;
@@ -6793,7 +6799,7 @@ body[data-active-tab="loops"] .page-content,
     -webkit-backdrop-filter: blur(16px);
   }
   body:not([data-active-tab="overview"]):not([data-active-tab="perps"]) .mobile-header {
-    display: flex;
+    display: flex !important;
   }
   .mobile-header-title {
     font-family: var(--ff-display);
@@ -7055,7 +7061,7 @@ body[data-active-tab="loops"] .page-content,
 
   /* Mobile search overlay */
   .mobile-search-overlay {
-    display: none;
+    display: none !important;
     position: fixed;
     inset: 0;
     z-index: 200;
@@ -7066,7 +7072,7 @@ body[data-active-tab="loops"] .page-content,
     flex-direction: column;
     gap: 0.75rem;
   }
-  .mobile-search-overlay.open { display: flex; }
+  .mobile-search-overlay.open { display: flex !important; }
   .mobile-search-overlay .feature-search-input {
     width: 100%;
     min-height: var(--mobile-touch);
