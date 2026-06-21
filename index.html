@@ -5299,14 +5299,40 @@ body {
 .dash-empty { color: var(--t3); font-size:0.82rem; padding: 1rem; }
 
 @media (max-width: 1180px) {
-  .dash-grid { grid-template-columns: 1fr; }
-  .dash-grid > .dash-panel { grid-column: 1 / -1 !important; }
+  .dash-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: none !important;
+    height: auto !important;
+    gap: 12px;
+  }
+  .dash-grid > .dash-panel,
+  .dash-grid > .dash-panel:nth-child(1),
+  .dash-grid > .dash-panel:nth-child(2),
+  .dash-grid > .dash-panel:nth-child(3),
+  .dash-grid > .dash-panel:nth-child(4),
+  .dash-grid > .dash-panel:nth-child(5) {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+  .dash-chart-wrap { height: 220px !important; min-height: 220px !important; max-height: none !important; }
+  .dash-allocation-wrap { height: auto !important; grid-template-rows: auto auto !important; }
+  .dash-info-pane { height: auto !important; max-height: none !important; }
+  .dash-event-list { height: auto !important; max-height: min(52dvh, 380px); min-height: 180px; }
+  .dash-table-wrap { height: auto !important; max-height: min(48dvh, 340px); }
+  .dash-daily .brief-news-section { height: auto !important; max-height: min(52dvh, 400px); }
+  .dash-split-panel { display: flex !important; flex-direction: column !important; }
+  .dash-split-panel .dash-subpanel + .dash-subpanel { border-left: none !important; border-top: 1px solid rgba(148,163,184,0.15); }
+  .page-content.tab-overview { overflow: auto !important; height: auto !important; }
+  .page-content.tab-overview #overviewTab { height: auto !important; min-height: 0 !important; overflow: visible !important; }
   .topbar-metrics { grid-template-columns: 1fr; }
   .topbar { flex-direction: column; }
   .topbar-metric { border-left: 0; border-top: 1px solid rgba(148,163,184,0.14); padding: 0.75rem 0; }
 }
 
-/* Desktop dashboard cockpit — min-width 769px only (phones use mobile block below) */
+/* Desktop shell density — not applied on phones */
 @media (min-width: 769px) {
   .main-area { height: 100%; overflow: hidden; }
   .topbar { min-height: 66px; padding: 0.42rem 0.9rem; }
@@ -5327,6 +5353,10 @@ body {
   .ticker-strip-sep { height: 26px; margin-right: 1.35rem; }
   .ticker-strip-refresh { font-size: 0.6rem; }
   .page-content { height: calc(100vh - 118px); overflow: auto; padding: 10px; }
+}
+
+/* Desktop dashboard cockpit — wide screens only (12-col grid) */
+@media (min-width: 1181px) {
   .page-content.tab-overview { overflow: hidden; }
   #overviewTab { min-height: 100%; overflow: visible; }
   .page-content.tab-overview #overviewTab { height: 100%; min-height: 0; overflow: hidden; }
@@ -6937,23 +6967,32 @@ body[data-active-tab="loops"] .page-content,
     display: none !important;
   }
 
-  /* ── Dashboard: fix grid overlap, stack panels ── */
+  /* ── Dashboard: stack panels, clip bleed between cards ── */
   .dash-grid {
     display: grid !important;
     grid-template-columns: 1fr !important;
     grid-template-rows: none !important;
+    grid-auto-rows: auto !important;
+    height: auto !important;
     gap: 12px !important;
     align-items: stretch !important;
   }
-  .dash-grid > .dash-panel {
+  .dash-grid > .dash-panel,
+  .dash-grid > .dash-panel:nth-child(1),
+  .dash-grid > .dash-panel:nth-child(2),
+  .dash-grid > .dash-panel:nth-child(3),
+  .dash-grid > .dash-panel:nth-child(4),
+  .dash-grid > .dash-panel:nth-child(5) {
     grid-column: 1 / -1 !important;
     grid-row: auto !important;
     height: auto !important;
     min-height: 0 !important;
-    overflow: visible !important;
+    overflow: hidden !important;
+    position: relative;
+    isolation: isolate;
   }
-  .dash-panel { overflow: visible !important; }
-  .dash-chart-panel { min-height: 0; }
+  .dash-panel { overflow: hidden !important; }
+  .dash-chart-panel { min-height: 0 !important; }
   .dash-chart-wrap {
     height: 220px !important;
     min-height: 220px !important;
@@ -7014,7 +7053,7 @@ body[data-active-tab="loops"] .page-content,
   }
   .dash-split-panel .dash-subpanel {
     min-height: 0;
-    overflow: visible !important;
+    overflow: hidden !important;
   }
   .dash-split-panel .dash-subpanel + .dash-subpanel {
     border-left: none !important;
