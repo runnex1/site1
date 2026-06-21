@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -4631,8 +4634,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
 @media (max-width: 480px) {
   .topbar-metrics { grid-template-columns: 1fr 1fr; }
   .topbar-hero-value { font-size: 1.35rem; }
-  .nav-item { min-width: 44px; font-size: 0.55rem; }
-  .nav-item span { display: none; } /* hide labels, icons only */
+  .nav-item { min-width: 48px; font-size: 0.58rem; }
   .charts-grid { gap: 1rem; }
   .chart-card { padding: 1.25rem; }
   .overview-strip { grid-template-columns: 1fr 1fr !important; }
@@ -6730,6 +6732,379 @@ body[data-active-tab="loops"] .page-content,
   .loops-grid { grid-template-columns:1fr; }
   .loop-card-main { grid-template-columns:minmax(0,1.6fr) minmax(200px,0.84fr); }
 }
+
+/* ══════════════════════════════════════════════════════
+   MOBILE-FIRST OVERRIDES — ≤ 768px (wins cascade)
+══════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  :root {
+    --mobile-nav-h: calc(58px + env(safe-area-inset-bottom, 0px));
+    --mobile-touch: 44px;
+    --mobile-pad: max(12px, env(safe-area-inset-left, 0px));
+    --mobile-pad-r: max(12px, env(safe-area-inset-right, 0px));
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    height: 100dvh;
+    height: 100vh;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+  }
+
+  .app-shell {
+    flex-direction: column;
+    height: 100dvh;
+    height: 100vh;
+    min-height: 0;
+  }
+
+  .main-area {
+    order: 1;
+    flex: 1;
+    min-height: 0;
+    height: auto !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    padding: 0 0 var(--mobile-nav-h) !important;
+    gap: 0;
+  }
+
+  /* Sticky mobile page header (non-overview / non-perps tabs) */
+  .mobile-header {
+    display: none;
+    position: sticky;
+    top: 0;
+    z-index: 95;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 48px;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) var(--mobile-pad-r) 8px var(--mobile-pad);
+    border-bottom: 1px solid rgba(110,231,216,0.14);
+    background: rgba(6,14,20,0.94);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+  body:not([data-active-tab="overview"]):not([data-active-tab="perps"]) .mobile-header {
+    display: flex;
+  }
+  .mobile-header-title {
+    font-family: var(--ff-display);
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--t1);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+  }
+  .mobile-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--mobile-touch);
+    height: var(--mobile-touch);
+    border: 1px solid rgba(148,163,184,0.18);
+    border-radius: 10px;
+    background: rgba(255,255,255,0.04);
+    color: var(--t2);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-icon-btn svg { width: 18px; height: 18px; }
+  .mobile-icon-btn:active { background: rgba(89,240,200,0.12); border-color: rgba(89,240,200,0.28); color: var(--teal); }
+
+  /* Bottom nav — horizontal scroll, thumb-friendly */
+  .sidebar {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    width: 100% !important;
+    height: var(--mobile-nav-h) !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    border: none !important;
+    border-top: 1px solid rgba(110,231,216,0.16) !important;
+    flex-direction: row !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px)) !important;
+    gap: 4px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    z-index: 120;
+    box-shadow: 0 -8px 32px rgba(0,0,0,0.45);
+  }
+  .sidebar::-webkit-scrollbar { display: none; }
+  .sidebar-brand, .feature-search, .sidebar-label, .sidebar-spacer, .sidebar-footer { display: none !important; }
+  .sidebar-section { display: contents !important; }
+  .nav-item {
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 56px;
+    max-width: 72px;
+    min-height: 46px;
+    padding: 6px 8px;
+    margin: 0;
+    font-size: 0.58rem;
+    font-weight: 600;
+    line-height: 1.15;
+    text-align: center;
+    justify-content: center;
+    border-radius: 10px;
+    scroll-snap-align: center;
+    -webkit-tap-highlight-color: transparent;
+    white-space: normal;
+    word-break: break-word;
+  }
+  .nav-item svg { width: 22px; height: 22px; }
+  .nav-item::before, .nav-item.active { border-left: none !important; }
+  .nav-item.active {
+    background: rgba(89,240,200,0.14) !important;
+    color: var(--teal) !important;
+    box-shadow: inset 0 0 0 1px rgba(89,240,200,0.22);
+  }
+
+  /* Topbar — compact hero on overview only */
+  body:not([data-active-tab="overview"]) .topbar { display: none !important; }
+  .topbar {
+    min-height: 0 !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    padding: calc(10px + env(safe-area-inset-top, 0px)) var(--mobile-pad-r) 10px var(--mobile-pad) !important;
+  }
+  .topbar-hero-value { font-size: clamp(1.45rem, 6vw, 1.85rem) !important; }
+  .topbar-metrics { grid-template-columns: 1fr 1fr !important; gap: 0.5rem !important; }
+  .topbar-metric { padding: 0.35rem 0.5rem !important; border-left: none !important; }
+  .market-ticker-strip { display: none !important; }
+
+  .page-content {
+    padding: 10px var(--mobile-pad-r) 12px var(--mobile-pad) !important;
+    overflow: visible !important;
+    min-height: 0;
+  }
+  body[data-active-tab="news"] .page-content,
+  body[data-active-tab="watcher"] .page-content,
+  body[data-active-tab="perps"] .page-content,
+  body[data-active-tab="loops"] .page-content,
+  body[data-active-tab="prediction"] .page-content {
+    padding-left: var(--mobile-pad) !important;
+    padding-right: var(--mobile-pad-r) !important;
+  }
+
+  /* Dashboard */
+  .dash-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
+  .dash-chart-panel { min-height: 240px; }
+  .dash-chart-wrap { height: 220px; }
+  .dash-panel-head { flex-wrap: wrap; gap: 0.5rem; }
+  .dash-chart-controls { width: 100%; justify-content: flex-start; }
+  .dash-chart-btn, .dash-panel-link { min-height: 36px; padding: 6px 10px; }
+  .dash-table-wrap {
+    margin: 0 calc(-1 * var(--mobile-pad));
+    padding: 0 var(--mobile-pad);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x proximity;
+  }
+  .dash-table { min-width: 560px; }
+  .dash-all-ok::after { width: min(92vw, 360px); right: var(--mobile-pad-r); }
+
+  /* Touch targets globally */
+  button, .btn, .perps-btn, .perps-range-btn, .perps-position-tab,
+  .loops-sync-btn, .wsec-add-btn, .nav-item, .dash-chart-btn,
+  .pred-subtab, .mobile-icon-btn {
+    min-height: var(--mobile-touch);
+  }
+  .perps-range-btn, .perps-position-tab, .dash-chart-btn {
+    min-height: 36px;
+    padding: 8px 12px;
+  }
+
+  /* Perps — full mobile layout */
+  .perps-root {
+    max-width: none;
+    margin: 0;
+    padding: 0 0 1rem;
+    min-height: 0;
+  }
+  .perps-portfolio-head { padding-top: calc(4px + env(safe-area-inset-top, 0px)); }
+  .perps-portfolio-title { font-size: 1.15rem; }
+  .perps-config input { min-width: 0; width: 100%; font-size: 16px; }
+  .perps-config { flex-direction: column; align-items: stretch; }
+  .perps-btn { min-height: var(--mobile-touch); width: 100%; }
+  .perps-stats-bar { grid-template-columns: 1fr 1fr !important; gap: 8px; }
+  .perps-stat-card:nth-child(5) { grid-column: 1 / -1; }
+  .perps-stat-value { font-size: 1.05rem; }
+  .perps-stat-range-row { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+  .perps-stat-range-group { justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+  .perps-kpi-grid, .perps-kpi-grid.wide { grid-template-columns: 1fr 1fr !important; }
+  .perps-charts-grid { grid-template-columns: 1fr !important; }
+  .perps-panel-head { flex-wrap: wrap; gap: 0.5rem; }
+  .perps-position-tabs { margin-left: 0; width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+  .perps-pos-list { overflow-x: visible !important; padding: 0 0.35rem 0.65rem !important; }
+  .perps-pos-head { display: none !important; }
+  .perps-pos-head, .perps-pos-row {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  .perps-pos-row,
+  .perps-pos-row.closed {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 0.55rem !important;
+    grid-template-columns: unset !important;
+  }
+  .perps-pos-apr-col, .perps-pos-head > div:nth-last-child(2) { text-align: left !important; }
+  .perps-pos-card { padding: 0.85rem; margin-bottom: 10px; }
+  .perps-pos-legs { padding-right: 0; }
+  .perps-pos-leg { flex-wrap: wrap; gap: 0.5rem; }
+  .perps-pos-chart-col { justify-content: flex-start; }
+  .perps-equity-tip { max-width: calc(100vw - 2rem); }
+  .perps-stat-equity-wrap:active .perps-stat-tip,
+  .perps-stat-equity-wrap:focus-within .perps-stat-tip { display: block; }
+
+  /* Loops */
+  .loops-cockpit { max-width: none; margin: 0; padding: 0 0 1rem; }
+  .loops-kpi-strip { grid-template-columns: 1fr 1fr !important; min-height: 0; }
+  .loops-kpi { border-right: 0; border-bottom: 1px solid rgba(148,163,184,0.14); padding: 0.65rem 0.85rem; }
+  .loops-kpi:nth-child(5) { grid-column: 1 / -1; }
+  .loops-panel { min-height: 0; }
+  .loops-panel-head { flex-direction: column; align-items: stretch; gap: 0.55rem; min-height: 0; padding: 0.75rem; }
+  .loops-head-actions { justify-content: flex-start; flex-wrap: wrap; }
+  .loops-grid { grid-template-columns: 1fr !important; padding: 8px; gap: 10px; }
+
+  /* Prediction */
+  .pred-kpi-strip, .pred-ticker-inner { grid-template-columns: 1fr 1fr !important; }
+  .pred-cockpit, .pred-workbench { padding: 0; }
+  .pred-panel-head { gap: 0.55rem; }
+  .pred-search { font-size: 16px; }
+
+  /* DeFi / ETF / tables */
+  .table-header, .table-row, .pm-header, .pm-row,
+  .protocols-header, .protocols-row, .etf-header, .etf-row {
+    min-width: 0;
+  }
+  .defi-table-scroll, .pm-table-wrap, .protocols-table-wrap, .etf-holdings-body,
+  .pnl-table-wrap, .data-table {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-left: calc(-1 * var(--mobile-pad));
+    margin-right: calc(-1 * var(--mobile-pad-r));
+    padding-left: var(--mobile-pad);
+    padding-right: var(--mobile-pad-r);
+  }
+  .etf-kpi-strip { grid-template-columns: 1fr !important; }
+  .etf-main { grid-template-columns: 1fr !important; }
+
+  /* Watcher */
+  .watcher-v2-pm-row { grid-template-columns: 38px minmax(0,1fr) auto !important; }
+  .watcher-v2 { max-height: none; height: auto; }
+
+  /* News */
+  .news-layout, .news-feed-grid { grid-template-columns: 1fr !important; }
+
+  /* Modals — bottom sheet style */
+  .modal-overlay { align-items: flex-end !important; padding: 0 !important; }
+  .modal-box {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    border-radius: 16px 16px 0 0 !important;
+    max-height: 92dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
+  .perps-modal-box { max-height: 94dvh; }
+
+  /* Section headers & forms */
+  .section-header { gap: 0.65rem; }
+  .section-header input, .section-header select,
+  .wsec-header input, .feature-search-input {
+    font-size: 16px !important;
+    min-height: var(--mobile-touch);
+  }
+  .overview-strip { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+  .activity-card-right { margin-left: 0; }
+  .charts-grid { gap: 10px; }
+  .chart-card { padding: 1rem; }
+
+  /* Mobile search overlay */
+  .mobile-search-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(4,8,12,0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: calc(12px + env(safe-area-inset-top, 0px)) var(--mobile-pad-r) 12px var(--mobile-pad);
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .mobile-search-overlay.open { display: flex; }
+  .mobile-search-overlay .feature-search-input {
+    width: 100%;
+    min-height: var(--mobile-touch);
+    font-size: 16px;
+    border-radius: 10px;
+    padding: 0.65rem 0.85rem;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(148,163,184,0.22);
+    color: var(--t1);
+  }
+  .mobile-search-overlay .feature-search-results {
+    position: static;
+    display: block;
+    max-height: min(60dvh, 420px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 10px;
+    border: 1px solid rgba(148,163,184,0.15);
+    background: rgba(8,14,20,0.98);
+  }
+  .mobile-search-overlay .feature-search-result {
+    width: 100%;
+    min-height: var(--mobile-touch);
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-size: 0.92rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .perps-stats-bar { grid-template-columns: 1fr !important; }
+  .perps-stat-card:nth-child(5) { grid-column: auto; }
+  .topbar-metrics { grid-template-columns: 1fr !important; }
+  .overview-strip { grid-template-columns: 1fr !important; }
+  .loops-kpi-strip { grid-template-columns: 1fr !important; }
+  .pred-kpi-strip, .pred-ticker-inner { grid-template-columns: 1fr !important; }
+  .nav-item { min-width: 52px; font-size: 0.54rem; }
+}
 </style>
 </head>
 
@@ -6822,6 +7197,26 @@ body[data-active-tab="loops"] .page-content,
   </aside>
 
   <div class="main-area">
+
+    <header class="mobile-header" id="mobileHeader" aria-hidden="true">
+      <span class="mobile-header-title" id="mobileHeaderTitle">Dashboard</span>
+      <div class="mobile-header-actions">
+        <button type="button" class="mobile-icon-btn" onclick="mobileSearchOpen()" aria-label="Search features">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="mobile-search-overlay" id="mobileSearchOverlay" aria-hidden="true">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:0.75rem;">
+        <strong style="font-family:var(--ff-display);letter-spacing:0.08em;text-transform:uppercase;font-size:0.85rem;">Search</strong>
+        <button type="button" class="mobile-icon-btn" onclick="mobileSearchClose()" aria-label="Close search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <input class="feature-search-input" id="mobileSearchInput" type="search" placeholder="Search features..." autocomplete="off" oninput="featureSearchUpdate(this.value)" onkeydown="mobileSearchKeydown(event)">
+      <div class="feature-search-results" id="mobileSearchResults"></div>
+    </div>
 
     <header class="topbar">
       <div class="topbar-hero">
@@ -10238,12 +10633,49 @@ const featureSearchItems = [
 ];
 let featureSearchMatches = [];
 
+function mobileSearchOpen() {
+    const ov = document.getElementById('mobileSearchOverlay');
+    const input = document.getElementById('mobileSearchInput');
+    if (!ov) return;
+    ov.classList.add('open');
+    ov.setAttribute('aria-hidden', 'false');
+    setTimeout(() => input?.focus(), 60);
+}
+
+function mobileSearchClose() {
+    const ov = document.getElementById('mobileSearchOverlay');
+    if (ov) {
+        ov.classList.remove('open');
+        ov.setAttribute('aria-hidden', 'true');
+    }
+    const input = document.getElementById('mobileSearchInput');
+    const out = document.getElementById('mobileSearchResults');
+    if (input) input.value = '';
+    if (out) out.innerHTML = '';
+    featureSearchMatches = [];
+}
+
+function mobileSearchKeydown(event) {
+    featureSearchKeydown(event);
+    if (event.key === 'Escape') mobileSearchClose();
+}
+
+function featureSearchRenderResults(html) {
+    const desktopOut = document.getElementById('featureSearchResults');
+    const mobileOut = document.getElementById('mobileSearchResults');
+    if (desktopOut) desktopOut.innerHTML = html;
+    if (mobileOut) mobileOut.innerHTML = html;
+}
+
 function featureSearchUpdate(query) {
     const root = document.getElementById('featureSearch');
-    const out = document.getElementById('featureSearchResults');
-    if (!root || !out) return;
     const q = String(query || '').trim().toLowerCase();
-    if (!q) { root.classList.remove('open'); out.innerHTML = ''; featureSearchMatches = []; return; }
+    if (!q) {
+        if (root) root.classList.remove('open');
+        featureSearchRenderResults('');
+        featureSearchMatches = [];
+        return;
+    }
     const words = q.split(/\s+/).filter(Boolean);
     featureSearchMatches = featureSearchItems
         .map(item => {
@@ -10255,10 +10687,11 @@ function featureSearchUpdate(query) {
         .sort((a, b) => b.score - a.score || a.item.label.localeCompare(b.item.label))
         .slice(0, 7)
         .map(x => x.item);
-    root.classList.add('open');
-    out.innerHTML = featureSearchMatches.length
+    if (root) root.classList.add('open');
+    const html = featureSearchMatches.length
         ? featureSearchMatches.map((item, i) => `<button class="feature-search-result" type="button" onclick="featureSearchGo(${i})">${item.label}</button>`).join('')
         : '<div class="feature-search-empty">No matching feature</div>';
+    featureSearchRenderResults(html);
 }
 
 function featureSearchGo(index) {
@@ -10273,10 +10706,9 @@ function featureSearchGo(index) {
     }
     const input = document.getElementById('featureSearchInput');
     const root = document.getElementById('featureSearch');
-    const out = document.getElementById('featureSearchResults');
     if (input) input.value = '';
-    if (out) out.innerHTML = '';
     if (root) root.classList.remove('open');
+    mobileSearchClose();
     featureSearchMatches = [];
 }
 
@@ -10303,6 +10735,16 @@ function switchTab(tab, opts = {}) {
     document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
     const item = document.querySelector(`.nav-item[data-tab="${tab}"]`);
     if (item) item.classList.add('active');
+    const mobileTitle = document.getElementById('mobileHeaderTitle');
+    if (mobileTitle) {
+        mobileTitle.textContent = item
+            ? item.textContent.replace(/\s+/g, ' ').trim()
+            : tab;
+    }
+    if (window.matchMedia('(max-width: 768px)').matches) {
+        document.querySelector('.main-area')?.scrollTo({ top: 0, behavior: 'auto' });
+        item?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    }
     document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
     const pane = document.getElementById(tab + 'Tab');
     if (pane) pane.classList.add('active');
