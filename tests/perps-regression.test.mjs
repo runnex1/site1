@@ -1199,6 +1199,32 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   assert.equal(Object.keys(store2).length, 1, 'same 2h bucket must not duplicate loop snapshots');
   const merged = mergeLoopSnapshotStores({ '2026-06-01T00': { fetchedAt: 1, positions: [] } }, store2);
   assert.ok(Object.keys(merged).length >= 2, 'server merge must keep existing buckets and add new ones');
+
+  const lendingStore = appendLoopSnapshotStore({}, {
+    wallets: ['0xabc'],
+    positions: [{
+      id: 'fluid-lending:0xabc:1:usdc',
+      protocol: 'Fluid',
+      marketName: 'USDC',
+      wallet: '0xabc',
+      chainId: 1,
+      totalSupplied: 5000,
+      totalBorrowed: 0,
+      netValue: 5000,
+      supplyApy: 4.2,
+      netApy: 4.2,
+      lendingOnly: true,
+    }],
+  });
+  const lendingBucket = Object.keys(lendingStore)[0];
+  assert.equal(lendingStore[lendingBucket].positions.length, 1, 'supply-only lending positions must be snapshotted');
+  assert.equal(lendingStore[lendingBucket].positions[0].lendingOnly, true);
+  assert.equal(lendingStore[lendingBucket].positions[0].netApy, 4.2);
+  assert.equal(
+    lendingStore[lendingBucket].positions[0].historyKey,
+    'fluid-lending:0xabc:1:usdc',
+    'Fluid lending history keys must stay stable',
+  );
 }
 
 {
@@ -1279,6 +1305,14 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   const vaultA = { ...base, id: 'fluid-vault:0x523c:1:0xvault:17728' };
   const vaultB = { ...base, id: 'fluid-vault:0x523c:1:0xvault:18888' };
   assert.notEqual(loopPositionHistoryKey(vaultA), loopPositionHistoryKey(vaultB), 'Fluid vault NFTs must not share snapshot history keys');
+  const lending = {
+    protocol: 'Fluid',
+    wallet,
+    chainId: 1,
+    id: 'fluid-lending:0x523c:1:usdc',
+    marketName: 'USDC',
+  };
+  assert.equal(loopPositionHistoryKey(lending), lending.id, 'Fluid lending positions must use stable id history keys');
 }
 
 {

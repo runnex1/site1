@@ -14585,37 +14585,50 @@ function loopSnapshotLegs(legs) {
     })).filter(leg => leg.value > 0 || leg.amount > 0);
 }
 
+function loopSnapshotEligiblePosition(p) {
+    return Number(p?.totalBorrowed || 0) > 0.01 || Number(p?.totalSupplied || 0) > 0.01;
+}
+
+function loopMapSnapshotPosition(p) {
+    const netValue = Number(p.netValue || 0);
+    const merklRewardsUsd = Number(p.merklRewardsUsd || 0);
+    const merklClaimedUsd = Number(p.merklClaimedUsd || 0);
+    const totalSupplied = Number(p.totalSupplied || 0);
+    const totalBorrowed = Number(p.totalBorrowed || 0);
+    const lendingOnly = Boolean(p.lendingOnly) || (totalBorrowed <= 0.01 && totalSupplied > 0.01);
+    const supplyApy = p.supplyApy == null ? null : Number(p.supplyApy);
+    let netApy = p.netApy == null ? null : Number(p.netApy);
+    if (netApy == null && lendingOnly && supplyApy != null) netApy = supplyApy;
+    const economicNetValue = Number(p.economicNetValue ?? netValue + merklRewardsUsd);
+    return {
+        id: p.id,
+        historyKey: loopPositionHistoryKey(p),
+        protocol: p.protocol,
+        marketName: p.marketName,
+        wallet: p.wallet,
+        chainId: p.chainId,
+        netValue,
+        merklRewardsUsd: merklRewardsUsd > 0.01 ? merklRewardsUsd : 0,
+        merklClaimedUsd: merklClaimedUsd > 0.01 ? merklClaimedUsd : 0,
+        economicNetValue,
+        totalSupplied,
+        totalBorrowed,
+        suppliedLegs: loopSnapshotLegs(p.supplied),
+        borrowedLegs: loopSnapshotLegs(p.borrowed),
+        supplyApy,
+        borrowApy: p.borrowApy == null ? null : Number(p.borrowApy),
+        netApy,
+        health: p.health == null ? null : Number(p.health),
+        lendingOnly,
+    };
+}
+
 function loopsAppendSnapshotFromApiData(data) {
     const fetchedAt = Date.now();
     const key = loopsSnapshotBucketKey(fetchedAt);
     const positions = (data?.positions || [])
-        .filter(p => Number(p?.totalBorrowed) > 0.01)
-        .map(p => {
-            const netValue = Number(p.netValue || 0);
-            const merklRewardsUsd = Number(p.merklRewardsUsd || 0);
-            const merklClaimedUsd = Number(p.merklClaimedUsd || 0);
-            const economicNetValue = Number(p.economicNetValue ?? netValue + merklRewardsUsd);
-            return {
-                id: p.id,
-                historyKey: loopPositionHistoryKey(p),
-                protocol: p.protocol,
-                marketName: p.marketName,
-                wallet: p.wallet,
-                chainId: p.chainId,
-                netValue,
-                merklRewardsUsd: merklRewardsUsd > 0.01 ? merklRewardsUsd : 0,
-                merklClaimedUsd: merklClaimedUsd > 0.01 ? merklClaimedUsd : 0,
-                economicNetValue,
-                totalSupplied: Number(p.totalSupplied || 0),
-                totalBorrowed: Number(p.totalBorrowed || 0),
-                suppliedLegs: loopSnapshotLegs(p.supplied),
-                borrowedLegs: loopSnapshotLegs(p.borrowed),
-                supplyApy: p.supplyApy == null ? null : Number(p.supplyApy),
-                borrowApy: p.borrowApy == null ? null : Number(p.borrowApy),
-                netApy: p.netApy == null ? null : Number(p.netApy),
-                health: p.health == null ? null : Number(p.health),
-            };
-        });
+        .filter(loopSnapshotEligiblePosition)
+        .map(loopMapSnapshotPosition);
     if (!positions.length) return false;
     if (loopSnapshotsStore[key]) {
         loopSnapshotsStore[key] = {
@@ -14652,7 +14665,7 @@ function loopPositionHistoryKey(pos) {
     const chainId = String(pos?.chainId ?? '');
     const id = String(pos?.id || '').trim().toLowerCase();
     if (!protocol || !wallet || chainId === '') return id || String(pos?.id || '');
-    if (protocol === 'fluid' && id.startsWith('fluid-vault:')) return id;
+    if (protocol === 'fluid' && (id.startsWith('fluid-vault:') || id.startsWith('fluid-lending:'))) return id;
     const marketName = String(pos?.marketName || '').trim().toLowerCase();
     return `${protocol}:${wallet}:${chainId}:${marketName}`;
 }
@@ -14665,7 +14678,8 @@ function loopHistoryPositionMatch(live, stored) {
     if (lp === 'fluid' || sp === 'fluid') {
         const liveKey = loopPositionHistoryKey(live);
         const storedKey = stored.historyKey || loopPositionHistoryKey(stored);
-        return !!(liveKey && storedKey && liveKey === storedKey);
+        if (liveKey && storedKey && liveKey === storedKey) return true;
+        if (live.id && stored.id && live.id === stored.id) return true;
     }
     const liveKey = loopPositionHistoryKey(live);
     const storedKey = stored.historyKey || loopPositionHistoryKey(stored);
@@ -18470,7 +18484,7 @@ function buildLoopCardHtml(loop, fmtV, { lendingOnly = false } = {}) {
         : '';
     const chartHtml = loop.live && loop.raw
         ? loopHistoryChartHtml(adjustedChartPoints, { endValue: liveEndValue, endTs: liveEndTs, manualKey })
-        : `<div class="loop-history-chart empty"><span>${lendingOnly ? 'Sync live to track supply-only lending' : 'Sync live to build 2h snapshot history'}</span></div>`;
+        : `<div class="loop-history-chart empty"><span>${lendingOnly ? 'History builds every 2h — sync live or wait for the next server snapshot' : 'Sync live to build 2h snapshot history'}</span></div>`;
     const aaveNetValue = loop.live && loop.raw ? Number(loop.raw.netValue ?? displayNetValue) : displayNetValue;
     const merklUnclaimed = loop.live && loop.raw ? Number(loop.raw.merklRewardsUsd || 0) : 0;
     const merklClaimed = loop.live && loop.raw ? Number(loop.raw.merklClaimedUsd || 0) : 0;
