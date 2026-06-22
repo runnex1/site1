@@ -4528,8 +4528,7 @@ textarea { min-height: 140px; resize: vertical; font-family: var(--ff-mono); fon
    SMALL MOBILE — ≤ 480px
 ══════════════════════════════════════════════════════ */
 @media (max-width: 480px) {
-  .topbar-metrics { grid-template-columns: 1fr 1fr; }
-  .topbar-hero-value { font-size: 1.35rem; }
+  .topbar-hero-value { font-size: 0.95rem; }
   .nav-item { min-width: 48px; font-size: 0.58rem; }
   .charts-grid { gap: 1rem; }
   .chart-card { padding: 1.25rem; }
@@ -6767,6 +6766,7 @@ body[data-active-tab="loops"] .page-content,
     overflow-x: hidden !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
+    overflow-anchor: none;
     padding: 0 0 var(--mobile-nav-h) !important;
     gap: 0;
   }
@@ -6774,6 +6774,7 @@ body[data-active-tab="loops"] .page-content,
   /* Sticky mobile page header (non-overview / non-perps tabs) */
   .mobile-header {
     display: none !important;
+    position: -webkit-sticky;
     position: sticky;
     top: 0;
     z-index: 95;
@@ -6783,9 +6784,12 @@ body[data-active-tab="loops"] .page-content,
     min-height: 48px;
     padding: calc(8px + env(safe-area-inset-top, 0px)) var(--mobile-pad-r) 8px var(--mobile-pad);
     border-bottom: 1px solid rgba(110,231,216,0.14);
-    background: rgba(6,14,20,0.94);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: rgba(6,14,20,0.98) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    box-shadow: 0 1px 0 rgba(110,231,216,0.1);
   }
   body:not([data-active-tab="overview"]):not([data-active-tab="perps"]) .mobile-header {
     display: flex !important;
@@ -6893,20 +6897,150 @@ body[data-active-tab="loops"] .page-content,
     box-shadow: inset 0 0 0 1px rgba(89,240,200,0.22);
   }
 
-  /* Topbar — compact hero on overview only */
+  /* Overview header: compact stats + stable ticker (scrolls with page, no sticky jank) */
+  body[data-active-tab="overview"] .overview-top-chrome {
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+    background: rgba(6,14,20,0.98);
+    border-bottom: 1px solid rgba(110,231,216,0.1);
+  }
   body:not([data-active-tab="overview"]) .topbar { display: none !important; }
+  body:not([data-active-tab="overview"]) .overview-top-chrome .market-ticker-strip { display: none !important; }
   .topbar {
     min-height: 0 !important;
     margin: 0 !important;
     border-radius: 0 !important;
     border-left: none !important;
     border-right: none !important;
-    padding: calc(10px + env(safe-area-inset-top, 0px)) var(--mobile-pad-r) 10px var(--mobile-pad) !important;
+    border-bottom: none !important;
+    padding: calc(6px + env(safe-area-inset-top, 0px)) var(--mobile-pad-r) 6px var(--mobile-pad) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transition: none !important;
+    background: transparent !important;
+    gap: 0 !important;
+    flex-wrap: nowrap !important;
+    align-items: stretch !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    column-gap: 10px;
+    row-gap: 4px;
+    position: static !important;
+    box-shadow: none !important;
   }
-  .topbar-hero-value { font-size: clamp(1.45rem, 6vw, 1.85rem) !important; }
-  .topbar-metrics { grid-template-columns: 1fr 1fr !important; gap: 0.5rem !important; }
-  .topbar-metric { padding: 0.35rem 0.5rem !important; border-left: none !important; }
-  .market-ticker-strip { display: none !important; }
+  .topbar.hidden-bar {
+    max-height: none !important;
+    opacity: 1 !important;
+    padding: calc(6px + env(safe-area-inset-top, 0px)) var(--mobile-pad-r) 6px var(--mobile-pad) !important;
+    pointer-events: auto !important;
+  }
+  .topbar-hero {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0 !important;
+    justify-content: flex-start;
+  }
+  .topbar-hero-label,
+  .topbar-metric-label {
+    font-size: 0.5rem !important;
+    letter-spacing: 0.1em !important;
+    line-height: 1.15;
+    margin-bottom: 1px;
+  }
+  .topbar-hero-value {
+    font-size: 1.05rem !important;
+    min-width: 0 !important;
+    line-height: 1.1 !important;
+    -webkit-text-fill-color: #f5f7ff;
+    background: none;
+  }
+  .topbar-metrics {
+    display: contents !important;
+  }
+  .topbar-metric {
+    min-width: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    justify-content: flex-start;
+  }
+  .topbar-metric:nth-child(1) {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: right;
+    align-items: flex-end;
+  }
+  .topbar-metric:nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .topbar-metric:nth-child(3) {
+    grid-column: 2;
+    grid-row: 2;
+    text-align: right;
+    align-items: flex-end;
+  }
+  .topbar-metric-value {
+    font-size: 0.92rem !important;
+    line-height: 1.1 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .topbar-metric-sub {
+    font-size: 0.48rem !important;
+    line-height: 1.15 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .dash-all-ok { display: none !important; }
+  body[data-active-tab="overview"] .market-ticker-strip {
+    display: flex !important;
+    margin: 0 !important;
+    min-height: 34px !important;
+    padding: 0 !important;
+    border: none !important;
+    border-top: 1px solid rgba(110,231,216,0.1) !important;
+    border-radius: 0 !important;
+    background: rgba(5,12,18,0.98) !important;
+    position: static !important;
+    flex-shrink: 0;
+  }
+  .ticker-strip-inner,
+  .ticker-strip-sequence {
+    min-height: 34px !important;
+    height: 34px !important;
+    padding: 0 0.5rem !important;
+  }
+  .ticker-asset {
+    min-width: 108px !important;
+    gap: 0.4rem !important;
+    padding-right: 0.85rem !important;
+  }
+  .ticker-asset-icon { width: 20px !important; height: 20px !important; }
+  .ticker-asset-name { font-size: 0.58rem !important; }
+  .ticker-asset-price { font-size: 0.68rem !important; }
+  .ticker-change { font-size: 0.55rem !important; }
+  .ticker-strip-sep { height: 22px !important; margin-right: 0.75rem !important; }
+  .ticker-add-btn { width: 20px !important; height: 20px !important; margin: 0 0.35rem !important; }
+  .ticker-strip-refresh { display: none !important; }
+  .ticker-strip-track {
+    will-change: auto !important;
+  }
+  .ticker-strip-track.scrolling {
+    animation: none !important;
+    transform: none !important;
+  }
+  .ticker-strip-viewport {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+  }
 
   .page-content {
     padding: 10px var(--mobile-pad-r) 12px var(--mobile-pad) !important;
@@ -7337,7 +7471,8 @@ body[data-active-tab="loops"] .page-content,
 @media (max-width: 480px) {
   .perps-stats-bar { grid-template-columns: 1fr !important; }
   .perps-stat-card:nth-child(5) { grid-column: auto; }
-  .topbar-metrics { grid-template-columns: 1fr !important; }
+  .topbar-hero-value { font-size: 0.98rem !important; }
+  .topbar-metric-value { font-size: 0.86rem !important; }
   .overview-strip { grid-template-columns: 1fr !important; }
   .loops-kpi-strip { grid-template-columns: 1fr !important; }
   .pred-kpi-strip, .pred-ticker-inner { grid-template-columns: 1fr !important; }
@@ -7463,6 +7598,7 @@ body[data-active-tab="loops"] .page-content,
       <div class="feature-search-results" id="mobileSearchResults"></div>
     </div>
 
+    <div class="overview-top-chrome">
     <header class="topbar">
       <div class="topbar-hero">
         <div class="topbar-hero-label">Total Portfolio Value</div>
@@ -7546,6 +7682,7 @@ body[data-active-tab="loops"] .page-content,
       </div>
       <button class="ticker-add-btn" id="tickerAddBtn" type="button" title="Add token or stock" onclick="openModal('tickerAdd')">+</button>
       <div class="ticker-strip-refresh" id="tickerRefreshTime"></div>
+    </div>
     </div>
 
     <div class="page-content tab-overview">
@@ -25291,40 +25428,44 @@ function renderDailyBrief() {
 // =============================================================================
 (function initTopbarScrollHide() {
     const pageContent  = document.querySelector('.page-content');
+    const mainArea     = document.querySelector('.main-area');
     const topbar       = document.querySelector('.topbar');
     const sidebarBrand = document.querySelector('.sidebar-brand');
     if (!pageContent || !topbar) return;
 
+    const mqMobile = window.matchMedia('(max-width: 768px)');
+
     let _currentTab = 'overview';
-    let _lastScrollY = 0;
     const THRESHOLD = 40; // px scrolled before hiding
+
+    function scrollRoot() {
+        return mqMobile.matches && mainArea ? mainArea : pageContent;
+    }
 
     // Patch switchTab to track active tab & reset scroll state
     const _origSwitchTab = window.switchTab;
     window.switchTab = function(tab) {
-        _origSwitchTab(tab);
+        _origSwitchTab.apply(this, arguments);
         _currentTab = tab;
-        _lastScrollY = 0;
-        pageContent.scrollTop = 0;
+        const root = scrollRoot();
+        if (root) root.scrollTop = 0;
         if (tab !== 'perps') topbar.classList.remove('hidden-bar');
         if (sidebarBrand) sidebarBrand.classList.remove('collapsed');
     };
 
-    pageContent.addEventListener('scroll', function() {
-        if (_currentTab === 'perps') return;
-        const st = pageContent.scrollTop;
+    function onScroll() {
+        if (mqMobile.matches) return; // mobile uses sticky bars, not collapse-on-scroll
+        if (_currentTab === 'perps' || _currentTab === 'overview') return;
+        const st = scrollRoot()?.scrollTop || 0;
         const scrolled = st > THRESHOLD;
 
-        // Sidebar brand + topbar (portfolio value) collapse on scroll
-        // Ticker strip always stays visible — never hide it
+        // Sidebar brand + topbar collapse on scroll (desktop narrow tabs only)
         if (sidebarBrand) sidebarBrand.classList.toggle('collapsed', scrolled);
-        if (scrolled) {
-            topbar.classList.add('hidden-bar');
-        } else {
-            topbar.classList.remove('hidden-bar');
-        }
-        _lastScrollY = st;
-    }, { passive: true });
+        topbar.classList.toggle('hidden-bar', scrolled);
+    }
+
+    pageContent.addEventListener('scroll', onScroll, { passive: true });
+    if (mainArea) mainArea.addEventListener('scroll', onScroll, { passive: true });
 })();
 
 
@@ -26094,6 +26235,15 @@ function tickerSetupMarquee() {
     clearTimeout(_tickerScrollDelayTimer);
     _tickerScrollDelayTimer = setTimeout(() => {
         const seqWidth = sequence.scrollWidth;
+        const isMobileTicker = window.matchMedia('(max-width: 768px)').matches;
+        if (isMobileTicker) {
+            track.classList.remove('scrolling', 'paused');
+            track.style.removeProperty('transform');
+            track.style.removeProperty('--ticker-scroll-duration');
+            track.dataset.marqueeActive = '0';
+            track.querySelectorAll('.ticker-strip-sequence-dup').forEach(el => el.remove());
+            return;
+        }
         if (seqWidth <= viewport.clientWidth + 8) return;
 
         const dup = sequence.cloneNode(true);
