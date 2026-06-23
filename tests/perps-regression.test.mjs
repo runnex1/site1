@@ -1621,6 +1621,10 @@ assert.doesNotMatch(indexHtml, /perpsSyncTotalPnlRolling24h/, 'Total PnL must no
 assert.match(indexHtml, /perpsSumDailyFundingSeries\(rows, true\)/, 'Net APR must use the same active-session rows as position performance');
 assert.match(indexHtml, /function perpsFilterPairLatestSessionForRange\(series, range\)/, 'Position Net APR must filter to the latest session before applying the selected range');
 assert.match(indexHtml, /const rows = perpsFilterPairLatestSessionForRange\(rawRows, range\);/, 'Position Net APR must not include older sessions in all-time APR');
+assert.match(indexHtml, /function perpsPairSessionApr\(p\)/, 'open position Net APR must use latest session scope');
+assert.match(indexHtml, /perpsPairSessionApr\(p\)/, 'positions table Net APR must not follow the global stat range selector');
+assert.doesNotMatch(indexHtml, /perpsPairPeriodApr\(p, _perpsStatRange\)/, 'positions table Net APR must not use the dashboard stat range');
+assert.match(indexHtml, /function perpsBuildNetAprTooltipHtml\(p\)/, 'Net APR must explain session funding minus fees');
 assert.match(indexHtml, /function perpsPairAprDaysForRows\(p, range, rows\)/, 'Position Net APR must not annualize rolling 24h rows as two calendar days');
 assert.match(indexHtml, /const days = perpsPairAprDaysForRows\(p, range, rows\);/, 'Position Net APR must use fixed stat-window days when a fixed range is selected');
 assert.match(indexHtml, /const PERPS_REFRESH_RETRIES = 1;/, 'Perps dashboard load must retry transient API failures once');

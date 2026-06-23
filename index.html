@@ -30128,7 +30128,7 @@ function perpsPairPeriodApr(p, range) {
         const days = perpsPairAprDaysForRows(p, range, rows);
         return perpsAnnualizeReturnPct(totals.net, margin, days);
     }
-    if (rawRows.length) return null;
+    if (rawRows.length && perpsStatRangeMs(range)) return null;
 
     const { funding, days } = perpsPairFundingForRange(p, range);
     if (funding == null || !days) return null;
@@ -30138,6 +30138,11 @@ function perpsPairPeriodApr(p, range) {
         fees = 0;
     }
     return perpsAnnualizeReturnPct(funding - fees, margin, days);
+}
+
+/** Open-position Net APR: latest session only (matches Funding / Total PnL columns). */
+function perpsPairSessionApr(p) {
+    return perpsPairPeriodApr(p, null);
 }
 
 function perpsRateSpreadRow(symbol) {
@@ -30336,11 +30341,35 @@ function perpsBuildFundingTooltipHtml(p) {
         `<div class="perps-apr-tip-meta">Gross funding collected on both legs · latest session</div>`;
 }
 
+function perpsBuildNetAprTooltipHtml(p) {
+    const apr = perpsPairSessionApr(p);
+    const margin = p.avgNotional ?? 0;
+    const rows = perpsFilterPairLatestSessionForRange(p.dailyPerformanceSeries || [], null);
+    const period = rows.length
+        ? { ...perpsSumDailyFundingSeries(rows, true), days: perpsDailySeriesSpanDays(rows), source: 'session' }
+        : perpsPairPeriodPnl(p, null);
+    if (apr == null || !period || period.net == null) {
+        return '<div class="perps-apr-tip-title">Net APR</div><div class="perps-apr-tip-meta">No session funding data yet.</div>';
+    }
+    const days = period.days ?? perpsPairEffectiveDays(p, null);
+    return `<div class="perps-apr-tip-title">Net APR</div>` +
+        `<div class="perps-apr-tip-row"><span>Funding − fees</span><span class="perps-apr-tip-apr ${perpsSignedCls(period.net)}">${perpsFmtUsd(period.net)}</span></div>` +
+        `<div class="perps-apr-tip-row"><span>Margin</span><span class="perps-apr-tip-apr">${perpsFmtUsd(margin)}</span></div>` +
+        `<div class="perps-apr-tip-row"><span>Session</span><span class="perps-apr-tip-apr">${days != null ? `${Number(days).toFixed(1)}d` : '—'}</span></div>` +
+        `<div class="perps-apr-tip-divider"></div>` +
+        `<div class="perps-apr-tip-row"><span>Net APR</span><span class="perps-apr-tip-apr ${perpsSignedCls(apr)}">${perpsFmtPct(apr)}</span></div>` +
+        `<div class="perps-apr-tip-meta">Annualized (funding − trading fees) ÷ margin · latest session</div>`;
+}
+
 function perpsShowPositionPnlTip(ev, pairIdx, kind) {
     const tip = document.getElementById('perpsAprTooltip');
     const p = (_perpsLastData?.paired || [])[pairIdx];
     if (!tip || !p) return;
-    tip.innerHTML = kind === 'funding' ? perpsBuildFundingTooltipHtml(p) : perpsBuildTotalPnlTooltipHtml(p);
+    tip.innerHTML = kind === 'funding'
+        ? perpsBuildFundingTooltipHtml(p)
+        : kind === 'netapr'
+            ? perpsBuildNetAprTooltipHtml(p)
+            : perpsBuildTotalPnlTooltipHtml(p);
     tip.style.display = 'block';
     tip.setAttribute('aria-hidden', 'false');
     perpsMoveCurrentAprTip(ev);
@@ -30920,7 +30949,7 @@ function perpsRenderPortfolioPositions(paired) {
         const totalPnl = totalBreakdown.total;
         const sessionFunding = perpsPairLatestSessionPnl(p)?.funding ?? null;
         const currentApr = perpsPairLiveApy(p);
-        const periodApr = perpsPairPeriodApr(p, _perpsStatRange);
+        const periodApr = perpsPairSessionApr(p);
         const margin = p.avgNotional ?? 0;
         const sizeLabel = legs.a.size != null ? `${perpsFmtSize(legs.a.size)} ${p.symbol}` : p.symbol;
         const midPx = perpsPositionMidPx(p, displayLegs);
@@ -30960,7 +30989,7 @@ function perpsRenderPortfolioPositions(paired) {
             <div class="perps-pos-metric perps-pos-apr-metric" onmouseenter="perpsShowCurrentAprTip(event, ${pairIdx})" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Current APR</div><div class="perps-pos-metric-val ${perpsSignedCls(currentApr)}">${currentApr != null ? perpsFmtPct(currentApr) : '—'}</div></div>
             <div class="perps-pos-spacer" aria-hidden="true"></div>
             <div class="perps-pos-metric"><div class="perps-pos-metric-label">Margin</div><div class="perps-pos-metric-val">${perpsFmtUsd(margin)}</div></div>
-            <div class="perps-pos-apr-col"><div class="perps-pos-metric-label">Net APR</div><div class="perps-pos-apr-val ${perpsSignedCls(periodApr)}">${periodApr != null ? perpsFmtPct(periodApr) : '—'}</div></div>
+            <div class="perps-pos-apr-col perps-pos-pnl-metric" onmouseenter="perpsShowPositionPnlTip(event, ${pairIdx}, 'netapr')" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Net APR</div><div class="perps-pos-apr-val ${perpsSignedCls(periodApr)}">${periodApr != null ? perpsFmtPct(periodApr) : '—'}</div></div>
             <div class="perps-pos-chart-col"><button type="button" class="perps-pos-chart-btn" aria-label="Position performance chart" onclick="perpsOpenPositionChart(${pairIdx}); event.stopPropagation();">${perpsPositionChartIconSvg()}</button></div>
         </div></div>`;
     }).join('');
