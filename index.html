@@ -28744,7 +28744,8 @@ function perpsEnrichVariationalPairFunding(pair, data) {
         ? VH.buildVariationalFundingEventsAligned(hedge, listing, recentFundingEvents, { sinceMs })
         : [];
     const varPaymentSum = variationalEvents.reduce((sum, ev) => sum + (ev.usdc || 0), 0);
-    const varTotal = VH?.estimateVariationalFundingUsd?.(hedge, listing) ?? varPaymentSum;
+    const override = Number(hedge?.variationalFundingUsdOverride);
+    const varTotal = Number.isFinite(override) ? override : varPaymentSum;
 
     pair.recentFundingEvents = [...recentFundingEvents, ...variationalEvents]
         .sort((a, b) => (b.time || 0) - (a.time || 0));

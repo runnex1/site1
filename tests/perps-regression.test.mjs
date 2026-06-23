@@ -2112,6 +2112,8 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
 
 assert.match(indexHtml, /function perpsEnrichVariationalPairFunding\(pair, data\)/, 'variational pairs must reattach exchange funding events after client-side merge');
 assert.match(indexHtml, /buildVariationalFundingEventsAligned/, 'variational enrichment must align estimated funding to tracked exchange payment timestamps');
+assert.match(indexHtml, /const varTotal = Number\.isFinite\(override\) \? override : varPaymentSum/, 'variational funding display must use aligned payments only');
+assert.doesNotMatch(indexHtml, /estimateVariationalFundingUsd\?\.\(hedge, listing\) \?\? varPaymentSum/, 'open variational funding must not use time-accrual estimate');
 assert.match(indexHtml, /perpsMergeVariationalIntoDailyFundingSeries\(data\)/, 'variational estimated funding must merge into portfolio daily funding series');
 assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose variational estimates');
 
@@ -2139,6 +2141,33 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
   assert.equal(aligned[0].venue, 'variational');
   assert.ok(aligned[0].fundingEstimated);
   assert.notEqual(aligned[0].usdc, 0);
+}
+
+{
+  const freshHedge = {
+    id: 'h2',
+    symbol: 'ETH',
+    trackedVenue: 'hyperliquid',
+    trackedSize: 1,
+    variationalSize: -1,
+    variationalEntryPx: 3200,
+    openedAt: Date.now() - 9 * 3600000,
+    status: 'open',
+  };
+  const ethListing = {
+    symbol: 'ETH',
+    markPx: 3180,
+    fundingRateInterval: 0.08 / 1095,
+    fundingIntervalS: 28800,
+    fundingIntervalHours: 8,
+  };
+  const noPayments = buildVariationalFundingEventsAligned(freshHedge, ethListing, [], { sinceMs: freshHedge.openedAt });
+  assert.equal(noPayments.length, 0, 'open HL+Var hedge must show zero variational funding before tracked exchange pays');
+  const accrued = estimateVariationalFundingUsd(freshHedge, ethListing);
+  assert.ok(Math.abs(accrued) > 0, 'accrual helper may still project intervals for closed-pair math');
+  const { buildVariationalSyntheticLeg } = require('../lib/variational-hedge.js');
+  const leg = buildVariationalSyntheticLeg(freshHedge, ethListing);
+  assert.equal(leg.fundingSinceOpen, 0, 'synthetic variational leg must not show funding until payments align');
 }
 
 {
