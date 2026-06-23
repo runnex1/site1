@@ -28713,10 +28713,16 @@ function perpsEnrichVariationalPairFunding(pair, data) {
     const base = pair.symbol;
     if (!trackedVenue || !base) return pair;
 
-    const sinceMs = perpsVariationalFundingSinceMs(pair, data);
-    if (sinceMs && (!Number.isFinite(Number(pair.pairOpenedAtMs)) || sinceMs < Number(pair.pairOpenedAtMs))) {
-        pair.pairOpenedAtMs = sinceMs;
-        pair.daysOpen = Math.max(1 / 24, (Date.now() - sinceMs) / 86400000);
+    const VH = window.VariationalHedge;
+    const hedge = pair.variationalHedgeId
+        ? perpsLoadVariationalHedges().find(h => h.id === pair.variationalHedgeId)
+        : null;
+    const sessionSince = VH?.variationalHedgeOpenedAtMs?.(hedge)
+        || Number(pair.pairOpenedAtMs)
+        || Date.now();
+    if (Number.isFinite(sessionSince) && sessionSince > 0) {
+        pair.pairOpenedAtMs = sessionSince;
+        pair.daysOpen = Math.max(1 / 24, (Date.now() - sessionSince) / 86400000);
     }
 
     const recentFundingEvents = [];
@@ -28724,7 +28730,7 @@ function perpsEnrichVariationalPairFunding(pair, data) {
     for (const p of perpsFundingPaymentsForVenue(data, trackedVenue)) {
         if (perpsSymbolBase(p.symbol) !== base) continue;
         const time = Number(p.time) || 0;
-        if (sinceMs && time < sinceMs) continue;
+        if (sessionSince && time < sessionSince) continue;
         paymentSum += p.usdc || 0;
         recentFundingEvents.push({
             venue: trackedVenue,
@@ -28735,33 +28741,29 @@ function perpsEnrichVariationalPairFunding(pair, data) {
         });
     }
 
-    const VH = window.VariationalHedge;
-    const hedge = pair.variationalHedgeId
-        ? perpsLoadVariationalHedges().find(h => h.id === pair.variationalHedgeId)
-        : null;
     const listing = perpsVariationalBySymbolFromSpread(data.rateSpread || [])[base] || null;
-    const variationalEvents = VH?.buildVariationalFundingEventsAligned
-        ? VH.buildVariationalFundingEventsAligned(hedge, listing, recentFundingEvents, { sinceMs })
+    const variationalEvents = VH?.buildVariationalFundingEventsScheduled
+        ? VH.buildVariationalFundingEventsScheduled(hedge, listing, { sinceMs: sessionSince })
         : [];
     const varPaymentSum = variationalEvents.reduce((sum, ev) => sum + (ev.usdc || 0), 0);
     const override = Number(hedge?.variationalFundingUsdOverride);
     const varTotal = Number.isFinite(override) ? override : varPaymentSum;
+    const varNextAt = VH?.variationalNextFundingAtMs?.(hedge, listing) ?? null;
 
     pair.recentFundingEvents = [...recentFundingEvents, ...variationalEvents]
         .sort((a, b) => (b.time || 0) - (a.time || 0));
 
-    const trackedLeg = pair.crossLegA?.venue === trackedVenue ? pair.crossLegA : pair.crossLegB;
-    const cumFunding = Number(trackedLeg?.cumFundingSinceOpen ?? trackedLeg?.cumulativeFundingSinceOpen);
-    pair.legAFundingSinceOpen = Number.isFinite(cumFunding) && Math.abs(cumFunding) >= Math.abs(paymentSum)
-        ? cumFunding
-        : paymentSum;
+    pair.legAFundingSinceOpen = paymentSum;
     pair.legBFundingSinceOpen = varTotal;
+    pair.variationalNextFundingAtMs = varNextAt;
     if (pair.crossLegB?.venue === 'variational') {
         pair.crossLegB.fundingSinceOpen = varTotal;
+        pair.crossLegB.fundingEstimated = true;
+        pair.crossLegB.variationalNextFundingAtMs = varNextAt;
     }
     pair.fundingSinceOpen = (pair.legAFundingSinceOpen ?? 0) + (pair.legBFundingSinceOpen ?? 0);
     pair.fundingWindow = pair.fundingSinceOpen;
-    pair.dailyPerformanceSeries = perpsBuildVariationalDailySeries(pair, data, sinceMs, variationalEvents);
+    pair.dailyPerformanceSeries = perpsBuildVariationalDailySeries(pair, data, sessionSince, variationalEvents);
     return pair;
 }
 
@@ -30332,14 +30334,23 @@ function perpsBuildFundingTooltipHtml(p) {
     const byVenue = perpsPairLatestSessionFundingByVenue(p);
     const venueRows = Object.entries(byVenue)
         .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
-        .map(([venue, amt]) => `<div class="perps-apr-tip-row"><span>${dashEsc(perpsVenueLabel(venue))}</span><span class="perps-apr-tip-apr ${perpsSignedCls(amt)}">${perpsFmtUsd(amt)}</span></div>`)
+        .map(([venue, amt]) => {
+            const est = venue === 'variational' ? ' ~est.' : '';
+            return `<div class="perps-apr-tip-row"><span>${dashEsc(perpsVenueLabel(venue))}${est}</span><span class="perps-apr-tip-apr ${perpsSignedCls(amt)}">${perpsFmtUsd(amt)}</span></div>`;
+        })
         .join('');
+    const VH = window.VariationalHedge;
+    const nextVar = Number(p?.variationalNextFundingAtMs || p?.crossLegB?.variationalNextFundingAtMs);
+    const nextVarLine = Number.isFinite(nextVar) && nextVar > Date.now()
+        ? `<div class="perps-apr-tip-meta">Variational next est. payout ${perpsFormatEventTime(nextVar)}</div>`
+        : '';
     return `<div class="perps-apr-tip-title">Funding</div>` +
         (venueRows || '<div class="perps-apr-tip-meta">No funding payments in the latest session yet.</div>') +
         (funding != null
             ? `<div class="perps-apr-tip-divider"></div><div class="perps-apr-tip-row"><span>Total funding</span><span class="perps-apr-tip-apr ${perpsSignedCls(funding)}">${perpsFmtUsd(funding)}</span></div>`
             : '') +
-        `<div class="perps-apr-tip-meta">Gross funding collected on both legs · latest session</div>`;
+        nextVarLine +
+        `<div class="perps-apr-tip-meta">Gross funding on both legs · latest session · Variational uses native interval schedule</div>`;
 }
 
 function perpsBuildNetAprTooltipHtml(p) {

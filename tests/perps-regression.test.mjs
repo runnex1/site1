@@ -2003,6 +2003,9 @@ const {
   buildVariationalClosedPair,
   estimateVariationalFundingUsd,
   buildVariationalFundingEventsAligned,
+  buildVariationalFundingEventsScheduled,
+  variationalNextFundingAtMs,
+  variationalHedgeOpenedAtMs,
   variationalLegPnl,
 } = require('../lib/variational-hedge.js');
 const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js');
@@ -2111,9 +2114,10 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
 }
 
 assert.match(indexHtml, /function perpsEnrichVariationalPairFunding\(pair, data\)/, 'variational pairs must reattach exchange funding events after client-side merge');
-assert.match(indexHtml, /buildVariationalFundingEventsAligned/, 'variational enrichment must align estimated funding to tracked exchange payment timestamps');
-assert.match(indexHtml, /const varTotal = Number\.isFinite\(override\) \? override : varPaymentSum/, 'variational funding display must use aligned payments only');
+assert.match(indexHtml, /buildVariationalFundingEventsScheduled/, 'variational enrichment must estimate funding on Variational native interval schedule');
+assert.match(indexHtml, /const varTotal = Number\.isFinite\(override\) \? override : varPaymentSum/, 'variational funding display must use scheduled interval payments only');
 assert.doesNotMatch(indexHtml, /estimateVariationalFundingUsd\?\.\(hedge, listing\) \?\? varPaymentSum/, 'open variational funding must not use time-accrual estimate');
+assert.match(indexHtml, /variationalNextFundingAtMs/, 'variational pairs must expose next native funding boundary');
 assert.match(indexHtml, /perpsMergeVariationalIntoDailyFundingSeries\(data\)/, 'variational estimated funding must merge into portfolio daily funding series');
 assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose variational estimates');
 
@@ -2136,11 +2140,14 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
     fundingIntervalHours: 8,
   };
   const trackedEvents = [{ time: Date.now() - 3600000, usdc: 1.25, intervalHours: 8 }];
-  const aligned = buildVariationalFundingEventsAligned(hedge, listing, trackedEvents, { sinceMs: hedge.openedAt });
-  assert.equal(aligned.length, 1, 'aligned variational funding must mirror tracked payment count');
-  assert.equal(aligned[0].venue, 'variational');
-  assert.ok(aligned[0].fundingEstimated);
-  assert.notEqual(aligned[0].usdc, 0);
+  const scheduled = buildVariationalFundingEventsScheduled(hedge, listing);
+  assert.equal(scheduled.length, 1, '9h open hedge must accrue one 8h Variational interval');
+  assert.equal(scheduled[0].venue, 'variational');
+  assert.ok(scheduled[0].fundingEstimated);
+  assert.notEqual(scheduled[0].usdc, 0);
+  const aligned = buildVariationalFundingEventsAligned(hedge, listing, trackedEvents);
+  assert.equal(aligned.length, 1, 'aligned alias must follow Variational schedule, not HL timestamps');
+  assert.ok(Math.abs(aligned[0].time - scheduled[0].time) < 1000);
 }
 
 {
@@ -2151,7 +2158,7 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
     trackedSize: 1,
     variationalSize: -1,
     variationalEntryPx: 3200,
-    openedAt: Date.now() - 9 * 3600000,
+    openedAt: Date.now() - 6 * 3600000,
     status: 'open',
   };
   const ethListing = {
@@ -2161,13 +2168,16 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
     fundingIntervalS: 28800,
     fundingIntervalHours: 8,
   };
-  const noPayments = buildVariationalFundingEventsAligned(freshHedge, ethListing, [], { sinceMs: freshHedge.openedAt });
-  assert.equal(noPayments.length, 0, 'open HL+Var hedge must show zero variational funding before tracked exchange pays');
-  const accrued = estimateVariationalFundingUsd(freshHedge, ethListing);
-  assert.ok(Math.abs(accrued) > 0, 'accrual helper may still project intervals for closed-pair math');
+  const beforeFirst = buildVariationalFundingEventsScheduled(freshHedge, ethListing);
+  assert.equal(beforeFirst.length, 0, '6h open hedge must have zero Variational funding before first 8h interval');
+  const nextAt = variationalNextFundingAtMs(freshHedge, ethListing);
+  assert.ok(nextAt > Date.now(), 'next Variational payout must be in the future');
+  assert.ok(nextAt - freshHedge.openedAt >= 2 * 3600000, 'next payout should be ~2h away when 6h elapsed on 8h interval');
+  const hlPaid = buildVariationalFundingEventsAligned(freshHedge, ethListing, [{ time: Date.now() - 3600000, usdc: 2 }]);
+  assert.equal(hlPaid.length, 0, 'HL funding payment must not create Variational estimate before native interval');
   const { buildVariationalSyntheticLeg } = require('../lib/variational-hedge.js');
   const leg = buildVariationalSyntheticLeg(freshHedge, ethListing);
-  assert.equal(leg.fundingSinceOpen, 0, 'synthetic variational leg must not show funding until payments align');
+  assert.equal(leg.fundingSinceOpen, 0, 'synthetic variational leg must stay zero until first interval elapses');
 }
 
 {
