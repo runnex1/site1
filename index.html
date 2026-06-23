@@ -17,6 +17,7 @@
 <script src="lib/loop-token-logos.js"></script>
 <script src="lib/defi-export.js"></script>
 <script src="lib/protocol-apr.js"></script>
+<script src="lib/defi-protocol-keys.js"></script>
 <script src="lib/variational-hedge.js"></script>
 <script src="lib/variational-equity.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14290,22 +14291,18 @@ function dashAprHtml(apr, opts = {}) {
     return `<span class="apr-badge ${cls}">${sign}${n.toFixed(1)}%</span>`;
 }
 function protocolSectionKeyPrefix(p, section) {
-    const sectionType = section?.type || 'Yield';
-    let count = 0;
-    for (const sec of p?.sections || []) {
-        if ((sec.type || 'Yield') === sectionType) count++;
-        if (sec === section) break;
-    }
-    return `${p.name}|||${sectionType}${count > 1 ? `[${count}]` : ''}`;
+    return DefiProtocolKeys.protocolSectionKeyPrefix(p, section);
+}
+function protocolPositionKey(p, section, pos) {
+    return DefiProtocolKeys.protocolPositionKey(p, section, pos);
 }
 function lendingSectionApyBreakdown(p, section, valueFn = protocolPositionValue) {
     if (!p || !section?.positions) return null;
-    const prefix = protocolSectionKeyPrefix(p, section);
     let suppliedWeight = 0, suppliedWeighted = 0, borrowedWeight = 0, borrowedWeighted = 0;
     for (const pos of section.positions || []) {
         const sub = String(pos.sub || '').toLowerCase();
         if (sub !== 'supplied' && sub !== 'borrowed') continue;
-        const key = `${prefix}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
+        const key = protocolPositionKey(p, section, pos);
         let { apr } = calcPositionAPR(key);
         if (apr === null) continue;
         const val = Math.abs(valueFn(pos));
@@ -14520,12 +14517,11 @@ function wrapDrawerLendingLoop(bodyHtml, breakdown) {
 }
 function lendingSectionApyBreakdownBetweenSnapshots(p, section, newerSnap, olderSnap, valueFn = protocolPositionValue) {
     if (!p || !section?.positions || !newerSnap || !olderSnap) return null;
-    const prefix = protocolSectionKeyPrefix(p, section);
     let suppliedWeight = 0, suppliedWeighted = 0, borrowedWeight = 0, borrowedWeighted = 0;
     for (const pos of section.positions || []) {
         const sub = String(pos.sub || '').toLowerCase();
         if (sub !== 'supplied' && sub !== 'borrowed') continue;
-        const key = `${prefix}:${pos.sub ? `${pos.sub}:` : ''}${pos.pool}`;
+        const key = protocolPositionKey(p, section, pos);
         let { apr } = calcSnapshotPositionAPR(key, newerSnap, olderSnap);
         if (apr === null) continue;
         const val = Math.abs(valueFn(pos));
@@ -18493,10 +18489,7 @@ function renderProtocols() {
                     secIdx: _secIdx,
                     editable: true,
                     breakdown: lendingSectionApyBreakdown(p, sec),
-                    aprHtmlFn: (pos, secType, secIdx) => {
-                        const posKey = `${p.name}|||${secType}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
-                        return aprBadgeHtml(posKey, pos.sub);
-                    },
+                    aprHtmlFn: (pos) => aprBadgeHtml(protocolPositionKey(p, sec, pos), pos.sub),
                 };
                 const posRows = isLendingLoop
                     ? buildLendingLoopDrawerTableHtml(sec, drawerCtx)
@@ -18842,10 +18835,7 @@ function renderProtocolsSnapshot() {
                     editable: false,
                     valueFn: snapValueFn,
                     breakdown: lendingSectionApyBreakdownBetweenSnapshots(p, sec, aprPair.newer, aprPair.older, snapValueFn),
-                    aprHtmlFn: (pos, secType, secIdx) => {
-                        const posKey = `${p.name}|||${secType}${secIdx}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
-                        return snapshotAprBadgeHtml(posKey, pos.sub, aprPair.newer, aprPair.older);
-                    },
+                    aprHtmlFn: (pos) => snapshotAprBadgeHtml(protocolPositionKey(p, sec, pos), pos.sub, aprPair.newer, aprPair.older),
                 };
                 const posRows = isLendingLoop
                     ? buildLendingLoopDrawerTableHtml(sec, drawerCtx)

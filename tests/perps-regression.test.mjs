@@ -872,6 +872,9 @@ assert.doesNotMatch(indexHtml, /Number\(item\.value \|\| 0\)\.toLocaleString\('e
 assert.match(indexHtml, /function loopLegUnitPrice\(pos\)/, 'loop tooltip price must be computed from explicit/live token prices');
 assert.doesNotMatch(indexHtml, /function loopLegUnitPrice\(amount, value\)[\s\S]{0,220}return value \/ amount;/, 'loop tooltip must not derive token price from value divided by amount');
 assert.match(indexHtml, /lendingSectionApyBreakdown\(p, sec, loopPositionValue\)/, 'Loops imported APY weighting must not use Protocol Positions stable peg valuation');
+assert.match(indexHtml, /lib\/defi-protocol-keys\.js/, 'protocol section keys must be shared for multi-loop APR');
+assert.match(indexHtml, /aprHtmlFn: \(pos\) => aprBadgeHtml\(protocolPositionKey\(p, sec, pos\)/, 'defi drawer APR must use canonical section index keys');
+assert.match(indexHtml, /protocolPositionKey\(p, section, pos\)/, 'lending APY breakdown must use canonical position keys');
 assert.match(indexHtml, /USDM:'mountain-protocol-usdm'/, 'Loops live token prices must resolve USDm via Mountain Protocol USDm');
 assert.match(indexHtml, /tab !== 'defi' && tab !== 'loops'/, 'live token prices must only refresh on DeFi and Loops tabs');
 assert.match(indexHtml, /LOOPS_TOKEN_PRICE_REFRESH_MS = 60 \* 60 \* 1000/, 'loops live prices must refresh hourly while tab is active');
