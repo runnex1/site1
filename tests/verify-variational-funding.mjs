@@ -108,6 +108,12 @@ assert.equal(overrideEvents.length, 1);
 assert.equal(overrideEvents[0].usdc, 42.5);
 assert.equal(estimateVariationalFundingUsd(overridden, listing), 42.5);
 
+// --- null override must not short-circuit scheduled accrual ---
+const nullOverride = hedgeAt(20, { variationalFundingUsdOverride: null });
+const nullOverrideEvents = buildVariationalFundingEventsScheduled(nullOverride, listing);
+assert.ok(nullOverrideEvents.length > 1, 'null override must accrue scheduled intervals, not return single $0');
+assert.ok(nullOverrideEvents.reduce((s, e) => s + e.usdc, 0) !== 0 || nullOverrideEvents.length > 1);
+
 // --- Events only after hedge open, not before ---
 const openedAt = Date.now() - 20 * 3600000;
 const withOldHl = buildVariationalFundingEvents(
@@ -129,6 +135,37 @@ try {
   }
 } catch (e) {
   console.warn('Skipping live Variational API check:', e.message);
+}
+
+// --- XLM-style hedge: days open, entry px recovered from pair leg ---
+{
+  const { variationalHedgeFromPair, normalizeVariationalListing, buildVariationalFundingEventsScheduled } = VH;
+  const listing = normalizeVariationalListing({
+    symbol: 'XLM',
+    markPx: 0.195,
+    fundingRate8h: 0.1095 / 1095,
+    fundingIntervalHours: 8,
+    fundingIntervalS: 28800,
+  });
+  const pair = {
+    symbol: 'XLM',
+    variationalHedgeId: 'missing-id',
+    pairOpenedAtMs: Date.now() - 5 * 86400000,
+    venueA: 'grvt',
+    crossLegA: { venue: 'grvt', size: 90000, entryPx: 0.22 },
+    crossLegB: { venue: 'variational', size: -90000, entryPx: 0.218 },
+  };
+  const effective = variationalHedgeFromPair(pair, null);
+  const events = buildVariationalFundingEventsScheduled(effective, listing);
+  assert.ok(events.length >= 14, `5d XLM hedge must accrue ~15 intervals, got ${events.length}`);
+  assert.ok(events.reduce((s, e) => s + e.usdc, 0) > 10, 'XLM variational funding must be non-zero with pair leg entry');
+  const sparseSpread = normalizeVariationalListing({
+    symbol: 'XLM',
+    markPx: 0.195,
+    fundingRate8h: 0.1095 / 1095,
+    fundingIntervalHours: 8,
+  });
+  assert.ok(sparseSpread?.fundingRateInterval > 0, 'spread row with only 8h rate must derive interval rate');
 }
 
 console.log('verify-variational-funding.mjs: PASS');

@@ -2115,7 +2115,12 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
 
 assert.match(indexHtml, /function perpsEnrichVariationalPairFunding\(pair, data\)/, 'variational pairs must reattach exchange funding events after client-side merge');
 assert.match(indexHtml, /buildVariationalFundingEventsScheduled/, 'variational enrichment must estimate funding on Variational native interval schedule');
-assert.match(indexHtml, /const varTotal = Number\.isFinite\(override\) \? override : varPaymentSum/, 'variational funding display must use scheduled interval payments only');
+assert.match(indexHtml, /function perpsResolveVariationalHedge\(pair\)/, 'variational enrichment must resolve hedge by id or symbol+venue');
+assert.match(indexHtml, /variationalHedgeFromPair/, 'variational enrichment must merge pair legs into hedge funding seed');
+assert.match(variationalHedgeJs, /function normalizeVariationalListing\(/, 'variational listing must derive native interval rate from spread row');
+assert.match(indexHtml, /const varTotal = override != null \? override : varPaymentSum/, 'variational funding display must use scheduled interval payments only');
+assert.match(variationalHedgeJs, /function variationalFundingOverrideUsd\(/, 'null variational override must not coerce to zero');
+assert.match(indexHtml, /variationalListings/, 'dashboard must expose variational listings for hedge funding when spread row is sparse');
 assert.doesNotMatch(indexHtml, /estimateVariationalFundingUsd\?\.\(hedge, listing\) \?\? varPaymentSum/, 'open variational funding must not use time-accrual estimate');
 assert.match(indexHtml, /variationalNextFundingAtMs/, 'variational pairs must expose next native funding boundary');
 assert.match(indexHtml, /perpsMergeVariationalIntoDailyFundingSeries\(data\)/, 'variational estimated funding must merge into portfolio daily funding series');

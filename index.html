@@ -28389,7 +28389,14 @@ function perpsMergeVariationalHedgesFromServer(serverRows) {
         const key = perpsVariationalHedgeKey(hedge);
         if (!key) continue;
         const prev = byKey.get(key);
-        byKey.set(key, prev ? { ...prev, ...hedge } : hedge);
+        byKey.set(key, prev ? {
+            ...prev,
+            ...hedge,
+            openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
+            variationalEntryPx: Number(hedge?.variationalEntryPx) || Number(prev?.variationalEntryPx) || null,
+            variationalSize: hedge?.variationalSize ?? prev?.variationalSize,
+            trackedSize: hedge?.trackedSize ?? prev?.trackedSize,
+        } : hedge);
         changed = true;
     }
     const merged = [...byKey.values()].sort((a, b) => (b.openedAt || 0) - (a.openedAt || 0));
@@ -28398,10 +28405,18 @@ function perpsMergeVariationalHedgesFromServer(serverRows) {
 }
 
 function perpsVariationalBySymbolFromSpread(rateSpread) {
+    const VH = window.VariationalHedge;
     const bySymbol = {};
     for (const row of rateSpread || []) {
         if (row.variational8h == null && row.variationalMarkPx == null) continue;
-        bySymbol[row.symbol] = {
+        const listing = VH?.normalizeVariationalListing ? VH.normalizeVariationalListing({
+            symbol: row.symbol,
+            markPx: row.variationalMarkPx,
+            fundingRateInterval: row.variationalIntervalRate,
+            fundingIntervalS: (row.variationalIntervalHours || 8) * 3600,
+            fundingRate8h: row.variational8h,
+            fundingIntervalHours: row.variationalIntervalHours || 8,
+        }) : {
             symbol: row.symbol,
             markPx: row.variationalMarkPx,
             fundingRateInterval: row.variationalIntervalRate,
@@ -28409,8 +28424,30 @@ function perpsVariationalBySymbolFromSpread(rateSpread) {
             fundingRate8h: row.variational8h,
             fundingIntervalHours: row.variationalIntervalHours || 8,
         };
+        if (listing) bySymbol[row.symbol] = listing;
     }
     return bySymbol;
+}
+
+function perpsResolveVariationalHedge(pair) {
+    const hedges = perpsLoadVariationalHedges();
+    if (pair?.variationalHedgeId) {
+        const byId = hedges.find(h => h.id === pair.variationalHedgeId);
+        if (byId) return byId;
+    }
+    const venue = pair?.venueA || pair?.crossLegA?.venue;
+    return hedges.find(h => h.status !== 'closed' && h.symbol === pair?.symbol && h.trackedVenue === venue) || null;
+}
+
+function perpsResolveVariationalListing(pair, data) {
+    const base = pair?.symbol;
+    const fromApi = data?.variationalListings?.[base];
+    const fromCache = data?._variationalListingBySymbol?.[base];
+    const fromSpread = perpsVariationalBySymbolFromSpread(data?.rateSpread || [])[base];
+    const VH = window.VariationalHedge;
+    return VH?.normalizeVariationalListing
+        ? VH.normalizeVariationalListing({ ...fromApi, ...fromCache, ...fromSpread })
+        : (fromSpread || fromCache || fromApi || null);
 }
 
 let _perpsVariationalModalMode = null;
@@ -28502,7 +28539,11 @@ function perpsApplyVariationalHedgesToData(data) {
     if (!VH || !data) return data;
     const hedges = perpsLoadVariationalHedges();
     if (!hedges.length) return data;
-    const variationalBySymbol = perpsVariationalBySymbolFromSpread(data.rateSpread || []);
+    const variationalBySymbol = {
+        ...(data.variationalListings || {}),
+        ...perpsVariationalBySymbolFromSpread(data.rateSpread || []),
+    };
+    data._variationalListingBySymbol = { ...(data._variationalListingBySymbol || {}), ...variationalBySymbol };
     const result = VH.applyVariationalHedges(data, hedges, variationalBySymbol);
     data.paired = result.paired;
     data.unhedged = result.unhedged;
@@ -28714,9 +28755,10 @@ function perpsEnrichVariationalPairFunding(pair, data) {
     if (!trackedVenue || !base) return pair;
 
     const VH = window.VariationalHedge;
-    const hedge = pair.variationalHedgeId
-        ? perpsLoadVariationalHedges().find(h => h.id === pair.variationalHedgeId)
-        : null;
+    const storedHedge = perpsResolveVariationalHedge(pair);
+    const hedge = VH?.variationalHedgeFromPair
+        ? VH.variationalHedgeFromPair(pair, storedHedge)
+        : storedHedge;
     const sessionSince = VH?.variationalHedgeOpenedAtMs?.(hedge)
         || Number(pair.pairOpenedAtMs)
         || Date.now();
@@ -28741,13 +28783,15 @@ function perpsEnrichVariationalPairFunding(pair, data) {
         });
     }
 
-    const listing = perpsVariationalBySymbolFromSpread(data.rateSpread || [])[base] || null;
+    const listing = perpsResolveVariationalListing(pair, data);
     const variationalEvents = VH?.buildVariationalFundingEventsScheduled
         ? VH.buildVariationalFundingEventsScheduled(hedge, listing, { sinceMs: sessionSince })
         : [];
     const varPaymentSum = variationalEvents.reduce((sum, ev) => sum + (ev.usdc || 0), 0);
-    const override = Number(hedge?.variationalFundingUsdOverride);
-    const varTotal = Number.isFinite(override) ? override : varPaymentSum;
+    const override = hedge?.variationalFundingUsdOverride != null && Number.isFinite(Number(hedge.variationalFundingUsdOverride))
+        ? Number(hedge.variationalFundingUsdOverride)
+        : null;
+    const varTotal = override != null ? override : varPaymentSum;
     const varNextAt = VH?.variationalNextFundingAtMs?.(hedge, listing) ?? null;
 
     pair.recentFundingEvents = [...recentFundingEvents, ...variationalEvents]

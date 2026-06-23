@@ -78,7 +78,14 @@ function mergeVariationalHedgeRows(existing, incoming) {
     const key = String(hedge?.id || `${hedge?.symbol}|${hedge?.trackedVenue}`);
     if (!key) continue;
     const prev = byKey.get(key);
-    byKey.set(key, prev ? { ...prev, ...hedge } : hedge);
+    byKey.set(key, prev ? {
+      ...prev,
+      ...hedge,
+      openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
+      variationalEntryPx: Number(hedge?.variationalEntryPx) || Number(prev?.variationalEntryPx) || null,
+      variationalSize: hedge?.variationalSize ?? prev?.variationalSize,
+      trackedSize: hedge?.trackedSize ?? prev?.trackedSize,
+    } : hedge);
   }
   return [...byKey.values()].sort((a, b) => (Number(b?.openedAt) || 0) - (Number(a?.openedAt) || 0));
 }
