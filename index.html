@@ -28416,6 +28416,8 @@ function perpsVariationalBySymbolFromSpread(rateSpread) {
             fundingIntervalS: (row.variationalIntervalHours || 8) * 3600,
             fundingRate8h: row.variational8h,
             fundingIntervalHours: row.variationalIntervalHours || 8,
+            fundingNextAtMs: row.variationalNextFundingAtMs,
+            fundingClockSource: row.variationalFundingClockSource,
         }) : {
             symbol: row.symbol,
             markPx: row.variationalMarkPx,
@@ -28423,6 +28425,8 @@ function perpsVariationalBySymbolFromSpread(rateSpread) {
             fundingIntervalS: (row.variationalIntervalHours || 8) * 3600,
             fundingRate8h: row.variational8h,
             fundingIntervalHours: row.variationalIntervalHours || 8,
+            fundingNextAtMs: row.variationalNextFundingAtMs,
+            fundingClockSource: row.variationalFundingClockSource,
         };
         if (listing) bySymbol[row.symbol] = listing;
     }
@@ -28804,7 +28808,9 @@ function perpsEnrichVariationalPairFunding(pair, data) {
         pair.crossLegB.fundingSinceOpen = varTotal;
         pair.crossLegB.fundingEstimated = true;
         pair.crossLegB.variationalNextFundingAtMs = varNextAt;
+        pair.crossLegB.fundingClockSource = listing?.fundingClockSource ?? null;
     }
+    pair.variationalFundingClockSource = listing?.fundingClockSource ?? null;
     pair.fundingSinceOpen = (pair.legAFundingSinceOpen ?? 0) + (pair.legBFundingSinceOpen ?? 0);
     pair.fundingWindow = pair.fundingSinceOpen;
     pair.dailyPerformanceSeries = perpsBuildVariationalDailySeries(pair, data, sessionSince, variationalEvents);
@@ -30386,15 +30392,17 @@ function perpsBuildFundingTooltipHtml(p) {
     const VH = window.VariationalHedge;
     const nextVar = Number(p?.variationalNextFundingAtMs || p?.crossLegB?.variationalNextFundingAtMs);
     const nextVarLine = Number.isFinite(nextVar) && nextVar > Date.now()
-        ? `<div class="perps-apr-tip-meta">Variational next est. payout ${perpsFormatEventTime(nextVar)}</div>`
-        : '';
+        ? `<div class="perps-apr-tip-meta">Variational next est. payout ${perpsFormatEventTime(nextVar)}${p?.variationalFundingClockSource ? ` · clock: ${dashEsc(String(p.variationalFundingClockSource))}` : ''}</div>`
+        : (!nextVar && (p?.crossLegB?.venue === 'variational' || p?.venueB === 'variational')
+            ? '<div class="perps-apr-tip-meta">Variational settlement clock unavailable (no Bybit/Binance perp for this symbol)</div>'
+            : '');
     return `<div class="perps-apr-tip-title">Funding</div>` +
         (venueRows || '<div class="perps-apr-tip-meta">No funding payments in the latest session yet.</div>') +
         (funding != null
             ? `<div class="perps-apr-tip-divider"></div><div class="perps-apr-tip-row"><span>Total funding</span><span class="perps-apr-tip-apr ${perpsSignedCls(funding)}">${perpsFmtUsd(funding)}</span></div>`
             : '') +
         nextVarLine +
-        `<div class="perps-apr-tip-meta">Gross funding on both legs · latest session · Variational uses native interval schedule</div>`;
+        `<div class="perps-apr-tip-meta">Gross funding on both legs · latest session · Variational ~est. on live Bybit/Binance settlement clock</div>`;
 }
 
 function perpsBuildNetAprTooltipHtml(p) {
