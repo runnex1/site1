@@ -7858,10 +7858,6 @@ body[data-active-tab="loops"] .page-content,
             </div>
             <button type="button" class="wallet-focus-strip-btn" onclick="toggleProtocolPositionsFocus()" title="Restore wallet table (E)">Show wallet</button>
           </div>
-          <div class="pm-search-wrap">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-            <input id="pmPositionSearch" type="search" placeholder="Search Polymarket positions..." oninput="renderPredictionMarkets()">
-          </div>
           <div class="data-table">
             <div class="table-header tokens-header">
               <div>Token</div><div>Symbol</div><div>Network</div><div>Balance</div><div>Price (USD)</div><div>Value (USD)</div><div>24h Change</div><div>Allocation</div><div></div>
@@ -8658,6 +8654,10 @@ body[data-active-tab="loops"] .page-content,
                 <div>
                   <label for="perpsVariationalPxInput" id="perpsVariationalPxLabel" style="display:block;font-size:0.78rem;color:var(--muted);margin-bottom:0.35rem;">Avg entry price</label>
                   <input type="text" id="perpsVariationalPxInput" inputmode="decimal" placeholder="0.00" style="width:100%;">
+                </div>
+                <div id="perpsVariationalSizeWrap" style="display:none;">
+                  <label for="perpsVariationalSizeInput" id="perpsVariationalSizeLabel" style="display:block;font-size:0.78rem;color:var(--muted);margin-bottom:0.35rem;">Variational fill size</label>
+                  <input type="text" id="perpsVariationalSizeInput" inputmode="decimal" placeholder="0" style="width:100%;">
                 </div>
                 <div class="perps-status" id="perpsVariationalModalHint" style="margin:0;"></div>
                 <button type="button" class="perps-btn" id="perpsVariationalModalSave" onclick="perpsSaveVariationalModal()">Save</button>
@@ -14219,6 +14219,7 @@ function protocolAprStats(p) {
         for (const pos of sec.positions) {
             const key = `${p.name}|||${sectionType}${sectionIndex}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
             let { apr } = calcPositionAPR(key);
+            apr = positionAprWithLiveLoopFallback(p, sec, pos, apr);
             if (apr !== null) {
                 const val = protocolPositionValue(pos);
                 const sub = String(pos.sub || '').toLowerCase();
@@ -14257,6 +14258,7 @@ function protocolAprBreakdown(p) {
         for (const pos of sec.positions) {
             const key = `${p.name}|||${sectionType}${sectionIndex}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
             let { apr } = calcPositionAPR(key);
+            apr = positionAprWithLiveLoopFallback(p, sec, pos, apr);
             if (apr === null) continue;
             const val = Math.abs(protocolPositionValue(pos));
             if (!val) continue;
@@ -14293,6 +14295,69 @@ function protocolSectionKeyPrefix(p, section) {
 function protocolPositionKey(p, section, pos) {
     return DefiProtocolKeys.protocolPositionKey(p, section, pos);
 }
+
+function loopNormalizeAprSymbol(sym) {
+    return String(sym || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function loopSectionSymbols(section, sub) {
+    const want = String(sub || '').toLowerCase();
+    return new Set((section?.positions || [])
+        .filter(pos => String(pos.sub || '').toLowerCase() === want)
+        .map(pos => {
+            const parsed = protocolPositionSingleToken(pos);
+            if (parsed?.symbol) return loopNormalizeAprSymbol(parsed.symbol);
+            return loopNormalizeAprSymbol(pos.pool || '');
+        })
+        .filter(Boolean));
+}
+
+function loopMatchLivePosition(protocol, section) {
+    const protocolName = String(protocol?.name || '').trim().toLowerCase();
+    const supplied = loopSectionSymbols(section, 'supplied');
+    const borrowed = loopSectionSymbols(section, 'borrowed');
+    if (!protocolName || !supplied.size || !borrowed.size) return null;
+    let best = null;
+    let bestScore = -1;
+    for (const lp of loopApiState.positions || []) {
+        if (String(lp.protocol || '').trim().toLowerCase() !== protocolName) continue;
+        const lpSup = new Set((lp.supplied || []).map(leg => loopNormalizeAprSymbol(leg.symbol)).filter(Boolean));
+        const lpBor = new Set((lp.borrowed || []).map(leg => loopNormalizeAprSymbol(leg.symbol)).filter(Boolean));
+        if (![...supplied].some(sym => lpSup.has(sym))) continue;
+        if (![...borrowed].some(sym => lpBor.has(sym))) continue;
+        const score = Math.abs(Number(lp.netValue || lp.economicNetValue || 0));
+        if (score >= bestScore) {
+            best = lp;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
+function loopLiveLegApr(protocol, section, pos) {
+    const lp = loopMatchLivePosition(protocol, section);
+    if (!lp) return null;
+    const sub = String(pos.sub || '').toLowerCase();
+    const sym = loopNormalizeAprSymbol(protocolPositionSingleToken(pos)?.symbol || pos.pool);
+    if (sub === 'supplied') {
+        const leg = (lp.supplied || []).find(item => loopNormalizeAprSymbol(item.symbol) === sym);
+        const apy = Number(leg?.apy ?? lp.supplyApy);
+        return Number.isFinite(apy) ? apy : null;
+    }
+    if (sub === 'borrowed') {
+        const leg = (lp.borrowed || []).find(item => loopNormalizeAprSymbol(item.symbol) === sym);
+        const apy = Number(leg?.apy ?? lp.borrowApy);
+        return Number.isFinite(apy) ? apy : null;
+    }
+    return null;
+}
+
+function positionAprWithLiveLoopFallback(protocol, section, pos, snapshotApr) {
+    if (snapshotApr !== null && snapshotApr !== 0) return snapshotApr;
+    const liveApr = loopLiveLegApr(protocol, section, pos);
+    return liveApr != null ? liveApr : snapshotApr;
+}
+
 function lendingSectionApyBreakdown(p, section, valueFn = protocolPositionValue) {
     if (!p || !section?.positions) return null;
     let suppliedWeight = 0, suppliedWeighted = 0, borrowedWeight = 0, borrowedWeighted = 0;
@@ -14301,6 +14366,7 @@ function lendingSectionApyBreakdown(p, section, valueFn = protocolPositionValue)
         if (sub !== 'supplied' && sub !== 'borrowed') continue;
         const key = protocolPositionKey(p, section, pos);
         let { apr } = calcPositionAPR(key);
+        apr = positionAprWithLiveLoopFallback(p, section, pos, apr);
         if (apr === null) continue;
         const val = Math.abs(valueFn(pos));
         if (!val) continue;
@@ -15714,6 +15780,7 @@ async function syncLoopApiPositions({ silent = false } = {}) {
                 .catch(() => {});
         } catch (e) {}
         renderLoops();
+        renderProtocols();
     }
 }
 
@@ -18388,6 +18455,8 @@ function exportDefiPositionsExcel() {
 }
 
 function renderProtocols() {
+    loopsHydrateApiStateFromLocal();
+    maybeAutoSyncLoopPositions();
     const table = document.getElementById('protocolsTable');
     if (!table) return;
     if (!defiProtocolsForDisplay(data.protocols).length) {
@@ -18405,8 +18474,11 @@ function renderProtocols() {
         return protocolStablePriceTagHtml(pos, tokenText);
     }
 
-    function aprBadgeHtml(posKey, sub) {
+    function aprBadgeHtml(posKey, sub, protocol = null, section = null, pos = null) {
         let { apr } = calcPositionAPR(posKey);
+        if (protocol && section && pos) {
+            apr = positionAprWithLiveLoopFallback(protocol, section, pos, apr);
+        }
         if (apr === null) return `<span class="apr-badge neu">—</span>`;
         // Borrowed positions: value growing = debt cost, so negate
         if (sub?.toLowerCase() === 'borrowed') apr = -Math.abs(apr);
@@ -18433,6 +18505,7 @@ function renderProtocols() {
             for (const pos of sec.positions) {
                 const key = `${p.name}|||${_st2}${_si2}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
                 let { apr } = calcPositionAPR(key);
+                apr = positionAprWithLiveLoopFallback(p, sec, pos, apr);
                 if (apr !== null) {
                     if (pos.sub?.toLowerCase() === 'borrowed') apr = -Math.abs(apr);
                     const val = Math.abs(protocolPositionValue(pos));
@@ -18486,7 +18559,7 @@ function renderProtocols() {
                     secIdx: _secIdx,
                     editable: true,
                     breakdown: lendingSectionApyBreakdown(p, sec),
-                    aprHtmlFn: (pos) => aprBadgeHtml(protocolPositionKey(p, sec, pos), pos.sub),
+                    aprHtmlFn: (pos) => aprBadgeHtml(protocolPositionKey(p, sec, pos), pos.sub, p, sec, pos),
                 };
                 const posRows = isLendingLoop
                     ? buildLendingLoopDrawerTableHtml(sec, drawerCtx)
@@ -19183,7 +19256,7 @@ function renderPredSubtabs() {
             <div class="pred-panel-head">
               <div class="pred-panel-title">Positions</div>
               <div class="pred-filters">
-                <input class="pred-search" id="pmPositionSearch" type="search" placeholder="Search markets..." oninput="renderPredictionMarkets();renderOpinionMarkets();renderPredictionIntelligence();">
+                <input class="pred-search" id="predPositionSearch" type="search" placeholder="Search markets..." oninput="renderPredictionMarkets();renderOpinionMarkets();renderPredictionIntelligence();">
                 <button class="pred-chip active" type="button" onclick="setPredictionSideFilter('all', this)">All</button>
                 <button class="pred-chip" type="button" onclick="setPredictionSideFilter('YES', this)">YES</button>
                 <button class="pred-chip" type="button" onclick="setPredictionSideFilter('NO', this)">NO</button>
@@ -20111,6 +20184,10 @@ async function predictionRenderActivity(seq, opts={}) {
     }
 }
 
+function predictionPositionSearchQuery() {
+    return String(document.getElementById('predPositionSearch')?.value || '').toLowerCase().trim();
+}
+
 function renderPredictionIntelligence() {
     const seq = ++_predictionIntelSeq;
     predictionRenderSummary();
@@ -20135,7 +20212,7 @@ function renderPredictionMarkets() {
         return;
     }
 
-    const query = String(document.getElementById('pmPositionSearch')?.value || '').toLowerCase().trim();
+    const query = predictionPositionSearchQuery();
     const sideFilter = String(window._predSideFilter || 'all').toUpperCase();
     const rows = predictionMergedPolymarketPositions(data.predictionMarkets)
         .filter(({p}) => (!query || `${p.title || ''} ${p.outcome || ''} ${p.wallet || ''}`.toLowerCase().includes(query))
@@ -20247,7 +20324,7 @@ function renderOpinionMarkets() {
         return;
     }
 
-    const query = String(document.getElementById('pmPositionSearch')?.value || '').toLowerCase().trim();
+    const query = predictionPositionSearchQuery();
     const sideFilter = String(window._predSideFilter || 'all').toUpperCase();
     const rows = [...data.opinionMarkets]
         .map((p,i)=>({ p, i }))
@@ -28384,6 +28461,31 @@ function perpsVariationalHedgeKey(hedge) {
     return String(hedge?.id || '');
 }
 
+function perpsMergeVariationalHedgeRecord(prev, hedge) {
+    if (!hedge) return prev || null;
+    if (!prev) return hedge;
+    const prevEntry = Number(prev?.variationalEntryPx) || 0;
+    const incEntry = Number(hedge?.variationalEntryPx) || 0;
+    const preferPrevSizes = prevEntry >= incEntry;
+    const pickSize = (field) => {
+        const prevVal = prev?.[field];
+        const incVal = hedge?.[field];
+        if (preferPrevSizes && Number.isFinite(Number(prevVal)) && Number(prevVal) !== 0) return prevVal;
+        if (Number.isFinite(Number(incVal)) && Number(incVal) !== 0) return incVal;
+        return prevVal ?? incVal;
+    };
+    return {
+        ...prev,
+        ...hedge,
+        openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
+        variationalEntryPx: preferPrevSizes
+            ? (Number(prev?.variationalEntryPx) || Number(hedge?.variationalEntryPx) || null)
+            : (Number(hedge?.variationalEntryPx) || Number(prev?.variationalEntryPx) || null),
+        variationalSize: pickSize('variationalSize'),
+        trackedSize: pickSize('trackedSize'),
+    };
+}
+
 function perpsMergeVariationalHedgesFromServer(serverRows) {
     const incoming = Array.isArray(serverRows) ? serverRows : [];
     if (!incoming.length) return perpsLoadVariationalHedges();
@@ -28397,15 +28499,7 @@ function perpsMergeVariationalHedgesFromServer(serverRows) {
     for (const hedge of incoming) {
         const key = perpsVariationalHedgeKey(hedge);
         if (!key) continue;
-        const prev = byKey.get(key);
-        byKey.set(key, prev ? {
-            ...prev,
-            ...hedge,
-            openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
-            variationalEntryPx: Number(hedge?.variationalEntryPx) || Number(prev?.variationalEntryPx) || null,
-            variationalSize: hedge?.variationalSize ?? prev?.variationalSize,
-            trackedSize: hedge?.trackedSize ?? prev?.trackedSize,
-        } : hedge);
+        byKey.set(key, perpsMergeVariationalHedgeRecord(byKey.get(key), hedge));
         changed = true;
     }
     const merged = [...byKey.values()].sort((a, b) => (b.openedAt || 0) - (a.openedAt || 0));
@@ -28481,6 +28575,9 @@ function perpsOpenVariationalModal(opts = {}) {
     const meta = document.getElementById('perpsVariationalModalMeta');
     const label = document.getElementById('perpsVariationalPxLabel');
     const input = document.getElementById('perpsVariationalPxInput');
+    const sizeWrap = document.getElementById('perpsVariationalSizeWrap');
+    const sizeLabel = document.getElementById('perpsVariationalSizeLabel');
+    const sizeInput = document.getElementById('perpsVariationalSizeInput');
     const hint = document.getElementById('perpsVariationalModalHint');
     const trackedWrap = document.getElementById('perpsVariationalTrackedEntryWrap');
     const trackedLabel = document.getElementById('perpsVariationalTrackedEntryLabel');
@@ -28503,10 +28600,27 @@ function perpsOpenVariationalModal(opts = {}) {
             if (trackedVal) trackedVal.textContent = perpsFmtPx(trackedEntry);
         }
     }
+    const showSize = opts.mode === 'entry' && !!opts.hedgeId;
+    if (sizeWrap) sizeWrap.style.display = showSize ? '' : 'none';
+    if (showSize && sizeInput) {
+        const sizeVal = Number(opts.variationalSize);
+        sizeInput.value = Number.isFinite(sizeVal) && sizeVal > 0 ? String(sizeVal) : '';
+        if (sizeLabel) {
+            sizeLabel.textContent = opts.symbol
+                ? `Variational fill size (${opts.symbol})`
+                : 'Variational fill size';
+        }
+    } else if (sizeInput) {
+        sizeInput.value = '';
+    }
     if (hint) {
-        hint.textContent = opts.mode === 'exit'
-            ? 'Enter the average exit price on Variational. Tracked leg already closed on exchange.'
-            : 'Enter your average Variational fill. uPnL = fill vs live Variational mark (not size-tier quotes). Funding shown as ~est.';
+        if (opts.mode === 'exit') {
+            hint.textContent = 'Enter the average exit price on Variational. Tracked leg already closed on exchange.';
+        } else if (opts.hadSizeMismatch) {
+            hint.textContent = 'Enter your Variational avg fill and fill size after resizing. Match the exchange leg to clear the size mismatch.';
+        } else {
+            hint.textContent = 'Enter your average Variational fill. uPnL = fill vs live Variational mark (not size-tier quotes). Funding shown as ~est.';
+        }
     }
     modal.style.display = 'flex';
     input.focus();
@@ -28539,6 +28653,19 @@ function perpsSaveVariationalModal() {
             hedge.closedAt = Date.now();
         } else {
             hedge.variationalEntryPx = px;
+            const pair = (_perpsLastData?.paired || []).find(p => p.variationalHedgeId === hedge.id);
+            const trackedLeg = pair?.crossLegA?.venue === hedge.trackedVenue
+                ? pair.crossLegA
+                : pair?.crossLegB?.venue === hedge.trackedVenue
+                    ? pair.crossLegB
+                    : VH.findTrackedLeg?.(_perpsLastData, hedge) || null;
+            const sizeRaw = document.getElementById('perpsVariationalSizeInput')?.value;
+            const explicitVarSize = Number(String(sizeRaw || '').replace(/,/g, ''));
+            if (VH.resolveVariationalSizesOnEntryEdit) {
+                VH.resolveVariationalSizesOnEntryEdit(hedge, trackedLeg, {
+                    variationalSize: Number.isFinite(explicitVarSize) && explicitVarSize > 0 ? explicitVarSize : null,
+                });
+            }
         }
         perpsPersistVariationalHedges(hedges);
     }
@@ -28846,11 +28973,22 @@ function perpsEditVariationalEntry(hedgeId) {
     const pair = (_perpsLastData?.paired || []).find(p => p.variationalHedgeId === hedgeId);
     const trackedLeg = pair?.crossLegA?.venue === hedge.trackedVenue
         ? pair.crossLegA
-        : pair?.crossLegB;
+        : pair?.crossLegB?.venue === hedge.trackedVenue
+            ? pair.crossLegB
+            : pair?.crossLegB;
+    const varLeg = pair?.crossLegA?.venue === 'variational'
+        ? pair.crossLegA
+        : pair?.crossLegB?.venue === 'variational'
+            ? pair.crossLegB
+            : null;
+    const variationalSize = Math.abs(Number(hedge.variationalSize ?? varLeg?.size ?? trackedLeg?.size ?? 0)) || null;
     perpsOpenVariationalModal({
         mode: 'entry',
         hedgeId,
+        symbol: hedge.symbol,
         value: hedge.variationalEntryPx,
+        variationalSize,
+        hadSizeMismatch: pair ? perpsPairHasSizeMismatch(pair) : false,
         trackedEntryPx: trackedLeg?.entryPx ?? trackedLeg?.entry ?? hedge.trackedLastSnapshot?.entryPx,
         trackedVenue: hedge.trackedVenue,
         meta: `${hedge.symbol} · ${perpsVenueShort(hedge.trackedVenue)} + Var (open)`,
@@ -29858,6 +29996,21 @@ function perpsSaveGrvtStateCache(state) {
 }
 
 function perpsPairHasSizeMismatch(p) {
+    const VH = window.VariationalHedge;
+    if (p?.crossLegA && p?.crossLegB && VH?.variationalPairHasSizeMismatch) {
+        const trackedLeg = p.crossLegA?.venue === 'variational' ? p.crossLegB : p.crossLegA;
+        const varLeg = p.crossLegA?.venue === 'variational' ? p.crossLegA : p.crossLegB;
+        const hedge = perpsResolveVariationalHedge(p);
+        if (VH.variationalPairHasSizeMismatch(trackedLeg, hedge, varLeg)) return true;
+    }
+    if (p?.crossLegA && p?.crossLegB) {
+        const a = Math.abs(Number(p.crossLegA.size || 0));
+        const b = Math.abs(Number(p.crossLegB.size || 0));
+        if (a > 0 && b > 0) {
+            const maxSize = Math.max(a, b, 1);
+            if (Math.abs(a - b) / maxSize > 0.0001) return true;
+        }
+    }
     return Boolean(p?.alerts?.includes('size_mismatch'));
 }
 

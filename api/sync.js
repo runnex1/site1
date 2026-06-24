@@ -69,6 +69,31 @@ function parseJson(raw, fallback) {
   try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { return fallback; }
 }
 
+function mergeVariationalHedgeRecord(prev, hedge) {
+  if (!hedge) return prev || null;
+  if (!prev) return hedge;
+  const prevEntry = Number(prev?.variationalEntryPx) || 0;
+  const incEntry = Number(hedge?.variationalEntryPx) || 0;
+  const preferPrevSizes = prevEntry >= incEntry;
+  const pickSize = (field) => {
+    const prevVal = prev?.[field];
+    const incVal = hedge?.[field];
+    if (preferPrevSizes && Number.isFinite(Number(prevVal)) && Number(prevVal) !== 0) return prevVal;
+    if (Number.isFinite(Number(incVal)) && Number(incVal) !== 0) return incVal;
+    return prevVal ?? incVal;
+  };
+  return {
+    ...prev,
+    ...hedge,
+    openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
+    variationalEntryPx: preferPrevSizes
+      ? (Number(prev?.variationalEntryPx) || Number(hedge?.variationalEntryPx) || null)
+      : (Number(hedge?.variationalEntryPx) || Number(prev?.variationalEntryPx) || null),
+    variationalSize: pickSize('variationalSize'),
+    trackedSize: pickSize('trackedSize'),
+  };
+}
+
 function mergeVariationalHedgeRows(existing, incoming) {
   const byKey = new Map((existing || []).map((h) => {
     const key = String(h?.id || `${h?.symbol}|${h?.trackedVenue}`);
@@ -77,15 +102,7 @@ function mergeVariationalHedgeRows(existing, incoming) {
   for (const hedge of incoming || []) {
     const key = String(hedge?.id || `${hedge?.symbol}|${hedge?.trackedVenue}`);
     if (!key) continue;
-    const prev = byKey.get(key);
-    byKey.set(key, prev ? {
-      ...prev,
-      ...hedge,
-      openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
-      variationalEntryPx: Number(hedge?.variationalEntryPx) || Number(prev?.variationalEntryPx) || null,
-      variationalSize: hedge?.variationalSize ?? prev?.variationalSize,
-      trackedSize: hedge?.trackedSize ?? prev?.trackedSize,
-    } : hedge);
+    byKey.set(key, mergeVariationalHedgeRecord(byKey.get(key), hedge));
   }
   return [...byKey.values()].sort((a, b) => (Number(b?.openedAt) || 0) - (Number(a?.openedAt) || 0));
 }

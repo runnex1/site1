@@ -798,6 +798,10 @@ assert.match(indexHtml, /id="loopsLendingSection"/, 'Loops tab must render a sep
 assert.match(indexHtml, /function loopImportedLendingPositions\(/, 'Loops must include imported supply-only lending positions');
 assert.match(indexHtml, /function buildLoopCardHtml\(/, 'Loops must share one card renderer for loops and lending rows');
 assert.match(indexHtml, /function protocolDisplayEntries\(protocols, unitPrices = null\)/, 'protocol positions must split leveraged loops into separate rows');
+assert.match(indexHtml, /function positionAprWithLiveLoopFallback\(/, 'protocol positions must fall back to live loop APY when snapshot APR is zero');
+assert.match(indexHtml, /function loopMatchLivePosition\(/, 'protocol positions must match imported lending sections to live loop API rows');
+assert.match(indexHtml, /loopsHydrateApiStateFromLocal\(\);\s*\n\s*maybeAutoSyncLoopPositions\(\)/, 'protocol positions must hydrate loop API cache and auto-sync live rates');
+assert.match(indexHtml, /renderLoops\(\);\s*\n\s*renderProtocols\(\)/, 'loop live sync must refresh protocol positions APR badges');
 assert.match(indexHtml, /DEFI_POSITION_MIN_DISPLAY_USD = 50/, 'DeFi positions table must hide positions at or below $50');
 assert.match(indexHtml, /function buildSimpleDrawerTableHtml\(sec, ctx\)/, 'deposit-only protocol drawers must use aligned table layout');
 assert.match(indexHtml, /kind: 'lending'/, 'protocol display entries must tag leveraged lending rows');
@@ -963,6 +967,32 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   enrichPositionWithDefillamaYield(position, index);
   assert.equal(position.supplied[0].apy, 0, 'WBTC collateral APY must stay at zero after enrichment');
   assert.ok(!position.defillamaBoost, 'WBTC/USDe loop must not be marked defillama-boosted from collateral');
+}
+
+{
+  const { shouldEnrichLegWithDefillama, enrichPositionWithDefillamaYield } = require('../lib/loop-rates.js');
+  const index = {
+    bySymbolChain: new Map([['1:REUSD', { apy: 6.6, score: 1006.6 }]]),
+    byAddress: new Map(),
+  };
+  const reusdLeg = { symbol: 'reUSD', apy: 0.05, value: 100000 };
+  assert.equal(
+    shouldEnrichLegWithDefillama(1, reusdLeg, index),
+    true,
+    'reUSD must use DeFiLlama native yield even when protocol supply APY is above 0.01%',
+  );
+  const position = {
+    chainId: 1,
+    totalSupplied: 100000,
+    totalBorrowed: 50000,
+    supplied: [reusdLeg],
+    borrowed: [{ symbol: 'USDC', value: 50000, apy: 4.2 }],
+    supplyApy: 0.05,
+    borrowApy: 4.2,
+    netApy: -2.0,
+  };
+  enrichPositionWithDefillamaYield(position, index);
+  assert.ok(position.supplied[0].apy >= 6.5, 'reUSD supply APY must reflect DeFiLlama native yield');
 }
 
 {
@@ -1709,6 +1739,9 @@ assert.match(indexHtml, /onerror="this\.replaceWith\(document\.createTextNode/, 
 assert.doesNotMatch(indexHtml, /ondblclick="deletePredictionMarketGroup/, 'Prediction market rows must not delete positions on double click');
 assert.doesNotMatch(indexHtml, /ondblclick="deleteItem\('opinionMarkets'/, 'Opinion rows in Prediction Markets must not delete positions on double click');
 assert.match(indexHtml, /data-market-url="\$\{dashEsc\(marketUrl\)\}"/, 'Prediction market rows must expose a market URL for click-through');
+assert.match(indexHtml, /function predictionPositionSearchQuery\(/, 'Prediction Markets search must use a dedicated query helper');
+assert.match(indexHtml, /id="predPositionSearch"/, 'Prediction Markets search input must use a unique id');
+assert.doesNotMatch(indexHtml, /id="pmPositionSearch"/, 'Prediction Markets search must not share pmPositionSearch with hidden DeFi markup');
 assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketId \|\| pos\.market_id\}/, 'Opinion positions must keep a market URL for click-through');
 {
   const renderDashboard = indexHtml.slice(indexHtml.indexOf('function perpsRenderDashboard(data, opts = {})'), indexHtml.indexOf('function perpsFormatConnectedStatus'));
@@ -1952,6 +1985,10 @@ assert.equal(perpHedgedSizesExactMatch(-44000, 44000), true, 'opposite-side legs
 assert.equal(perpHedgedSizesExactMatch(44000, 43999), false, 'any hedged size difference must fail exact match');
 assert.match(perpsJs, /!perpHedgedSizesExactMatch/, 'paired hedges must alert on non-exact sizes');
 assert.match(indexHtml, /perpsPairHasSizeMismatch/, 'perps UI must detect hedged size mismatch');
+assert.match(indexHtml, /variationalPairHasSizeMismatch/, 'size mismatch must compare live variational vs exchange legs');
+assert.match(indexHtml, /resolveVariationalSizesOnEntryEdit/, 'entry edit must resolve variational fill size from explicit input or live exchange leg');
+assert.match(indexHtml, /perpsVariationalSizeInput/, 'variational entry modal must expose fill size when editing an open hedge');
+assert.match(indexHtml, /function perpsMergeVariationalHedgeRecord\(/, 'variational hedge merge must prefer newer local fill sizes');
 assert.match(indexHtml, /perps-pos-size-warn/, 'perps position cards must show size mismatch warning');
 
 assert.match(indexHtml, /function dashWalletSuffix4\(/, 'order fills must expose wallet suffix helper');
@@ -2276,6 +2313,111 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
   assert.ok(pair.sizeMismatchPct > 0);
   assert.ok(pair.daysOpen != null && pair.daysOpen >= 1);
   assert.equal(pair.combinedUpnl != null, true);
+}
+
+{
+  const { applyVariationalHedges, pinVariationalHedgeSizes } = require('../lib/variational-hedge.js');
+  const listing = { symbol: 'ADA', markPx: 0.147, fundingRateInterval: 0.08 / 1095, fundingIntervalS: 28800, fundingRate8h: 0.08 / 1095 };
+  const data = {
+    paired: [],
+    unhedged: [],
+    rateSpread: [{ symbol: 'ADA', variational8h: 0.08 / 1095, variationalMarkPx: 0.147 }],
+    hyperliquid: { state: { positions: [{ symbol: 'ADA', size: 176000, side: 'long', entryPx: 0.15, markPx: 0.147, unrealizedPnl: -437, fundingSinceOpen: 20, fees: 0 }] } },
+    nado: { state: { positions: [] } },
+    grvt: { state: { positions: [] } },
+    extended: { state: { positions: [] } },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  };
+  const hedge = {
+    id: 'ada-h1',
+    symbol: 'ADA',
+    trackedVenue: 'hyperliquid',
+    trackedSize: 160000,
+    variationalEntryPx: 0.145,
+    status: 'open',
+    openedAt: Date.now() - 5 * 86400000,
+  };
+  let result = applyVariationalHedges(data, [hedge], { ADA: listing });
+  assert.equal(result.hedges[0].variationalSize, -160000, 'apply must pin explicit variational fill size');
+  assert.ok(result.paired[0].alerts.includes('size_mismatch'));
+  hedge.variationalEntryPx = 0.146;
+  hedge.variationalSize = -160000;
+  result = applyVariationalHedges(data, [hedge], { ADA: listing });
+  assert.ok(result.paired[0].alerts.includes('size_mismatch'), 'entry edit must not clear size mismatch');
+  assert.equal(result.paired[0].crossLegB.size, -160000);
+  const serverStale = [{
+    ...hedge,
+    variationalEntryPx: 0.145,
+    trackedSize: 176000,
+    variationalSize: -176000,
+  }];
+  const merged = [mergeVariationalHedgeRecord(hedge, serverStale[0])];
+  assert.equal(merged[0].variationalSize, -160000, 'merge must keep newer local variational fill size');
+  assert.equal(merged[0].variationalEntryPx, 0.146);
+}
+
+{
+  const { applyVariationalHedges, resolveVariationalSizesOnEntryEdit } = require('../lib/variational-hedge.js');
+  const listing = { symbol: 'ADA', markPx: 0.147, fundingRateInterval: 0.08 / 1095, fundingIntervalS: 28800, fundingRate8h: 0.08 / 1095 };
+  const data = {
+    paired: [],
+    unhedged: [],
+    rateSpread: [{ symbol: 'ADA', variational8h: 0.08 / 1095, variationalMarkPx: 0.147 }],
+    hyperliquid: { state: { positions: [{ symbol: 'ADA', size: 176000, side: 'long', entryPx: 0.15, markPx: 0.147, unrealizedPnl: -437, fundingSinceOpen: 20, fees: 0 }] } },
+    nado: { state: { positions: [] } },
+    grvt: { state: { positions: [] } },
+    extended: { state: { positions: [] } },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  };
+  const hedge = {
+    id: 'ada-h2',
+    symbol: 'ADA',
+    trackedVenue: 'hyperliquid',
+    trackedSize: 176000,
+    variationalSize: -160000,
+    variationalEntryPx: 0.145,
+    status: 'open',
+    openedAt: Date.now() - 5 * 86400000,
+  };
+  resolveVariationalSizesOnEntryEdit(hedge, { size: 176000, side: 'long' }, { variationalSize: 176000 });
+  let result = applyVariationalHedges(data, [hedge], { ADA: listing });
+  assert.ok(!result.paired[0].alerts.includes('size_mismatch'), 'explicit fill size after resize must clear mismatch');
+  assert.equal(result.paired[0].crossLegB.size, -176000);
+
+  const priceOnly = {
+    ...hedge,
+    variationalSize: -160000,
+    variationalEntryPx: 0.146,
+  };
+  resolveVariationalSizesOnEntryEdit(priceOnly, { size: 176000, side: 'long' });
+  result = applyVariationalHedges(data, [priceOnly], { ADA: listing });
+  assert.ok(result.paired[0].alerts.includes('size_mismatch'), 'price-only edit must keep size mismatch when fill size unchanged');
+  assert.equal(result.paired[0].crossLegB.size, -160000);
+}
+
+function mergeVariationalHedgeRecord(prev, hedge) {
+  const prevEntry = Number(prev?.variationalEntryPx) || 0;
+  const incEntry = Number(hedge?.variationalEntryPx) || 0;
+  const preferPrevSizes = prevEntry >= incEntry;
+  const pickSize = (field) => {
+    const prevVal = prev?.[field];
+    const incVal = hedge?.[field];
+    if (preferPrevSizes && Number.isFinite(Number(prevVal)) && Number(prevVal) !== 0) return prevVal;
+    if (Number.isFinite(Number(incVal)) && Number(incVal) !== 0) return incVal;
+    return prevVal ?? incVal;
+  };
+  return {
+    ...prev,
+    ...hedge,
+    openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
+    variationalEntryPx: preferPrevSizes
+      ? (Number(prev?.variationalEntryPx) || Number(hedge?.variationalEntryPx) || null)
+      : (Number(hedge?.variationalEntryPx) || Number(prev?.variationalEntryPx) || null),
+    variationalSize: pickSize('variationalSize'),
+    trackedSize: pickSize('trackedSize'),
+  };
 }
 
 assert.ok(indexHtml.includes('PERPS_VARIATIONAL_HEDGES_KEY'), 'index must persist variational hedges');
