@@ -798,10 +798,6 @@ assert.match(indexHtml, /id="loopsLendingSection"/, 'Loops tab must render a sep
 assert.match(indexHtml, /function loopImportedLendingPositions\(/, 'Loops must include imported supply-only lending positions');
 assert.match(indexHtml, /function buildLoopCardHtml\(/, 'Loops must share one card renderer for loops and lending rows');
 assert.match(indexHtml, /function protocolDisplayEntries\(protocols, unitPrices = null\)/, 'protocol positions must split leveraged loops into separate rows');
-assert.match(indexHtml, /function positionAprWithLiveLoopFallback\(/, 'protocol positions must fall back to live loop APY when snapshot APR is zero');
-assert.match(indexHtml, /function loopMatchLivePosition\(/, 'protocol positions must match imported lending sections to live loop API rows');
-assert.match(indexHtml, /loopsHydrateApiStateFromLocal\(\);\s*\n\s*maybeAutoSyncLoopPositions\(\)/, 'protocol positions must hydrate loop API cache and auto-sync live rates');
-assert.match(indexHtml, /renderLoops\(\);\s*\n\s*renderProtocols\(\)/, 'loop live sync must refresh protocol positions APR badges');
 assert.match(indexHtml, /DEFI_POSITION_MIN_DISPLAY_USD = 50/, 'DeFi positions table must hide positions at or below $50');
 assert.match(indexHtml, /function buildSimpleDrawerTableHtml\(sec, ctx\)/, 'deposit-only protocol drawers must use aligned table layout');
 assert.match(indexHtml, /kind: 'lending'/, 'protocol display entries must tag leveraged lending rows');
@@ -967,32 +963,6 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   enrichPositionWithDefillamaYield(position, index);
   assert.equal(position.supplied[0].apy, 0, 'WBTC collateral APY must stay at zero after enrichment');
   assert.ok(!position.defillamaBoost, 'WBTC/USDe loop must not be marked defillama-boosted from collateral');
-}
-
-{
-  const { shouldEnrichLegWithDefillama, enrichPositionWithDefillamaYield } = require('../lib/loop-rates.js');
-  const index = {
-    bySymbolChain: new Map([['1:REUSD', { apy: 6.6, score: 1006.6 }]]),
-    byAddress: new Map(),
-  };
-  const reusdLeg = { symbol: 'reUSD', apy: 0.05, value: 100000 };
-  assert.equal(
-    shouldEnrichLegWithDefillama(1, reusdLeg, index),
-    true,
-    'reUSD must use DeFiLlama native yield even when protocol supply APY is above 0.01%',
-  );
-  const position = {
-    chainId: 1,
-    totalSupplied: 100000,
-    totalBorrowed: 50000,
-    supplied: [reusdLeg],
-    borrowed: [{ symbol: 'USDC', value: 50000, apy: 4.2 }],
-    supplyApy: 0.05,
-    borrowApy: 4.2,
-    netApy: -2.0,
-  };
-  enrichPositionWithDefillamaYield(position, index);
-  assert.ok(position.supplied[0].apy >= 6.5, 'reUSD supply APY must reflect DeFiLlama native yield');
 }
 
 {

@@ -14219,7 +14219,6 @@ function protocolAprStats(p) {
         for (const pos of sec.positions) {
             const key = `${p.name}|||${sectionType}${sectionIndex}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
             let { apr } = calcPositionAPR(key);
-            apr = positionAprWithLiveLoopFallback(p, sec, pos, apr);
             if (apr !== null) {
                 const val = protocolPositionValue(pos);
                 const sub = String(pos.sub || '').toLowerCase();
@@ -14258,7 +14257,6 @@ function protocolAprBreakdown(p) {
         for (const pos of sec.positions) {
             const key = `${p.name}|||${sectionType}${sectionIndex}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
             let { apr } = calcPositionAPR(key);
-            apr = positionAprWithLiveLoopFallback(p, sec, pos, apr);
             if (apr === null) continue;
             const val = Math.abs(protocolPositionValue(pos));
             if (!val) continue;
@@ -14296,68 +14294,6 @@ function protocolPositionKey(p, section, pos) {
     return DefiProtocolKeys.protocolPositionKey(p, section, pos);
 }
 
-function loopNormalizeAprSymbol(sym) {
-    return String(sym || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-}
-
-function loopSectionSymbols(section, sub) {
-    const want = String(sub || '').toLowerCase();
-    return new Set((section?.positions || [])
-        .filter(pos => String(pos.sub || '').toLowerCase() === want)
-        .map(pos => {
-            const parsed = protocolPositionSingleToken(pos);
-            if (parsed?.symbol) return loopNormalizeAprSymbol(parsed.symbol);
-            return loopNormalizeAprSymbol(pos.pool || '');
-        })
-        .filter(Boolean));
-}
-
-function loopMatchLivePosition(protocol, section) {
-    const protocolName = String(protocol?.name || '').trim().toLowerCase();
-    const supplied = loopSectionSymbols(section, 'supplied');
-    const borrowed = loopSectionSymbols(section, 'borrowed');
-    if (!protocolName || !supplied.size || !borrowed.size) return null;
-    let best = null;
-    let bestScore = -1;
-    for (const lp of loopApiState.positions || []) {
-        if (String(lp.protocol || '').trim().toLowerCase() !== protocolName) continue;
-        const lpSup = new Set((lp.supplied || []).map(leg => loopNormalizeAprSymbol(leg.symbol)).filter(Boolean));
-        const lpBor = new Set((lp.borrowed || []).map(leg => loopNormalizeAprSymbol(leg.symbol)).filter(Boolean));
-        if (![...supplied].some(sym => lpSup.has(sym))) continue;
-        if (![...borrowed].some(sym => lpBor.has(sym))) continue;
-        const score = Math.abs(Number(lp.netValue || lp.economicNetValue || 0));
-        if (score >= bestScore) {
-            best = lp;
-            bestScore = score;
-        }
-    }
-    return best;
-}
-
-function loopLiveLegApr(protocol, section, pos) {
-    const lp = loopMatchLivePosition(protocol, section);
-    if (!lp) return null;
-    const sub = String(pos.sub || '').toLowerCase();
-    const sym = loopNormalizeAprSymbol(protocolPositionSingleToken(pos)?.symbol || pos.pool);
-    if (sub === 'supplied') {
-        const leg = (lp.supplied || []).find(item => loopNormalizeAprSymbol(item.symbol) === sym);
-        const apy = Number(leg?.apy ?? lp.supplyApy);
-        return Number.isFinite(apy) ? apy : null;
-    }
-    if (sub === 'borrowed') {
-        const leg = (lp.borrowed || []).find(item => loopNormalizeAprSymbol(item.symbol) === sym);
-        const apy = Number(leg?.apy ?? lp.borrowApy);
-        return Number.isFinite(apy) ? apy : null;
-    }
-    return null;
-}
-
-function positionAprWithLiveLoopFallback(protocol, section, pos, snapshotApr) {
-    if (snapshotApr !== null && snapshotApr !== 0) return snapshotApr;
-    const liveApr = loopLiveLegApr(protocol, section, pos);
-    return liveApr != null ? liveApr : snapshotApr;
-}
-
 function lendingSectionApyBreakdown(p, section, valueFn = protocolPositionValue) {
     if (!p || !section?.positions) return null;
     let suppliedWeight = 0, suppliedWeighted = 0, borrowedWeight = 0, borrowedWeighted = 0;
@@ -14366,7 +14302,6 @@ function lendingSectionApyBreakdown(p, section, valueFn = protocolPositionValue)
         if (sub !== 'supplied' && sub !== 'borrowed') continue;
         const key = protocolPositionKey(p, section, pos);
         let { apr } = calcPositionAPR(key);
-        apr = positionAprWithLiveLoopFallback(p, section, pos, apr);
         if (apr === null) continue;
         const val = Math.abs(valueFn(pos));
         if (!val) continue;
@@ -15780,7 +15715,6 @@ async function syncLoopApiPositions({ silent = false } = {}) {
                 .catch(() => {});
         } catch (e) {}
         renderLoops();
-        renderProtocols();
     }
 }
 
@@ -18455,8 +18389,6 @@ function exportDefiPositionsExcel() {
 }
 
 function renderProtocols() {
-    loopsHydrateApiStateFromLocal();
-    maybeAutoSyncLoopPositions();
     const table = document.getElementById('protocolsTable');
     if (!table) return;
     if (!defiProtocolsForDisplay(data.protocols).length) {
@@ -18474,11 +18406,8 @@ function renderProtocols() {
         return protocolStablePriceTagHtml(pos, tokenText);
     }
 
-    function aprBadgeHtml(posKey, sub, protocol = null, section = null, pos = null) {
+    function aprBadgeHtml(posKey, sub) {
         let { apr } = calcPositionAPR(posKey);
-        if (protocol && section && pos) {
-            apr = positionAprWithLiveLoopFallback(protocol, section, pos, apr);
-        }
         if (apr === null) return `<span class="apr-badge neu">—</span>`;
         // Borrowed positions: value growing = debt cost, so negate
         if (sub?.toLowerCase() === 'borrowed') apr = -Math.abs(apr);
@@ -18505,7 +18434,6 @@ function renderProtocols() {
             for (const pos of sec.positions) {
                 const key = `${p.name}|||${_st2}${_si2}:${pos.sub ? pos.sub + ':' : ''}${pos.pool}`;
                 let { apr } = calcPositionAPR(key);
-                apr = positionAprWithLiveLoopFallback(p, sec, pos, apr);
                 if (apr !== null) {
                     if (pos.sub?.toLowerCase() === 'borrowed') apr = -Math.abs(apr);
                     const val = Math.abs(protocolPositionValue(pos));
@@ -18559,7 +18487,7 @@ function renderProtocols() {
                     secIdx: _secIdx,
                     editable: true,
                     breakdown: lendingSectionApyBreakdown(p, sec),
-                    aprHtmlFn: (pos) => aprBadgeHtml(protocolPositionKey(p, sec, pos), pos.sub, p, sec, pos),
+                    aprHtmlFn: (pos) => aprBadgeHtml(protocolPositionKey(p, sec, pos), pos.sub),
                 };
                 const posRows = isLendingLoop
                     ? buildLendingLoopDrawerTableHtml(sec, drawerCtx)
