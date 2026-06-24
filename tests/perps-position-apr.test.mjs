@@ -59,15 +59,26 @@ function perpsPairEffectiveDays(p, range) {
 }
 
 function perpsPairAprDaysForRows(p, range, rows) {
-  if (perpsStatRangeMs(range)) return perpsPairEffectiveDays(p, range);
-  return perpsDailySeriesSpanDays(rows);
+  const span = perpsDailySeriesSpanDays(rows);
+  if (span != null && rows?.length) return span;
+  return perpsPairEffectiveDays(p, range);
+}
+
+function perpsFilterPairLatestSessionForRange(series, range) {
+  let rows = [...(series || [])];
+  const ms = perpsStatRangeMs(range);
+  if (ms) {
+    const cutoff = Date.now() - ms;
+    rows = rows.filter((r) => new Date(`${r.day}T23:59:59.999Z`).getTime() >= cutoff);
+  }
+  return rows;
 }
 
 function perpsPairPeriodApr(p, range) {
   const margin = p.avgNotional ?? 0;
   if (!margin) return null;
   const rawRows = Array.isArray(p.dailyPerformanceSeries) ? p.dailyPerformanceSeries : [];
-  const rows = rawRows;
+  const rows = perpsFilterPairLatestSessionForRange(rawRows, range);
   if (rows.length) {
     const totals = perpsSumDailyFundingSeries(rows);
     const days = perpsPairAprDaysForRows(p, range, rows);
@@ -76,34 +87,45 @@ function perpsPairPeriodApr(p, range) {
   return perpsAnnualizeReturnPct((p.fundingSinceOpen ?? 0) - (p.feesSinceOpen ?? 0), margin, perpsPairEffectiveDays(p, range));
 }
 
+const now = Date.now();
+const day = (offset) => new Date(now - offset * 86400000).toISOString().slice(0, 10);
+
 const pair = {
   symbol: 'BTC',
   avgNotional: 100000,
   daysOpen: 20,
-  dailyPerformanceSeries: [
-    { day: '2026-06-01', dailyFunding: 10, dailyFees: 1, dailyNet: 9 },
-    { day: '2026-06-02', dailyFunding: 10, dailyFees: 1, dailyNet: 9 },
-    { day: '2026-06-03', dailyFunding: 10, dailyFees: 1, dailyNet: 9 },
-  ],
+  dailyPerformanceSeries: Array.from({ length: 20 }, (_, i) => ({
+    day: day(19 - i),
+    dailyFunding: 10,
+    dailyFees: 1,
+    dailyNet: 9,
+  })),
 };
 
 const sessionApr = perpsPairPeriodApr(pair, null);
-const windowApr = perpsPairPeriodApr(pair, '7d');
+const window7d = perpsPairPeriodApr(pair, '7d');
+const window30d = perpsPairPeriodApr(pair, '30d');
+const window1d = perpsPairPeriodApr(pair, '1d');
 
 assert.ok(sessionApr != null, 'session APR must be computable');
-assert.ok(windowApr != null, 'window APR must be computable');
-assert.ok(Math.abs(sessionApr - windowApr) > 0.01, '20d session APR must differ from 7d-window APR when only 3 session days exist');
+assert.ok(window7d != null, '7d APR must be computable');
+assert.ok(window30d != null, '30d APR must be computable');
+assert.ok(window1d != null, '1d APR must be computable');
+assert.ok(Math.abs(sessionApr - window30d) < 0.01, '20d session inside 30d window should match full session APR');
+assert.ok(Math.abs(window7d - window1d) > 0.01 || window7d !== window30d, '7d APR must differ from full session when session is longer');
 
 const young = {
   ...pair,
   daysOpen: 3,
   dailyPerformanceSeries: [
-    { day: '2026-06-18', dailyFunding: 30, dailyFees: 0, dailyNet: 30 },
-    { day: '2026-06-19', dailyFunding: 30, dailyFees: 0, dailyNet: 30 },
-    { day: '2026-06-20', dailyFunding: 30, dailyFees: 0, dailyNet: 30 },
+    { day: day(2), dailyFunding: 30, dailyFees: 0, dailyNet: 30 },
+    { day: day(1), dailyFunding: 30, dailyFees: 0, dailyNet: 30 },
+    { day: day(0), dailyFunding: 30, dailyFees: 0, dailyNet: 30 },
   ],
 };
 const youngSession = perpsPairPeriodApr(young, null);
+const young30d = perpsPairPeriodApr(young, '30d');
+assert.ok(Math.abs(youngSession - young30d) < 0.01, '3d session should match 30d window when session is shorter');
 assert.ok(Math.abs(youngSession - 10.95) < 0.2, `3d $90 net on 100k margin should annualize near 10.95%, got ${youngSession}`);
 
 console.log('perps-position-apr.test.mjs: ok');
