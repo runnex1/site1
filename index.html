@@ -18,6 +18,7 @@
 <script src="lib/defi-export.js"></script>
 <script src="lib/protocol-apr.js"></script>
 <script src="lib/defi-protocol-keys.js"></script>
+<script src="lib/variational-funding-clock.js"></script>
 <script src="lib/variational-hedge.js"></script>
 <script src="lib/variational-equity.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -10230,14 +10231,10 @@ async function saveData() {
 
         const perpsCfg = perpsGetSavedConfig();
         if (perpsIsValidEthAddress(perpsCfg.hyperliquid)) {
-            data.perpsArb = {
-                hyperliquid: perpsCfg.hyperliquid.trim(),
-                nado: perpsCfg.nado || '',
-                grvtSubAccount: perpsCfg.grvtSubAccount || '4860249204328359',
-                statRange: perpsCfg.statRange || _perpsStatRange,
-            };
+            perpsApplyArbToDataObject();
+        } else {
+            perpsWritePortfolioLocal();
         }
-        perpsWritePortfolioLocal();
         try { localStorage.setItem('portfolio-data-pro', JSON.stringify(data)); } catch(e) {}
 
         // Cloud sync only works when served via http/https (not file://)
@@ -27542,6 +27539,7 @@ function perpsRestoreWalletSnapshot(snapshot) {
             nado: snapshot.nado || '',
             grvtSubAccount: snapshot.grvtSubAccount || '4860249204328359',
             statRange: snapshot.statRange || _perpsStatRange,
+            variationalHedges: perpsLoadVariationalHedgesRaw(),
         };
     }
 }
@@ -27931,9 +27929,17 @@ function perpsReadPortfolioArbConfig() {
 function perpsSyncConfigToPortfolio(payload) {
     if (!payload) return;
     try {
-        if (typeof data === 'object' && data) data.perpsArb = payload;
+        const hedges = perpsLoadVariationalHedgesRaw();
+        const arb = {
+            ...payload,
+            ...(hedges.length ? { variationalHedges: hedges } : {}),
+        };
+        if (typeof data === 'object' && data) data.perpsArb = arb;
         const portfolio = JSON.parse(localStorage.getItem('portfolio-data-pro') || '{}');
-        portfolio.perpsArb = payload;
+        portfolio.perpsArb = {
+            ...(portfolio.perpsArb || {}),
+            ...arb,
+        };
         if (Array.isArray(portfolio.tokens)) {
             localStorage.setItem('portfolio-data-pro', JSON.stringify(portfolio));
         } else {
@@ -27951,12 +27957,15 @@ function perpsImportConfigFromPortfolio() {
 
 function perpsReadPortfolioVariationalHedges() {
     try {
+        const fromKey = perpsLoadVariationalHedgesRaw();
+        if (fromKey.length) return fromKey;
+        const portfolio = JSON.parse(localStorage.getItem('portfolio-data-pro') || '{}');
+        const hedges = portfolio?.perpsArb?.variationalHedges;
+        if (Array.isArray(hedges) && hedges.length) return hedges;
         if (Array.isArray(data?.perpsArb?.variationalHedges) && data.perpsArb.variationalHedges.length) {
             return data.perpsArb.variationalHedges;
         }
-        const portfolio = JSON.parse(localStorage.getItem('portfolio-data-pro') || '{}');
-        const hedges = portfolio?.perpsArb?.variationalHedges;
-        return Array.isArray(hedges) ? hedges : [];
+        return [];
     } catch (e) {
         return [];
     }
