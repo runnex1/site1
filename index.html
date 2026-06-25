@@ -652,6 +652,13 @@ body[data-active-tab="perps"] .topbar,
   width:100%; max-width:min(1180px, calc(100% - 2rem)); margin:0 auto; padding:0 1.35rem 1.25rem;
 }
 .perps-mobile-jumps { display: none; }
+.perps-mv3-only { display: none !important; }
+.perps-desktop-only { display: revert; }
+@media (min-width: 769px) {
+  .perps-root > .perps-refresh-bar { order: 1; }
+  .perps-root > .perps-stat-range-row { order: 2; }
+  .perps-root > .perps-stats-bar { order: 3; }
+}
 .perps-head {
   border:1px solid rgba(134,159,179,0.15); border-radius:10px;
   background:rgba(6,16,23,0.88); padding:1rem 1.15rem;
@@ -845,6 +852,11 @@ body[data-active-tab="perps"] .topbar,
 .perps-equity-area { fill:rgba(167,139,250,0.14); stroke:none; }
 .perps-equity-point { fill:#c4b5fd; stroke:#1a1025; stroke-width:1.2; vector-effect:non-scaling-stroke; }
 .perps-position-tabs { display:flex; align-items:center; gap:0.4rem; margin-left:auto; }
+.perps-positions-panel > .perps-position-tabs {
+  display:flex; align-items:center; gap:0.4rem;
+  padding:0 1rem 0.55rem; margin-left:0;
+  border-bottom:1px solid rgba(134,159,179,0.12);
+}
 .perps-position-tab { font-family:var(--ff-mono); font-size:0.62rem; font-weight:900; letter-spacing:0.07em; text-transform:uppercase; padding:0.32rem 0.7rem; border-radius:999px; border:1px solid rgba(134,159,179,0.18); background:rgba(255,255,255,0.03); color:#9dacbb; cursor:pointer; }
 .perps-position-tab.active { border-color:rgba(89,240,200,0.38); background:rgba(89,240,200,0.1); color:#59f0c8; }
 .perps-pos-list { display:flex; flex-direction:column; gap:0; padding:0 0.85rem 0.65rem; min-width:0; overflow-x:auto; }
@@ -7259,42 +7271,138 @@ body[data-active-tab="loops"] .page-content,
     padding: 8px 12px;
   }
 
-  /* Perps — full mobile layout (v3 single-scroll) */
+  /* Perps — mobile v3 layout (matches ui-previews/perps-mobile-preview-v3.html) */
+  header.perps-mv3-only { display: block !important; }
+  nav.perps-mv3-only { display: flex !important; }
+  p.perps-mv3-only { display: block !important; }
+  span.perps-mv3-only { display: inline !important; }
+  .perps-panel.perps-mv3-only { display: flex !important; flex-direction: column; }
+  .perps-mv3-live-pill.perps-mv3-only { display: inline-block !important; }
+  .perps-desktop-only { display: none !important; }
   .perps-root {
     width: 100%;
     max-width: none;
     margin: 0;
     padding: 0 0 calc(var(--mobile-nav-h) + 20px);
     min-height: 0 !important;
-    gap: 10px;
+    gap: 0;
+    display: flex;
+    flex-direction: column;
   }
-  .perps-mobile-sticky {
+  .perps-mv3-sticky {
     position: sticky;
     top: 0;
-    z-index: 8;
+    z-index: 10;
     backdrop-filter: blur(12px);
     background: rgba(5, 10, 14, 0.92);
     border-bottom: 1px solid rgba(134, 159, 179, 0.16);
-    margin: 0;
-    padding: 0 0 6px;
+    padding: 10px 14px 8px;
+    order: 1;
   }
-  .perps-refresh-bar {
-    padding: 0.35rem 0 0.25rem;
+  .perps-mv3-sticky-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .perps-mv3-eyebrow {
+    font-family: var(--ff-mono);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #9dacbb;
+  }
+  .perps-mv3-title {
+    font-weight: 900;
+    font-size: 18px;
+    color: #59f0c8;
+    margin: 2px 0 0;
+    line-height: 1.1;
+  }
+  .perps-mv3-refresh-wrap { text-align: right; }
+  .perps-mv3-refresh {
+    font-family: var(--ff-mono);
+    font-size: 10px;
+    color: #718391;
+  }
+  .perps-stats-bar {
+    order: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 10px 14px 0;
+    margin: 0;
+  }
+  .perps-stat-card {
+    padding: 10px 12px;
+    border: 1px solid rgba(134, 159, 179, 0.16);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .perps-stat-card:nth-child(1) { order: 2; }
+  .perps-stat-card:nth-child(2) { order: 1; }
+  .perps-stat-card:nth-child(3) { order: 3; }
+  .perps-stat-card:nth-child(4) { display: none !important; }
+  .perps-stat-card:nth-child(5) { order: 4; }
+  .perps-stat-label {
+    font-family: var(--ff-mono);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #718391;
+  }
+  .perps-stat-value {
+    margin-top: 4px;
+    font-family: var(--ff-mono);
+    font-size: 16px;
+    font-weight: 800;
+  }
+  .perps-stat-sub { display: none; }
+  .perps-mv3-range-row {
+    order: 3;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 14px 0;
+    margin: 0;
     border: none;
     background: transparent;
-    box-shadow: none;
   }
-  .perps-portfolio-sub { display: none; }
-  .perps-mobile-jumps {
+  .perps-mv3-range-row .perps-stat-range-group {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .perps-mv3-range-row .perps-stat-range-group::-webkit-scrollbar { display: none; }
+  .perps-mv3-live-pill {
+    font-family: var(--ff-mono);
+    font-size: 10px;
+    font-weight: 800;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(89, 240, 200, 0.28);
+    color: #59f0c8;
+    background: rgba(89, 240, 200, 0.08);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .perps-mv3-jumps {
+    order: 4;
     display: flex;
     gap: 6px;
     overflow-x: auto;
     flex-wrap: nowrap;
     -webkit-overflow-scrolling: touch;
-    padding: 8px 0 2px;
+    padding: 10px 14px 0;
     scrollbar-width: none;
   }
-  .perps-mobile-jumps::-webkit-scrollbar { display: none; }
+  .perps-mv3-jumps::-webkit-scrollbar { display: none; }
   .perps-mobile-jump {
     font-family: var(--ff-mono);
     font-size: 10px;
@@ -7309,49 +7417,79 @@ body[data-active-tab="loops"] .page-content,
     text-decoration: none;
     white-space: nowrap;
   }
+  .perps-mv3-scroll-hint {
+    order: 5;
+    text-align: center;
+    padding: 8px 14px 0;
+    margin: 0;
+    font-family: var(--ff-mono);
+    font-size: 10px;
+    color: #718391;
+  }
+  .perps-equity-panel { order: 6; }
+  .perps-positions-panel { order: 7; scroll-margin-top: 72px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
+  .perps-leverage-panel { order: 8; scroll-margin-top: 72px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
+  .perps-mv3-rates-panel { order: 9; scroll-margin-top: 72px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
+  #perpsUnhedgedSection, #perpsVariationalPendingSection { order: 10; }
+  #perpsConfigFoot, .perps-config-toggle-row { order: 11; }
   .perps-daily-funding-panel { display: none !important; }
   .perps-config-toggle-row { display: none !important; }
-  .perps-mobile-sticky { order: 1; }
-  .perps-stats-bar { order: 2; }
-  .perps-positions-panel { order: 3; scroll-margin-top: 64px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
-  .perps-equity-panel { order: 4; }
-  .perps-leverage-panel { order: 5; scroll-margin-top: 64px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
-  #perpsUnhedgedSection, #perpsVariationalPendingSection { order: 6; }
-  #perpsConfigFoot { order: 7; }
-  .perps-stat-card { padding: 8px 10px; }
-  .perps-stat-sub { font-size: 0.58rem; line-height: 1.25; }
-  .perps-equity-panel .perps-panel-head,
-  .perps-positions-panel .perps-panel-head,
-  .perps-leverage-panel .perps-panel-head {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.65rem;
+  .perps-panel {
+    margin: 14px 14px 0;
+    border: 1px solid rgba(134, 159, 179, 0.16);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(8, 20, 29, 0.97), rgba(4, 11, 16, 0.98));
+    overflow: hidden;
+    min-height: 0 !important;
   }
-  .perps-equity-panel .perps-panel-title-row,
-  .perps-positions-panel .perps-panel-title-row {
-    width: 100%;
+  .perps-panel-head {
+    display: flex;
+    align-items: center;
     justify-content: space-between;
-  }
-  .perps-equity-panel .perps-panel-title-row {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.5rem;
-  }
-  .perps-equity-panel #perpsEquityChartNote { display: none; }
-  .perps-equity-panel .perps-equity-mode-group {
+    gap: 8px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(134, 159, 179, 0.16);
     flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    max-width: 100%;
-    width: 100%;
-    padding-bottom: 2px;
+  }
+  .perps-panel-title, .perps-panel-title-row .perps-panel-title {
+    font-weight: 900;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .perps-panel-title-row { width: auto; flex: 1; }
+  .perps-mv3-section-sub {
+    padding: 0 14px 10px;
+    margin: 0;
+    font-family: var(--ff-mono);
+    font-size: 10px;
+    color: #718391;
+    line-height: 1.35;
+    border-bottom: 1px solid rgba(134, 159, 179, 0.16);
+  }
+  .perps-equity-panel .perps-equity-mode-group,
+  .perps-equity-panel #perpsEquityChartNote,
+  .perps-positions-panel .perps-refresh-btn { display: none !important; }
+  .perps-equity-panel .perps-panel-head { flex-direction: row; }
+  .perps-equity-panel .perps-pnl-chart { min-height: 96px !important; height: 96px; }
+  .perps-equity-panel .perps-panel-body--chart { padding: 8px 10px 12px; }
+  .perps-equity-panel .perps-equity-line { stroke: #59f0c8; }
+  .perps-equity-panel .perps-equity-area { fill: rgba(89, 240, 200, 0.12); }
+  .perps-positions-panel .perps-panel-head {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  .perps-positions-panel .perps-mv3-section-sub {
+    border-bottom: none;
+    padding-bottom: 0;
   }
   .perps-positions-panel .perps-position-tabs {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
-    width: 100%;
-    margin-left: 0;
+    width: auto;
+    margin: 12px 14px 0;
+    padding: 0;
     overflow: visible;
   }
   .perps-positions-panel .perps-position-tab {
@@ -7359,110 +7497,273 @@ body[data-active-tab="loops"] .page-content,
     text-align: center;
     min-height: 36px;
   }
-  .perps-positions-panel > .perps-panel-head > .perps-pill,
-  .perps-equity-panel > .perps-panel-head > .perps-pill {
-    align-self: flex-start;
+  .perps-pos-list {
+    overflow-x: visible !important;
+    padding: 10px 0 4px !important;
+    margin: 0;
   }
-  .perps-equity-panel .perps-pnl-chart { min-height: 96px !important; }
-  .perps-equity-panel .perps-panel-body--chart { padding-bottom: 0.35rem; }
-  .perps-leverage-grid { grid-template-columns: 1fr 1fr !important; gap: 8px; }
-  .perps-leverage-card { padding: 0.7rem 0.75rem; }
-  .perps-leverage-value { font-size: 1.25rem; }
-  .perps-portfolio-head { padding-top: calc(4px + env(safe-area-inset-top, 0px)); }
-  .perps-portfolio-title { font-size: 1.15rem; }
-  .perps-config input { min-width: 0; width: 100%; font-size: 16px; }
-  .perps-config { flex-direction: column; align-items: stretch; }
-  .perps-btn { min-height: var(--mobile-touch); width: 100%; }
-  .perps-stats-bar { grid-template-columns: 1fr 1fr !important; gap: 8px; }
-  .perps-stat-card:nth-child(5) { grid-column: 1 / -1; }
-  .perps-stat-value { font-size: 1.05rem; }
-  .perps-stat-range-row { flex-direction: column; align-items: stretch; gap: 0.5rem; }
-  .perps-stat-range-group { justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
-  .perps-kpi-grid, .perps-kpi-grid.wide { grid-template-columns: 1fr 1fr !important; }
-  .perps-charts-grid { grid-template-columns: 1fr !important; }
-  .perps-panel-head { flex-wrap: wrap; gap: 0.5rem; }
-  .perps-position-tabs { margin-left: 0; width: 100%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
-  .perps-pos-list { overflow-x: visible !important; padding: 0 0.35rem 0.65rem !important; }
   .perps-pos-head { display: none !important; }
-  .perps-pos-head, .perps-pos-row {
-    min-width: 0 !important;
+  .perps-mv3-card {
+    margin: 0 14px 10px;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(134, 159, 179, 0.16);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .perps-mv3-card.warn { border-color: rgba(245, 158, 11, 0.28); }
+  .perps-mv3-head { display: flex; gap: 10px; align-items: flex-start; }
+  .perps-mv3-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(134, 159, 179, 0.16);
+    display: grid;
+    place-items: center;
+    font-weight: 900;
+    font-size: 12px;
+    color: #63b7ff;
+    background: linear-gradient(135deg, #1a2a3a, #0d1822);
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .perps-mv3-icon img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+  .perps-mv3-icon .token-logo {
     width: 100% !important;
+    height: 100% !important;
+    border: none !important;
+    box-shadow: none !important;
   }
-  .perps-pos-row,
-  .perps-pos-row.closed {
-    display: grid !important;
-    grid-template-columns: 1fr 1fr !important;
-    align-items: stretch !important;
-    gap: 8px !important;
+  .perps-mv3-name { font-weight: 900; font-size: 16px; }
+  .perps-mv3-meta {
+    font-family: var(--ff-mono);
+    font-size: 10px;
+    color: #9dacbb;
+    margin-top: 2px;
   }
-  .perps-pos-token,
-  .perps-pos-legs,
-  .perps-pos-chart-col {
-    grid-column: 1 / -1;
-  }
-  .perps-pos-liq-stack,
-  .perps-pos-tpsl-stack,
-  .perps-pos-spacer {
-    display: none !important;
-  }
-  .perps-pos-apr-col, .perps-pos-head > div:nth-last-child(2) { text-align: left !important; }
-  .perps-pos-apr-col { grid-column: auto !important; }
-  .perps-pos-card { padding: 0.85rem; margin-bottom: 10px; }
-  .perps-pos-legs { padding-right: 0; }
-  .perps-pos-leg { flex-wrap: wrap; gap: 0.5rem; }
-  .perps-pos-chart-col {
-    justify-content: flex-end;
-    align-items: center;
-    flex-direction: row;
-    padding-top: 0.15rem;
-  }
-  .perps-pos-chart-btn { min-height: 36px; min-width: 36px; }
-  .perps-equity-tip { max-width: calc(100vw - 2rem); }
-  .perps-pos-row > div {
+  .perps-mv3-status {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: flex-start;
-    gap: 0.2rem;
-    width: auto;
+    gap: 8px;
+    align-items: center;
+    margin-top: 5px;
+  }
+  .perps-mv3-open {
+    font-family: var(--ff-mono);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    border-radius: 999px;
+    border: 1px solid rgba(89, 240, 200, 0.28);
+    color: #59f0c8;
+    background: rgba(89, 240, 200, 0.08);
+  }
+  .perps-mv3-open.warn {
+    border-color: rgba(245, 158, 11, 0.35);
+    color: #ffc857;
+    background: rgba(245, 158, 11, 0.12);
+  }
+  .perps-mv3-px {
+    font-family: var(--ff-mono);
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .perps-mv3-warnline {
+    margin-top: 8px;
+    font-family: var(--ff-mono);
+    font-size: 10px;
+    font-weight: 700;
+    color: #ffc857;
+  }
+  .perps-mv3-legs { margin-top: 10px; display: grid; gap: 8px; }
+  .perps-mv3-leg {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 9px 11px;
+    border-radius: 10px;
+    border: 1px solid rgba(134, 159, 179, 0.10);
+    background: rgba(255, 255, 255, 0.025);
+    font-family: var(--ff-mono);
+    font-size: 11px;
+    color: #9dacbb;
+  }
+  .perps-mv3-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    font-size: 9px;
+    font-weight: 900;
+    margin-right: 6px;
+  }
+  .perps-mv3-badge.long { background: #55d66f; color: #06110a; }
+  .perps-mv3-badge.short { background: #ff5c7a; color: #19040a; }
+  .perps-mv3-val { font-weight: 800; font-size: 12px; color: #eef4fb; }
+  .perps-mv3-val.pos { color: #55d66f; }
+  .perps-mv3-val.neg { color: #ff5c7a; }
+  .perps-mv3-grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .perps-mv3-cell {
     padding: 9px 10px;
-    border-bottom: none;
     border-radius: 10px;
     border: 1px solid rgba(134, 159, 179, 0.10);
     background: rgba(255, 255, 255, 0.02);
   }
-  .perps-pos-row > .perps-pos-token,
-  .perps-pos-row > .perps-pos-legs {
-    padding: 0;
-    border: none;
-    background: transparent;
-  }
-  .perps-pos-metric-label {
+  .perps-mv3-cell-label {
+    font-family: var(--ff-mono);
     font-size: 9px;
+    font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: #718391;
   }
-  .perps-pos-row.closed .perps-pos-closed-cell {
-    min-width: 0;
-    text-align: left;
+  .perps-mv3-cell-val {
+    margin-top: 3px;
+    font-family: var(--ff-mono);
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .perps-mv3-cell-val.pos { color: #55d66f; }
+  .perps-mv3-cell-val.neg { color: #ff5c7a; }
+  .perps-leverage-panel .perps-panel-head { border-bottom: none; }
+  .perps-leverage-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 0 14px 14px;
+    margin: 0;
+  }
+  .perps-leverage-card {
+    padding: 11px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(134, 159, 179, 0.14);
+    background: rgba(255, 255, 255, 0.025);
+  }
+  .perps-leverage-name {
+    font-family: var(--ff-mono);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #9dacbb;
+  }
+  .perps-leverage-value {
+    margin-top: 5px;
+    font-family: var(--ff-mono);
+    font-size: 20px;
+    font-weight: 900;
+  }
+  .perps-leverage-meta {
+    margin-top: 4px;
+    font-family: var(--ff-mono);
+    font-size: 9px;
+    color: #718391;
+    line-height: 1.4;
+  }
+  .perps-mv3-rate-list {
+    padding: 0 14px 14px;
+    display: grid;
+    gap: 10px;
+  }
+  .perps-mv3-rate-card {
+    border: 1px solid rgba(134, 159, 179, 0.14);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    overflow: hidden;
+  }
+  .perps-mv3-rate-head {
     display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    align-items: flex-start;
-    padding: 9px 10px;
-    border-radius: 10px;
-    border: 1px solid rgba(134, 159, 179, 0.10);
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(134, 159, 179, 0.10);
+  }
+  .perps-mv3-rate-symbol { font-weight: 900; font-size: 15px; }
+  .perps-mv3-rate-best {
+    font-family: var(--ff-mono);
+    font-size: 10px;
+    font-weight: 800;
+    color: #55d66f;
+    text-align: right;
+  }
+  .perps-mv3-rate-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: rgba(134, 159, 179, 0.10);
+  }
+  .perps-mv3-rate-cell {
+    padding: 8px 6px;
+    background: rgba(8, 16, 22, 0.96);
+    text-align: center;
+  }
+  .perps-mv3-rate-venue {
+    font-family: var(--ff-mono);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #718391;
+  }
+  .perps-mv3-rate-num {
+    margin-top: 3px;
+    font-family: var(--ff-mono);
+    font-size: 11px;
+    font-weight: 800;
+  }
+  .perps-mv3-rate-num.best { color: #55d66f; }
+  .perps-mv3-rate-spreads {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px 10px;
+  }
+  .perps-mv3-spread-pill {
+    font-family: var(--ff-mono);
+    font-size: 9px;
+    font-weight: 700;
+    padding: 4px 7px;
+    border-radius: 999px;
+    border: 1px solid rgba(134, 159, 179, 0.16);
+    color: #9dacbb;
     background: rgba(255, 255, 255, 0.02);
   }
-  .perps-pos-row.closed .perps-pos-closed-cell .perps-pos-metric-val,
-  .perps-pos-row.closed .perps-pos-closed-cell .perps-pos-apr-val,
-  .perps-pos-row.closed .perps-pos-closed-time {
-    margin-top: 3px;
-    text-align: left;
+  .perps-mv3-spread-pill.hot {
+    border-color: rgba(89, 240, 200, 0.28);
+    color: #59f0c8;
+    background: rgba(89, 240, 200, 0.08);
   }
-  .perps-fund-chart-wrap, .perps-pnl-chart { min-height: 180px; }
-  .perps-panel { min-height: 0 !important; }
+  .perps-range-btn.active {
+    border-color: rgba(89, 240, 200, 0.35);
+    color: #59f0c8;
+    background: rgba(89, 240, 200, 0.08);
+  }
+  .perps-position-tab.active {
+    border-color: rgba(89, 240, 200, 0.35);
+    color: #59f0c8;
+    background: rgba(89, 240, 200, 0.08);
+  }
+  .perps-pill {
+    font-family: var(--ff-mono);
+    font-size: 10px;
+    font-weight: 800;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(89, 240, 200, 0.28);
+    color: #59f0c8;
+    background: rgba(89, 240, 200, 0.08);
+  }
+  .perps-config input { min-width: 0; width: 100%; font-size: 16px; }
+  .perps-config { flex-direction: column; align-items: stretch; }
+  .perps-btn { min-height: var(--mobile-touch); width: 100%; }
+  .perps-equity-tip { max-width: calc(100vw - 2rem); }
   body[data-active-tab="perps"] .page-content {
     padding: 6px var(--mobile-pad-r) 12px var(--mobile-pad) !important;
   }
@@ -7478,10 +7779,6 @@ body[data-active-tab="loops"] .page-content,
     overflow: visible !important;
     height: auto !important;
     min-height: 0 !important;
-  }
-  .perps-panel {
-    min-height: 0 !important;
-    overflow: visible !important;
   }
 
   /* Loops */
@@ -8678,9 +8975,21 @@ body[data-active-tab="loops"] .page-content,
       </div><!-- /terminalTab -->
 
       <div id="perpsTab" class="tab-pane">
-        <div class="perps-root">
-          <div class="perps-mobile-sticky">
-          <div class="perps-refresh-bar" id="perpsRefreshBar">
+        <div class="perps-root" id="perpsRoot">
+          <header class="perps-mv3-sticky perps-mv3-only">
+            <div class="perps-mv3-sticky-row">
+              <div>
+                <div class="perps-mv3-eyebrow">Perps DEXs</div>
+                <h2 class="perps-mv3-title">Portfolio</h2>
+              </div>
+              <div class="perps-mv3-refresh-wrap">
+                <div class="perps-mv3-refresh" id="perpsMv3LastRefresh">Waiting for data…</div>
+                <div class="perps-refresh-warn" id="perpsMv3RefreshWarn" style="display:none;">API timed out</div>
+              </div>
+            </div>
+          </header>
+
+          <div class="perps-refresh-bar perps-desktop-only" id="perpsRefreshBar">
             <div>
               <div class="perps-portfolio-head">
                 <h2 class="perps-portfolio-title">Portfolio</h2>
@@ -8693,40 +9002,42 @@ body[data-active-tab="loops"] .page-content,
             </div>
           </div>
 
-          <div class="perps-stat-range-row">
-            <div class="perps-stat-range-group">
-              <span class="perps-stat-range-label">Time window</span>
-              <button type="button" class="perps-range-btn" data-perps-stat-range="1d" onclick="perpsSetStatRange('1d',this)">1D</button>
-              <button type="button" class="perps-range-btn active" data-perps-stat-range="7d" onclick="perpsSetStatRange('7d',this)">7D</button>
-              <button type="button" class="perps-range-btn" data-perps-stat-range="30d" onclick="perpsSetStatRange('30d',this)">30D</button>
-              <button type="button" class="perps-range-btn" data-perps-stat-range="all" onclick="perpsSetStatRange('all',this)">ALL</button>
-            </div>
-          </div>
-          <nav class="perps-mobile-jumps" aria-label="Perps sections">
-            <a class="perps-mobile-jump" href="#perpsPositionsPanel">Positions</a>
-            <a class="perps-mobile-jump" href="#perpsLeveragePanel">Cross margin</a>
-          </nav>
-          </div>
-
           <section class="perps-stats-bar" id="perpsStatsBar">
-            <div class="perps-stat-card"><div class="perps-stat-label">Open Notional</div><div class="perps-stat-value" id="perpsStatNotional">—</div><div class="perps-stat-sub" id="perpsStatNotionalSub">—</div></div>
+            <div class="perps-stat-card"><div class="perps-stat-label"><span class="perps-mv3-only">Notional</span><span class="perps-desktop-only">Open Notional</span></div><div class="perps-stat-value" id="perpsStatNotional">—</div><div class="perps-stat-sub" id="perpsStatNotionalSub">—</div></div>
             <div class="perps-stat-card">
-              <div class="perps-stat-label">Total Equity</div>
+              <div class="perps-stat-label"><span class="perps-mv3-only">Equity</span><span class="perps-desktop-only">Total Equity</span></div>
               <div class="perps-stat-equity-wrap" id="perpsStatEquityWrap">
                 <div class="perps-stat-value" id="perpsStatEquity">—</div>
                 <div class="perps-stat-tip" id="perpsStatEquityTip"></div>
               </div>
               <div class="perps-stat-sub" id="perpsStatEquitySub">HL · Nado · GRVT · Ext</div>
             </div>
-            <div class="perps-stat-card"><div class="perps-stat-label">Total PnL</div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">selected window · funding − fees</div></div>
-            <div class="perps-stat-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
-            <div class="perps-stat-card"><div class="perps-stat-label">Avg APR</div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">chart PnL ÷ avg equity</div></div>
+            <div class="perps-stat-card"><div class="perps-stat-label" id="perpsStatPnlLabel"><span class="perps-mv3-only" id="perpsMv3PnlLabel">PnL · 7D</span><span class="perps-desktop-only">Total PnL</span></div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">selected window · funding − fees</div></div>
+            <div class="perps-stat-card perps-stat-funding-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
+            <div class="perps-stat-card"><div class="perps-stat-label"><span class="perps-mv3-only">Net APR</span><span class="perps-desktop-only">Avg APR</span></div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">chart PnL ÷ avg equity</div></div>
           </section>
+
+          <div class="perps-stat-range-row perps-mv3-range-row">
+            <div class="perps-stat-range-group">
+              <span class="perps-stat-range-label perps-desktop-only">Time window</span>
+              <button type="button" class="perps-range-btn" data-perps-stat-range="1d" onclick="perpsSetStatRange('1d',this)">1D</button>
+              <button type="button" class="perps-range-btn active" data-perps-stat-range="7d" onclick="perpsSetStatRange('7d',this)">7D</button>
+              <button type="button" class="perps-range-btn" data-perps-stat-range="30d" onclick="perpsSetStatRange('30d',this)">30D</button>
+              <button type="button" class="perps-range-btn" data-perps-stat-range="all" onclick="perpsSetStatRange('all',this)">ALL</button>
+            </div>
+            <span class="perps-mv3-live-pill perps-mv3-only" id="perpsMv3LivePill">0 live</span>
+          </div>
+          <nav class="perps-mobile-jumps perps-mv3-jumps perps-mv3-only" aria-label="Perps sections">
+            <a class="perps-mobile-jump" href="#perpsPositionsPanel">Positions</a>
+            <a class="perps-mobile-jump" href="#perpsLeveragePanel">Cross margin</a>
+            <a class="perps-mobile-jump" href="#perpsRatesPanel">Funding rates</a>
+          </nav>
+          <p class="perps-mv3-scroll-hint perps-mv3-only">Scroll for live positions, cross-margin leverage, and venue funding rates</p>
 
           <section class="perps-panel perps-equity-panel" id="perpsEquityPanel">
             <div class="perps-panel-head">
               <div class="perps-panel-title-row">
-                <div class="perps-panel-title">Portfolio Equity</div>
+                <div class="perps-panel-title"><span class="perps-mv3-only" id="perpsMv3EquityTitle">Equity · 7D</span><span class="perps-desktop-only">Portfolio Equity</span></div>
                 <div class="perps-equity-mode-group">
                   <button type="button" class="perps-range-btn perps-equity-mode-btn active" data-perps-equity-value-mode="neutral" onclick="perpsSetEquityValueMode('neutral',this)">Hedge-neutral</button>
                   <button type="button" class="perps-range-btn perps-equity-mode-btn" data-perps-equity-value-mode="raw" onclick="perpsSetEquityValueMode('raw',this)">Exchange</button>
@@ -8782,16 +9093,17 @@ body[data-active-tab="loops"] .page-content,
           <section class="perps-panel perps-positions-panel" id="perpsPositionsPanel">
             <div class="perps-panel-head">
               <div class="perps-panel-title-row">
-                <div class="perps-panel-title">Positions</div>
-                <button type="button" class="perps-refresh-btn" id="perpsManualRefreshBtn" onclick="perpsManualRefresh()" title="Refresh perps data" aria-label="Refresh perps data">
+                <div class="perps-panel-title"><span class="perps-mv3-only" id="perpsMv3PositionsTitle">Live positions</span><span class="perps-desktop-only">Positions</span></div>
+                <button type="button" class="perps-refresh-btn perps-desktop-only" id="perpsManualRefreshBtn" onclick="perpsManualRefresh()" title="Refresh perps data" aria-label="Refresh perps data">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
                 </button>
+                <span class="perps-pill" id="perpsPairsBadge">0 pairs</span>
               </div>
-              <div class="perps-position-tabs" role="tablist" aria-label="Position status">
-                <button type="button" class="perps-position-tab active" data-perps-positions-tab="live" onclick="perpsSetPositionsTab('live', this)">Live</button>
-                <button type="button" class="perps-position-tab" data-perps-positions-tab="closed" onclick="perpsSetPositionsTab('closed', this)">Closed</button>
-              </div>
-              <span class="perps-pill" id="perpsPairsBadge">0 pairs</span>
+            </div>
+            <p class="perps-mv3-section-sub perps-mv3-only" id="perpsMv3PositionsSub">Hedged pairs across HL, GRVT, Extended + Variational</p>
+            <div class="perps-position-tabs" role="tablist" aria-label="Position status">
+              <button type="button" class="perps-position-tab active" data-perps-positions-tab="live" onclick="perpsSetPositionsTab('live', this)">Live</button>
+              <button type="button" class="perps-position-tab" data-perps-positions-tab="closed" onclick="perpsSetPositionsTab('closed', this)">Closed</button>
             </div>
             <div class="perps-apr-tooltip" id="perpsAprTooltip" role="tooltip" aria-hidden="true"></div>
             <div class="perps-pos-list" id="perpsPositionsList"></div>
@@ -8891,9 +9203,19 @@ body[data-active-tab="loops"] .page-content,
           <section class="perps-panel perps-leverage-panel" id="perpsLeveragePanel" style="min-height:0;">
             <div class="perps-panel-head">
               <div class="perps-panel-title">Cross-margin leverage</div>
-              <span class="perps-pill">open notional / equity</span>
+              <span class="perps-pill"><span class="perps-mv3-only">notional / equity</span><span class="perps-desktop-only">open notional / equity</span></span>
             </div>
+            <p class="perps-mv3-section-sub perps-mv3-only">Effective leverage per exchange account</p>
             <div class="perps-leverage-grid" id="perpsLeverageGrid"></div>
+          </section>
+
+          <section class="perps-panel perps-mv3-rates-panel perps-mv3-only" id="perpsRatesPanel">
+            <div class="perps-panel-head">
+              <div class="perps-panel-title">Funding rates · 8h</div>
+              <span class="perps-pill">live spreads</span>
+            </div>
+            <p class="perps-mv3-section-sub">Venue rates and cross-exchange spreads for your open bases</p>
+            <div class="perps-mv3-rate-list" id="perpsMv3RatesList"></div>
           </section>
         </div>
       </div>
@@ -11385,6 +11707,7 @@ function switchTab(tab, opts = {}) {
         perpsLoadConfig();
         perpsStartAutoRefresh();
         perpsEnsureConnected();
+        if (_perpsLastData) perpsRerenderForViewport();
     } else {
         perpsStopAutoRefresh();
     }
@@ -27803,6 +28126,7 @@ function perpsSetStatRange(range, btn) {
         perpsRenderStatsBar(_perpsLastData);
         perpsRenderPositionsPanel(_perpsLastData);
         perpsRenderFundingForTimeWindow(_perpsLastData);
+        perpsMv3SyncChrome(_perpsLastData);
     }
 }
 
@@ -28462,19 +28786,28 @@ function perpsUpdateRefreshBar() {
     const bar = document.getElementById('perpsRefreshBar');
     const lastEl = document.getElementById('perpsLastRefresh');
     const warnEl = document.getElementById('perpsRefreshWarn');
+    const mv3Last = document.getElementById('perpsMv3LastRefresh');
+    const mv3Warn = document.getElementById('perpsMv3RefreshWarn');
     if (warnEl) {
         warnEl.style.display = _perpsRefreshError ? '' : 'none';
         if (_perpsRefreshError) warnEl.textContent = _perpsRefreshError;
     }
+    if (mv3Warn) {
+        mv3Warn.style.display = _perpsRefreshError ? '' : 'none';
+        if (_perpsRefreshError) mv3Warn.textContent = _perpsRefreshError;
+    }
     if (bar) bar.classList.toggle('warn', Boolean(_perpsRefreshError));
-    if (lastEl) {
+    const refreshText = (() => {
         if (_perpsLastRefreshAt) {
-            lastEl.textContent = `Updated ${new Date(_perpsLastRefreshAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
-        } else if (_perpsRefreshError) {
-            lastEl.textContent = 'Last refresh failed';
-        } else {
-            lastEl.textContent = 'Waiting for data…';
+            return `Updated ${new Date(_perpsLastRefreshAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
         }
+        if (_perpsRefreshError) return 'Last refresh failed';
+        return 'Waiting for data…';
+    })();
+    if (lastEl) lastEl.textContent = refreshText;
+    if (mv3Last) {
+        if (_perpsRefreshError) mv3Last.textContent = 'Last refresh failed';
+        else mv3Last.textContent = perpsMv3RefreshAgo(_perpsLastRefreshAt);
     }
 }
 
@@ -31210,6 +31543,231 @@ function perpsComputePortfolioStats(data) {
     };
 }
 
+function perpsIsMobileV3() {
+    return window.matchMedia('(max-width: 768px)').matches;
+}
+
+function perpsRerenderForViewport() {
+    if (document.body.dataset.activeTab !== 'perps' || !_perpsLastData) return;
+    perpsRenderDashboard(_perpsLastData);
+}
+
+(function initPerpsMobileViewportWatch() {
+    const mq = window.matchMedia('(max-width: 768px)');
+    let wasMobile = mq.matches;
+    const onViewportChange = () => {
+        const nowMobile = mq.matches;
+        if (nowMobile !== wasMobile) {
+            wasMobile = nowMobile;
+            perpsRerenderForViewport();
+        }
+    };
+    mq.addEventListener('change', onViewportChange);
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(onViewportChange, 120);
+    });
+})();
+
+function perpsMv3RefreshAgo(ts) {
+    if (!ts) return 'Waiting for data…';
+    const diff = Date.now() - ts;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Updated just now';
+    if (mins < 60) return `Updated ${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `Updated ${hrs}h ago`;
+    return `Updated ${new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+}
+
+const PERPS_MV3_SPREAD_SPECS = [
+    { key: 'spreadHlVariational8h', label: 'HL−Var' },
+    { key: 'spreadGrvtVariational8h', label: 'GRVT−Var' },
+    { key: 'spreadExtendedVariational8h', label: 'Ext−Var' },
+    { key: 'spreadNadoVariational8h', label: 'Nado−Var' },
+    { key: 'spread8h', label: 'HL−Nado' },
+    { key: 'spreadHlGrvt8h', label: 'HL−GRVT' },
+    { key: 'spreadHlExtended8h', label: 'HL−Ext' },
+    { key: 'spreadNadoExtended8h', label: 'Nado−Ext' },
+    { key: 'spreadNadoGrvt8h', label: 'Nado−GRVT' },
+    { key: 'spreadGrvtExtended8h', label: 'GRVT−Ext' },
+];
+
+function perpsMv3FmtSpreadPct(rate) {
+    if (rate == null || !Number.isFinite(rate)) return '—';
+    const pct = rate * 100;
+    return (pct >= 0 ? '+' : '') + pct.toFixed(4) + '%';
+}
+
+function perpsMv3SpreadEntries(row) {
+    return PERPS_MV3_SPREAD_SPECS
+        .map(spec => ({ ...spec, val: row?.[spec.key] }))
+        .filter(spec => spec.val != null && Number.isFinite(spec.val));
+}
+
+function perpsMv3SyncChrome(data) {
+    if (!perpsIsMobileV3()) return;
+    const rangeLabel = perpsStatRangeLabel(_perpsStatRange);
+    const pnlLabel = document.getElementById('perpsMv3PnlLabel');
+    if (pnlLabel) pnlLabel.textContent = `PnL · ${rangeLabel}`;
+    const equityTitle = document.getElementById('perpsMv3EquityTitle');
+    if (equityTitle) equityTitle.textContent = `Equity · ${rangeLabel}`;
+    const livePill = document.getElementById('perpsMv3LivePill');
+    const liveCount = data?.paired?.length || 0;
+    if (livePill) livePill.textContent = `${liveCount} live`;
+    const posTitle = document.getElementById('perpsMv3PositionsTitle');
+    if (posTitle) posTitle.textContent = _perpsPositionsTab === 'closed' ? 'Closed positions' : 'Live positions';
+    const posSub = document.getElementById('perpsMv3PositionsSub');
+    if (posSub) {
+        posSub.textContent = _perpsPositionsTab === 'closed'
+            ? 'Fully closed hedged rounds from fill history'
+            : 'Hedged pairs across HL, GRVT, Extended + Variational';
+    }
+}
+
+function perpsMv3Cell(label, val, cls) {
+    return `<div class="perps-mv3-cell"><div class="perps-mv3-cell-label">${dashEsc(label)}</div><div class="perps-mv3-cell-val${cls ? ' ' + cls : ''}">${val}</div></div>`;
+}
+
+function perpsMv3LegHtml(entry, p) {
+    const side = Number(entry.leg.size) >= 0 ? 'long' : 'short';
+    const label = perpsVenueLabel(entry.venue);
+    const hedgeId = p.variationalHedgeId;
+    const varEdit = entry.venue === 'variational' && hedgeId
+        ? ` <button type="button" class="perps-btn secondary" style="padding:0.1rem 0.4rem;font-size:0.65rem;margin-left:0.25rem;" onclick="perpsEditVariationalEntry('${hedgeId}'); event.stopPropagation();">Edit</button>`
+        : '';
+    const upnlCls = entry.leg.upnl != null ? perpsSignedCls(entry.leg.upnl) : '';
+    const upnlVal = entry.leg.upnl != null ? perpsFmtUsd(entry.leg.upnl) : '—';
+    return `<div class="perps-mv3-leg"><span><span class="perps-mv3-badge ${side}">${side === 'long' ? 'L' : 'S'}</span>${dashEsc(label)}${varEdit}</span><span class="perps-mv3-val ${upnlCls}">${upnlVal}</span></div>`;
+}
+
+function perpsRenderPortfolioPositionsV3(paired) {
+    const el = document.getElementById('perpsPositionsList');
+    const badge = document.getElementById('perpsPairsBadge');
+    if (badge) badge.textContent = paired.length + (paired.length === 1 ? ' pair' : ' pairs');
+    if (!el) return;
+    if (!paired.length) {
+        el.innerHTML = '<div class="perps-empty">No delta-neutral pairs open.</div>';
+        return;
+    }
+    el.innerHTML = paired.map((p, pairIdx) => {
+        const legs = perpsPairLegs(p);
+        const displayLegs = perpsPairDisplayLegEntries(p);
+        const totalBreakdown = perpsPairTotalPnlBreakdown(p);
+        const totalPnl = totalBreakdown.total;
+        const sessionFunding = perpsPairLatestSessionPnl(p)?.funding ?? null;
+        const currentApr = perpsPairLiveApy(p);
+        const periodApr = perpsPairPeriodApr(p, _perpsStatRange);
+        const midPx = perpsPositionMidPx(p, displayLegs);
+        const sizeMismatch = perpsPairHasSizeMismatch(p);
+        const meta = `${perpsFmtSize(legs.a.size)} · ${dashEsc(p.pairLabel || 'HL + Nado')}`;
+        const warnHtml = sizeMismatch
+            ? `<div class="perps-mv3-warnline">⚠ Size mismatch: ${dashEsc(perpsPairSizeMismatchText(p))}</div>`
+            : '';
+        return `<article class="perps-mv3-card${sizeMismatch ? ' warn' : ''}">
+            <div class="perps-mv3-head">
+                <div class="perps-mv3-icon">${makeLogo(p.symbol, false, 36)}</div>
+                <div>
+                    <div class="perps-mv3-name">${dashEsc(p.symbol)}</div>
+                    <div class="perps-mv3-meta">${meta}</div>
+                    <div class="perps-mv3-status">
+                        <span class="perps-mv3-open${sizeMismatch ? ' warn' : ''}">Open</span>
+                        <span class="perps-mv3-px">${perpsFmtPx(midPx)}</span>
+                    </div>
+                </div>
+            </div>
+            ${warnHtml}
+            <div class="perps-mv3-legs">${displayLegs.map(entry => perpsMv3LegHtml(entry, p)).join('')}</div>
+            <div class="perps-mv3-grid2">
+                ${perpsMv3Cell('Total PnL', totalPnl != null ? perpsFmtUsd(totalPnl) : '—', totalPnl != null ? perpsSignedCls(totalPnl) : '')}
+                ${perpsMv3Cell('Funding', sessionFunding != null ? perpsFmtUsd(sessionFunding) : '—', sessionFunding != null ? perpsSignedCls(sessionFunding) : '')}
+                ${perpsMv3Cell('Current APR', currentApr != null ? perpsFmtPct(currentApr) : '—', currentApr != null ? perpsSignedCls(currentApr) : '')}
+                ${perpsMv3Cell('Net APR', periodApr != null ? perpsFmtPct(periodApr) : '—', periodApr != null ? perpsSignedCls(periodApr) : '')}
+            </div>
+        </article>`;
+    }).join('');
+    if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
+}
+
+function perpsRenderClosedPositionsV3(closedPairs) {
+    const el = document.getElementById('perpsPositionsList');
+    const badge = document.getElementById('perpsPairsBadge');
+    if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
+    if (!el) return;
+    if (!closedPairs.length) {
+        el.innerHTML = '<div class="perps-empty">No fully closed hedged rounds found in the available fill history.</div>';
+        return;
+    }
+    el.innerHTML = closedPairs.map(pairRaw => {
+        const pair = perpsNormalizeClosedPairForDisplay(pairRaw);
+        const closedAt = pair.closeTime
+            ? new Date(pair.closeTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+            : '—';
+        const meta = `${perpsFmtSize(pair.size)} · ${dashEsc(pair.pairLabel || 'HL + Nado')} · closed ${dashEsc(closedAt)}`;
+        return `<article class="perps-mv3-card">
+            <div class="perps-mv3-head">
+                <div class="perps-mv3-icon">${makeLogo(pair.symbol, false, 36)}</div>
+                <div>
+                    <div class="perps-mv3-name">${dashEsc(pair.symbol)}</div>
+                    <div class="perps-mv3-meta">${meta}</div>
+                </div>
+            </div>
+            <div class="perps-mv3-grid2">
+                ${perpsMv3Cell('Realized', perpsFmtUsd(pair.netPnl), perpsSignedCls(pair.netPnl))}
+                ${perpsMv3Cell('Funding', perpsFmtUsd(pair.funding), perpsSignedCls(pair.funding))}
+            </div>
+        </article>`;
+    }).join('');
+    if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
+}
+
+function perpsRenderMobileFundingRates(data) {
+    const el = document.getElementById('perpsMv3RatesList');
+    if (!el) return;
+    if (!perpsIsMobileV3()) return;
+    const symbols = [...new Set((data?.paired || []).map(p => p.symbol).filter(Boolean))];
+    if (!symbols.length) {
+        el.innerHTML = '<div class="perps-empty">No open positions.</div>';
+        return;
+    }
+    const rows = symbols.map(sym => perpsRateSpreadRow(sym)).filter(Boolean);
+    if (!rows.length) {
+        el.innerHTML = '<div class="perps-empty">No rate data available.</div>';
+        return;
+    }
+    el.innerHTML = rows.map(row => {
+        const venueRates = [
+            { label: 'HL', val: row.hyperliquid8h },
+            { label: 'GRVT', val: row.grvt8h },
+            { label: 'Ext', val: row.extended8h },
+            { label: 'Nado', val: row.nado8h },
+            { label: 'Var', val: row.variational8h },
+        ].filter(v => v.val != null && Number.isFinite(v.val));
+        const minRate = venueRates.length ? Math.min(...venueRates.map(v => v.val)) : null;
+        const spreads = perpsMv3SpreadEntries(row).sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
+        const bestSpread = spreads[0] || null;
+        const spreadCol = bestSpread ? bestSpread.val : null;
+        const rateCells = [
+            ...venueRates.map(v => `<div class="perps-mv3-rate-cell"><div class="perps-mv3-rate-venue">${dashEsc(v.label)}</div><div class="perps-mv3-rate-num${v.val === minRate ? ' best' : ''}">${perpsFmtRate(v.val)}</div></div>`),
+            `<div class="perps-mv3-rate-cell"><div class="perps-mv3-rate-venue">Spread</div><div class="perps-mv3-rate-num${spreadCol != null ? ' best' : ''}">${spreadCol != null ? perpsMv3FmtSpreadPct(spreadCol) : '—'}</div></div>`,
+        ].join('');
+        const pills = spreads.map((s, i) => {
+            const hot = i === 0 ? ' hot' : '';
+            return `<span class="perps-mv3-spread-pill${hot}">${dashEsc(s.label)} ${perpsMv3FmtSpreadPct(s.val)}</span>`;
+        }).join('');
+        const bestLabel = bestSpread ? `Best: ${bestSpread.label} ${perpsMv3FmtSpreadPct(bestSpread.val)}` : '—';
+        return `<div class="perps-mv3-rate-card">
+            <div class="perps-mv3-rate-head">
+                <div class="perps-mv3-rate-symbol">${dashEsc(row.symbol)}</div>
+                <div class="perps-mv3-rate-best">${dashEsc(bestLabel)}</div>
+            </div>
+            <div class="perps-mv3-rate-grid">${rateCells}</div>
+            ${pills ? `<div class="perps-mv3-rate-spreads">${pills}</div>` : ''}
+        </div>`;
+    }).join('');
+}
+
 function perpsRenderStatsBar(data) {
     _perpsLastData = data;
     if (typeof updateCharts === 'function' && document.body.dataset.activeTab === 'overview') updateCharts(true);
@@ -31244,6 +31802,7 @@ function perpsRenderStatsBar(data) {
         }
     }
     perpsSyncTotalPnlForRange(data, _perpsStatRange);
+    perpsMv3SyncChrome(data);
 }
 
 function perpsSetPositionsTab(tab, btn) {
@@ -31252,7 +31811,10 @@ function perpsSetPositionsTab(tab, btn) {
         el.classList.toggle('active', el.getAttribute('data-perps-positions-tab') === _perpsPositionsTab);
     });
     if (btn) btn.classList.add('active');
-    perpsRenderPositionsPanel(_perpsLastData);
+    if (_perpsLastData) {
+        perpsMv3SyncChrome(_perpsLastData);
+        perpsRenderPositionsPanel(_perpsLastData);
+    }
 }
 
 function perpsRenderPositionsPanel(data) {
@@ -31264,6 +31826,7 @@ function perpsRenderPositionsPanel(data) {
 }
 
 function perpsRenderPortfolioPositions(paired) {
+    if (perpsIsMobileV3()) return perpsRenderPortfolioPositionsV3(paired);
     const el = document.getElementById('perpsPositionsList');
     const badge = document.getElementById('perpsPairsBadge');
     if (badge) badge.textContent = paired.length + (paired.length === 1 ? ' pair' : ' pairs');
@@ -31449,6 +32012,7 @@ function perpsClosedDebugNoticeHtml(debug) {
 }
 
 function perpsRenderClosedPositions(closedPairs) {
+    if (perpsIsMobileV3()) return perpsRenderClosedPositionsV3(closedPairs);
     const el = document.getElementById('perpsPositionsList');
     const badge = document.getElementById('perpsPairsBadge');
     if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
@@ -32043,10 +32607,13 @@ function perpsRenderCrossMarginLeverage(data) {
         const notional = positions.reduce((sum, p) => sum + Math.abs(Number(p.notional || 0)), 0);
         const equity = Number(perpsVenueEquityForLeverage(data, venue));
         const lev = Number.isFinite(equity) && equity > 0 ? notional / equity : null;
+        const meta = perpsIsMobileV3()
+            ? `${perpsFmtUsd(notional)} notional<br>${Number.isFinite(equity) ? perpsFmtUsd(equity) : '—'} equity · ${positions.length} pos`
+            : `${perpsFmtUsd(notional)} open notional<br>${Number.isFinite(equity) ? perpsFmtUsd(equity) : '—'} equity · ${positions.length} pos`;
         return `<div class="perps-leverage-card">
             <div class="perps-leverage-name">${dashEsc(label)}</div>
             <div class="perps-leverage-value">${lev != null ? `${lev.toFixed(2)}x` : '—'}</div>
-            <div class="perps-leverage-meta">${perpsFmtUsd(notional)} open notional<br>${Number.isFinite(equity) ? perpsFmtUsd(equity) : '—'} equity · ${positions.length} pos</div>
+            <div class="perps-leverage-meta">${meta}</div>
         </div>`;
     }).join('');
 }
@@ -32084,6 +32651,7 @@ function perpsRenderDashboard(data, opts = {}) {
     perpsRenderVariationalPending(data.variationalPendingClose || []);
     perpsRenderAlerts(data.paired || [], data.unhedged || [], data.summary || {});
     perpsRenderCrossMarginLeverage(data);
+    perpsRenderMobileFundingRates(data);
     _perpsLastRefreshAt = data.fetchedAt || Date.now();
     _perpsLiveAprUpdatedAt = _perpsLastRefreshAt;
     _perpsRefreshError = null;
