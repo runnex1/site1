@@ -883,13 +883,18 @@ body[data-active-tab="perps"] .topbar,
   padding-right:0.85rem;
 }
 .perps-pos-head.closed > div:nth-child(n+3) { text-align:right; }
-.perps-pos-row.closed .perps-pos-closed-cell {
-  min-width:0;
-  text-align:right;
-  display:flex;
-  justify-content:flex-end;
-  align-items:center;
-}
+  .perps-pos-row.closed .perps-pos-closed-cell {
+    min-width: 0;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: flex-start;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(134, 159, 179, 0.10);
+    background: rgba(255, 255, 255, 0.02);
+  }
 .perps-pos-row.closed .perps-pos-closed-cell .perps-pos-metric-val,
 .perps-pos-row.closed .perps-pos-closed-cell .perps-pos-apr-val {
   margin-top:0;
@@ -1019,6 +1024,11 @@ body[data-active-tab="perps"] .topbar,
   background:rgba(6,16,23,0.88); padding:0.85rem 1rem;
 }
 .perps-config-foot.collapsed { display:none; }
+.perps-config-toggle-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0.15rem;
+}
 .perps-config-toggle {
   font-family:var(--ff-mono); font-size:0.62rem; font-weight:800; letter-spacing:0.06em;
   text-transform:uppercase; color:#9dacbb; background:none; border:none; cursor:pointer; padding:0;
@@ -7246,6 +7256,7 @@ body[data-active-tab="loops"] .page-content,
 
   /* Perps — full mobile layout (v3 single-scroll) */
   .perps-root {
+    width: 100%;
     max-width: none;
     margin: 0;
     padding: 0 0 1rem;
@@ -7259,8 +7270,14 @@ body[data-active-tab="loops"] .page-content,
     backdrop-filter: blur(12px);
     background: rgba(5, 10, 14, 0.92);
     border-bottom: 1px solid rgba(134, 159, 179, 0.16);
-    margin: 0 calc(-1 * var(--mobile-pad)) 0;
-    padding: 0 var(--mobile-pad) 8px;
+    margin: 0;
+    padding: 0 0 8px;
+  }
+  .perps-refresh-bar {
+    padding: 0.35rem 0 0.25rem;
+    border: none;
+    background: transparent;
+    box-shadow: none;
   }
   .perps-portfolio-sub { display: none; }
   .perps-mobile-jumps {
@@ -7288,19 +7305,58 @@ body[data-active-tab="loops"] .page-content,
     white-space: nowrap;
   }
   .perps-daily-funding-panel { display: none !important; }
+  .perps-config-toggle-row { display: none !important; }
+  .perps-mobile-sticky { order: 1; }
   .perps-equity-panel { order: 2; }
   .perps-positions-panel { order: 3; scroll-margin-top: 72px; }
   .perps-leverage-panel { order: 4; scroll-margin-top: 72px; }
   #perpsUnhedgedSection, #perpsVariationalPendingSection { order: 5; }
   #perpsConfigFoot { order: 6; }
-  .perps-equity-panel .perps-pnl-chart { min-height: 96px !important; }
-  .perps-equity-panel .perps-panel-body--chart { padding-bottom: 0.35rem; }
-  .perps-equity-mode-group {
+  .perps-equity-panel .perps-panel-head,
+  .perps-positions-panel .perps-panel-head,
+  .perps-leverage-panel .perps-panel-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+  }
+  .perps-equity-panel .perps-panel-title-row,
+  .perps-positions-panel .perps-panel-title-row {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .perps-equity-panel .perps-panel-title-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+  .perps-equity-panel #perpsEquityChartNote { display: none; }
+  .perps-equity-panel .perps-equity-mode-group {
     flex-wrap: nowrap;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     max-width: 100%;
+    width: 100%;
+    padding-bottom: 2px;
   }
+  .perps-positions-panel .perps-position-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+    margin-left: 0;
+    overflow: visible;
+  }
+  .perps-positions-panel .perps-position-tab {
+    width: 100%;
+    text-align: center;
+    min-height: 36px;
+  }
+  .perps-positions-panel > .perps-panel-head > .perps-pill,
+  .perps-equity-panel > .perps-panel-head > .perps-pill {
+    align-self: flex-start;
+  }
+  .perps-equity-panel .perps-pnl-chart { min-height: 96px !important; }
+  .perps-equity-panel .perps-panel-body--chart { padding-bottom: 0.35rem; }
   .perps-leverage-grid { grid-template-columns: 1fr 1fr !important; gap: 8px; }
   .perps-leverage-card { padding: 0.7rem 0.75rem; }
   .perps-leverage-value { font-size: 1.25rem; }
@@ -7342,10 +7398,17 @@ body[data-active-tab="loops"] .page-content,
     display: none !important;
   }
   .perps-pos-apr-col, .perps-pos-head > div:nth-last-child(2) { text-align: left !important; }
+  .perps-pos-apr-col { grid-column: auto !important; }
   .perps-pos-card { padding: 0.85rem; margin-bottom: 10px; }
   .perps-pos-legs { padding-right: 0; }
   .perps-pos-leg { flex-wrap: wrap; gap: 0.5rem; }
-  .perps-pos-chart-col { justify-content: flex-start; }
+  .perps-pos-chart-col {
+    justify-content: flex-end;
+    align-items: center;
+    flex-direction: row;
+    padding-top: 0.15rem;
+  }
+  .perps-pos-chart-btn { min-height: 36px; min-width: 36px; }
   .perps-equity-tip { max-width: calc(100vw - 2rem); }
   .perps-pos-row > div {
     display: flex;
@@ -7371,6 +7434,24 @@ body[data-active-tab="loops"] .page-content,
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: #718391;
+  }
+  .perps-pos-row.closed .perps-pos-closed-cell {
+    min-width: 0;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: flex-start;
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(134, 159, 179, 0.10);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .perps-pos-row.closed .perps-pos-closed-cell .perps-pos-metric-val,
+  .perps-pos-row.closed .perps-pos-closed-cell .perps-pos-apr-val,
+  .perps-pos-row.closed .perps-pos-closed-time {
+    margin-top: 3px;
+    text-align: left;
   }
   .perps-fund-chart-wrap, .perps-pnl-chart { min-height: 180px; }
   .perps-panel { min-height: 0 !important; }
@@ -8764,7 +8845,7 @@ body[data-active-tab="loops"] .page-content,
             <div class="perps-table-wrap" id="perpsVariationalPendingTable"></div>
           </section>
 
-          <div style="display:flex;justify-content:flex-end;padding:0 0.15rem;">
+          <div class="perps-config-toggle-row">
             <button type="button" class="perps-config-toggle" id="perpsConfigToggle" onclick="perpsToggleConfigFoot()" style="display:none;">Edit wallets</button>
           </div>
           <section class="perps-config-foot" id="perpsConfigFoot">
@@ -31388,12 +31469,12 @@ function perpsRenderClosedPositions(closedPairs) {
                 ${perpsClosedLegHtml(pair.longLeg)}
                 ${perpsClosedLegHtml(pair.shortLeg)}
             </div>
-            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-val ${perpsSignedCls(pair.netPnl)}">${perpsFmtUsd(pair.netPnl)}</div></div>
-            <div class="perps-pos-closed-cell"><div class="perps-pos-apr-val ${sessionApr != null ? perpsSignedCls(sessionApr) : ''}" title="${dashEsc(aprTip)}">${sessionApr != null ? perpsFmtPct(sessionApr) : '—'}</div></div>
-            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-val ${perpsSignedCls(pair.closeSlippage)}">${perpsFmtUsd(pair.closeSlippage)}</div></div>
-            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-val ${perpsSignedCls(pair.funding)}">${perpsFmtUsd(pair.funding)}</div></div>
-            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-val neg">-${perpsFmtUsd(feesAbs)}</div></div>
-            <div class="perps-pos-closed-cell"><div class="perps-pos-closed-time">${dashEsc(closedAt)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.netPnl)}">${perpsFmtUsd(pair.netPnl)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">APR</div><div class="perps-pos-apr-val ${sessionApr != null ? perpsSignedCls(sessionApr) : ''}" title="${dashEsc(aprTip)}">${sessionApr != null ? perpsFmtPct(sessionApr) : '—'}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.closeSlippage)}">${perpsFmtUsd(pair.closeSlippage)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.funding)}">${perpsFmtUsd(pair.funding)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Fees</div><div class="perps-pos-metric-val neg">-${perpsFmtUsd(feesAbs)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Closed</div><div class="perps-pos-closed-time">${dashEsc(closedAt)}</div></div>
         </div></div>`;
     }).join('');
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
