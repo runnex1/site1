@@ -2313,6 +2313,7 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
   assert.ok(result.paired[0].alerts.includes('size_mismatch'));
   hedge.variationalEntryPx = 0.146;
   hedge.variationalSize = -160000;
+  hedge.updatedAt = Date.now();
   result = applyVariationalHedges(data, [hedge], { ADA: listing });
   assert.ok(result.paired[0].alerts.includes('size_mismatch'), 'entry edit must not clear size mismatch');
   assert.equal(result.paired[0].crossLegB.size, -160000);
@@ -2321,10 +2322,15 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
     variationalEntryPx: 0.145,
     trackedSize: 176000,
     variationalSize: -176000,
+    updatedAt: hedge.updatedAt - 60000,
   }];
   const merged = [mergeVariationalHedgeRecord(hedge, serverStale[0])];
   assert.equal(merged[0].variationalSize, -160000, 'merge must keep newer local variational fill size');
   assert.equal(merged[0].variationalEntryPx, 0.146);
+  const localLower = { ...hedge, variationalEntryPx: 0.144, updatedAt: Date.now() };
+  const serverHigher = { ...hedge, variationalEntryPx: 0.146, updatedAt: localLower.updatedAt - 60000 };
+  const mergedLower = mergeVariationalHedgeRecord(localLower, serverHigher);
+  assert.equal(mergedLower.variationalEntryPx, 0.144, 'merge must keep newer local entry even when price is lower');
 }
 
 {
@@ -2351,9 +2357,9 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
     status: 'open',
     openedAt: Date.now() - 5 * 86400000,
   };
-  resolveVariationalSizesOnEntryEdit(hedge, { size: 176000, side: 'long' }, { variationalSize: 176000 });
+  resolveVariationalSizesOnEntryEdit(hedge, { size: 176000, side: 'long' });
   let result = applyVariationalHedges(data, [hedge], { ADA: listing });
-  assert.ok(!result.paired[0].alerts.includes('size_mismatch'), 'explicit fill size after resize must clear mismatch');
+  assert.ok(!result.paired[0].alerts.includes('size_mismatch'), 'entry edit must sync variational size to exchange leg');
   assert.equal(result.paired[0].crossLegB.size, -176000);
 
   const priceOnly = {
@@ -2363,30 +2369,29 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
   };
   resolveVariationalSizesOnEntryEdit(priceOnly, { size: 176000, side: 'long' });
   result = applyVariationalHedges(data, [priceOnly], { ADA: listing });
-  assert.ok(result.paired[0].alerts.includes('size_mismatch'), 'price-only edit must keep size mismatch when fill size unchanged');
-  assert.equal(result.paired[0].crossLegB.size, -160000);
+  assert.ok(!result.paired[0].alerts.includes('size_mismatch'), 'price edit must auto-sync size from exchange leg');
+  assert.equal(result.paired[0].crossLegB.size, -176000);
 }
 
 function mergeVariationalHedgeRecord(prev, hedge) {
-  const prevEntry = Number(prev?.variationalEntryPx) || 0;
-  const incEntry = Number(hedge?.variationalEntryPx) || 0;
-  const preferPrevSizes = prevEntry >= incEntry;
-  const pickSize = (field) => {
+  const prevTs = Number(prev?.updatedAt) || Number(prev?.openedAt) || 0;
+  const incTs = Number(hedge?.updatedAt) || Number(hedge?.openedAt) || 0;
+  const preferPrev = prevTs >= incTs;
+  const pickField = (field) => {
     const prevVal = prev?.[field];
     const incVal = hedge?.[field];
-    if (preferPrevSizes && Number.isFinite(Number(prevVal)) && Number(prevVal) !== 0) return prevVal;
-    if (Number.isFinite(Number(incVal)) && Number(incVal) !== 0) return incVal;
-    return prevVal ?? incVal;
+    if (preferPrev && prevVal != null && prevVal !== '' && Number(prevVal) !== 0) return prevVal;
+    if (incVal != null && incVal !== '' && Number(incVal) !== 0) return incVal;
+    return preferPrev ? (prevVal ?? incVal) : (incVal ?? prevVal);
   };
   return {
     ...prev,
     ...hedge,
     openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
-    variationalEntryPx: preferPrevSizes
-      ? (Number(prev?.variationalEntryPx) || Number(hedge?.variationalEntryPx) || null)
-      : (Number(hedge?.variationalEntryPx) || Number(prev?.variationalEntryPx) || null),
-    variationalSize: pickSize('variationalSize'),
-    trackedSize: pickSize('trackedSize'),
+    updatedAt: Math.max(prevTs, incTs) || null,
+    variationalEntryPx: pickField('variationalEntryPx'),
+    variationalSize: pickField('variationalSize'),
+    trackedSize: pickField('trackedSize'),
   };
 }
 

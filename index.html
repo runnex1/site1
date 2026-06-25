@@ -651,6 +651,7 @@ body[data-active-tab="perps"] .topbar,
   display:flex; flex-direction:column; gap:12px; min-height:calc(100vh - 24px);
   width:100%; max-width:min(1180px, calc(100% - 2rem)); margin:0 auto; padding:0 1.35rem 1.25rem;
 }
+.perps-mobile-jumps { display: none; }
 .perps-head {
   border:1px solid rgba(134,159,179,0.15); border-radius:10px;
   background:rgba(6,16,23,0.88); padding:1rem 1.15rem;
@@ -7243,13 +7244,66 @@ body[data-active-tab="loops"] .page-content,
     padding: 8px 12px;
   }
 
-  /* Perps — full mobile layout */
+  /* Perps — full mobile layout (v3 single-scroll) */
   .perps-root {
     max-width: none;
     margin: 0;
     padding: 0 0 1rem;
     min-height: 0;
+    gap: 10px;
   }
+  .perps-mobile-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    backdrop-filter: blur(12px);
+    background: rgba(5, 10, 14, 0.92);
+    border-bottom: 1px solid rgba(134, 159, 179, 0.16);
+    margin: 0 calc(-1 * var(--mobile-pad)) 0;
+    padding: 0 var(--mobile-pad) 8px;
+  }
+  .perps-portfolio-sub { display: none; }
+  .perps-mobile-jumps {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 0 2px;
+    scrollbar-width: none;
+  }
+  .perps-mobile-jumps::-webkit-scrollbar { display: none; }
+  .perps-mobile-jump {
+    font-family: var(--ff-mono);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 7px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(134, 159, 179, 0.16);
+    background: rgba(255, 255, 255, 0.02);
+    color: #9dacbb;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .perps-daily-funding-panel { display: none !important; }
+  .perps-equity-panel { order: 2; }
+  .perps-positions-panel { order: 3; scroll-margin-top: 72px; }
+  .perps-leverage-panel { order: 4; scroll-margin-top: 72px; }
+  #perpsUnhedgedSection, #perpsVariationalPendingSection { order: 5; }
+  #perpsConfigFoot { order: 6; }
+  .perps-equity-panel .perps-pnl-chart { min-height: 96px !important; }
+  .perps-equity-panel .perps-panel-body--chart { padding-bottom: 0.35rem; }
+  .perps-equity-mode-group {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  .perps-leverage-grid { grid-template-columns: 1fr 1fr !important; gap: 8px; }
+  .perps-leverage-card { padding: 0.7rem 0.75rem; }
+  .perps-leverage-value { font-size: 1.25rem; }
   .perps-portfolio-head { padding-top: calc(4px + env(safe-area-inset-top, 0px)); }
   .perps-portfolio-title { font-size: 1.15rem; }
   .perps-config input { min-width: 0; width: 100%; font-size: 16px; }
@@ -7272,11 +7326,20 @@ body[data-active-tab="loops"] .page-content,
   }
   .perps-pos-row,
   .perps-pos-row.closed {
-    display: flex !important;
-    flex-direction: column !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
     align-items: stretch !important;
-    gap: 0.55rem !important;
-    grid-template-columns: unset !important;
+    gap: 8px !important;
+  }
+  .perps-pos-token,
+  .perps-pos-legs,
+  .perps-pos-chart-col {
+    grid-column: 1 / -1;
+  }
+  .perps-pos-liq-stack,
+  .perps-pos-tpsl-stack,
+  .perps-pos-spacer {
+    display: none !important;
   }
   .perps-pos-apr-col, .perps-pos-head > div:nth-last-child(2) { text-align: left !important; }
   .perps-pos-card { padding: 0.85rem; margin-bottom: 10px; }
@@ -7286,15 +7349,29 @@ body[data-active-tab="loops"] .page-content,
   .perps-equity-tip { max-width: calc(100vw - 2rem); }
   .perps-pos-row > div {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.25rem 0.5rem;
-    width: 100%;
-    padding: 0.35rem 0;
-    border-bottom: 1px solid rgba(134,159,179,0.08);
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 0.2rem;
+    width: auto;
+    padding: 9px 10px;
+    border-bottom: none;
+    border-radius: 10px;
+    border: 1px solid rgba(134, 159, 179, 0.10);
+    background: rgba(255, 255, 255, 0.02);
   }
-  .perps-pos-row > div:last-child { border-bottom: none; }
+  .perps-pos-row > .perps-pos-token,
+  .perps-pos-row > .perps-pos-legs {
+    padding: 0;
+    border: none;
+    background: transparent;
+  }
+  .perps-pos-metric-label {
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #718391;
+  }
   .perps-fund-chart-wrap, .perps-pnl-chart { min-height: 180px; }
   .perps-panel { min-height: 0 !important; }
   body[data-active-tab="perps"] .page-content {
@@ -8502,6 +8579,7 @@ body[data-active-tab="loops"] .page-content,
 
       <div id="perpsTab" class="tab-pane">
         <div class="perps-root">
+          <div class="perps-mobile-sticky">
           <div class="perps-refresh-bar" id="perpsRefreshBar">
             <div>
               <div class="perps-portfolio-head">
@@ -8538,8 +8616,13 @@ body[data-active-tab="loops"] .page-content,
             <div class="perps-stat-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Avg APR</div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">chart PnL ÷ avg equity</div></div>
           </section>
+          <nav class="perps-mobile-jumps" aria-label="Perps sections">
+            <a class="perps-mobile-jump" href="#perpsPositionsPanel">Positions</a>
+            <a class="perps-mobile-jump" href="#perpsLeveragePanel">Cross margin</a>
+          </nav>
+          </div>
 
-          <section class="perps-panel">
+          <section class="perps-panel perps-equity-panel" id="perpsEquityPanel">
             <div class="perps-panel-head">
               <div class="perps-panel-title-row">
                 <div class="perps-panel-title">Portfolio Equity</div>
@@ -8566,7 +8649,7 @@ body[data-active-tab="loops"] .page-content,
             </div>
           </section>
 
-          <section class="perps-panel">
+          <section class="perps-panel perps-daily-funding-panel" id="perpsDailyFundingPanel">
             <div class="perps-panel-head">
               <div class="perps-panel-title">Daily funding collected</div>
               <div class="perps-fund-controls">
@@ -8595,7 +8678,7 @@ body[data-active-tab="loops"] .page-content,
             </div>
           </section>
 
-          <section class="perps-panel">
+          <section class="perps-panel perps-positions-panel" id="perpsPositionsPanel">
             <div class="perps-panel-head">
               <div class="perps-panel-title-row">
                 <div class="perps-panel-title">Positions</div>
@@ -8704,7 +8787,7 @@ body[data-active-tab="loops"] .page-content,
             <div class="perps-status" id="perpsStatus">Checking saved wallets…</div>
           </section>
 
-          <section class="perps-panel" style="min-height:0;">
+          <section class="perps-panel perps-leverage-panel" id="perpsLeveragePanel" style="min-height:0;">
             <div class="perps-panel-head">
               <div class="perps-panel-title">Cross-margin leverage</div>
               <span class="perps-pill">open notional / equity</span>
@@ -28392,25 +28475,24 @@ function perpsVariationalHedgeKey(hedge) {
 function perpsMergeVariationalHedgeRecord(prev, hedge) {
     if (!hedge) return prev || null;
     if (!prev) return hedge;
-    const prevEntry = Number(prev?.variationalEntryPx) || 0;
-    const incEntry = Number(hedge?.variationalEntryPx) || 0;
-    const preferPrevSizes = prevEntry >= incEntry;
-    const pickSize = (field) => {
+    const prevTs = Number(prev?.updatedAt) || Number(prev?.openedAt) || 0;
+    const incTs = Number(hedge?.updatedAt) || Number(hedge?.openedAt) || 0;
+    const preferPrev = prevTs >= incTs;
+    const pickField = (field) => {
         const prevVal = prev?.[field];
         const incVal = hedge?.[field];
-        if (preferPrevSizes && Number.isFinite(Number(prevVal)) && Number(prevVal) !== 0) return prevVal;
-        if (Number.isFinite(Number(incVal)) && Number(incVal) !== 0) return incVal;
-        return prevVal ?? incVal;
+        if (preferPrev && prevVal != null && prevVal !== '' && Number(prevVal) !== 0) return prevVal;
+        if (incVal != null && incVal !== '' && Number(incVal) !== 0) return incVal;
+        return preferPrev ? (prevVal ?? incVal) : (incVal ?? prevVal);
     };
     return {
         ...prev,
         ...hedge,
         openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
-        variationalEntryPx: preferPrevSizes
-            ? (Number(prev?.variationalEntryPx) || Number(hedge?.variationalEntryPx) || null)
-            : (Number(hedge?.variationalEntryPx) || Number(prev?.variationalEntryPx) || null),
-        variationalSize: pickSize('variationalSize'),
-        trackedSize: pickSize('trackedSize'),
+        updatedAt: Math.max(prevTs, incTs) || null,
+        variationalEntryPx: pickField('variationalEntryPx'),
+        variationalSize: pickField('variationalSize'),
+        trackedSize: pickField('trackedSize'),
     };
 }
 
@@ -28528,7 +28610,7 @@ function perpsOpenVariationalModal(opts = {}) {
             if (trackedVal) trackedVal.textContent = perpsFmtPx(trackedEntry);
         }
     }
-    const showSize = opts.mode === 'entry' && !!opts.hedgeId;
+    const showSize = false;
     if (sizeWrap) sizeWrap.style.display = showSize ? '' : 'none';
     if (showSize && sizeInput) {
         const sizeVal = Number(opts.variationalSize);
@@ -28545,7 +28627,9 @@ function perpsOpenVariationalModal(opts = {}) {
         if (opts.mode === 'exit') {
             hint.textContent = 'Enter the average exit price on Variational. Tracked leg already closed on exchange.';
         } else if (opts.hadSizeMismatch) {
-            hint.textContent = 'Enter your Variational avg fill and fill size after resizing. Match the exchange leg to clear the size mismatch.';
+            hint.textContent = 'Enter your Variational avg fill. Size syncs automatically to the exchange leg.';
+        } else if (opts.hedgeId) {
+            hint.textContent = 'Enter your average Variational fill. Size syncs automatically to the exchange leg.';
         } else {
             hint.textContent = 'Enter your average Variational fill. uPnL = fill vs live Variational mark (not size-tier quotes). Funding shown as ~est.';
         }
@@ -28579,20 +28663,18 @@ function perpsSaveVariationalModal() {
         if (_perpsVariationalModalMode === 'exit') {
             hedge.variationalExitPx = px;
             hedge.closedAt = Date.now();
+            hedge.updatedAt = Date.now();
         } else {
             hedge.variationalEntryPx = px;
+            hedge.updatedAt = Date.now();
             const pair = (_perpsLastData?.paired || []).find(p => p.variationalHedgeId === hedge.id);
             const trackedLeg = pair?.crossLegA?.venue === hedge.trackedVenue
                 ? pair.crossLegA
                 : pair?.crossLegB?.venue === hedge.trackedVenue
                     ? pair.crossLegB
                     : VH.findTrackedLeg?.(_perpsLastData, hedge) || null;
-            const sizeRaw = document.getElementById('perpsVariationalSizeInput')?.value;
-            const explicitVarSize = Number(String(sizeRaw || '').replace(/,/g, ''));
             if (VH.resolveVariationalSizesOnEntryEdit) {
-                VH.resolveVariationalSizesOnEntryEdit(hedge, trackedLeg, {
-                    variationalSize: Number.isFinite(explicitVarSize) && explicitVarSize > 0 ? explicitVarSize : null,
-                });
+                VH.resolveVariationalSizesOnEntryEdit(hedge, trackedLeg);
             }
         }
         perpsPersistVariationalHedges(hedges);
@@ -28615,7 +28697,9 @@ function perpsApplyVariationalHedgesToData(data) {
     const result = VH.applyVariationalHedges(data, hedges, variationalBySymbol);
     data.paired = result.paired;
     data.unhedged = result.unhedged;
-    perpsPersistVariationalHedges(result.hedges);
+    const prevStatus = new Map(hedges.map(h => [h.id, h.status]));
+    const statusChanged = result.hedges.some(h => prevStatus.get(h.id) !== h.status);
+    perpsPersistVariationalHedges(result.hedges, { skipCloudSync: !statusChanged });
     if (result.newClosedPairs?.length) {
         data.closedPairs = perpsCacheNewClosedPairs([
             ...(data.closedPairs || []),

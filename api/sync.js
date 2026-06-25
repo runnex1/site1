@@ -72,25 +72,24 @@ function parseJson(raw, fallback) {
 function mergeVariationalHedgeRecord(prev, hedge) {
   if (!hedge) return prev || null;
   if (!prev) return hedge;
-  const prevEntry = Number(prev?.variationalEntryPx) || 0;
-  const incEntry = Number(hedge?.variationalEntryPx) || 0;
-  const preferPrevSizes = prevEntry >= incEntry;
-  const pickSize = (field) => {
+  const prevTs = Number(prev?.updatedAt) || Number(prev?.openedAt) || 0;
+  const incTs = Number(hedge?.updatedAt) || Number(hedge?.openedAt) || 0;
+  const preferPrev = prevTs >= incTs;
+  const pickField = (field) => {
     const prevVal = prev?.[field];
     const incVal = hedge?.[field];
-    if (preferPrevSizes && Number.isFinite(Number(prevVal)) && Number(prevVal) !== 0) return prevVal;
-    if (Number.isFinite(Number(incVal)) && Number(incVal) !== 0) return incVal;
-    return prevVal ?? incVal;
+    if (preferPrev && prevVal != null && prevVal !== '' && Number(prevVal) !== 0) return prevVal;
+    if (incVal != null && incVal !== '' && Number(incVal) !== 0) return incVal;
+    return preferPrev ? (prevVal ?? incVal) : (incVal ?? prevVal);
   };
   return {
     ...prev,
     ...hedge,
     openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
-    variationalEntryPx: preferPrevSizes
-      ? (Number(prev?.variationalEntryPx) || Number(hedge?.variationalEntryPx) || null)
-      : (Number(hedge?.variationalEntryPx) || Number(prev?.variationalEntryPx) || null),
-    variationalSize: pickSize('variationalSize'),
-    trackedSize: pickSize('trackedSize'),
+    updatedAt: Math.max(prevTs, incTs) || null,
+    variationalEntryPx: pickField('variationalEntryPx'),
+    variationalSize: pickField('variationalSize'),
+    trackedSize: pickField('trackedSize'),
   };
 }
 
