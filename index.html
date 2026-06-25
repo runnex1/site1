@@ -6724,7 +6724,7 @@ body[data-active-tab="loops"] .page-content,
     height: 100vh;
     min-height: 0;
     max-width: 100vw;
-    overflow-x: hidden;
+    overflow: hidden;
   }
 
   /* Undo desktop full-height tab traps so content can scroll */
@@ -6773,15 +6773,15 @@ body[data-active-tab="loops"] .page-content,
 
   .main-area {
     order: 1;
-    flex: 1;
+    flex: 1 1 0;
     min-height: 0;
-    height: auto !important;
     overflow-x: hidden !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
     overflow-anchor: none;
     padding: 0 0 var(--mobile-nav-h) !important;
     gap: 0;
+    touch-action: pan-y;
   }
 
   /* Sticky mobile page header (non-overview / non-perps tabs) */
@@ -6920,6 +6920,7 @@ body[data-active-tab="loops"] .page-content,
   }
   body:not([data-active-tab="overview"]) .topbar { display: none !important; }
   body:not([data-active-tab="overview"]) .overview-top-chrome .market-ticker-strip { display: none !important; }
+  body[data-active-tab="perps"] .overview-top-chrome { display: none !important; }
   .topbar {
     min-height: 0 !important;
     margin: 0 !important;
@@ -7059,6 +7060,7 @@ body[data-active-tab="loops"] .page-content,
     padding: 10px var(--mobile-pad-r) 12px var(--mobile-pad) !important;
     overflow: visible !important;
     min-height: 0;
+    flex: 0 0 auto;
     height: auto !important;
   }
   .page-content.tab-overview,
@@ -7260,7 +7262,7 @@ body[data-active-tab="loops"] .page-content,
     max-width: none;
     margin: 0;
     padding: 0 0 1rem;
-    min-height: 0;
+    min-height: 0 !important;
     gap: 10px;
   }
   .perps-mobile-sticky {
@@ -7463,6 +7465,17 @@ body[data-active-tab="loops"] .page-content,
   .page-content:has(#perpsTab.active) {
     overflow: visible !important;
     height: auto !important;
+    flex: 0 0 auto !important;
+  }
+  body[data-active-tab="perps"] #perpsTab.active,
+  body[data-active-tab="perps"] #perpsTab {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+  .perps-panel {
+    min-height: 0 !important;
+    overflow: visible !important;
   }
 
   /* Loops */
