@@ -6775,13 +6775,16 @@ body[data-active-tab="loops"] .page-content,
     order: 1;
     flex: 1 1 0;
     min-height: 0;
+    max-height: calc(100dvh - var(--mobile-nav-h));
+    max-height: calc(100svh - var(--mobile-nav-h));
     overflow-x: hidden !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
     overflow-anchor: none;
-    padding: 0 0 var(--mobile-nav-h) !important;
+    padding: 0 0 8px !important;
     gap: 0;
     touch-action: pan-y;
+    scroll-padding-bottom: calc(var(--mobile-nav-h) + 12px);
   }
 
   /* Sticky mobile page header (non-overview / non-perps tabs) */
@@ -7261,7 +7264,7 @@ body[data-active-tab="loops"] .page-content,
     width: 100%;
     max-width: none;
     margin: 0;
-    padding: 0 0 1rem;
+    padding: 0 0 calc(var(--mobile-nav-h) + 20px);
     min-height: 0 !important;
     gap: 10px;
   }
@@ -7273,7 +7276,7 @@ body[data-active-tab="loops"] .page-content,
     background: rgba(5, 10, 14, 0.92);
     border-bottom: 1px solid rgba(134, 159, 179, 0.16);
     margin: 0;
-    padding: 0 0 8px;
+    padding: 0 0 6px;
   }
   .perps-refresh-bar {
     padding: 0.35rem 0 0.25rem;
@@ -7309,11 +7312,14 @@ body[data-active-tab="loops"] .page-content,
   .perps-daily-funding-panel { display: none !important; }
   .perps-config-toggle-row { display: none !important; }
   .perps-mobile-sticky { order: 1; }
-  .perps-equity-panel { order: 2; }
-  .perps-positions-panel { order: 3; scroll-margin-top: 72px; }
-  .perps-leverage-panel { order: 4; scroll-margin-top: 72px; }
-  #perpsUnhedgedSection, #perpsVariationalPendingSection { order: 5; }
-  #perpsConfigFoot { order: 6; }
+  .perps-stats-bar { order: 2; }
+  .perps-positions-panel { order: 3; scroll-margin-top: 64px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
+  .perps-equity-panel { order: 4; }
+  .perps-leverage-panel { order: 5; scroll-margin-top: 64px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
+  #perpsUnhedgedSection, #perpsVariationalPendingSection { order: 6; }
+  #perpsConfigFoot { order: 7; }
+  .perps-stat-card { padding: 8px 10px; }
+  .perps-stat-sub { font-size: 0.58rem; line-height: 1.25; }
   .perps-equity-panel .perps-panel-head,
   .perps-positions-panel .perps-panel-head,
   .perps-leverage-panel .perps-panel-head {
@@ -8696,6 +8702,12 @@ body[data-active-tab="loops"] .page-content,
               <button type="button" class="perps-range-btn" data-perps-stat-range="all" onclick="perpsSetStatRange('all',this)">ALL</button>
             </div>
           </div>
+          <nav class="perps-mobile-jumps" aria-label="Perps sections">
+            <a class="perps-mobile-jump" href="#perpsPositionsPanel">Positions</a>
+            <a class="perps-mobile-jump" href="#perpsLeveragePanel">Cross margin</a>
+          </nav>
+          </div>
+
           <section class="perps-stats-bar" id="perpsStatsBar">
             <div class="perps-stat-card"><div class="perps-stat-label">Open Notional</div><div class="perps-stat-value" id="perpsStatNotional">—</div><div class="perps-stat-sub" id="perpsStatNotionalSub">—</div></div>
             <div class="perps-stat-card">
@@ -8710,11 +8722,6 @@ body[data-active-tab="loops"] .page-content,
             <div class="perps-stat-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
             <div class="perps-stat-card"><div class="perps-stat-label">Avg APR</div><div class="perps-stat-value" id="perpsStatApr">—</div><div class="perps-stat-sub" id="perpsStatAprSub">chart PnL ÷ avg equity</div></div>
           </section>
-          <nav class="perps-mobile-jumps" aria-label="Perps sections">
-            <a class="perps-mobile-jump" href="#perpsPositionsPanel">Positions</a>
-            <a class="perps-mobile-jump" href="#perpsLeveragePanel">Cross margin</a>
-          </nav>
-          </div>
 
           <section class="perps-panel perps-equity-panel" id="perpsEquityPanel">
             <div class="perps-panel-head">
