@@ -10730,7 +10730,7 @@ async function loadData() {
     perpsBootPromise.catch(() => {});
 }
 
-async function saveData() {
+async function saveData(syncOpts = {}) {
     try {
         normalizePortfolioData();
         persistPolymarketWalletsLocal();
@@ -10802,6 +10802,8 @@ async function saveData() {
             // Dismissed opportunities (market IDs)
             dismissedMarkets: _dismissedMarkets || [],
         };
+        if (syncOpts.watcherWalletsClear) payload.watcherWalletsClear = true;
+        if (syncOpts.watcherLinksClear) payload.watcherLinksClear = true;
         await fetch('/api/sync', {
             method:    'POST',
             headers:   { 'Content-Type': 'application/json' },
@@ -16197,12 +16199,14 @@ async function syncLoopApiPositions({ silent = false } = {}) {
         loopsAppendSnapshotFromApiData(json);
         try { await fetchLiveTokenPrices({ force: true }); } catch (e) {}
         try {
-            await fetch('/api/sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ watcherWallets: watcherWallets || [] }),
-                keepalive: true,
-            });
+            if (Array.isArray(watcherWallets) && watcherWallets.length) {
+                await fetch('/api/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ watcherWallets }),
+                    keepalive: true,
+                });
+            }
         } catch (e) {}
     } catch (e) {
         loopApiState.errors = [{ provider: 'loops', message: e.message || 'Live loop sync failed' }];
@@ -22112,7 +22116,8 @@ function loadWatchlist() {
 
 function saveWatcherWallets() {
     try { localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets)); } catch(e) {}
-    saveData();
+    const clearEmpty = !(Array.isArray(watcherWallets) && watcherWallets.length);
+    saveData({ watcherWalletsClear: clearEmpty });
     updateWatcherWalletCount();
 }
 
@@ -22321,7 +22326,8 @@ function renderWatcherWalletSection(category, gridId, countId) {
 function saveWatcherLinks() {
     const savedLinks = watcherLinks.map(({ _editing, ...link }) => link);
     try { localStorage.setItem('watcher-links', JSON.stringify(savedLinks)); } catch(e) {}
-    saveData();
+    const clearEmpty = !(Array.isArray(savedLinks) && savedLinks.length);
+    saveData({ watcherLinksClear: clearEmpty });
 }
 function loadWatcherLinks() {
     try {

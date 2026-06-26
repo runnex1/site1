@@ -14,6 +14,11 @@
 
 const { kvGet, kvSet } = require('../lib/kv');
 const { mergeLoopSnapshotStores, ensureUsdeUsdmSnapshotsPurged } = require('../lib/loop-snapshots');
+const {
+  shouldPersistSyncArray,
+  shouldPersistWatcherWallets,
+  shouldPersistWatcherLinks,
+} = require('../lib/sync-array-guard');
 const { collectEvents } = require('../lib/event-log');
 const { fetchPolymarketWalletBalances } = require('../lib/polymarket-balance');
 const https = require('https');
@@ -963,27 +968,27 @@ module.exports = async function handler(req, res) {
       saved.dismissedMarkets = true;
     }
 
-    // Watcher wallets
-    if (body.watcherWallets) {
+    // Watcher wallets (ignore empty payloads that would erase saved yield/PM wallets)
+    if (shouldPersistWatcherWallets(body.watcherWallets, body)) {
       await kvSet('vault:watcherwallets', JSON.stringify(body.watcherWallets));
       saved.watcherWallets = true;
     }
 
     // Polymarket wallet addresses — also available inside body.portfolio
     const pmWallets = body.polymarketWallets || body.portfolio?.polymarketWallets;
-    if (pmWallets) {
+    if (shouldPersistSyncArray(pmWallets)) {
       await kvSet('vault:pm_wallets', JSON.stringify(pmWallets));
       saved.pmWallets = true;
     }
 
     // Watcher links
-    if (body.watcherLinks) {
+    if (shouldPersistWatcherLinks(body.watcherLinks, body)) {
       await kvSet('vault:watcherlinks', JSON.stringify(body.watcherLinks));
       saved.watcherLinks = true;
     }
 
     // Opinion.trade wallet addresses (no API key stored)
-    if (body.opinionWallets) {
+    if (shouldPersistSyncArray(body.opinionWallets)) {
       await kvSet('vault:opinion_wallets', JSON.stringify(body.opinionWallets));
       saved.opinionWallets = true;
     }
@@ -1001,7 +1006,7 @@ module.exports = async function handler(req, res) {
     }
 
     // TG / news feed channel handles
-    if (body.tgChannels) {
+    if (shouldPersistSyncArray(body.tgChannels)) {
       await kvSet('vault:feed_channels', JSON.stringify(body.tgChannels));
       saved.tgChannels = true;
     }
