@@ -28974,6 +28974,8 @@ function perpsVariationalBySymbolFromSpread(rateSpread) {
             fundingIntervalHours: row.variationalIntervalHours || 8,
             fundingNextAtMs: row.variationalNextFundingAtMs,
             fundingClockSource: row.variationalFundingClockSource,
+            referenceFundingRateInterval: row.variationalReferenceIntervalRate,
+            referenceFundingIntervalS: row.variationalReferenceIntervalS,
         }) : {
             symbol: row.symbol,
             markPx: row.variationalMarkPx,
@@ -29005,9 +29007,21 @@ function perpsResolveVariationalListing(pair, data) {
     const fromCache = data?._variationalListingBySymbol?.[base];
     const fromSpread = perpsVariationalBySymbolFromSpread(data?.rateSpread || [])[base];
     const VH = window.VariationalHedge;
+    const merged = {
+        ...fromSpread,
+        ...fromCache,
+        ...fromApi,
+        // Freshest settlement clock wins when spread row was refreshed more recently.
+        ...(fromSpread?.fundingNextAtMs ? {
+            fundingNextAtMs: fromSpread.fundingNextAtMs,
+            fundingClockSource: fromSpread.fundingClockSource,
+            referenceFundingRateInterval: fromSpread.referenceFundingRateInterval,
+            referenceFundingIntervalS: fromSpread.referenceFundingIntervalS,
+        } : {}),
+    };
     return VH?.normalizeVariationalListing
-        ? VH.normalizeVariationalListing({ ...fromApi, ...fromCache, ...fromSpread })
-        : (fromSpread || fromCache || fromApi || null);
+        ? VH.normalizeVariationalListing(merged)
+        : (fromApi || fromSpread || fromCache || null);
 }
 
 let _perpsVariationalModalMode = null;
@@ -29133,8 +29147,8 @@ function perpsApplyVariationalHedgesToData(data) {
     const hedges = perpsLoadVariationalHedges();
     if (!hedges.length) return data;
     const variationalBySymbol = {
-        ...(data.variationalListings || {}),
         ...perpsVariationalBySymbolFromSpread(data.rateSpread || []),
+        ...(data.variationalListings || {}),
     };
     data._variationalListingBySymbol = { ...(data._variationalListingBySymbol || {}), ...variationalBySymbol };
     const result = VH.applyVariationalHedges(data, hedges, variationalBySymbol);
@@ -30845,10 +30859,22 @@ function perpsVenueNativeFundingRate(venue, row) {
         return { rateDecimal: hourly, intervalHours: 1 };
     }
     if (venue === 'variational') {
-        return {
-            rateDecimal: row.variationalIntervalRate ?? row.variational8h ?? null,
-            intervalHours: row.variationalIntervalHours ?? 8,
-        };
+        const VH = window.VariationalHedge;
+        if (VH?.resolveVariationalNativeRate) {
+            const native = VH.resolveVariationalNativeRate({
+                fundingRateInterval: row.variationalIntervalRate,
+                fundingRate8h: row.variational8h,
+                fundingIntervalHours: row.variationalIntervalHours,
+                fundingIntervalS: row.variationalIntervalHours ? row.variationalIntervalHours * 3600 : null,
+            });
+            return { rateDecimal: native.rateDecimal, intervalHours: native.intervalHours };
+        }
+        const hours = row.variationalIntervalHours ?? 8;
+        let rateDecimal = row.variationalIntervalRate;
+        if (rateDecimal == null && row.variational8h != null) {
+            rateDecimal = row.variational8h * (8 / hours);
+        }
+        return { rateDecimal, intervalHours: hours };
     }
     return { rateDecimal: null, intervalHours: 8 };
 }

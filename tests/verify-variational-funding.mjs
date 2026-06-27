@@ -17,6 +17,7 @@ const {
   variationalNextFundingAtMs,
   variationalHedgeOpenedAtMs,
   parseVariationalListing,
+  resolveVariationalNativeRate,
 } = VH;
 
 const H8 = 8 * 3600000;
@@ -105,7 +106,40 @@ function listing4h() {
   assert.equal(variationalNextFundingAtMs(null, noClock, now), null);
 }
 
-// --- 4h interval on same anchor ---
+// --- 4h markets (e.g. TRUMP): never treat fundingRate8h as native interval rate ---
+{
+  const trump = parseVariationalListing({
+    ticker: 'TRUMP',
+    mark_price: '1.69',
+    funding_rate: '-0.252795',
+    funding_interval_s: 14400,
+  });
+  assert.equal(trump.fundingIntervalHours, 4);
+  assert.ok(Math.abs(trump.fundingRateInterval * 2190 - trump.fundingRateAnnual) < 1e-9);
+  const native = resolveVariationalNativeRate({
+    fundingRate8h: trump.fundingRate8h,
+    fundingIntervalHours: 4,
+    fundingIntervalS: 14400,
+  });
+  assert.ok(Math.abs(native.rateDecimal - trump.fundingRateInterval) < 1e-12,
+    '4h native rate must derive from 8h-equiv, not reuse fundingRate8h directly');
+  assert.ok(Math.abs(native.rateDecimal / trump.fundingRate8h - 0.5) < 1e-6,
+    'TRUMP 4h interval rate must be half the 8h-normalized rate');
+}
+
+// --- mark price (not entry/mark average) drives payment size ---
+{
+  const openedAt = Date.parse('2026-06-24T10:00:00.000Z');
+  const now = Date.parse('2026-06-24T13:00:00.000Z');
+  const hedge = hedgeAt(openedAt, { variationalEntryPx: 1.2, variationalSize: -1000 });
+  const listingTrump = listing4h();
+  const withMark = { ...listingTrump, markPx: 2.0 };
+  const events = buildVariationalFundingEventsScheduled(hedge, withMark, { now });
+  assert.equal(events.length, 1);
+  const expected = variationalFundingPaymentPerInterval(-1000, 2.0, listingTrump.fundingRateInterval);
+  assert.ok(Math.abs(events[0].usdc - expected) < 1e-9, 'funding payment must use live mark, not entry/mark average');
+}
+
 {
   const openedAt = Date.parse('2026-06-24T10:00:00.000Z');
   const now = Date.parse('2026-06-24T13:00:00.000Z');

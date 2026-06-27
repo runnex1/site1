@@ -2131,9 +2131,9 @@ assert.match(variationalHedgeJs, /function variationalFundingOverrideUsd\(/, 'nu
 assert.match(indexHtml, /variationalListings/, 'dashboard must expose variational listings for hedge funding when spread row is sparse');
 assert.doesNotMatch(indexHtml, /estimateVariationalFundingUsd\?\.\(hedge, listing\) \?\? varPaymentSum/, 'open variational funding must not use time-accrual estimate');
 assert.match(indexHtml, /lib\/variational-funding-clock\.js/, 'variational funding clock must load in browser before hedge helpers');
-assert.match(variationalHedgeJs, /fundingSettlementsOnAnchorGrid/, 'variational funding must use live reference-exchange settlement clock');
+assert.match(variationalHedgeJs, /resolveVariationalNativeRate/, 'variational helpers must resolve native interval rates for 4h markets');
 assert.match(variationalHedgeJs, /VariationalFundingClock/, 'variational hedge helpers must load funding clock in browser');
-assert.match(indexHtml, /perpsMergeVariationalIntoDailyFundingSeries\(data\)/, 'variational estimated funding must merge into portfolio daily funding series');
+assert.match(indexHtml, /resolveVariationalNativeRate/, 'perps must resolve variational native interval rates for non-8h markets like TRUMP');
 assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose variational estimates');
 
 {
