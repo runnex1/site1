@@ -127,6 +127,29 @@ function listing4h() {
     'TRUMP 4h interval rate must be half the 8h-normalized rate');
 }
 
+// --- Stale cache: fundingRateInterval wrongly equal to fundingRate8h on 4h market ---
+{
+  const trump = parseVariationalListing({
+    ticker: 'TRUMP',
+    mark_price: '1.62',
+    funding_rate: '-0.99917',
+    funding_interval_s: 14400,
+  });
+  const stale = {
+    fundingRateInterval: trump.fundingRate8h,
+    fundingRate8h: trump.fundingRate8h,
+    fundingIntervalHours: 4,
+    fundingIntervalS: 14400,
+  };
+  const native = resolveVariationalNativeRate(stale);
+  assert.ok(Math.abs(native.rateDecimal - trump.fundingRateInterval) < 1e-12,
+    'must correct 8h-normalized rate stored as native 4h interval rate');
+  const size = 8837;
+  const pay = variationalFundingPaymentPerInterval(size, 1.62, native.rateDecimal);
+  assert.ok(Math.abs(pay - 6.53145) < 0.02,
+    `TRUMP long ~8837 @ 1.62 one 4h interval ≈ $6.53145, got ${pay}`);
+}
+
 // --- mark price (not entry/mark average) drives payment size ---
 {
   const openedAt = Date.parse('2026-06-24T10:00:00.000Z');

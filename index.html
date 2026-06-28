@@ -29008,9 +29008,17 @@ function perpsResolveVariationalListing(pair, data) {
     const fromSpread = perpsVariationalBySymbolFromSpread(data?.rateSpread || [])[base];
     const VH = window.VariationalHedge;
     const merged = {
-        ...fromSpread,
         ...fromCache,
         ...fromApi,
+        ...fromSpread,
+        // Stats API listing is authoritative for interval rates; spread only fills gaps.
+        ...(fromApi ? {
+            fundingRateInterval: fromApi.fundingRateInterval ?? fromSpread?.fundingRateInterval,
+            fundingRate8h: fromApi.fundingRate8h ?? fromSpread?.fundingRate8h,
+            fundingRateAnnual: fromApi.fundingRateAnnual ?? fromSpread?.fundingRateAnnual,
+            fundingIntervalHours: fromApi.fundingIntervalHours ?? fromSpread?.fundingIntervalHours,
+            fundingIntervalS: fromApi.fundingIntervalS ?? fromSpread?.fundingIntervalS,
+        } : {}),
         // Freshest settlement clock wins when spread row was refreshed more recently.
         ...(fromSpread?.fundingNextAtMs ? {
             fundingNextAtMs: fromSpread.fundingNextAtMs,
@@ -29393,8 +29401,9 @@ function perpsEnrichVariationalPairFunding(pair, data) {
     }
 
     const listing = perpsResolveVariationalListing(pair, data);
+    const trackedLeg = pair.crossLegA?.venue === trackedVenue ? pair.crossLegA : pair.crossLegB;
     const variationalEvents = VH?.buildVariationalFundingEventsScheduled
-        ? VH.buildVariationalFundingEventsScheduled(hedge, listing, { sinceMs: sessionSince })
+        ? VH.buildVariationalFundingEventsScheduled(hedge, listing, { sinceMs: sessionSince, trackedLeg })
         : [];
     const varPaymentSum = variationalEvents.reduce((sum, ev) => sum + (ev.usdc || 0), 0);
     const override = hedge?.variationalFundingUsdOverride != null && Number.isFinite(Number(hedge.variationalFundingUsdOverride))
@@ -30669,7 +30678,13 @@ function perpsPairLiveApyFromNativeLegs(p) {
         if (!leg.venue || !leg.size) continue;
         let native = perpsVenueNativeFundingRate(leg.venue, row);
         if (native.rateDecimal == null && leg.rate8h != null && Number.isFinite(leg.rate8h)) {
-            native = { rateDecimal: leg.rate8h, intervalHours: 8 };
+            const intervalHours = leg.venue === 'variational'
+                ? (row?.variationalIntervalHours ?? native.intervalHours ?? 8)
+                : 8;
+            const rateDecimal = leg.venue === 'variational' && intervalHours !== 8
+                ? leg.rate8h * (intervalHours / 8)
+                : leg.rate8h;
+            native = { rateDecimal, intervalHours };
         }
         if (native.rateDecimal == null || !native.intervalHours) continue;
         const periodsPerYear = (365 * 24) / native.intervalHours;
@@ -30877,7 +30892,7 @@ function perpsVenueNativeFundingRate(venue, row) {
         const hours = row.variationalIntervalHours ?? 8;
         let rateDecimal = row.variationalIntervalRate;
         if (rateDecimal == null && row.variational8h != null) {
-            rateDecimal = row.variational8h * (8 / hours);
+            rateDecimal = row.variational8h * (hours / 8);
         }
         return { rateDecimal, intervalHours: hours };
     }
@@ -30932,7 +30947,15 @@ function perpsPairLegFundingTooltipRows(p) {
         let native = perpsVenueNativeFundingRate(venue, row);
         if (native.rateDecimal == null) {
             const rate8h = key === 'a' ? p.fundingRate8hA : p.fundingRate8hB;
-            if (rate8h != null && Number.isFinite(rate8h)) native = { rateDecimal: rate8h, intervalHours: 8 };
+            if (rate8h != null && Number.isFinite(rate8h)) {
+                const intervalHours = venue === 'variational'
+                    ? (row?.variationalIntervalHours ?? native.intervalHours ?? 8)
+                    : 8;
+                const rateDecimal = venue === 'variational' && intervalHours !== 8
+                    ? rate8h * (intervalHours / 8)
+                    : rate8h;
+                native = { rateDecimal, intervalHours };
+            }
         }
         const sideLabel = (leg.size > 0) ? 'Long Funding Rate' : (leg.size < 0) ? 'Short Funding Rate' : 'Funding Rate';
         return {
