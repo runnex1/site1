@@ -9073,7 +9073,7 @@ body[data-active-tab="loops"] .page-content,
               </div>
             </div>
             <div class="perps-panel-fund-head">
-              <div class="perps-pnl-note" id="perpsDailyFundNote" style="margin-top:0;font-size:0.68rem;">7D gross funding · HL, Nado, GRVT, Extended + ~Variational est.</div>
+              <div class="perps-pnl-note" id="perpsDailyFundNote" style="margin-top:0;font-size:0.68rem;">7D gross funding · paired positions · HL, Nado, GRVT, Extended + ~Variational est.</div>
               <div class="perps-pnl-total" id="perpsDailyFundTotal">—</div>
             </div>
             <div class="perps-panel-body perps-panel-body--chart">
@@ -29171,10 +29171,22 @@ function perpsApplyVariationalHedgesToData(data) {
     return data;
 }
 
+function perpsDailyFundingExchangeBase(data) {
+    const paired = data?.pairedDailyFundingSeries;
+    if (Array.isArray(paired) && paired.length) return paired;
+    return data?.dailyFundingSeries || [];
+}
+
+function perpsDailyFundingSeriesWindow(baseRows) {
+    const rows = Array.isArray(baseRows) ? baseRows : [];
+    if (!rows.length) return { startDay: null, endDay: null };
+    return { startDay: rows[0].day, endDay: rows[rows.length - 1].day };
+}
+
 function perpsEnsureDailyFundingBase(data) {
     const fetchedAt = Number(data?.fetchedAt || 0);
     if (data._dailyFundingSeriesBaseFetchedAt !== fetchedAt) {
-        data._dailyFundingSeriesBase = JSON.parse(JSON.stringify(data.dailyFundingSeries || []));
+        data._dailyFundingSeriesBase = JSON.parse(JSON.stringify(perpsDailyFundingExchangeBase(data)));
         data._dailyFundingSeriesBaseFetchedAt = fetchedAt;
     }
     return data._dailyFundingSeriesBase || [];
@@ -29185,21 +29197,37 @@ function perpsCollectVariationalFundingEvents(data) {
     const events = [];
     for (const p of data.paired || []) {
         if (!VH?.isVariationalPair?.(p)) continue;
-        for (const row of p.dailyPerformanceSeries || []) {
-            for (const ev of row.fundingEvents || []) {
-                if (ev.venue !== 'variational') continue;
-                events.push(ev);
-            }
-        }
+        const hedge = VH?.variationalHedgeFromPair
+            ? VH.variationalHedgeFromPair(p, perpsResolveVariationalHedge(p))
+            : perpsResolveVariationalHedge(p);
+        const listing = perpsResolveVariationalListing(p, data);
+        const sessionSince = VH?.variationalHedgeOpenedAtMs?.(hedge)
+            || Number(p.pairOpenedAtMs)
+            || Date.now();
+        const trackedVenue = p.venueA || p.crossLegA?.venue;
+        const trackedLeg = p.crossLegA?.venue === trackedVenue ? p.crossLegA : p.crossLegB;
+        const variationalEvents = VH?.buildVariationalFundingEventsScheduled
+            ? VH.buildVariationalFundingEventsScheduled(hedge, listing, { sinceMs: sessionSince, trackedLeg })
+            : [];
+        for (const ev of variationalEvents) events.push(ev);
     }
     return events;
 }
 
 function perpsMergeVariationalIntoDailyFundingSeries(data) {
     const events = perpsCollectVariationalFundingEvents(data);
-    if (!events.length) return data;
-
     const baseRows = perpsEnsureDailyFundingBase(data);
+    if (!events.length) {
+        data.dailyFundingSeries = perpsRecomputeDailySeriesCumulative(baseRows.map(r => ({
+            ...r,
+            byVenue: { ...(r.byVenue || {}) },
+            fundingEvents: [...(r.fundingEvents || [])],
+            feeEvents: [...(r.feeEvents || [])],
+        })));
+        return data;
+    }
+
+    const { startDay, endDay } = perpsDailyFundingSeriesWindow(baseRows);
     const rows = baseRows.map(r => ({
         ...r,
         byVenue: { ...(r.byVenue || {}) },
@@ -29212,6 +29240,8 @@ function perpsMergeVariationalIntoDailyFundingSeries(data) {
         const time = Number(ev.time) || 0;
         if (!time) continue;
         const day = new Date(time).toISOString().slice(0, 10);
+        if (startDay && day < startDay) continue;
+        if (endDay && day > endDay) continue;
         let row = byDay.get(day);
         if (!row) {
             row = {
@@ -29393,8 +29423,9 @@ function perpsEnrichVariationalPairFunding(pair, data) {
     }
 
     const listing = perpsResolveVariationalListing(pair, data);
+    const trackedLeg = pair.crossLegA?.venue === trackedVenue ? pair.crossLegA : pair.crossLegB;
     const variationalEvents = VH?.buildVariationalFundingEventsScheduled
-        ? VH.buildVariationalFundingEventsScheduled(hedge, listing, { sinceMs: sessionSince })
+        ? VH.buildVariationalFundingEventsScheduled(hedge, listing, { sinceMs: sessionSince, trackedLeg })
         : [];
     const varPaymentSum = variationalEvents.reduce((sum, ev) => sum + (ev.usdc || 0), 0);
     const override = hedge?.variationalFundingUsdOverride != null && Number.isFinite(Number(hedge.variationalFundingUsdOverride))
@@ -29773,6 +29804,11 @@ function perpsFmtUsd(n, digits = 2) {
     if (n == null || !Number.isFinite(n)) return '—';
     const sign = n >= 0 ? '' : '-';
     return sign + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+function perpsFmtEstUsd(n, digits = 2) {
+    if (n == null || !Number.isFinite(n)) return '—';
+    return `~ ${perpsFmtUsd(n, digits)}`;
 }
 
 function perpsFmtPct(n, digits = 1) {
@@ -30345,8 +30381,8 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
     }
     if (noteEl) {
         noteEl.textContent = _perpsDailyFundShowFees
-            ? `${label} net funding minus fees · HL, Nado, GRVT, Extended + ~Variational est.`
-            : `${label} gross funding · HL, Nado, GRVT, Extended + ~Variational est.`;
+            ? `${label} net · paired positions · HL, Nado, GRVT, Extended + ~Variational est.`
+            : `${label} gross · paired positions · HL, Nado, GRVT, Extended + ~Variational est.`;
     }
     if (badge) badge.textContent = label;
     if (statsEl) {
@@ -30376,7 +30412,7 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
             if (tipVal) {
                 const cls = hit.val >= 0 ? 'pos' : 'neg';
                 const label = _perpsDailyFundShowFees ? 'Net' : 'Funding';
-                const venueLabels = { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext' };
+                const venueLabels = { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext', variational: 'Var ~est.' };
                 const detailRows = [];
                 if (_perpsDailyFundShowFees) {
                     detailRows.push(`Funding ${perpsFmtUsd(hit.funding)}`);
@@ -30726,6 +30762,7 @@ function perpsApplyLiveRates(rateSpread, fetchedAt = null) {
     }
     perpsApplyVariationalHedgesToData(_perpsLastData);
     perpsRenderPositionsPanel(_perpsLastData);
+    perpsRenderFundingForTimeWindow(_perpsLastData);
 }
 
 /** Gross funding + fees for the pair's latest open session (all time within that session). */
@@ -31317,7 +31354,7 @@ function perpsRenderRecentFundingPayments(p) {
             const hasValue = byVenue.has(key);
             const value = hasValue ? byVenue.get(key) : 0;
             const est = entry.venue === 'variational' || entry.leg?.fundingEstimated;
-            const label = hasValue && est ? `~${perpsFmtUsd(value)}` : (hasValue ? perpsFmtUsd(value) : '—');
+            const label = hasValue && est ? perpsFmtEstUsd(value) : (hasValue ? perpsFmtUsd(value) : '—');
             return `<div class="perps-pos-funding-breakdown-row"><span>${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="${hasValue ? perpsSignedCls(value) : ''}">${label}</span></div>`;
         }).join('')}</div>`;
         return `<div class="perps-pos-funding-card net">` +

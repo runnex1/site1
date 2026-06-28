@@ -167,6 +167,35 @@ const longPay = variationalFundingPaymentPerInterval(2, 3190, listing.fundingRat
 assert.ok(shortPay > 0);
 assert.ok(longPay < 0);
 
+// --- Short tracked leg → long Variational hedge (negative TRUMP-like rate) ---
+{
+  const trumpListing = listing4h();
+  trumpListing.fundingRateAnnual = -0.533436;
+  trumpListing.fundingRateInterval = -0.00024357808219178082;
+  trumpListing.markPx = 1.64;
+  const openedAt = Date.parse('2026-06-28T00:00:00.000Z');
+  const now = Date.parse('2026-06-28T12:00:00.000Z');
+  const shortTracked = hedgeAt(openedAt, { trackedSize: -5000, variationalSize: 5000 });
+  const events = buildVariationalFundingEventsScheduled(shortTracked, trumpListing, {
+    now,
+    trackedLeg: { size: -5000, side: 'short' },
+  });
+  assert.ok(events.length > 0, 'short tracked must produce variational long funding events');
+  assert.ok(events[0].usdc > 0, 'long Variational with negative rate must receive positive funding');
+  const wrongShortVar = buildVariationalFundingEventsScheduled(
+    { ...shortTracked, variationalSize: -5000 },
+    trumpListing,
+    { now },
+  );
+  assert.ok(wrongShortVar[0].usdc < 0, 'stale same-side short hedge record pays until live leg is passed');
+  const fixed = buildVariationalFundingEventsScheduled(
+    { ...shortTracked, variationalSize: -5000 },
+    trumpListing,
+    { now, trackedLeg: { size: -5000 } },
+  );
+  assert.ok(fixed[0].usdc > 0, 'live tracked leg must override stale hedge size for funding sign');
+}
+
 // --- estimate equals event sum ---
 {
   const openedAt = Date.parse('2026-06-24T09:00:00.000Z');
