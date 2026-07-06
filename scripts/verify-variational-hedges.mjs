@@ -43,7 +43,9 @@ try {
   perps = await fetchJson(`${PROD}/api/perps?wallet=${WALLET}&days=30`);
 }
 
-const { applyVariationalHedges } = await import(`file://${join(ROOT, '..', 'lib', 'variational-hedge.js').replace(/\\/g, '/')}`);
+const { createRequire } = await import('module');
+const require = createRequire(import.meta.url);
+const { applyVariationalHedges } = require(join(ROOT, '..', 'lib', 'variational-hedge.js'));
 const result = applyVariationalHedges(perps, open, {});
 const paired = result.paired.filter((p) => p.variationalHedgeId).map((p) => p.symbol).sort();
 const unhedged = result.unhedged
