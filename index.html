@@ -28929,9 +28929,14 @@ function perpsMergeVariationalHedgeRecord(prev, hedge) {
         if (incVal != null && incVal !== '' && Number(incVal) !== 0) return incVal;
         return preferPrev ? (prevVal ?? incVal) : (incVal ?? prevVal);
     };
+    const active = new Set(['open', 'pending_close']);
+    let status = hedge?.status ?? prev?.status;
+    if (active.has(prev?.status) && hedge?.status === 'closed') status = prev.status;
+    else if (active.has(hedge?.status) && prev?.status === 'closed') status = hedge.status;
     return {
         ...prev,
         ...hedge,
+        status,
         openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
         updatedAt: Math.max(prevTs, incTs) || null,
         variationalEntryPx: pickField('variationalEntryPx'),
@@ -28999,7 +29004,15 @@ function perpsResolveVariationalHedge(pair) {
         if (byId) return byId;
     }
     const venue = pair?.venueA || pair?.crossLegA?.venue;
-    return hedges.find(h => h.status !== 'closed' && h.symbol === pair?.symbol && h.trackedVenue === venue) || null;
+    const VH = window.VariationalHedge;
+    const matchKey = VH?.variationalHedgeMatchKey
+        ? VH.variationalHedgeMatchKey(pair?.symbol, venue)
+        : `${pair?.symbol}|${venue}`;
+    return hedges.find(h => h.status !== 'closed' && (
+        VH?.variationalHedgeMatchKey
+            ? VH.variationalHedgeMatchKey(h.symbol, h.trackedVenue) === matchKey
+            : h.symbol === pair?.symbol && h.trackedVenue === venue
+    )) || null;
 }
 
 function perpsResolveVariationalListing(pair, data) {
@@ -29119,7 +29132,11 @@ function perpsSaveVariationalModal() {
         if (!leg) return;
         const hedge = VH.createHedgeFromUnhedged(leg, px);
         const hedges = perpsLoadVariationalHedges().filter(h =>
-            !(h.status !== 'closed' && h.symbol === leg.symbol && h.trackedVenue === leg.venue));
+            !(h.status !== 'closed' && (
+                VH.variationalHedgeMatchKey
+                    ? VH.variationalHedgeMatchKey(h.symbol, h.trackedVenue) === VH.variationalHedgeMatchKey(leg.symbol, leg.venue)
+                    : h.symbol === leg.symbol && h.trackedVenue === leg.venue
+            )));
         hedges.push(hedge);
         perpsPersistVariationalHedges(hedges);
     } else if (_perpsVariationalModalHedgeId) {

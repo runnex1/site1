@@ -2641,4 +2641,78 @@ const {
 assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
 assert.match(variationalHedgeJs, /lockedEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
 
+{
+  const d = JSON.parse(readFileSync(join(ROOT, '_live-perps.json'), 'utf8'));
+  const { applyVariationalHedges, findTrackedLeg } = require('../lib/variational-hedge.js');
+  const hedge = {
+    id: 'trump-case',
+    symbol: 'trump',
+    trackedVenue: 'hyperliquid',
+    status: 'open',
+    openedAt: Date.now() - 86400000,
+    variationalEntryPx: 8.5,
+    trackedSize: 22500,
+  };
+  assert.ok(findTrackedLeg(d, hedge), 'findTrackedLeg must match venue symbols case-insensitively');
+  const result = applyVariationalHedges(d, [hedge], {});
+  assert.equal(result.hedges[0].status, 'open', 'open hedge must stay open after refresh');
+  assert.ok(result.paired.some((p) => p.variationalHedgeId === 'trump-case'), 'variational pair must rebuild on refresh');
+  assert.equal(
+    result.unhedged.filter((u) => u.venue === 'hyperliquid' && u.symbol === 'TRUMP').length,
+    0,
+    'hedged leg must not leak into unhedged when hedge key casing differs',
+  );
+}
+
+{
+  const d = JSON.parse(readFileSync(join(ROOT, '_live-perps.json'), 'utf8'));
+  const { applyVariationalHedges } = require('../lib/variational-hedge.js');
+  const empty = JSON.parse(JSON.stringify(d));
+  empty.hyperliquid = { state: { positions: [] } };
+  empty.unhedged = (empty.unhedged || []).filter((u) => !(u.venue === 'hyperliquid' && u.symbol === 'TRUMP'));
+  const hedge = {
+    id: 'trump-misclose',
+    symbol: 'TRUMP',
+    trackedVenue: 'hyperliquid',
+    status: 'pending_close',
+    openedAt: Date.now() - 86400000,
+    variationalEntryPx: 8.5,
+    variationalExitPx: 8.6,
+    trackedSize: 22500,
+    pendingCloseAt: Date.now(),
+    trackedLastSnapshot: { side: 'long', size: 22500, entryPx: 8.2, markPx: 8.5, unrealizedPnl: 100, funding: 5, fees: 0 },
+  };
+  let result = applyVariationalHedges(empty, [hedge], {});
+  assert.equal(result.hedges[0].status, 'closed', 'pending close without live leg may finalize when exit px is set');
+  result = applyVariationalHedges(d, result.hedges, {});
+  assert.equal(result.hedges[0].status, 'open', 'misclosed hedge must reopen when exchange leg is still live');
+  assert.ok(result.paired.some((p) => p.variationalHedgeId === 'trump-misclose'), 'reopened hedge must rebuild variational pair');
+  assert.equal(
+    result.unhedged.filter((u) => u.venue === 'hyperliquid' && u.symbol === 'TRUMP').length,
+    0,
+    'reopened hedge must hide tracked leg from unhedged',
+  );
+}
+
+{
+  const d = JSON.parse(readFileSync(join(ROOT, '_live-perps.json'), 'utf8'));
+  const { applyVariationalHedges } = require('../lib/variational-hedge.js');
+  const empty = JSON.parse(JSON.stringify(d));
+  empty.hyperliquid = { state: { positions: [] } };
+  empty.unhedged = (empty.unhedged || []).filter((u) => !(u.venue === 'hyperliquid' && u.symbol === 'PYTH'));
+  const hedge = {
+    id: 'pyth-snap',
+    symbol: 'PYTH',
+    trackedVenue: 'hyperliquid',
+    status: 'open',
+    openedAt: Date.now() - 86400000,
+    variationalEntryPx: 0.2,
+    trackedSize: 590000,
+    trackedLastSnapshot: { side: 'short', size: 590000, entryPx: 0.21, markPx: 0.2, unrealizedPnl: -50, funding: 3, fees: 0 },
+  };
+  const result = applyVariationalHedges(empty, [hedge], {});
+  assert.equal(result.hedges[0].status, 'open', 'snapshot must keep open hedge paired when venue data is briefly missing');
+  assert.ok(result.paired.some((p) => p.variationalHedgeId === 'pyth-snap'), 'snapshot fallback must rebuild variational pair');
+}
+
 console.log('PASS: perps accounting and dashboard regression checks');
