@@ -29228,6 +29228,7 @@ function perpsApplyVariationalHedgesToData(data) {
         ]);
     }
     data.variationalPendingClose = result.pendingClose || [];
+    data.closedPairs = perpsSanitizeVariationalClosedPairs(data);
     for (const pair of data.paired || []) {
         if (VH.isVariationalPair?.(pair)) perpsEnrichVariationalPairFunding(pair, data);
     }
@@ -32030,6 +32031,9 @@ function perpsClosedLegHtml(leg, pair) {
     if (!pair?.manualVariationalClose) {
         return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val muted" title="Gross leg PnL is hedged — see Close Slippage and Net PnL">—</span></div>`;
     }
+    if (!Number.isFinite(leg.realizedPnl)) {
+        return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val muted" title="Variational exit price missing or estimated">—</span></div>`;
+    }
     const pnlLabel = leg.closeLegEstimated || leg.fundingEstimated ? 'est. ' : '';
     return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val ${perpsSignedCls(leg.realizedPnl ?? 0)}">${pnlLabel}${perpsFmtUsd(leg.realizedPnl ?? 0)}</span></div>`;
 }
@@ -32061,6 +32065,37 @@ function perpsClosedPairAvgNotional(pair) {
     if (!marks.length) return null;
     const avgPx = marks.reduce((sum, px) => sum + px, 0) / marks.length;
     return fallbackSize * avgPx;
+}
+
+function perpsSanitizeVariationalClosedPairs(data) {
+    const VH = window.VariationalHedge;
+    if (!VH?.buildVariationalClosedPair || !VH?.findTrackedCloseLeg) {
+        return data?.closedPairs || [];
+    }
+    const hedges = perpsLoadVariationalHedges();
+    const byId = new Map(hedges.map((h) => [h.id, h]));
+    const listingBy = data?._variationalListingBySymbol || perpsVariationalBySymbolFromSpread(data?.rateSpread || []);
+    let changed = false;
+    const next = (data?.closedPairs || []).map((pair) => {
+        if (!pair?.manualVariationalClose || !pair?.variationalHedgeId) return pair;
+        const hedge = byId.get(pair.variationalHedgeId);
+        if (!hedge) return pair;
+        const varLeg = pair.longLeg?.venue === 'variational' ? pair.longLeg : pair.shortLeg;
+        const entry = Number(varLeg?.avgEntryPx);
+        const size = Number(varLeg?.size);
+        const pnl = Number(varLeg?.realizedPnl);
+        const exitMissing = !VH.isPositivePx?.(hedge.variationalExitPx);
+        const looksLikeZeroExitBug = exitMissing && entry > 0 && size > 0 && Number.isFinite(pnl)
+            && Math.abs(pnl - entry * size) / Math.max(entry * size, 1) < 0.02;
+        if (!looksLikeZeroExitBug) return pair;
+        const closeLeg = VH.findTrackedCloseLeg(data, hedge);
+        if (!closeLeg) return pair;
+        const rebuilt = VH.buildVariationalClosedPair(hedge, closeLeg, listingBy[hedge.symbol] || null);
+        changed = true;
+        return rebuilt;
+    });
+    if (changed) perpsPersistCachedClosedPairs(next, { skipCloudSync: true });
+    return next;
 }
 
 function perpsNormalizeClosedPairForDisplay(pair) {

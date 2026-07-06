@@ -2290,6 +2290,40 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
 {
   assert.equal(variationalLegPnl(-1, 100, 95), 5);
   assert.equal(variationalLegPnl(1, 100, 110), 10);
+  assert.equal(variationalLegPnl(-40000, 0.2181, 0), null, 'zero exit must not invent notional-sized PnL');
+  assert.equal(variationalLegPnl(-40000, 0.2181, null), null, 'missing exit must not invent PnL');
+}
+
+{
+  const { buildVariationalClosedPair } = require('../lib/variational-hedge.js');
+  const hedge = {
+    id: 'xlm-null-exit',
+    symbol: 'XLM',
+    trackedVenue: 'grvt',
+    trackedSize: 40000,
+    variationalSize: -40000,
+    variationalEntryPx: 0.2181,
+    variationalExitPx: null,
+    openedAt: Date.now() - 5 * 86400000,
+    closedAt: Date.now() - 86400000,
+  };
+  const closeLeg = {
+    venue: 'grvt',
+    symbol: 'XLM',
+    side: 'long',
+    size: 40000,
+    realizedPnl: null,
+    closeLegEstimated: true,
+    avgEntryPx: 0.218460403,
+    funding: 21.99,
+    fees: 0,
+    closeTime: hedge.closedAt,
+  };
+  const pair = buildVariationalClosedPair(hedge, closeLeg, { symbol: 'XLM', markPx: 0.214 });
+  assert.ok(pair.shortLeg.realizedPnl == null, 'missing Variational exit must not fabricate short-leg PnL');
+  assert.ok(Math.abs(pair.netPnl) < 500, 'net PnL must stay near tracked funding when Variational exit is missing');
+  assert.equal(pair.aprUnavailable, true);
+  assert.ok(Math.abs((pair.shortLeg.realizedPnl ?? 0)) < 1, 'must not equal entry*size notional bug');
 }
 
 {
