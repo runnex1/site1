@@ -28881,7 +28881,7 @@ function perpsClosedPairKey(pair) {
 function perpsLoadCachedClosedPairs() {
     try {
         const rows = JSON.parse(localStorage.getItem(PERPS_CLOSED_PAIRS_KEY) || '[]');
-        return Array.isArray(rows) ? rows : [];
+        return Array.isArray(rows) ? rows.map((p) => perpsGuardClosedPairRecord(p)) : [];
     } catch (e) {
         return [];
     }
@@ -28889,7 +28889,7 @@ function perpsLoadCachedClosedPairs() {
 
 function perpsPersistCachedClosedPairs(rows, opts = {}) {
     try {
-        const list = Array.isArray(rows) ? rows : [];
+        const list = (Array.isArray(rows) ? rows : []).map((p) => perpsGuardClosedPairRecord(p));
         localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, JSON.stringify(list));
         if (!opts.skipCloudSync && typeof saveData === 'function') saveData();
     } catch (e) {}
@@ -29224,7 +29224,7 @@ function perpsApplyVariationalHedgesToData(data) {
     if (result.newClosedPairs?.length) {
         data.closedPairs = perpsCacheNewClosedPairs([
             ...(data.closedPairs || []),
-            ...result.newClosedPairs,
+            ...result.newClosedPairs.map((p) => perpsGuardClosedPairRecord(p)),
         ]);
     }
     data.variationalPendingClose = result.pendingClose || [];
@@ -29551,7 +29551,7 @@ function perpsMergeClosedPairRecord(prev, fresh) {
         if (Number.isFinite(right)) return right;
         return null;
     };
-    return {
+    const merged = {
         ...prev,
         ...fresh,
         longLeg: { ...prev.longLeg, ...fresh.longLeg },
@@ -29567,6 +29567,7 @@ function perpsMergeClosedPairRecord(prev, fresh) {
         fees: pickNum(fresh.fees, prev.fees) ?? prev.fees,
         closeSlippage: pickNum(fresh.closeSlippage, prev.closeSlippage) ?? prev.closeSlippage,
     };
+    return perpsGuardClosedPairRecord(merged);
 }
 
 function perpsMergeClosedPairsFromServer(serverRows) {
@@ -32067,39 +32068,43 @@ function perpsClosedPairAvgNotional(pair) {
     return fallbackSize * avgPx;
 }
 
+function perpsGuardClosedPairRecord(pair) {
+    if (!pair?.manualVariationalClose) return pair;
+    const VH = window.VariationalHedge;
+    if (!VH?.guardVariationalClosedPair) return pair;
+    const hedge = pair.variationalHedgeId
+        ? perpsLoadVariationalHedges().find((h) => h.id === pair.variationalHedgeId) || null
+        : null;
+    return VH.guardVariationalClosedPair(pair, hedge);
+}
+
 function perpsSanitizeVariationalClosedPairs(data) {
     const VH = window.VariationalHedge;
-    if (!VH?.buildVariationalClosedPair || !VH?.findTrackedCloseLeg) {
-        return data?.closedPairs || [];
-    }
+    if (!VH?.guardVariationalClosedPair) return data?.closedPairs || [];
     const hedges = perpsLoadVariationalHedges();
     const byId = new Map(hedges.map((h) => [h.id, h]));
     const listingBy = data?._variationalListingBySymbol || perpsVariationalBySymbolFromSpread(data?.rateSpread || []);
     let changed = false;
     const next = (data?.closedPairs || []).map((pair) => {
-        if (!pair?.manualVariationalClose || !pair?.variationalHedgeId) return pair;
-        const hedge = byId.get(pair.variationalHedgeId);
-        if (!hedge) return pair;
-        const varLeg = pair.longLeg?.venue === 'variational' ? pair.longLeg : pair.shortLeg;
-        const entry = Number(varLeg?.avgEntryPx);
-        const size = Number(varLeg?.size);
-        const pnl = Number(varLeg?.realizedPnl);
-        const exitMissing = !VH.isPositivePx?.(hedge.variationalExitPx);
-        const looksLikeZeroExitBug = exitMissing && entry > 0 && size > 0 && Number.isFinite(pnl)
-            && Math.abs(pnl - entry * size) / Math.max(entry * size, 1) < 0.02;
-        if (!looksLikeZeroExitBug) return pair;
-        const closeLeg = VH.findTrackedCloseLeg(data, hedge);
-        if (!closeLeg) return pair;
-        const rebuilt = VH.buildVariationalClosedPair(hedge, closeLeg, listingBy[hedge.symbol] || null);
-        changed = true;
-        return rebuilt;
+        if (!pair?.manualVariationalClose) return pair;
+        const hedge = pair.variationalHedgeId ? byId.get(pair.variationalHedgeId) : null;
+        let cleaned = perpsGuardClosedPairRecord(pair);
+        const varLeg = cleaned.longLeg?.venue === 'variational' ? cleaned.longLeg : cleaned.shortLeg;
+        const stillBad = varLeg?.realizedPnl != null
+            && VH.variationalRealizedPnlLooksImplausible?.(varLeg, hedge, VH.resolveVariationalExitPx?.(hedge));
+        if (stillBad && hedge && VH.buildVariationalClosedPair && VH.findTrackedCloseLeg) {
+            const closeLeg = VH.findTrackedCloseLeg(data, hedge);
+            if (closeLeg) cleaned = VH.buildVariationalClosedPair(hedge, closeLeg, listingBy[hedge.symbol] || null);
+        }
+        if (JSON.stringify(cleaned) !== JSON.stringify(pair)) changed = true;
+        return cleaned;
     });
     if (changed) perpsPersistCachedClosedPairs(next, { skipCloudSync: true });
     return next;
 }
 
 function perpsNormalizeClosedPairForDisplay(pair) {
-    const next = { ...pair };
+    const next = perpsGuardClosedPairRecord({ ...pair });
     if (Array.isArray(next.dailyPerformanceSeries) && next.dailyPerformanceSeries.length) {
         const session = perpsPairLatestSessionPnl(next);
         if (session?.source === 'session') {

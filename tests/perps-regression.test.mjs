@@ -2327,6 +2327,25 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
 }
 
 {
+  const { guardVariationalClosedPair, variationalRealizedPnlLooksImplausible } = require('../lib/variational-hedge.js');
+  const hedge = { variationalEntryPx: 0.2181, variationalExitPx: null };
+  const bogus = {
+    manualVariationalClose: true,
+    longLeg: { venue: 'grvt', realizedPnl: 0, funding: 22, fees: 0 },
+    shortLeg: { venue: 'variational', size: 40000, avgEntryPx: 0.2181, realizedPnl: 8724, funding: 0, fees: 0 },
+    closeSlippage: 8724,
+    netPnl: 8746,
+    funding: 22,
+    fees: 0,
+  };
+  assert.ok(variationalRealizedPnlLooksImplausible(bogus.shortLeg, hedge, null), 'must flag notional-sized Variational close PnL');
+  const fixed = guardVariationalClosedPair(bogus, hedge);
+  assert.equal(fixed.shortLeg.realizedPnl, null, 'guard must strip fake Variational leg PnL');
+  assert.ok(Math.abs(fixed.netPnl - 22) < 1, 'guard must recompute net from funding only when exit missing');
+  assert.equal(fixed.aprUnavailable, true);
+}
+
+{
   const { buildVariationalSyntheticLeg } = require('../lib/variational-hedge.js');
   const hedge = {
     variationalSize: -90000,
@@ -2676,7 +2695,9 @@ assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'pending close mu
 assert.match(variationalHedgeJs, /lockedEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
 assert.match(indexHtml, /function perpsReapplyVariationalHedgesIfMounted\(/, 'perps must re-render after late variational hedge hydration');
 assert.match(indexHtml, /if \(_perpsBootPromise\) await _perpsBootPromise/, 'perps refresh must wait for hedge bootstrap');
-assert.match(readFileSync(join(ROOT, 'lib/closed-leg-reconstruct.js'), 'utf8'), /root\.ClosedLegReconstruct = api/, 'closed-leg reconstruct must not leak globals that break variational-hedge.js');
+assert.match(indexHtml, /function perpsGuardClosedPairRecord\(/, 'closed pairs must be guarded before cache persist and display');
+assert.match(variationalHedgeJs, /function guardVariationalClosedPair\(/, 'variational closed pairs must be guarded at build time');
+assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed-leg reconstruct must not leak globals that break variational-hedge.js');
 
 {
   const syncJs = readFileSync(join(ROOT, 'api/sync.js'), 'utf8');
