@@ -19,6 +19,7 @@
 <script src="lib/protocol-apr.js"></script>
 <script src="lib/defi-protocol-keys.js"></script>
 <script src="lib/variational-funding-clock.js"></script>
+<script src="lib/closed-leg-reconstruct.js"></script>
 <script src="lib/variational-hedge.js"></script>
 <script src="lib/variational-equity.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29126,6 +29127,14 @@ function perpsSaveVariationalModal() {
         const hedge = hedges.find(h => h.id === _perpsVariationalModalHedgeId);
         if (!hedge) return;
         if (_perpsVariationalModalMode === 'exit') {
+            const listing = _perpsLastData?._variationalListingBySymbol?.[hedge.symbol]
+                || perpsVariationalBySymbolFromSpread(_perpsLastData?.rateSpread || [])[hedge.symbol]
+                || null;
+            const warnings = VH.validateVariationalExitPrices?.(hedge, px, listing) || [];
+            if (warnings.length) {
+                const msg = `${warnings.join('\n')}\n\nSave this exit price anyway?`;
+                if (!confirm(msg)) return;
+            }
             hedge.variationalExitPx = px;
             hedge.closedAt = Date.now();
             hedge.updatedAt = Date.now();
@@ -31965,9 +31974,14 @@ function perpsRenderPortfolioPositions(paired) {
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
 }
 
-function perpsClosedLegHtml(leg) {
+function perpsClosedLegHtml(leg, pair) {
     const signedSize = leg.side === 'short' ? -Math.abs(leg.size || 0) : Math.abs(leg.size || 0);
-    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(leg.venue, signedSize)}</span><span class="perps-pos-metric-val ${perpsSignedCls(leg.realizedPnl ?? 0)}">${perpsFmtUsd(leg.realizedPnl ?? 0)}</span></div>`;
+    const venueHtml = perpsVenueWithSideHtml(leg.venue, signedSize);
+    if (!pair?.manualVariationalClose) {
+        return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val muted" title="Gross leg PnL is hedged — see Close Slippage and Net PnL">—</span></div>`;
+    }
+    const pnlLabel = leg.closeLegEstimated || leg.fundingEstimated ? 'est. ' : '';
+    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val ${perpsSignedCls(leg.realizedPnl ?? 0)}">${pnlLabel}${perpsFmtUsd(leg.realizedPnl ?? 0)}</span></div>`;
 }
 
 function perpsClosedPairLegMarginPx(leg, symbol) {
@@ -32001,10 +32015,27 @@ function perpsClosedPairAvgNotional(pair) {
 
 function perpsNormalizeClosedPairForDisplay(pair) {
     const next = { ...pair };
+    if (Array.isArray(next.dailyPerformanceSeries) && next.dailyPerformanceSeries.length) {
+        const session = perpsPairLatestSessionPnl(next);
+        if (session?.source === 'session') {
+            next.funding = session.funding;
+            next.fees = session.fees;
+            const slip = Number(next.closeSlippage);
+            if (Number.isFinite(slip)) next.netPnl = slip + session.funding - session.fees;
+            const rows = perpsFilterPairLatestSessionForRange(next.dailyPerformanceSeries, null);
+            if (rows.length) {
+                next.sessionStartDay = rows[0].day;
+                next.sessionEndDay = rows[rows.length - 1].day;
+                next.sessionDayCount = rows.length;
+            }
+        }
+    }
     const margin = perpsClosedPairAvgNotional(next);
     if (margin) next.avgNotional = margin;
-    const apr = perpsClosedPairSessionApr(next);
-    if (apr != null) next.sessionApr = apr;
+    if (!next.aprUnavailable && !next.closeLegEstimated) {
+        const apr = perpsClosedPairSessionApr(next);
+        if (apr != null) next.sessionApr = apr;
+    }
     return next;
 }
 
@@ -32028,6 +32059,7 @@ function perpsClosedPairSessionDays(pair) {
 }
 
 function perpsClosedPairSessionApr(pair) {
+    if (pair?.aprUnavailable || pair?.closeLegEstimated) return null;
     const margin = perpsClosedPairAvgNotional(pair);
     const days = perpsClosedPairSessionDays(pair);
     const netPnl = Number(pair?.netPnl);
@@ -32109,12 +32141,13 @@ function perpsRenderClosedPositions(closedPairs) {
                         <div class="perps-pos-token-name">${dashEsc(pair.symbol)}</div>
                         <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}</div>
                         <span class="perps-pos-pill">CLOSED</span>
+                        ${pair.closeLegEstimated || pair.manualVariationalClose && pair.aprUnavailable ? '<span class="perps-pos-pill warn" title="Tracked close leg or PnL is estimated">EST</span>' : ''}
                     </div>
                 </div>
             </div>
             <div class="perps-pos-legs">
-                ${perpsClosedLegHtml(pair.longLeg)}
-                ${perpsClosedLegHtml(pair.shortLeg)}
+                ${perpsClosedLegHtml(pair.longLeg, pair)}
+                ${perpsClosedLegHtml(pair.shortLeg, pair)}
             </div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.netPnl)}">${perpsFmtUsd(pair.netPnl)}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">APR</div><div class="perps-pos-apr-val ${sessionApr != null ? perpsSignedCls(sessionApr) : ''}" title="${dashEsc(aprTip)}">${sessionApr != null ? perpsFmtPct(sessionApr) : '—'}</div></div>

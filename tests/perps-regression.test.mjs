@@ -16,6 +16,8 @@ const {
   buildClosedPairs,
   buildClosedLegsFromExchangeHistory,
   enrichClosedPairsSessionPnl,
+  buildPairDailyPerformanceSeries,
+  pairLatestSessionTotals,
   closedPairStableKey,
   closedPairAvgNotional,
   closedPairSessionApr,
@@ -49,6 +51,7 @@ const aaveProxyJs = readFileSync(join(ROOT, 'api', 'aave-proxy.js'), 'utf8');
 const syncJs = readFileSync(join(ROOT, 'api', 'sync.js'), 'utf8');
 const syncArrayGuardJs = readFileSync(join(ROOT, 'lib', 'sync-array-guard.js'), 'utf8');
 const variationalHedgeJs = readFileSync(join(ROOT, 'lib', 'variational-hedge.js'), 'utf8');
+const closedLegReconstructJs = readFileSync(join(ROOT, 'lib', 'closed-leg-reconstruct.js'), 'utf8');
 const vercelJson = readFileSync(join(ROOT, 'vercel.json'), 'utf8');
 const watcherPreviewHtml = readFileSync(join(ROOT, 'ui-previews', 'watcher-preview.html'), 'utf8');
 const now = Date.now();
@@ -605,6 +608,50 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 {
+  const openTime = now - 4 * 86400000;
+  const closeTime = now - 1 * 86400000;
+  const sessionFunding = (symbol, perDay, days, venue) => Array.from({ length: days }, (_, i) => ({
+    venue,
+    symbol,
+    time: Math.min(openTime + i * 86400000 + 3600000, closeTime - 60000),
+    usdc: perDay,
+  }));
+  const nadoPayments = sessionFunding('JUP', 0.8, 4, 'nado');
+  const extendedPayments = sessionFunding('JUP', 0.4, 4, 'extended');
+  const closed = buildClosedPairs({
+    nado: [
+      { venue: 'nado', symbol: 'JUP', time: openTime, side: 'buy', px: 0.24, size: 35000, fee: 1 },
+      { venue: 'nado', symbol: 'JUP', time: closeTime, side: 'sell', px: 0.24, size: 35000, fee: 1, realizedPnl: -10 },
+    ],
+    extended: [],
+  }, { nado: nadoPayments, extended: extendedPayments }, {
+    extended: [{
+      market: 'JUP-USD',
+      side: 'SHORT',
+      createdTime: openTime + 1000,
+      closedTime: closeTime - 1000,
+      maxPositionSize: '35000',
+      realisedPnl: '8',
+    }],
+  });
+  assert.equal(closed.length, 1, 'JUP extended+nado closed round must pair');
+  const truncatedExtended = extendedPayments.filter(p => p.time >= now - 2 * 86400000);
+  const dailySeriesInputs = {
+    nadoPayments,
+    extendedPayments: truncatedExtended,
+    nadoMatches: [{ symbol: 'JUP', time: openTime, fee: 1 }, { symbol: 'JUP', time: closeTime, fee: 1 }],
+  };
+  const enriched = enrichClosedPairsSessionPnl(closed, dailySeriesInputs, 2)[0];
+  const perfDays = Math.min(365, Math.max(2, Math.ceil((closeTime - openTime) / 86400000) + 2));
+  const expected = pairLatestSessionTotals(
+    buildPairDailyPerformanceSeries(dailySeriesInputs, 'JUP', perfDays, closeTime),
+  );
+  assert.ok(Array.isArray(enriched.dailyPerformanceSeries) && enriched.dailyPerformanceSeries.length, 'closed JUP must carry dailyPerformanceSeries');
+  assert.ok(Math.abs(enriched.funding - expected.funding) < 1e-6, 'closed JUP funding must match Position Performance latest-session totals');
+  assert.ok(Math.abs(enriched.fees - expected.fees) < 1e-6, 'closed JUP fees must match Position Performance latest-session totals');
+}
+
+{
   const pair = {
     symbol: 'UNI',
     closeTime: 1700000000000,
@@ -669,7 +716,8 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 assert.match(indexHtml, /function perpsClosedPairAvgNotional\(/, 'Closed tab must recompute margin from leg prices and live marks');
-assert.match(indexHtml, /perps-pos-closed-cell/, 'Closed tab must align metric values under column headers');
+assert.match(indexHtml, /function perpsClosedLegHtml\(leg, pair\)/, 'Closed tab must hide gross leg PnL on exchange hedges');
+assert.match(indexHtml, /manualVariationalClose/, 'Closed tab must show leg PnL for manual Variational closes');
 
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
 assert.match(indexHtml, /dayStart < cutoff\) return null;/, 'summary-only boundary rows must not count as full last-24h PnL');
@@ -1572,7 +1620,8 @@ assert.match(indexHtml, /perps-pos-head closed[\s\S]{0,180}<div>APR<\/div>/, 'Cl
 assert.match(indexHtml, /function perpsClosedPairSessionDays\(/, 'closed APR must use latest performance session day span');
 assert.match(indexHtml, /perpsClosedPairSessionApr\(pair\)/, 'Closed tab must show session APR under Net PnL');
 assert.match(indexHtml, /perps-pos-closed-cell/, 'Closed tab rows must align values under headers without duplicate labels');
-assert.match(indexHtml, /function perpsNormalizeClosedPairForDisplay\(pair\)/, 'Closed tab must recompute APR from margin and session days at render time');
+assert.match(indexHtml, /function perpsNormalizeClosedPairForDisplay\(pair\)/, 'Closed tab must recompute session PnL from dailyPerformanceSeries at render time');
+assert.match(indexHtml, /perpsPairLatestSessionPnl\(next\)/, 'Closed tab funding must use the same latest-session logic as Position Performance');
 assert.match(perpsJs, /function closedPairSessionApr\(/, 'closed pairs must compute session APR server-side');
 assert.match(indexHtml, /pair\.closeSlippage/, 'Closed tab must show closing slippage separately');
 assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response must include closed pairs');
@@ -1587,7 +1636,7 @@ assert.match(perpsJs, /grvtPositionHistoryCount/, 'perps summary must expose GRV
 assert.match(perpsJs, /fetchExtendedPositionHistory/, 'closed positions must load Extended native position history');
 assert.match(perpsJs, /buildClosedLegsFromExchangeHistory/, 'closed positions must map exchange-native closed rounds');
 assert.match(perpsJs, /const PERPS_MAX_FILL_HISTORY_DAYS = 365;/, 'Closed tab must fetch a long enough fill history to show older closed rounds');
-assert.match(perpsJs, /reconstructedFromClosingFills: true/, 'Closed tab must recover rounds whose opening fill is outside the fetched history');
+assert.match(closedLegReconstructJs, /reconstructedFromClosingFills: true/, 'Closed tab must recover rounds whose opening fill is outside the fetched history');
 assert.match(perpsJs, /function parseGrvtIsBuyer\(value\)/, 'GRVT fill side parsing must normalize string booleans');
 assert.match(perpsJs, /side: parseGrvtIsBuyer\(row\.is_buyer \?\? row\.ib\) \? 'buy' : 'sell'/, 'GRVT fills must not treat string "false" as a buy');
 assert.match(indexHtml, /const PERPS_MAX_FILL_HISTORY_DAYS = 365;/, 'browser must request a 365d perps history window');
@@ -1618,7 +1667,8 @@ assert.match(indexHtml, /showFees \? \(r\.dailyNet \|\| 0\) : \(r\.dailyFunding 
 assert.match(indexHtml, /perpsTogglePositionChartFees/, 'position performance must expose a trading-fee toggle');
 assert.match(perpsJs, /Math\.min\(\.\.\.candidates\)/, 'position open time must use earliest fill or funding on either leg');
 assert.match(perpsJs, /const perfDays = Math\.min\(PERPS_MAX_FILL_HISTORY_DAYS, Math\.max\(fillHistoryDays, openDays\)\)/, 'per-pair performance series must span from pair open through fill history');
-assert.match(perpsJs, /days: perfDays,\s*\n\s*pairedBases: \[p\.symbol\]/, 'per-pair performance series must use computed performance window');
+assert.match(perpsJs, /buildPairDailyPerformanceSeries\(dailySeriesInputs, p\.symbol, perfDays\)/, 'per-pair performance series must use computed performance window');
+assert.match(perpsJs, /dailyPerformanceSeries,\s*\n\s*funding,/s, 'closed pairs must attach dailyPerformanceSeries for Position Performance session totals');
 assert.ok(indexHtml.includes('function perpsSyncTotalPnlForRange(data, range)'), 'Total PnL must follow the selected stat time window');
 assert.ok(indexHtml.includes('perpsSyncTotalPnlForRange(data, _perpsStatRange)'), 'stats bar must sync Total PnL from the active stat range');
 assert.doesNotMatch(indexHtml, /perpsSyncTotalPnlRolling24h/, 'Total PnL must not stay fixed to rolling 24h');
@@ -2277,6 +2327,95 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
   });
   assert.equal(snapClose?.realizedPnl, null, 'snapshot fallback must not treat uPnL as realized');
   assert.equal(snapClose?.closeLegEstimated, true);
+}
+
+{
+  const { findTrackedCloseLeg, buildVariationalClosedPair, validateVariationalExitPrices } = require('../lib/variational-hedge.js');
+  const { closedPairSessionApr } = require('../lib/perps.js');
+  const openedAt = Date.now() - 5 * 86400000;
+  const closedAt = Date.now() - 3600000;
+  const listing = { symbol: 'ADA', markPx: 0.155, fundingRateInterval: 0.08 / 1095, fundingIntervalS: 28800 };
+  const hedge = {
+    id: 'ada-close-h1',
+    symbol: 'ADA',
+    trackedVenue: 'hyperliquid',
+    trackedSize: 100000,
+    variationalSize: -100000,
+    variationalEntryPx: 0.15,
+    variationalExitPx: 0.147,
+    openedAt,
+    closedAt,
+    pendingCloseAt: closedAt,
+    trackedLastSnapshot: { side: 'long', size: 100000, entryPx: 0.15, unrealizedPnl: -500, funding: 10, fees: 0 },
+  };
+  const data = {
+    closedPairs: [{
+      symbol: 'ADA',
+      openTime: openedAt - 30 * 86400000,
+      closeTime: openedAt - 2 * 86400000,
+      longLeg: { venue: 'hyperliquid', side: 'long', size: 50000, realizedPnl: 9999, closeTime: openedAt - 2 * 86400000 },
+      shortLeg: { venue: 'grvt', side: 'short', size: 50000, realizedPnl: -9999 },
+    }],
+    hyperliquid: {
+      fills: { fills: [
+        { symbol: 'ADA', time: openedAt + 1000, side: 'B', sz: 100000, px: 0.15 },
+        { symbol: 'ADA', time: closedAt, side: 'A', sz: 100000, px: 0.147, closedPnl: -300 },
+      ] },
+      funding: { payments: [] },
+    },
+  };
+  const closeLeg = findTrackedCloseLeg(data, hedge);
+  assert.ok(closeLeg, 'must find tracked close leg from fills');
+  assert.ok(Math.abs(closeLeg.realizedPnl + 300) < 1, 'must use fill-based HL close PnL, not stale pool leg');
+  assert.notEqual(closeLeg.realizedPnl, 9999, 'must not reuse unrelated historical closed pair leg');
+
+  const badExitWarnings = validateVariationalExitPrices(
+    { ...hedge, variationalExitPx: 0.05 },
+    0.05,
+    listing,
+  );
+  assert.ok(badExitWarnings.length > 0, 'implausible Variational exit vs mark must warn');
+
+  const pair = buildVariationalClosedPair(hedge, closeLeg, listing);
+  assert.equal(pair.longLeg.realizedPnl, -300, 'tracked HL leg must carry fill-based realized PnL');
+  assert.ok(Math.abs(pair.shortLeg.realizedPnl) < 500, 'variational leg PnL must use pinned hedge size at realistic exit');
+  assert.ok(Math.abs(pair.netPnl) < 5000, 'net PnL must not explode when HL close is reconstructed');
+  assert.equal(pair.aprUnavailable, false, 'APR allowed when tracked close has realized PnL');
+  assert.ok(closedPairSessionApr(pair) == null || Math.abs(closedPairSessionApr(pair)) < 500, 'APR must not explode for manual variational close');
+
+  const snapOnly = findTrackedCloseLeg({ closedPairs: [] }, hedge);
+  const snapPair = buildVariationalClosedPair(hedge, snapOnly, listing);
+  assert.equal(snapPair.closeLegEstimated, true);
+  assert.equal(snapPair.aprUnavailable, true);
+  assert.equal(closedPairSessionApr(snapPair), null, 'estimated close must suppress APR');
+}
+
+{
+  const d = JSON.parse(readFileSync(join(ROOT, '_live-perps.json'), 'utf8'));
+  const { findTrackedCloseLeg, buildVariationalClosedPair } = require('../lib/variational-hedge.js');
+  const openedAt = Date.parse('2026-07-01T00:00:00Z');
+  const closedAt = Date.parse('2026-07-05T20:05:00Z');
+  const listing = { symbol: 'XLM', markPx: 0.214, fundingRateInterval: 0.0001, fundingIntervalS: 28800 };
+  const hedge = {
+    id: 'xlm-partial',
+    symbol: 'XLM',
+    trackedVenue: 'grvt',
+    trackedSize: 90000,
+    variationalSize: -90000,
+    variationalEntryPx: 0.218,
+    variationalExitPx: 0.214,
+    openedAt,
+    closedAt,
+    pendingCloseAt: closedAt,
+    trackedLastSnapshot: { side: 'long', size: 90000, entryPx: 0.22, markPx: 0.214, unrealizedPnl: -540, funding: 10, fees: 0 },
+  };
+  const closeLeg = findTrackedCloseLeg(d, hedge);
+  assert.ok(closeLeg, 'must resolve a tracked close leg for XLM');
+  assert.notEqual(closeLeg.realizedPnl, -707.576764, 'must not use partial synthetic GRVT close PnL for full hedge');
+  assert.ok(Math.abs(closeLeg.size - 90000) < 1, 'tracked close leg must pin to hedge size');
+  const pair = buildVariationalClosedPair(hedge, closeLeg, listing);
+  assert.ok(Math.abs(pair.netPnl) < 500, 'XLM variational net PnL must not explode on partial GRVT unwind');
+  assert.ok(Math.abs(pair.longLeg.realizedPnl) < 1000, 'tracked leg PnL must be estimated at hedge size, not partial fill cluster');
 }
 
 {
