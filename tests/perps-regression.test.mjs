@@ -2642,6 +2642,7 @@ assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'pending close mu
 assert.match(variationalHedgeJs, /lockedEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
 assert.match(indexHtml, /function perpsReapplyVariationalHedgesIfMounted\(/, 'perps must re-render after late variational hedge hydration');
 assert.match(indexHtml, /if \(_perpsBootPromise\) await _perpsBootPromise/, 'perps refresh must wait for hedge bootstrap');
+assert.match(readFileSync(join(ROOT, 'lib/closed-leg-reconstruct.js'), 'utf8'), /root\.ClosedLegReconstruct = api/, 'closed-leg reconstruct must not leak globals that break variational-hedge.js');
 
 {
   const syncJs = readFileSync(join(ROOT, 'api/sync.js'), 'utf8');

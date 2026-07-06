@@ -27,6 +27,7 @@ function check(name, ok, detail = '') {
 const html = await fetchText(`${PROD}/`);
 check('production has reapply hook', html.includes('perpsReapplyVariationalHedgesIfMounted'));
 check('production waits for boot promise', html.includes('_perpsBootPromise'));
+check('VariationalHedge loads in browser', html.includes('lib/variational-hedge.js'));
 
 const sync = await fetchJson(`${PROD}/api/sync?portfolioOnly=1`);
 const portfolio = JSON.parse(sync.result);
