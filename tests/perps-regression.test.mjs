@@ -2640,6 +2640,13 @@ const {
 
 assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
 assert.match(variationalHedgeJs, /lockedEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
+assert.match(indexHtml, /function perpsReapplyVariationalHedgesIfMounted\(/, 'perps must re-render after late variational hedge hydration');
+assert.match(indexHtml, /if \(_perpsBootPromise\) await _perpsBootPromise/, 'perps refresh must wait for hedge bootstrap');
+
+{
+  const syncJs = readFileSync(join(ROOT, 'api/sync.js'), 'utf8');
+  assert.match(syncJs, /result\._perpsVariationalHedges = perpsVariationalHedges/, 'portfolio-first sync must include variational hedges');
+}
 
 {
   const d = JSON.parse(readFileSync(join(ROOT, '_live-perps.json'), 'utf8'));

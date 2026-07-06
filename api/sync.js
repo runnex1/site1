@@ -87,9 +87,14 @@ function mergeVariationalHedgeRecord(prev, hedge) {
     if (incVal != null && incVal !== '' && Number(incVal) !== 0) return incVal;
     return preferPrev ? (prevVal ?? incVal) : (incVal ?? prevVal);
   };
+  const active = new Set(['open', 'pending_close']);
+  let status = hedge?.status ?? prev?.status;
+  if (active.has(prev?.status) && hedge?.status === 'closed') status = prev.status;
+  else if (active.has(hedge?.status) && prev?.status === 'closed') status = hedge.status;
   return {
     ...prev,
     ...hedge,
+    status,
     openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
     updatedAt: Math.max(prevTs, incTs) || null,
     variationalEntryPx: pickField('variationalEntryPx'),
@@ -864,11 +869,12 @@ module.exports = async function handler(req, res) {
         _perpsConfig:         perpsConfig,
         _geckoSymbolIds:      geckoSymbolIds,
       };
+      // Small payload — include on portfolio-first sync so Variational hedges apply before perps paint.
+      result._perpsVariationalHedges = perpsVariationalHedges;
       if (!portfolioOnly) {
         result._snapshots = snapshots;
         result._eventHistory = eventHistory;
         result._perpsSnapshots = perpsSnapshots;
-        result._perpsVariationalHedges = perpsVariationalHedges;
         result._perpsClosedPairs = perpsClosedPairs;
         result._logoCache = logoCache;
       }

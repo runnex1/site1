@@ -10154,6 +10154,7 @@ let _perpsDailyFundShowFees = true;
 let _perpsDailyFundChartState = null;
 let _perpsScheduledRefreshTimer = null;
 let _perpsRefreshInFlight = false;
+let _perpsBootPromise = null;
 let _marketTickerTimer = null;
 let _eventLogRefreshTimer = null;
 const EVENT_LOG_REFRESH_MS = 5 * 60 * 1000;
@@ -10594,6 +10595,11 @@ async function hydratePortfolioFromCloud(opts = {}) {
         return false;
     }
     if (!mergeCloudPortfolio(parsed)) return false;
+    if (Array.isArray(parsed._perpsVariationalHedges) && parsed._perpsVariationalHedges.length) {
+        perpsMergeVariationalHedgesFromServer(parsed._perpsVariationalHedges);
+        perpsReapplyVariationalHedgesIfMounted();
+        delete parsed._perpsVariationalHedges;
+    }
     persistPortfolioLocalOnly();
     try { invokeUpdateUI(); } catch (e) { console.error('[Vault] updateUI after cloud sync failed:', e); }
     if (!background) {
@@ -10660,8 +10666,8 @@ async function loadData() {
     updateLogoStatus('ready', 'Ready');
     if (location.protocol !== 'file:') hydrateLogoCacheFromCloud().catch(() => {});
 
-    const perpsBootPromise = (location.protocol !== 'file:'
-        ? perpsBootstrapWallet().then(() => { perpsLoadConfig(); }).catch(() => {})
+    _perpsBootPromise = (location.protocol !== 'file:'
+        ? perpsBootstrapWallet().then(() => { perpsLoadConfig(); })
         : Promise.resolve());
 
     try {
@@ -10731,7 +10737,7 @@ async function loadData() {
     } catch(e) {}
 
     loadDomeConfig();
-    perpsBootPromise.catch(() => {});
+    _perpsBootPromise.catch(() => {});
 }
 
 async function saveData(syncOpts = {}) {
@@ -28608,7 +28614,7 @@ async function perpsHydrateSnapshotsFromCloud() {
 async function perpsHydratePerpsAuxFromCloud() {
     if (location.protocol === 'file:') return false;
     try {
-        const res = await fetch('/api/sync?perpsAux=1', { signal: AbortSignal.timeout(5000) });
+        const res = await fetch('/api/sync?perpsAux=1', { signal: AbortSignal.timeout(15000) });
         if (!res.ok) return false;
         const body = await res.json();
         let changed = false;
@@ -28619,6 +28625,8 @@ async function perpsHydratePerpsAuxFromCloud() {
         if (Array.isArray(body?.perpsVariationalHedges) && body.perpsVariationalHedges.length) {
             perpsMergeVariationalHedgesFromServer(body.perpsVariationalHedges);
             changed = true;
+        } else if (body?.perpsVariationalHedges) {
+            perpsReapplyVariationalHedgesIfMounted();
         } else {
             const local = perpsLoadVariationalHedgesRaw();
             if (local.length) await perpsPushVariationalHedgesToServer(local);
@@ -28661,6 +28669,7 @@ async function perpsBootstrapWallet() {
 }
 
 async function perpsEnsureConnected() {
+    if (_perpsBootPromise) await _perpsBootPromise.catch(() => {});
     perpsImportConfigFromPortfolio();
     perpsRepairSavedConfig();
     if (!perpsHasValidWallet()) await perpsHydrateConfigFromCloud();
@@ -28951,6 +28960,7 @@ function perpsMergeVariationalHedgesFromServer(serverRows) {
     const local = perpsLoadVariationalHedgesRaw();
     if (!local.length) {
         perpsPersistVariationalHedges(incoming, { skipCloudSync: true });
+        perpsReapplyVariationalHedgesIfMounted();
         return incoming;
     }
     const byKey = new Map(local.map(h => [perpsVariationalHedgeKey(h), h]));
@@ -28963,7 +28973,27 @@ function perpsMergeVariationalHedgesFromServer(serverRows) {
     }
     const merged = [...byKey.values()].sort((a, b) => (b.openedAt || 0) - (a.openedAt || 0));
     if (changed) perpsPersistVariationalHedges(merged, { skipCloudSync: true });
+    perpsReapplyVariationalHedgesIfMounted();
     return merged;
+}
+
+function perpsReapplyVariationalHedgesIfMounted() {
+    if (!_perpsLastData) return false;
+    const unhedgedBefore = (_perpsLastData.unhedged || []).length;
+    perpsApplyVariationalHedgesToData(_perpsLastData);
+    if (document.body.dataset.activeTab !== 'perps') return true;
+    perpsRenderPositionsPanel(_perpsLastData);
+    perpsRenderUnhedged(_perpsLastData.unhedged || []);
+    perpsRenderVariationalPending(_perpsLastData.variationalPendingClose || []);
+    perpsRenderAlerts(_perpsLastData.paired || [], _perpsLastData.unhedged || [], _perpsLastData.summary || {});
+    if (unhedgedBefore !== (_perpsLastData.unhedged || []).length) {
+        perpsRenderStatsBar(_perpsLastData);
+        const notionalSub = document.getElementById('perpsNotionalSub');
+        if (notionalSub) {
+            notionalSub.textContent = `${_perpsLastData.paired?.length || 0} hedged · ${_perpsLastData.unhedged?.length || 0} unhedged`;
+        }
+    }
+    return true;
 }
 
 function perpsVariationalBySymbolFromSpread(rateSpread) {
@@ -30772,6 +30802,9 @@ function perpsApplyLiveRates(rateSpread, fetchedAt = null) {
     }
     perpsApplyVariationalHedgesToData(_perpsLastData);
     perpsRenderPositionsPanel(_perpsLastData);
+    perpsRenderUnhedged(_perpsLastData.unhedged || []);
+    perpsRenderVariationalPending(_perpsLastData.variationalPendingClose || []);
+    perpsRenderAlerts(_perpsLastData.paired || [], _perpsLastData.unhedged || [], _perpsLastData.summary || {});
 }
 
 /** Gross funding + fees for the pair's latest open session (all time within that session). */
