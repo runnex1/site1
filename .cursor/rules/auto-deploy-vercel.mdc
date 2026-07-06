@@ -10,7 +10,8 @@ The user wants **automatic production deploys**. After completing any task that 
 1. Run relevant tests if the project has them for the touched area.
 2. **Commit and push to `origin/main`** to trigger Vercel — do not wait for a separate "deploy" request.
 3. Follow git safety: no force push, no git config changes, no secrets in commits.
-4. After push, briefly confirm deploy (commit hash + https://testedefi.vercel.app).
+4. After push, **verify the fix on production** (see `verify-after-deploy.mdc`) and report what was checked + pass/fail.
+5. Briefly confirm deploy (commit hash + https://testedefi.vercel.app).
 
 ## Skip auto-deploy only when
 

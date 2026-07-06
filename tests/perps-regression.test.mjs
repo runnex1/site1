@@ -2646,6 +2646,7 @@ assert.match(indexHtml, /if \(_perpsBootPromise\) await _perpsBootPromise/, 'per
 {
   const syncJs = readFileSync(join(ROOT, 'api/sync.js'), 'utf8');
   assert.match(syncJs, /result\._perpsVariationalHedges = perpsVariationalHedges/, 'portfolio-first sync must include variational hedges');
+  assert.doesNotMatch(syncJs, /portfolioOnly \? null : kvGet\('vault:perps_variational_hedges'\)/, 'portfolio-first sync must fetch variational hedges from KV');
 }
 
 {

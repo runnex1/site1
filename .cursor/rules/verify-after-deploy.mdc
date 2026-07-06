@@ -1,0 +1,27 @@
+---
+description: Verify production after deploying fixes (user policy)
+alwaysApply: true
+---
+
+# Verify after deploy (standing user policy)
+
+After committing and pushing a fix to `origin/main`, **verify it works on production** before reporting done.
+
+## Required steps
+
+1. **Wait for deploy** — confirm Vercel picked up the push (commit hash on `main`).
+2. **Run verification** appropriate to the fix:
+   - Relevant tests: `node tests/perps-regression.test.mjs` (or other touched test files).
+   - Production smoke check against https://testedefi.vercel.app (API response, HTML contains expected change, or scripted check).
+   - For UI bugs: use browser tools to confirm the user-visible behavior on the live site.
+3. **Report evidence** — state what was checked and the outcome (pass/fail). If verification fails, investigate and ship a follow-up fix; do not stop at “deployed”.
+
+## Prefer concrete checks over assumptions
+
+- API: `curl` / `fetch` the affected endpoint and assert key fields.
+- Client logic: small `scripts/verify-*.mjs` or `node -e` against production payload + local lib.
+- Do not claim a bug is fixed based only on code review or local tests if production behavior was the reported issue.
+
+## When verification is blocked
+
+If production is still building, poll briefly then verify. If live verification is impossible (needs user login, wallet, secrets), say what was verified automatically and what the user should confirm once.

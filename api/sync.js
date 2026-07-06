@@ -812,7 +812,7 @@ module.exports = async function handler(req, res) {
         kvGet('vault:dismissed_markets'),
         kvGet('vault:perps_config'),
         portfolioOnly ? null : kvGet('vault:perps_snapshots'),
-        portfolioOnly ? null : kvGet('vault:perps_variational_hedges'),
+        kvGet('vault:perps_variational_hedges'),
         portfolioOnly ? null : kvGet('vault:perps_closed_pairs'),
         portfolioOnly ? null : kvGet('vault:logo_cache'),
         kvGet('vault:gecko_symbol_ids'),
