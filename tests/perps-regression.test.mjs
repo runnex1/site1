@@ -1280,6 +1280,42 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
     'fluid-lending:0xabc:1:usdc',
     'Fluid lending history keys must stay stable',
   );
+
+  const morphoOnly = {
+    wallets: ['0xabc'],
+    positions: [{
+      id: 'morpho:0xabc:1:0xmarket',
+      protocol: 'Morpho',
+      marketName: 'reUSD / USDC',
+      wallet: '0xabc',
+      chainId: 1,
+      totalBorrowed: 100,
+      totalSupplied: 110,
+      netValue: 10,
+    }],
+  };
+  let unionStore = appendLoopSnapshotStore({}, morphoOnly);
+  const unionBucket = Object.keys(unionStore)[0];
+  unionStore = appendLoopSnapshotStore(unionStore, {
+    wallets: ['0xabc'],
+    positions: [{
+      id: 'fluid-vault:0xabc:1:162:17698',
+      protocol: 'Fluid',
+      marketName: 'reUSD / GHO #17698',
+      wallet: '0xabc',
+      chainId: 1,
+      totalBorrowed: 50,
+      totalSupplied: 100,
+      netValue: 50,
+    }],
+  });
+  assert.equal(unionStore[unionBucket].positions.length, 2, 'same-bucket append must union positions instead of replacing');
+
+  const mergedUnion = mergeLoopSnapshotStores(
+    { [unionBucket]: { fetchedAt: 1, positions: [{ id: 'aave:1', protocol: 'Aave', marketName: 'X', wallet: '0xabc', chainId: 1, totalSupplied: 1, totalBorrowed: 0, netValue: 1 }] } },
+    unionStore,
+  );
+  assert.ok(mergedUnion[unionBucket].positions.length >= 2, 'server/client merge must union bucket positions');
 }
 
 {

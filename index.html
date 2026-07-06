@@ -15206,8 +15206,53 @@ function loopsPurgeUsdeUsdmSnapshotHistory() {
 
 function loopsMergeSnapshotsFromServer(serverStore) {
     if (!serverStore || typeof serverStore !== 'object') return;
-    loopSnapshotsStore = { ...loopSnapshotsStore, ...serverStore };
+    const next = { ...loopSnapshotsStore };
+    for (const [key, rec] of Object.entries(serverStore)) {
+        if (!rec || typeof rec !== 'object') continue;
+        next[key] = loopsMergeSnapshotBucketRecords(next[key], rec);
+    }
+    loopSnapshotsStore = next;
     try { localStorage.setItem(LOOP_SNAPSHOTS_KEY, JSON.stringify(loopSnapshotsStore)); } catch (e) {}
+}
+
+function loopSnapshotPositionKey(pos) {
+    const id = String(pos?.id || '').trim().toLowerCase();
+    if (id) return id;
+    const historyKey = String(pos?.historyKey || '').trim().toLowerCase();
+    if (historyKey) return historyKey;
+    return loopPositionHistoryKey(pos);
+}
+
+function loopsMergeSnapshotBucketPositions(existingPositions, incomingPositions) {
+    const byKey = new Map();
+    for (const pos of existingPositions || []) {
+        const key = loopSnapshotPositionKey(pos);
+        if (key) byKey.set(key, pos);
+    }
+    for (const pos of incomingPositions || []) {
+        const key = loopSnapshotPositionKey(pos);
+        if (key) byKey.set(key, pos);
+    }
+    return [...byKey.values()];
+}
+
+function loopsMergeSnapshotBucketRecords(prev, incoming) {
+    if (!prev) return incoming;
+    if (!incoming) return prev;
+    const prevAt = Number(prev.fetchedAt) || 0;
+    const inAt = Number(incoming.fetchedAt) || 0;
+    const wallets = [...new Set([
+        ...(Array.isArray(prev.wallets) ? prev.wallets : []),
+        ...(Array.isArray(incoming.wallets) ? incoming.wallets : []),
+    ])];
+    return {
+        ...prev,
+        ...incoming,
+        bucket: incoming.bucket || prev.bucket,
+        fetchedAt: Math.max(prevAt, inAt),
+        wallets,
+        positions: loopsMergeSnapshotBucketPositions(prev.positions, incoming.positions),
+    };
 }
 
 function loopsSnapshotBucketKey(ms) {
@@ -15283,22 +15328,13 @@ function loopsAppendSnapshotFromApiData(data) {
         .filter(loopSnapshotEligiblePosition)
         .map(loopMapSnapshotPosition);
     if (!positions.length) return false;
-    if (loopSnapshotsStore[key]) {
-        loopSnapshotsStore[key] = {
-            ...loopSnapshotsStore[key],
-            bucket: key,
-            fetchedAt,
-            wallets: Array.isArray(data?.wallets) ? data.wallets : [],
-            positions,
-        };
-    } else {
-        loopSnapshotsStore[key] = {
-            bucket: key,
-            fetchedAt,
-            wallets: Array.isArray(data?.wallets) ? data.wallets : [],
-            positions,
-        };
-    }
+    const record = {
+        bucket: key,
+        fetchedAt,
+        wallets: Array.isArray(data?.wallets) ? data.wallets : [],
+        positions,
+    };
+    loopSnapshotsStore[key] = loopsMergeSnapshotBucketRecords(loopSnapshotsStore[key], record);
     const keys = Object.keys(loopSnapshotsStore).sort();
     while (keys.length > 360) {
         delete loopSnapshotsStore[keys.shift()];
@@ -15323,11 +15359,42 @@ function loopPositionHistoryKey(pos) {
     return `${protocol}:${wallet}:${chainId}:${marketName}`;
 }
 
+function loopMorphoMarketIdFromPosition(pos) {
+    const id = String(pos?.id || '');
+    const match = id.match(/^morpho:[^:]+:[^:]+:(0x[a-f0-9]+)$/i);
+    if (match) return match[1].toLowerCase();
+    const marketId = String(pos?.marketId || '').trim().toLowerCase();
+    return marketId || null;
+}
+
+function loopFluidNftFromPosition(pos) {
+    const id = String(pos?.id || '').toLowerCase();
+    const vaultMatch = id.match(/^fluid-vault:[^:]+:[^:]+:[^:]+:(\d+)$/);
+    if (vaultMatch) return vaultMatch[1];
+    const name = String(pos?.marketName || pos?.historyKey || '');
+    const nameMatch = name.match(/#(\d+)\s*$/);
+    return nameMatch ? nameMatch[1] : null;
+}
+
 function loopHistoryPositionMatch(live, stored) {
     if (!live || !stored) return false;
     if (live.id && stored.id && live.id === stored.id) return true;
     const lp = String(live.protocol || '').trim().toLowerCase();
     const sp = String(stored.protocol || '').trim().toLowerCase();
+    const lw = String(live.wallet || '').trim().toLowerCase();
+    const sw = String(stored.wallet || '').trim().toLowerCase();
+    const lc = String(live.chainId ?? '');
+    const sc = String(stored.chainId ?? '');
+    if (lp === 'morpho' && sp === 'morpho' && lw && sw && lw === sw && lc === sc) {
+        const lm = loopMorphoMarketIdFromPosition(live);
+        const sm = loopMorphoMarketIdFromPosition(stored);
+        if (lm && sm && lm === sm) return true;
+    }
+    if ((lp === 'fluid' || sp === 'fluid') && lw && sw && lw === sw && lc === sc) {
+        const ln = loopFluidNftFromPosition(live);
+        const sn = loopFluidNftFromPosition(stored);
+        if (ln && sn && ln === sn) return true;
+    }
     if (lp === 'fluid' || sp === 'fluid') {
         const liveKey = loopPositionHistoryKey(live);
         const storedKey = stored.historyKey || loopPositionHistoryKey(stored);
@@ -15338,10 +15405,6 @@ function loopHistoryPositionMatch(live, stored) {
     const storedKey = stored.historyKey || loopPositionHistoryKey(stored);
     if (liveKey && storedKey && liveKey === storedKey) return true;
     const normMarket = v => String(v || '').toLowerCase().replace(/\s+/g, ' ').replace(/\s*\/\s*/g, ' / ').trim();
-    const lw = String(live.wallet || '').trim().toLowerCase();
-    const sw = String(stored.wallet || '').trim().toLowerCase();
-    const lc = String(live.chainId ?? '');
-    const sc = String(stored.chainId ?? '');
     const lm = normMarket(live.marketName);
     const sm = normMarket(stored.marketName);
     return !!(lp && sp && lp === sp && lw && sw && lw === sw && lc === sc && lm && sm && lm === sm);
