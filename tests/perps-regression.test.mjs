@@ -892,6 +892,11 @@ assert.match(loopsWorkflow, /5 \*\/2 \* \* \*/, 'GitHub cron must run every 2 ho
 assert.match(loopsWorkflow, /loop-cron-snapshot/, 'loop cron backup must use vercel rewrite to loopCronSnapshot');
 assert.match(vercelJson, /"source": "\/api\/check-alerts"/, 'check-alerts must rewrite to sync handler');
 assert.match(vercelJson, /"source": "\/api\/loop-cron-snapshot"/, 'loop cron must expose friendly rewrite path');
+assert.match(vercelJson, /"path": "\/api\/loop-cron-snapshot"/, 'vercel cron must trigger loop snapshots every 2h');
+assert.match(vercelJson, /"path": "\/api\/cron\/tick/, 'vercel cron must trigger lightweight cron tick');
+assert.match(loopSnapshotsJs, /persistLoopSnapshotStore/, 'loop snapshots must verify KV writes');
+assert.match(loopSnapshotsJs, /resolveLoopYieldWallets/, 'loop cron must resolve yield wallets from multiple KV sources');
+assert.match(aaveProxyJs, /providedCronSecret/, 'loop cron snapshot must accept Vercel cron bearer auth');
 assert.match(syncJs, /checkAlerts === '1'/, 'sync must route check-alerts cron through shared handler');
 assert.match(syncJs, /check-alerts-run/, 'check-alerts logic must live in lib to stay within function limit');
 assert.match(aaveProxyJs, /vault:loop_snapshots/, 'loop snapshots must persist in KV');
@@ -1316,6 +1321,40 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
     unionStore,
   );
   assert.ok(mergedUnion[unionBucket].positions.length >= 2, 'server/client merge must union bucket positions');
+}
+
+{
+  const {
+    resolveLoopYieldWallets,
+    persistLoopSnapshotStore,
+    parseLoopYieldWalletsFromRatesCache,
+  } = require('../lib/loop-snapshots.js');
+  const cacheWallets = parseLoopYieldWalletsFromRatesCache({
+    key: 'v2:0xabcdef0000000000000000000000000000000001,0x1234567890123456789012345678901234567890',
+    fetchedAt: Date.now(),
+    data: {},
+  });
+  assert.equal(cacheWallets.length, 2, 'loop rates cache key must provide fallback yield wallets');
+  let stored = {};
+  const kv = {
+    async kvGet(key) {
+      if (key === 'vault:watcherwallets') return JSON.stringify([]);
+      if (key === 'vault:loop_yield_wallets') return JSON.stringify([]);
+      if (key === 'vault:loop_rates_cache') {
+        return JSON.stringify({ key: 'v2:0xabcdef0000000000000000000000000000000001', fetchedAt: Date.now(), data: {} });
+      }
+      if (key === 'vault:loop_snapshots') return JSON.stringify(stored);
+      return null;
+    },
+    async kvSet(key, value) {
+      if (key === 'vault:loop_snapshots') stored = JSON.parse(value);
+    },
+  };
+  const wallets = await resolveLoopYieldWallets(kv);
+  assert.deepEqual(wallets, ['0xabcdef0000000000000000000000000000000001'], 'resolveLoopYieldWallets must fall back to loop rates cache');
+  const store = { '2026-07-07T12': { bucket: '2026-07-07T12', fetchedAt: 1000, positions: [{ id: 'a' }] } };
+  const persisted = await persistLoopSnapshotStore({ ...kv, store });
+  assert.equal(persisted.latestFetchedAt, 1000, 'persistLoopSnapshotStore must verify read-back fetchedAt');
 }
 
 {

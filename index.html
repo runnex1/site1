@@ -15263,14 +15263,18 @@ function loopsSnapshotBucketKey(ms) {
 
 function loopsUploadSnapshotsToServer() {
     if (location.protocol === 'file:') return;
-    try {
-        fetch('/api/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ loopSnapshots: loopSnapshotsStore }),
-            keepalive: true,
-        }).catch(() => {});
-    } catch (e) {}
+    const upload = async () => {
+        try {
+            await loopsEnsureSnapshotsHydrated();
+            await fetch('/api/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ loopSnapshots: loopSnapshotsStore }),
+                keepalive: true,
+            });
+        } catch (e) {}
+    };
+    upload();
 }
 
 function loopSnapshotLegs(legs) {

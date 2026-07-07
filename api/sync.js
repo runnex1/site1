@@ -13,7 +13,7 @@
  */
 
 const { kvGet, kvSet } = require('../lib/kv');
-const { mergeLoopSnapshotStores, ensureUsdeUsdmSnapshotsPurged } = require('../lib/loop-snapshots');
+const { mergeLoopSnapshotStores, ensureUsdeUsdmSnapshotsPurged, loopYieldWalletsFromWatcherList, persistLoopYieldWallets, persistLoopSnapshotStore } = require('../lib/loop-snapshots');
 const {
   shouldPersistSyncArray,
   shouldPersistWatcherWallets,
@@ -978,6 +978,11 @@ module.exports = async function handler(req, res) {
     if (shouldPersistWatcherWallets(body.watcherWallets, body)) {
       await kvSet('vault:watcherwallets', JSON.stringify(body.watcherWallets));
       saved.watcherWallets = true;
+      const yieldWallets = loopYieldWalletsFromWatcherList(body.watcherWallets);
+      if (yieldWallets.length) {
+        await persistLoopYieldWallets(kvSet, yieldWallets);
+        saved.loopYieldWallets = true;
+      }
     }
 
     // Polymarket wallet addresses — also available inside body.portfolio
@@ -1068,7 +1073,7 @@ module.exports = async function handler(req, res) {
       await ensureUsdeUsdmSnapshotsPurged({ kvGet, kvSet, parseJson });
       const existing = parseJson(await kvGet('vault:loop_snapshots'), {});
       const merged = mergeLoopSnapshotStores(existing, body.loopSnapshots);
-      await kvSet('vault:loop_snapshots', JSON.stringify(merged));
+      await persistLoopSnapshotStore({ kvGet, kvSet, parseJson, store: merged });
       saved.loopSnapshots = true;
     }
 

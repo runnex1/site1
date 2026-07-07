@@ -16,7 +16,9 @@ const { fetchLoopRates, mergeRecentLoopPositions } = require('../lib/loop-rates'
 const {
   appendLoopSnapshotStore,
   buildLoopSnapshotFromRates,
-  loopYieldWalletsFromWatcherList,
+  resolveLoopYieldWallets,
+  persistLoopYieldWallets,
+  persistLoopSnapshotStore,
   ensureUsdeUsdmSnapshotsPurged,
 } = require('../lib/loop-snapshots');
 const { ensureLoopLogoCache } = require('../lib/logo-resolver');
@@ -37,7 +39,16 @@ function parseJson(raw, fallback) {
 }
 
 function expectedSyncSecret() {
-  return process.env.SYNC_SECRET || '';
+  return process.env.SYNC_SECRET || process.env.CRON_SECRET || '';
+}
+
+function providedCronSecret(req) {
+  return String(
+    req.headers['x-sync-secret']
+    || req.query?.secret
+    || String(req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+    || '',
+  );
 }
 
 function sortedCsv(raw) {
@@ -309,31 +320,40 @@ async function persistLoopLogoCache(positions) {
 
 async function handleLoopCronSnapshot(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  const secret = String(req.headers['x-sync-secret'] || req.query.secret || '');
   const expected = expectedSyncSecret();
-  if (!expected || secret !== expected) {
+  if (!expected || providedCronSecret(req) !== expected) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const watcherWallets = parseJson(await kvGet('vault:watcherwallets'), []);
-  const wallets = loopYieldWalletsFromWatcherList(watcherWallets);
+  const wallets = await resolveLoopYieldWallets({ kvGet, parseJson });
   if (!wallets.length) {
-    return res.status(400).json({ error: 'No yield wallets configured in vault:watcherwallets' });
+    return res.status(400).json({ error: 'No yield wallets configured for loop snapshots' });
   }
 
   try {
-    const data = await fetchLoopRates({ wallets });
+    const previousCache = parseCronJson(await kvGet(CACHE_KEYS.loopRates), null);
+    const freshData = await fetchLoopRates({ wallets });
+    const data = mergeRecentLoopPositions(freshData, previousCache?.data, {
+      previousFetchedAt: previousCache?.fetchedAt,
+    });
     const savedSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
     const store = appendLoopSnapshotStore(savedSnapshots, data);
-    await kvSet('vault:loop_snapshots', JSON.stringify(store));
+    const persisted = await persistLoopSnapshotStore({ kvGet, kvSet, parseJson, store });
+    await persistLoopYieldWallets(kvSet, wallets);
     const logosUpdated = await persistLoopLogoCache(data.positions);
+    await kvSet(CACHE_KEYS.loopRates, JSON.stringify({
+      key: `${LOOP_RATES_CACHE_VERSION}:${wallets.map((w) => w.toLowerCase()).sort().join(',')}`,
+      fetchedAt: Date.now(),
+      data,
+    }));
     const { key, record } = buildLoopSnapshotFromRates(data);
     return res.status(200).json({
       ok: true,
       bucket: key,
       fetchedAt: record.fetchedAt,
       positionCount: record.positions.length,
-      snapshotCount: Object.keys(store).length,
+      snapshotCount: persisted.bucketCount,
+      latestFetchedAt: persisted.latestFetchedAt,
       logosUpdated,
     });
   } catch (e) {
@@ -360,13 +380,16 @@ async function handleLoopSnapshots(req, res) {
   }
 }
 
-async function persistLoopSnapshotsFromRates(data) {
+async function persistLoopSnapshotsFromRates(data, wallets = []) {
   try {
     const savedSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
     const store = appendLoopSnapshotStore(savedSnapshots, data);
-    await kvSet('vault:loop_snapshots', JSON.stringify(store));
+    const persisted = await persistLoopSnapshotStore({ kvGet, kvSet, parseJson, store });
+    if (wallets.length) await persistLoopYieldWallets(kvSet, wallets);
+    return persisted;
   } catch (e) {
     console.warn('[loop-snapshots-persist]', e.message || e);
+    throw e;
   }
 }
 
@@ -389,7 +412,7 @@ async function handleLoopRates(req, res) {
       ? null
       : await kvCacheGet(CACHE_KEYS.loopRates, walletKey, LOOP_RATES_KV_CACHE_MS);
     if (kvCached) {
-      await persistLoopSnapshotsFromRates(kvCached);
+      await persistLoopSnapshotsFromRates(kvCached, wallets);
       return res.status(200).json(kvCached);
     }
     const previousCache = parseCronJson(await kvGet(CACHE_KEYS.loopRates), null);
@@ -402,7 +425,7 @@ async function handleLoopRates(req, res) {
     const data = mergeRecentLoopPositions(freshData, previousCache?.data, {
       previousFetchedAt: previousCache?.fetchedAt,
     });
-    await persistLoopSnapshotsFromRates(data);
+    await persistLoopSnapshotsFromRates(data, wallets);
     await persistLoopLogoCache(data.positions);
     await kvCacheSet(CACHE_KEYS.loopRates, walletKey, data);
     return res.status(200).json(data);
