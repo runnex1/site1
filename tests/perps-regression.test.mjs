@@ -977,6 +977,7 @@ assert.match(indexHtml, /height:148px/, 'loop history chart must be tall enough 
 assert.match(indexHtml, /function loopSnapshotPeriodNetApy\(/, 'loops tab must compute period net APY from spot snapshot rates');
 assert.match(indexHtml, /function loopTrimHistoryToLatestSession\(/, 'loop history must reset after deposits and withdrawals');
 assert.match(indexHtml, /function loopHistoryCapitalEvent\(/, 'loop history must detect capital flow between snapshots');
+assert.match(indexHtml, /function loopHistoryPartialLegApiMiss\(/, 'loop history must ignore missing legs from partial API responses');
 assert.match(indexHtml, /loopSnapshotApyRowHtml\(chartMode, adjustedHistoryPoints, liveEndValue, liveEndTs\)/, 'loop cards must seed 7d/30d metrics from active chart mode and manual APY overrides');
 assert.match(indexHtml, /function loopSetManualSupplyApy\(/, 'loops must allow timestamped manual supply APY overrides');
 assert.doesNotMatch(indexHtml, /Fix \$1 peg/, 'loops tab must not expose borrowed-token $1 peg toggle');
@@ -1204,6 +1205,39 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
 
 {
   const {
+    loopHistoryCapitalEvent,
+    loopHistoryPartialLegApiMiss,
+    loopTrimHistoryToLatestSession,
+  } = require('../lib/loop-snapshot-apy.js');
+  const before = {
+    ts: Date.UTC(2026, 6, 7, 16),
+    netValue: 47978,
+    totalSupplied: 89785,
+    totalBorrowed: 41806,
+    netApy: -1,
+    suppliedLegs: [
+      { symbol: 'STCUSD', amount: 44876.744468, value: 47980 },
+      { symbol: 'USDM', amount: 41804.009274, value: 41804 },
+    ],
+    borrowedLegs: [{ symbol: 'USDM', amount: 41806.545054, value: 41806 }],
+  };
+  const after = {
+    ts: Date.UTC(2026, 6, 7, 18),
+    netValue: 6176,
+    totalSupplied: 47982,
+    totalBorrowed: 41806,
+    netApy: -1,
+    suppliedLegs: [{ symbol: 'STCUSD', amount: 44876.744468, value: 47982 }],
+    borrowedLegs: [{ symbol: 'USDM', amount: 41806.807139, value: 41806 }],
+  };
+  assert.ok(loopHistoryPartialLegApiMiss(before, after), 'missing USDM supply leg must look like partial API data');
+  assert.ok(!loopHistoryCapitalEvent(before, after), 'stcUSD/USDm must not reset chart when a supply leg disappears from API');
+  const points = [before, after, { ...after, ts: Date.UTC(2026, 6, 7, 20) }];
+  assert.equal(loopTrimHistoryToLatestSession(points).length, 3, 'stcUSD/USDm chart must keep full session after partial API miss');
+}
+
+{
+  const {
     loopSnapshotPeriodNetApy,
     loopTrimHistoryToLatestSession,
     loopHistoryCapitalEvent,
@@ -1407,6 +1441,17 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   assert.equal(cleaned['2026-06-09T00'].positions.length, 1, 'other loop positions must remain in shared buckets');
   assert.equal(cleaned['2026-06-09T00'].positions[0].protocol, 'Jupiter');
   assert.equal(cleaned['2026-06-09T02'], undefined, 'USDe-only buckets must be deleted entirely');
+  assert.equal(
+    isUsdeUsdmLoopSnapshotPosition({
+      protocol: 'Aave',
+      marketName: 'AaveV3MegaETH',
+      chainId: 4326,
+      suppliedLegs: [{ symbol: 'STCUSD', amount: 44876 }],
+      borrowedLegs: [{ symbol: 'USDM', amount: 41806 }],
+    }),
+    false,
+    'stcUSD/USDm MegaETH loop must not be purged as USDe/USDm',
+  );
 
   let flag = '';
   const kv = {
