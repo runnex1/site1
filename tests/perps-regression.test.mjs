@@ -896,6 +896,7 @@ assert.match(vercelJson, /"path": "\/api\/loop-cron-snapshot"/, 'vercel cron mus
 assert.match(vercelJson, /"path": "\/api\/cron\/tick/, 'vercel cron must trigger lightweight cron tick');
 assert.match(loopSnapshotsJs, /persistLoopSnapshotStore/, 'loop snapshots must verify KV writes');
 assert.match(loopSnapshotsJs, /resolveLoopYieldWallets/, 'loop cron must resolve yield wallets from multiple KV sources');
+assert.match(readFileSync(join(ROOT, 'lib', 'kv.js'), 'utf8'), /getWriteToken/, 'KV writes must use write token, not read-only token');
 assert.match(aaveProxyJs, /providedCronSecret/, 'loop cron snapshot must accept Vercel cron bearer auth');
 assert.match(syncJs, /checkAlerts === '1'/, 'sync must route check-alerts cron through shared handler');
 assert.match(syncJs, /check-alerts-run/, 'check-alerts logic must live in lib to stay within function limit');
