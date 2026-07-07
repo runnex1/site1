@@ -2,10 +2,6 @@
   "version": 2,
   "ignoreCommand": "[ \"$VERCEL_ENV\" = \"preview\" ]",
   "regions": ["iad1"],
-  "crons": [
-    { "path": "/api/cron/tick?maxJobs=1", "schedule": "*/15 * * * *" },
-    { "path": "/api/loop-cron-snapshot", "schedule": "5 */2 * * *" }
-  ],
   "functions": {
     "api/aave-proxy.js": {
       "maxDuration": 60,

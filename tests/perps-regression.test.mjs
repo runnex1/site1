@@ -892,8 +892,7 @@ assert.match(loopsWorkflow, /5 \*\/2 \* \* \*/, 'GitHub cron must run every 2 ho
 assert.match(loopsWorkflow, /loop-cron-snapshot/, 'loop cron backup must use vercel rewrite to loopCronSnapshot');
 assert.match(vercelJson, /"source": "\/api\/check-alerts"/, 'check-alerts must rewrite to sync handler');
 assert.match(vercelJson, /"source": "\/api\/loop-cron-snapshot"/, 'loop cron must expose friendly rewrite path');
-assert.match(vercelJson, /"path": "\/api\/loop-cron-snapshot"/, 'vercel cron must trigger loop snapshots every 2h');
-assert.match(vercelJson, /"path": "\/api\/cron\/tick/, 'vercel cron must trigger lightweight cron tick');
+assert.doesNotMatch(vercelJson, /"crons"\s*:/, 'hobby plan must use external schedulers instead of sub-daily vercel crons');
 assert.match(loopSnapshotsJs, /persistLoopSnapshotStore/, 'loop snapshots must verify KV writes');
 assert.match(loopSnapshotsJs, /resolveLoopYieldWallets/, 'loop cron must resolve yield wallets from multiple KV sources');
 assert.match(readFileSync(join(ROOT, 'lib', 'kv.js'), 'utf8'), /getWriteToken/, 'KV writes must use write token, not read-only token');

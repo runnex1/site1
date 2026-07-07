@@ -25,8 +25,8 @@ jobs:
           SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
         run: |
           if [ -z "$SYNC_SECRET" ]; then
-            echo "No SYNC_SECRET GitHub secret configured; skipping backup cron."
-            exit 0
+            echo "ERROR: SYNC_SECRET GitHub secret is not configured; cron tick will not run server-side."
+            exit 1
           fi
           STATUS=$(curl -s -o /tmp/cron-tick.json -w "%{http_code}" \
             --max-time 120 \
