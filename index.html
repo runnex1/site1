@@ -15303,7 +15303,7 @@ function loopMapSnapshotPosition(p) {
     if (netApy == null && lendingOnly && supplyApy != null) netApy = supplyApy;
     const economicNetValue = Number(p.economicNetValue ?? netValue + merklRewardsUsd);
     return {
-        id: p.id,
+        id: String(p.id || '').trim().toLowerCase(),
         historyKey: loopPositionHistoryKey(p),
         protocol: p.protocol,
         marketName: p.marketName,
@@ -15380,9 +15380,15 @@ function loopFluidNftFromPosition(pos) {
     return nameMatch ? nameMatch[1] : null;
 }
 
+function loopPositionIdsMatch(a, b) {
+    const left = String(a || '').trim().toLowerCase();
+    const right = String(b || '').trim().toLowerCase();
+    return !!(left && right && left === right);
+}
+
 function loopHistoryPositionMatch(live, stored) {
     if (!live || !stored) return false;
-    if (live.id && stored.id && live.id === stored.id) return true;
+    if (loopPositionIdsMatch(live.id, stored.id)) return true;
     const lp = String(live.protocol || '').trim().toLowerCase();
     const sp = String(stored.protocol || '').trim().toLowerCase();
     const lw = String(live.wallet || '').trim().toLowerCase();
@@ -15403,7 +15409,7 @@ function loopHistoryPositionMatch(live, stored) {
         const liveKey = loopPositionHistoryKey(live);
         const storedKey = stored.historyKey || loopPositionHistoryKey(stored);
         if (liveKey && storedKey && liveKey === storedKey) return true;
-        if (live.id && stored.id && live.id === stored.id) return true;
+        if (loopPositionIdsMatch(live.id, stored.id)) return true;
     }
     const liveKey = loopPositionHistoryKey(live);
     const storedKey = stored.historyKey || loopPositionHistoryKey(stored);

@@ -882,6 +882,7 @@ assert.match(loopSnapshotsJs, /fluid-vault:/, 'Fluid loop history keys must incl
 assert.match(loopRatesJs, /function fluidVaultPositionId\(/, 'Fluid vault positions must use unique ids per NFT');
 assert.match(aaveProxyJs, /loopCronSnapshot/, 'loop cron snapshots must be exposed through aave-proxy');
 assert.match(indexHtml, /function loopHistoryPositionMatch\(/, 'loop history must match snapshots by stable history key');
+assert.match(indexHtml, /function loopPositionIdsMatch\(/, 'loop history must compare position ids case-insensitively');
 assert.match(indexHtml, /\/api\/loop-snapshots/, 'loops tab must hydrate snapshots from dedicated endpoint');
 assert.match(indexHtml, /if \(Array\.isArray\(watcherWallets\) && watcherWallets\.length\)/, 'loop sync must only POST yield wallets when non-empty');
 assert.match(indexHtml, /JSON\.stringify\(\{ watcherWallets \}\)/, 'loop sync must POST yield wallets so cron can snapshot server-side');
@@ -1183,6 +1184,14 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   );
   assert.ok(partial30?.partial, '10d history must mark 30d APY as partial');
   assert.ok(Math.abs(partial30.periodDays - 10) < 0.01, '30d APY must use full period when position is younger than 30d');
+}
+
+{
+  const { loopPositionIdsMatch } = require('../lib/loop-snapshot-apy.js');
+  assert.ok(loopPositionIdsMatch(
+    'aave:0xCaddE3b7858ED6B664D8DB3eBdA876902A58528C:1:0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2',
+    'aave:0xcadde3b7858ed6b664d8db3ebda876902a58528c:1:0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2',
+  ), 'Aave loop ids must match when only wallet casing differs');
 }
 
 {
