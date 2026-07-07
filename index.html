@@ -15073,7 +15073,9 @@ let loopApiState = {
 const LOOP_SNAPSHOTS_KEY = 'vault-loop-snapshots';
 const LOOP_USDE_USDM_PURGE_KEY = 'vault-loop-snapshots-usde-usdm-purged';
 const LOOP_API_STATE_KEY = 'vault-loop-api-state';
+const LOOP_API_LAST_SYNC_KEY = 'vault-loop-last-auto-sync';
 const LOOP_MANUAL_APY_KEY = 'vault-loop-manual-supply-apy';
+const LOOP_AUTO_SYNC_MIN_MS = 15 * 60 * 1000;
 let loopSnapshotsStore = {};
 let _loopSnapshotsHydratePromise = null;
 let _loopSnapshotsHydrated = false;
@@ -16264,7 +16266,7 @@ function loopImportedPositions() {
     return loops;
 }
 
-async function syncLoopApiPositions({ silent = false } = {}) {
+async function syncLoopApiPositions({ silent = false, persistSnapshot = !silent } = {}) {
     const wallets = loopYieldWalletAddresses();
     const btn = document.getElementById('loopsSyncBtn');
     if (!wallets.length) {
@@ -16279,6 +16281,7 @@ async function syncLoopApiPositions({ silent = false } = {}) {
     setTextSafe('loopsUpdated', 'syncing live APIs...');
     try {
         const qs = new URLSearchParams({ wallets: wallets.join(',') });
+        if (!persistSnapshot) qs.set('snapshots', '0');
         const response = await fetch('/api/loop-rates?' + qs.toString(), { cache: 'no-store', signal: AbortSignal.timeout(55000) });
         const json = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(json.error || `Loop API HTTP ${response.status}`);
@@ -16287,7 +16290,8 @@ async function syncLoopApiPositions({ silent = false } = {}) {
         loopApiState.errors = Array.isArray(json.errors) ? json.errors : [];
         loopApiState.coverage = json.coverage || null;
         loopsPersistApiState();
-        loopsAppendSnapshotFromApiData(json);
+        if (persistSnapshot) loopsAppendSnapshotFromApiData(json);
+        try { localStorage.setItem(LOOP_API_LAST_SYNC_KEY, String(Date.now())); } catch (e) {}
         try { await fetchLiveTokenPrices({ force: true }); } catch (e) {}
         try {
             if (Array.isArray(watcherWallets) && watcherWallets.length) {
@@ -16327,16 +16331,23 @@ function startLoopSnapshotScheduler() {
     if (_loopSnapshotTimer || location.protocol === 'file:') return;
     _loopSnapshotTimer = setInterval(() => {
         if (!loopYieldWalletAddresses().length || loopApiState.loading) return;
-        syncLoopApiPositions({ silent: true });
+        syncLoopApiPositions({ silent: true, persistSnapshot: true });
     }, LOOP_SNAPSHOT_INTERVAL_MS);
 }
 
 function maybeAutoSyncLoopPositions() {
-    if (loopApiState.triedAuto || loopApiState.loading) return;
+    if (loopApiState.loading) return;
     if (!loopYieldWalletAddresses().length) return;
-    loopApiState.triedAuto = true;
     startLoopSnapshotScheduler();
-    syncLoopApiPositions({ silent: true });
+    const lastAuto = Number(localStorage.getItem(LOOP_API_LAST_SYNC_KEY) || 0);
+    if (lastAuto && Date.now() - lastAuto < LOOP_AUTO_SYNC_MIN_MS) {
+        loopsHydrateApiStateFromLocal();
+        if (document.getElementById('loopsGrid')) renderLoops();
+        return;
+    }
+    if (loopApiState.triedAuto) return;
+    loopApiState.triedAuto = true;
+    syncLoopApiPositions({ silent: true, persistSnapshot: false });
 }
 
 function setTextSafe(id, text) {

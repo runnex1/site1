@@ -408,11 +408,12 @@ async function handleLoopRates(req, res) {
 
   try {
     const walletKey = `${LOOP_RATES_CACHE_VERSION}:${wallets.map(w => w.toLowerCase()).sort().join(',')}`;
+    const writeSnapshots = req.query.snapshots !== '0';
     const kvCached = req.query.force === '1'
       ? null
       : await kvCacheGet(CACHE_KEYS.loopRates, walletKey, LOOP_RATES_KV_CACHE_MS);
     if (kvCached) {
-      await persistLoopSnapshotsFromRates(kvCached, wallets);
+      if (writeSnapshots) await persistLoopSnapshotsFromRates(kvCached, wallets);
       return res.status(200).json(kvCached);
     }
     const previousCache = parseCronJson(await kvGet(CACHE_KEYS.loopRates), null);
@@ -425,7 +426,7 @@ async function handleLoopRates(req, res) {
     const data = mergeRecentLoopPositions(freshData, previousCache?.data, {
       previousFetchedAt: previousCache?.fetchedAt,
     });
-    await persistLoopSnapshotsFromRates(data, wallets);
+    if (writeSnapshots) await persistLoopSnapshotsFromRates(data, wallets);
     await persistLoopLogoCache(data.positions);
     await kvCacheSet(CACHE_KEYS.loopRates, walletKey, data);
     return res.status(200).json(data);

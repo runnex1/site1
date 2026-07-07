@@ -857,6 +857,10 @@ assert.match(indexHtml, /function startLoopSnapshotScheduler\(/, 'loops tab must
 assert.match(indexHtml, /LOOP_SNAPSHOT_INTERVAL_MS = 2 \* 60 \* 60 \* 1000/, 'loop snapshot scheduler must run every 2 hours');
 assert.match(indexHtml, /2h snapshot history/, 'loop history empty state must mention 2h snapshots');
 assert.match(aaveProxyJs, /persistLoopSnapshotsFromRates/, 'loop-rates fetch must persist snapshots to KV');
+assert.match(aaveProxyJs, /writeSnapshots = req\.query\.snapshots !== '0'/, 'loop-rates must skip KV snapshot writes when snapshots=0');
+assert.match(indexHtml, /qs\.set\('snapshots', '0'\)/, 'auto loop sync must not persist snapshots on every refresh');
+assert.match(indexHtml, /persistSnapshot: false/, 'auto loop sync must refresh live rates without writing history buckets');
+assert.match(indexHtml, /persistSnapshot: true/, 'scheduled loop sync must still persist 2h snapshot buckets');
 assert.match(syncJs, /body\.loopSnapshots/, 'sync POST must merge client loop snapshots into KV');
 assert.match(loopRatesJs, /fetchSolanaLoopRates/, 'loop rates must fetch Kamino and Jupiter Lend for Solana yield wallets');
 const loopSolanaRatesJs = readFileSync(join(ROOT, 'lib', 'loop-solana-rates.js'), 'utf8');
