@@ -11676,12 +11676,13 @@ function switchTab(tab, opts = {}) {
     if (_pc) _pc.classList.toggle('tab-news', tab === 'news');
     if (tab === 'terminal') { terminalRenderAlerts(); }
     if (tab === 'loops') {
-        try {
-            loopsLoadSnapshotsLocal();
-            renderLoops();
-            maybeAutoSyncLoopPositions();
-            loopsEnsureSnapshotsHydrated({ force: true });
-        } catch (e) { console.error('[Loops tab]', e); }
+        (async () => {
+            try {
+                await loopsEnsureSnapshotsHydrated({ force: true });
+                renderLoops();
+                maybeAutoSyncLoopPositions();
+            } catch (e) { console.error('[Loops tab]', e); }
+        })();
     }
     if (tab === 'prediction') {
         try {
@@ -15075,6 +15076,7 @@ const LOOP_API_STATE_KEY = 'vault-loop-api-state';
 const LOOP_MANUAL_APY_KEY = 'vault-loop-manual-supply-apy';
 let loopSnapshotsStore = {};
 let _loopSnapshotsHydratePromise = null;
+let _loopSnapshotsHydrated = false;
 let loopManualSupplyApy = {};
 
 function loopsLoadManualSettings() {
@@ -15212,7 +15214,12 @@ function loopsMergeSnapshotsFromServer(serverStore) {
         next[key] = loopsMergeSnapshotBucketRecords(next[key], rec);
     }
     loopSnapshotsStore = next;
-    try { localStorage.setItem(LOOP_SNAPSHOTS_KEY, JSON.stringify(loopSnapshotsStore)); } catch (e) {}
+    try {
+        localStorage.setItem(LOOP_SNAPSHOTS_KEY, JSON.stringify(loopSnapshotsStore));
+    } catch (e) {
+        console.warn('[loops] snapshot localStorage save failed; using in-memory server merge', e);
+    }
+    _loopSnapshotsHydrated = true;
 }
 
 function loopSnapshotPositionKey(pos) {
@@ -15350,6 +15357,7 @@ function loopsAppendSnapshotFromApiData(data) {
 
 function loopsResetSnapshotHydrate() {
     _loopSnapshotsHydratePromise = null;
+    _loopSnapshotsHydrated = false;
 }
 
 function loopPositionHistoryKey(pos) {
@@ -15388,6 +15396,9 @@ function loopPositionIdsMatch(a, b) {
 
 function loopHistoryPositionMatch(live, stored) {
     if (!live || !stored) return false;
+    const liveKey = loopPositionHistoryKey(live);
+    const storedKey = stored.historyKey || loopPositionHistoryKey(stored);
+    if (liveKey && storedKey && liveKey === storedKey) return true;
     if (loopPositionIdsMatch(live.id, stored.id)) return true;
     const lp = String(live.protocol || '').trim().toLowerCase();
     const sp = String(stored.protocol || '').trim().toLowerCase();
@@ -15411,9 +15422,6 @@ function loopHistoryPositionMatch(live, stored) {
         if (liveKey && storedKey && liveKey === storedKey) return true;
         if (loopPositionIdsMatch(live.id, stored.id)) return true;
     }
-    const liveKey = loopPositionHistoryKey(live);
-    const storedKey = stored.historyKey || loopPositionHistoryKey(stored);
-    if (liveKey && storedKey && liveKey === storedKey) return true;
     const normMarket = v => String(v || '').toLowerCase().replace(/\s+/g, ' ').replace(/\s*\/\s*/g, ' / ').trim();
     const lm = normMarket(live.marketName);
     const sm = normMarket(stored.marketName);
@@ -19249,7 +19257,11 @@ function renderLoops() {
     const countEl = document.getElementById('loopsCount');
     const lendingCountEl = document.getElementById('loopsLendingCount');
     if (!grid) return;
-    loopsLoadSnapshotsLocal();
+    if (!_loopSnapshotsHydrated) loopsLoadSnapshotsLocal();
+    else if (!Object.keys(loopSnapshotsStore || {}).length) loopsLoadSnapshotsLocal();
+    if (!_loopSnapshotsHydrated && !_loopSnapshotsHydratePromise && location.protocol !== 'file:') {
+        loopsEnsureSnapshotsHydrated().then(() => renderLoops()).catch(() => {});
+    }
     loopsLoadManualSettings();
 
     const fmtV = v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

@@ -883,6 +883,10 @@ assert.match(loopRatesJs, /function fluidVaultPositionId\(/, 'Fluid vault positi
 assert.match(aaveProxyJs, /loopCronSnapshot/, 'loop cron snapshots must be exposed through aave-proxy');
 assert.match(indexHtml, /function loopHistoryPositionMatch\(/, 'loop history must match snapshots by stable history key');
 assert.match(indexHtml, /function loopPositionIdsMatch\(/, 'loop history must compare position ids case-insensitively');
+assert.match(indexHtml, /let _loopSnapshotsHydrated = false/, 'loops must track server snapshot hydration state');
+assert.match(indexHtml, /_loopSnapshotsHydrated = true/, 'loops must mark snapshot store hydrated after server merge');
+assert.match(indexHtml, /if \(!_loopSnapshotsHydrated\) loopsLoadSnapshotsLocal\(\)/, 'loops must not reload stale localStorage after server hydration');
+assert.match(indexHtml, /await loopsEnsureSnapshotsHydrated\(\{ force: true \}\)[\s\S]{0,160}renderLoops\(\)/, 'loops tab must hydrate server snapshots before first render');
 assert.match(indexHtml, /\/api\/loop-snapshots/, 'loops tab must hydrate snapshots from dedicated endpoint');
 assert.match(indexHtml, /if \(Array\.isArray\(watcherWallets\) && watcherWallets\.length\)/, 'loop sync must only POST yield wallets when non-empty');
 assert.match(indexHtml, /JSON\.stringify\(\{ watcherWallets \}\)/, 'loop sync must POST yield wallets so cron can snapshot server-side');
