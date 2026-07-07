@@ -639,7 +639,7 @@ async function getPolymarketPnlSeries(query) {
 }
 
 const runCheckAlerts = require('../lib/check-alerts-run');
-const { runDueJobs, getCronStatus } = require('../lib/cron-runner');
+const { runDueJobs, getCronStatus, compactCronTickPayload } = require('../lib/cron-runner');
 
 function expectedCronSyncSecret() {
   return process.env.SYNC_SECRET || '';
@@ -661,7 +661,8 @@ async function handleCronTick(req, res) {
   }
   const maxJobs = Math.min(2, Math.max(1, parseInt(req.query?.maxJobs || '1', 10) || 1));
   try {
-    return res.status(200).json(await runDueJobs({ maxJobs }));
+    const payload = await runDueJobs({ maxJobs });
+    return res.status(200).json(compactCronTickPayload(payload));
   } catch (e) {
     return res.status(500).json({ ok: false, error: e.message || 'Cron tick failed' });
   }
