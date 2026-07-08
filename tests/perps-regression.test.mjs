@@ -2620,8 +2620,7 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
 }
 
 {
-  const d = JSON.parse(readFileSync(join(ROOT, '_live-perps.json'), 'utf8'));
-  const { findTrackedCloseLeg, buildVariationalClosedPair } = require('../lib/variational-hedge.js');
+  const { buildVariationalClosedPair, resolveVariationalExitPx } = require('../lib/variational-hedge.js');
   const openedAt = Date.parse('2026-07-01T00:00:00Z');
   const closedAt = Date.parse('2026-07-05T20:05:00Z');
   const listing = { symbol: 'XLM', markPx: 0.214, fundingRateInterval: 0.0001, fundingIntervalS: 28800 };
@@ -2632,19 +2631,27 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
     trackedSize: 90000,
     variationalSize: -90000,
     variationalEntryPx: 0.218,
-    variationalExitPx: 0.214,
     openedAt,
     closedAt,
     pendingCloseAt: closedAt,
-    trackedLastSnapshot: { side: 'long', size: 90000, entryPx: 0.22, markPx: 0.214, unrealizedPnl: -540, funding: 10, fees: 0 },
   };
-  const closeLeg = findTrackedCloseLeg(d, hedge);
-  assert.ok(closeLeg, 'must resolve a tracked close leg for XLM');
-  assert.notEqual(closeLeg.realizedPnl, -707.576764, 'must not use partial synthetic GRVT close PnL for full hedge');
-  assert.ok(Math.abs(closeLeg.size - 90000) < 1, 'tracked close leg must pin to hedge size');
+  const closeLeg = {
+    venue: 'grvt',
+    symbol: 'XLM',
+    side: 'long',
+    size: 90000,
+    realizedPnl: -183.42,
+    avgClosePx: 0.214,
+    closeTime: closedAt,
+    funding: 10,
+    fees: 0,
+  };
+  const exit = resolveVariationalExitPx(hedge, closeLeg);
+  assert.ok(Math.abs(exit - 0.214 * 1.0012) < 1e-6, 'variational exit must be tracked close + 0.12% for short leg');
   const pair = buildVariationalClosedPair(hedge, closeLeg, listing);
-  assert.ok(Math.abs(pair.netPnl) < 500, 'XLM variational net PnL must not explode on partial GRVT unwind');
-  assert.ok(Math.abs(pair.longLeg.realizedPnl) < 1000, 'tracked leg PnL must be estimated at hedge size, not partial fill cluster');
+  assert.ok(Math.abs(pair.netPnl) < 500, 'XLM variational net PnL must stay sensible with derived exit');
+  assert.ok(Math.abs(pair.longLeg.realizedPnl + 183.42) < 0.01, 'tracked leg PnL must use pinned close leg');
+  assert.ok(pair.shortLeg.variationalExitDerived, 'variational exit must be model-derived');
 }
 
 {
@@ -2998,13 +3005,44 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   };
   const listing = { PYTH: { symbol: 'PYTH', markPx: 0.043, fundingRateInterval: 0.0001, fundingIntervalS: 28800 } };
   const result = applyVariationalHedges(data, [hedge], listing);
-  assert.equal(result.hedges[0].status, 'pending_close', 'closed exchange leg must move variational hedge out of live');
+  assert.equal(result.hedges[0].status, 'closed', 'closed exchange leg must auto-finalize variational close');
   assert.equal(result.paired.filter((p) => p.symbol === 'PYTH').length, 0, 'closed PYTH must not render as live pair');
-  assert.ok(result.pendingClose.some((h) => h.id === hedge.id), 'closed PYTH must appear in pending close');
-  assert.ok(
-    Math.abs(result.hedges[0].pendingCloseAt - closedAt) < 60000,
-    'pending close must anchor to tracked exchange close time',
-  );
+  assert.ok(result.newClosedPairs.some((p) => p.symbol === 'PYTH'), 'PYTH must move to closed pairs automatically');
+  const closed = result.newClosedPairs.find((p) => p.symbol === 'PYTH');
+  const varLeg = closed.shortLeg?.venue === 'variational' ? closed.shortLeg : closed.longLeg;
+  assert.ok(Math.abs(varLeg.avgClosePx - 0.044 * 1.0012) < 1e-6, 'Variational exit must be HL close + 0.12% for short leg');
+  assert.ok(Math.abs(varLeg.realizedPnl + 247.14) < 1, 'Variational leg PnL must reflect 0.12% slippage vs HL close');
+}
+
+{
+  const { deriveVariationalExitPx, resolveVariationalExitPx, buildVariationalClosedPair, VARIATIONAL_VS_TRACKED_CLOSE_SLIPPAGE_PCT } = require('../lib/variational-hedge.js');
+  assert.equal(VARIATIONAL_VS_TRACKED_CLOSE_SLIPPAGE_PCT, 0.0012);
+  const hlClose = 0.044;
+  assert.ok(Math.abs(deriveVariationalExitPx(hlClose, -50000) - hlClose * 1.0012) < 1e-9);
+  assert.ok(Math.abs(deriveVariationalExitPx(hlClose, 50000) - hlClose * 0.9988) < 1e-9);
+  const hedge = {
+    variationalSize: -50000,
+    variationalEntryPx: 0.03911,
+    trackedSize: 50000,
+    closedAt: Date.now(),
+  };
+  const closeLeg = {
+    side: 'long',
+    size: 50000,
+    avgClosePx: hlClose,
+    realizedPnl: 257.41,
+    closeTime: Date.now(),
+    funding: -10,
+    fees: 0,
+  };
+  const exit = resolveVariationalExitPx(hedge, closeLeg);
+  assert.ok(Math.abs(exit - hlClose * 1.0012) < 1e-9);
+  const pair = buildVariationalClosedPair(hedge, closeLeg, { symbol: 'PYTH', markPx: 0.043 });
+  assert.ok(pair.shortLeg.variationalExitDerived, 'closed variational leg must flag derived exit');
+  const pnlAtHl = (0.03911 - hlClose) * 50000;
+  const pnlAtExit = (0.03911 - exit) * 50000;
+  assert.ok(Math.abs((pnlAtExit - pnlAtHl) + hlClose * 50000 * 0.0012) < 0.05, '0.12% slippage must hit variational leg PnL');
+  assert.ok(Math.abs(pair.closeSlippage - (257.41 + pnlAtExit)) < 0.05, 'close slippage must sum both legs');
 }
 
 console.log('PASS: perps accounting and dashboard regression checks');

@@ -29293,7 +29293,7 @@ function perpsOpenVariationalModal(opts = {}) {
     }
     if (hint) {
         if (opts.mode === 'exit') {
-            hint.textContent = 'Enter the average exit price on Variational. Tracked leg already closed on exchange.';
+            hint.textContent = 'Variational exit is derived automatically from the tracked exchange close (+0.12% slippage).';
         } else if (opts.hadSizeMismatch) {
             hint.textContent = 'Enter your Variational avg fill. Size syncs automatically to the exchange leg.';
         } else if (opts.hedgeId) {
@@ -29690,14 +29690,7 @@ function perpsEditVariationalEntry(hedgeId) {
 }
 
 function perpsEditVariationalExit(hedgeId) {
-    const hedge = perpsLoadVariationalHedges().find(h => h.id === hedgeId);
-    if (!hedge) return;
-    perpsOpenVariationalModal({
-        mode: 'exit',
-        hedgeId,
-        value: hedge.variationalExitPx,
-        meta: `${hedge.symbol} · ${perpsVenueShort(hedge.trackedVenue)} leg closed — enter Variational exit`,
-    });
+    alert('Variational exit is set automatically at 0.12% slippage vs the tracked exchange close. Refresh the dashboard to finalize closed pairs.');
 }
 
 function perpsMergeClosedPairRecord(prev, fresh) {
@@ -32802,8 +32795,8 @@ function perpsRenderVariationalPending(pending) {
         <td>${dashEsc(h.symbol)}</td>
         <td>${dashEsc(perpsVenueShort(h.trackedVenue))}</td>
         <td>${h.variationalEntryPx != null ? perpsFmtPx(h.variationalEntryPx) : '—'}</td>
-        <td>Tracked leg closed — enter Variational exit</td>
-        <td><button type="button" class="perps-btn secondary" style="padding:0.2rem 0.55rem;font-size:0.72rem;" onclick="perpsEditVariationalExit('${h.id}')">Enter exit price</button></td>
+        <td>Tracked leg closed — finalizing Variational close (0.12% vs ${dashEsc(perpsVenueShort(h.trackedVenue))})</td>
+        <td><span class="perps-pos-pill">AUTO</span></td>
     </tr>`).join('')}</tbody></table>`;
 }
 
