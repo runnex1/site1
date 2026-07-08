@@ -15382,10 +15382,14 @@ function loopPositionHistoryKey(pos) {
 
 function loopMorphoMarketIdFromPosition(pos) {
     const id = String(pos?.id || '');
-    const match = id.match(/^morpho:[^:]+:[^:]+:(0x[a-f0-9]+)$/i);
+    const match = id.match(/^morpho(?:-supply)?:[^:]+:[^:]+:(0x[a-f0-9]+)$/i);
     if (match) return match[1].toLowerCase();
     const marketId = String(pos?.marketId || '').trim().toLowerCase();
     return marketId || null;
+}
+
+function loopMorphoPositionIsLoanSupply(pos) {
+    return String(pos?.id || '').toLowerCase().startsWith('morpho-supply:');
 }
 
 function loopFluidNftFromPosition(pos) {
@@ -15416,6 +15420,9 @@ function loopHistoryPositionMatch(live, stored) {
     const lc = String(live.chainId ?? '');
     const sc = String(stored.chainId ?? '');
     if (lp === 'morpho' && sp === 'morpho' && lw && sw && lw === sw && lc === sc) {
+        const liveSupply = loopMorphoPositionIsLoanSupply(live);
+        const storedSupply = loopMorphoPositionIsLoanSupply(stored);
+        if (liveSupply !== storedSupply) return false;
         const lm = loopMorphoMarketIdFromPosition(live);
         const sm = loopMorphoMarketIdFromPosition(stored);
         if (lm && sm && lm === sm) return true;

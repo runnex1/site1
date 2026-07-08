@@ -1204,6 +1204,42 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
 }
 
 {
+  const { mapMorphoMarketPosition } = require('../lib/loop-rates.js');
+  const wallet = '0xCaddE3b7858ED6B664D8DB3eBdA876902A58528C';
+  const chain = { chainId: 1, chainName: 'Ethereum' };
+  const pos = {
+    healthFactor: '1.15',
+    market: {
+      marketId: '0xe3df58f9',
+      loanAsset: { symbol: 'USDC', address: '0xa0b86991', decimals: 6 },
+      collateralAsset: { symbol: 'USD3', address: '0x123', decimals: 18 },
+      state: { avgNetSupplyApy: 0.08, avgNetBorrowApy: 0.05 },
+    },
+    state: {
+      collateralUsd: 75270,
+      supplyAssetsUsd: 34800,
+      borrowAssetsUsd: 65427,
+    },
+  };
+  const mapped = mapMorphoMarketPosition(wallet, chain, pos);
+  assert.equal(mapped.length, 2, 'collateral+borrow+loan supply must split into loop and lending');
+  const loop = mapped.find(p => !p.lendingOnly);
+  const lending = mapped.find(p => p.lendingOnly);
+  assert.ok(loop, 'split must include borrow loop');
+  assert.ok(lending, 'split must include loan-asset supply lending');
+  assert.equal(loop.supplied.length, 1, 'loop must only show collateral supply leg');
+  assert.equal(loop.supplied[0].role, 'collateral');
+  assert.equal(loop.supplied[0].symbol, 'USD3');
+  assert.equal(lending.supplied.length, 1, 'lending must only show loan supply leg');
+  assert.equal(lending.supplied[0].role, 'supply');
+  assert.equal(lending.supplied[0].symbol, 'USDC');
+  assert.ok(loop.id.startsWith('morpho:') && !loop.id.includes('supply'), 'loop id must stay morpho: prefix');
+  assert.ok(lending.id.startsWith('morpho-supply:'), 'lending supply id must use morpho-supply prefix');
+  assert.ok(Math.abs(loop.netValue - (75270 - 65427)) < 1, 'loop net must exclude loan supply');
+  assert.ok(Math.abs(lending.netValue - 34800) < 1, 'lending net must equal loan supply only');
+}
+
+{
   const {
     loopHistoryCapitalEvent,
     loopHistoryPartialLegApiMiss,
