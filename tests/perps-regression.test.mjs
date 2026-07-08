@@ -2938,7 +2938,7 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   const d = JSON.parse(readFileSync(join(ROOT, '_live-perps.json'), 'utf8'));
   const { applyVariationalHedges } = require('../lib/variational-hedge.js');
   const empty = JSON.parse(JSON.stringify(d));
-  empty.hyperliquid = { state: { positions: [] } };
+  empty.hyperliquid = { state: { error: 'Hyperliquid timeout', positions: [] } };
   empty.unhedged = (empty.unhedged || []).filter((u) => !(u.venue === 'hyperliquid' && u.symbol === 'PYTH'));
   const hedge = {
     id: 'pyth-snap',
@@ -2948,11 +2948,63 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
     openedAt: Date.now() - 86400000,
     variationalEntryPx: 0.2,
     trackedSize: 590000,
+    trackedLastLiveAt: Date.now() - 60000,
     trackedLastSnapshot: { side: 'short', size: 590000, entryPx: 0.21, markPx: 0.2, unrealizedPnl: -50, funding: 3, fees: 0 },
   };
   const result = applyVariationalHedges(empty, [hedge], {});
   assert.equal(result.hedges[0].status, 'open', 'snapshot must keep open hedge paired when venue data is briefly missing');
   assert.ok(result.paired.some((p) => p.variationalHedgeId === 'pyth-snap'), 'snapshot fallback must rebuild variational pair');
+}
+
+{
+  const { applyVariationalHedges } = require('../lib/variational-hedge.js');
+  const hedge = {
+    id: 'var-1782922237783-owz36e',
+    symbol: 'PYTH',
+    trackedVenue: 'hyperliquid',
+    trackedSize: 50000,
+    variationalSize: -50000,
+    variationalEntryPx: 0.03911,
+    openedAt: 1782922237783,
+    status: 'open',
+    trackedLastSnapshot: {
+      size: 50000,
+      side: 'long',
+      entryPx: 0.039129,
+      unrealizedPnl: 206.783508,
+      funding: -41.804241,
+      fees: 0,
+    },
+  };
+  const closedAt = Date.parse('2026-07-08T13:54:13.174Z');
+  const data = {
+    hyperliquid: {
+      state: { positions: [] },
+      fills: {
+        fills: [{
+          symbol: 'PYTH',
+          time: closedAt,
+          side: 'A',
+          sz: 50000,
+          px: 0.044,
+          closedPnl: 257.41,
+        }],
+      },
+      funding: { payments: [] },
+    },
+    paired: [],
+    unhedged: [],
+    closedPairs: [],
+  };
+  const listing = { PYTH: { symbol: 'PYTH', markPx: 0.043, fundingRateInterval: 0.0001, fundingIntervalS: 28800 } };
+  const result = applyVariationalHedges(data, [hedge], listing);
+  assert.equal(result.hedges[0].status, 'pending_close', 'closed exchange leg must move variational hedge out of live');
+  assert.equal(result.paired.filter((p) => p.symbol === 'PYTH').length, 0, 'closed PYTH must not render as live pair');
+  assert.ok(result.pendingClose.some((h) => h.id === hedge.id), 'closed PYTH must appear in pending close');
+  assert.ok(
+    Math.abs(result.hedges[0].pendingCloseAt - closedAt) < 60000,
+    'pending close must anchor to tracked exchange close time',
+  );
 }
 
 console.log('PASS: perps accounting and dashboard regression checks');
