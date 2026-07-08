@@ -3086,6 +3086,59 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
 }
 
 {
+  const { buildVariationalClosedPair } = require('../lib/variational-hedge.js');
+  const closedAt = Date.parse('2026-07-08T13:54:13.174Z');
+  const windowStart = closedAt - 20 * 3600000;
+  const hedge = {
+    id: 'var-pyth-peak',
+    symbol: 'PYTH',
+    trackedVenue: 'hyperliquid',
+    trackedSize: 50000,
+    variationalSize: -50000,
+    variationalEntryPx: 0.03911,
+    openedAt: windowStart - 86400000,
+    status: 'closed',
+    closedAt,
+  };
+  const hlClosePx = 0.044;
+  const data = {
+    hyperliquid: {
+      state: { positions: [] },
+      fills: {
+        fills: [
+          { symbol: 'PYTH', time: windowStart + 1000, side: 'B', sz: 540000, px: 0.04, fee: 100, closedPnl: 0 },
+          { symbol: 'PYTH', time: closedAt - 5000, side: 'A', sz: 540000, px: 0.043, fee: 50, closedPnl: 1620 },
+          { symbol: 'PYTH', time: closedAt, side: 'A', sz: 50000, px: hlClosePx, fee: 2, closedPnl: 257.41 },
+        ],
+      },
+      funding: { payments: [] },
+    },
+    closedPairs: [],
+  };
+  const closeLeg = {
+    venue: 'hyperliquid',
+    symbol: 'PYTH',
+    side: 'long',
+    size: 50000,
+    avgClosePx: hlClosePx,
+    realizedPnl: 257.41,
+    closeTime: closedAt,
+    funding: 0,
+    fees: 2,
+    closeLegEstimated: false,
+  };
+  const pair = buildVariationalClosedPair(hedge, closeLeg, { symbol: 'PYTH', markPx: 0.043 }, data);
+  const varLeg = pair.shortLeg?.venue === 'variational' ? pair.shortLeg : pair.longLeg;
+  const hlLeg = pair.longLeg?.venue === 'hyperliquid' ? pair.longLeg : pair.shortLeg;
+  assert.equal(pair.peakMetricsApplied, true);
+  assert.equal(varLeg.size, 50000, 'variational leg size must stay at hedge trackedSize, not 24h peak');
+  assert.ok(pair.size >= 50000, 'pair display size may reflect 24h peak');
+  assert.ok(hlLeg.size >= 50000, 'exchange leg uses peak-window size');
+  assert.ok(Math.abs(varLeg.avgClosePx - hlClosePx * 1.0012) < 1e-6, 'variational exit from final HL close VWAP + 0.12%');
+  assert.ok(Math.abs(varLeg.realizedPnl + 247.14) < 1, 'variational PnL must use hedge size only, not peak size');
+}
+
+{
   const { deriveVariationalExitPx, resolveVariationalExitPx, buildVariationalClosedPair, VARIATIONAL_VS_TRACKED_CLOSE_SLIPPAGE_PCT } = require('../lib/variational-hedge.js');
   assert.equal(VARIATIONAL_VS_TRACKED_CLOSE_SLIPPAGE_PCT, 0.0012);
   const hlClose = 0.044;
