@@ -52,6 +52,7 @@ const syncJs = readFileSync(join(ROOT, 'api', 'sync.js'), 'utf8');
 const syncArrayGuardJs = readFileSync(join(ROOT, 'lib', 'sync-array-guard.js'), 'utf8');
 const variationalHedgeJs = readFileSync(join(ROOT, 'lib', 'variational-hedge.js'), 'utf8');
 const closedLegReconstructJs = readFileSync(join(ROOT, 'lib', 'closed-leg-reconstruct.js'), 'utf8');
+const positionPeakWindowJs = readFileSync(join(ROOT, 'lib', 'position-peak-window.js'), 'utf8');
 const vercelJson = readFileSync(join(ROOT, 'vercel.json'), 'utf8');
 const watcherPreviewHtml = readFileSync(join(ROOT, 'ui-previews', 'watcher-preview.html'), 'utf8');
 const now = Date.now();
@@ -577,16 +578,17 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 
 {
   const close = now - 3600000;
-  const sessionStart = close - 5 * 86400000;
-  const sessionFunding = (symbol, perDay, days) => Array.from({ length: days }, (_, i) => ({
-    symbol,
-    time: sessionStart + i * 86400000 + 3600000,
-    usdc: perDay,
-  }));
-  const hlPayments = sessionFunding('UNI', 6, 5);
-  const grvtPayments = sessionFunding('UNI', -5, 5);
+  const peakTime = close - 12 * 3600000;
+  const hlPayments = [
+    { symbol: 'UNI', time: peakTime + 3600000, usdc: 4 },
+    { symbol: 'UNI', time: close - 1800000, usdc: 2 },
+  ];
+  const grvtPayments = [
+    { symbol: 'UNI', time: peakTime + 7200000, usdc: -3 },
+  ];
   const closed = buildClosedPairs({
     hyperliquid: [
+      { venue: 'hyperliquid', symbol: 'UNI', time: peakTime, side: 'B', px: 10, sz: 100, fee: 1, closedPnl: 0 },
       { venue: 'hyperliquid', symbol: 'UNI', time: close, side: 'A', px: 10, sz: 100, fee: 2, closedPnl: 50 },
     ],
     grvt: [
@@ -594,30 +596,35 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     ],
   }, { hyperliquid: hlPayments, grvt: grvtPayments });
   assert.equal(closed.length, 1, 'UNI closing-fill recovery must still pair opposite legs');
-  assert.equal(closed[0].funding, 0, 'fill-window closed legs miss funding when open predates history');
 
   const enriched = enrichClosedPairsSessionPnl(closed, {
     hlPayments,
     grvtPayments,
-    hlFills: [{ symbol: 'UNI', time: close, fee: 2 }],
-    grvtFills: [{ symbol: 'UNI', time: close + 60000, fee: 1.5 }],
+    hlFills: [
+      { symbol: 'UNI', time: peakTime, side: 'B', sz: 100, fee: 1, closedPnl: 0 },
+      { symbol: 'UNI', time: close, side: 'A', sz: 100, fee: 2, closedPnl: 50 },
+    ],
+    grvtFills: [{ symbol: 'UNI', time: close + 60000, side: 'buy', sz: 100, fee: 1.5, closedPnl: -48 }],
   }, 30);
-  assert.equal(enriched[0].funding, 5, 'closed UNI must include full latest-session funding from both venues');
-  assert.equal(enriched[0].fees, 3.5, 'closed UNI must include latest-session trading fees');
-  assert.equal(enriched[0].netPnl, closed[0].closeSlippage + 5 - 3.5, 'closed net PnL must use session funding and fees');
+  assert.equal(enriched[0].peakMetricsApplied, true, 'closed UNI must use 24h peak-to-close stats');
+  assert.equal(enriched[0].size, 100, 'closed UNI size must be 24h peak position');
+  assert.equal(enriched[0].funding, 6, 'closed UNI funding must sum HL payments from peak to close');
+  assert.equal(enriched[0].fees, 4.5, 'closed UNI fees must sum fills from peak to close');
+  assert.equal(enriched[0].closeSlippage, 2, 'closed UNI slippage must sum realized PnL from peak to close');
+  assert.equal(enriched[0].netPnl, 2 + 6 - 4.5, 'closed net PnL must use peak-window funding and fees');
 }
 
 {
-  const openTime = now - 4 * 86400000;
   const closeTime = now - 1 * 86400000;
+  const openTime = closeTime - 4 * 86400000;
   const sessionFunding = (symbol, perDay, days, venue) => Array.from({ length: days }, (_, i) => ({
     venue,
     symbol,
-    time: Math.min(openTime + i * 86400000 + 3600000, closeTime - 60000),
+    time: closeTime - (days - i) * 6 * 3600000,
     usdc: perDay,
   }));
-  const nadoPayments = sessionFunding('JUP', 0.8, 4, 'nado');
-  const extendedPayments = sessionFunding('JUP', 0.4, 4, 'extended');
+  const nadoPayments = sessionFunding('JUP', 0.8, 3, 'nado');
+  const extendedPayments = sessionFunding('JUP', 0.4, 3, 'extended');
   const closed = buildClosedPairs({
     nado: [
       { venue: 'nado', symbol: 'JUP', time: openTime, side: 'buy', px: 0.24, size: 35000, fee: 1 },
@@ -635,20 +642,21 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     }],
   });
   assert.equal(closed.length, 1, 'JUP extended+nado closed round must pair');
-  const truncatedExtended = extendedPayments.filter(p => p.time >= now - 2 * 86400000);
   const dailySeriesInputs = {
     nadoPayments,
-    extendedPayments: truncatedExtended,
-    nadoMatches: [{ symbol: 'JUP', time: openTime, fee: 1 }, { symbol: 'JUP', time: closeTime, fee: 1 }],
+    extendedPayments,
+    nadoMatches: [
+      { symbol: 'JUP', time: openTime, side: 'buy', size: 35000, fee: 1 },
+      { symbol: 'JUP', time: closeTime, side: 'sell', size: 35000, fee: 1, realizedPnl: -10 },
+    ],
+    extendedFills: [],
   };
   const enriched = enrichClosedPairsSessionPnl(closed, dailySeriesInputs, 2)[0];
-  const perfDays = Math.min(365, Math.max(2, Math.ceil((closeTime - openTime) / 86400000) + 2));
-  const expected = pairLatestSessionTotals(
-    buildPairDailyPerformanceSeries(dailySeriesInputs, 'JUP', perfDays, closeTime),
-  );
+  assert.ok(enriched.peakMetricsApplied, 'closed JUP must use 24h peak-to-close stats');
+  assert.equal(enriched.size, 35000, 'closed JUP size must be 24h peak position');
   assert.ok(Array.isArray(enriched.dailyPerformanceSeries) && enriched.dailyPerformanceSeries.length, 'closed JUP must carry dailyPerformanceSeries');
-  assert.ok(Math.abs(enriched.funding - expected.funding) < 1e-6, 'closed JUP funding must match Position Performance latest-session totals');
-  assert.ok(Math.abs(enriched.fees - expected.fees) < 1e-6, 'closed JUP fees must match Position Performance latest-session totals');
+  assert.ok(enriched.funding > 0, 'closed JUP funding must include payments from peak to close');
+  assert.equal(enriched.fees, 1, 'closed JUP fees must sum nado fills in the 24h peak window');
 }
 
 {
@@ -761,8 +769,8 @@ assert.match(perpsJs, /applyPairFundingSinceOpen\(pair, base, venueA, venueB, pa
   assert.equal(pair.netArbPnl, 90, 'net arb PnL must refresh after funding since open correction');
 }
 assert.match(perpsJs, /stats\.funding_rate/, 'Extended rates must tolerate snake_case funding-rate fields');
-assert.match(perpsJs, /function enrichClosedPairsSessionPnl\(closedPairs, dailySeriesInputs/, 'closed positions must enrich funding and fees from the latest performance session');
-assert.match(perpsJs, /enrichClosedPairsSessionPnl\(freshClosedPairs/, 'dashboard closed pairs must use session-aligned PnL');
+assert.match(perpsJs, /applyPeakToCloseMetrics/, 'closed pairs must attribute stats from 24h peak to close');
+assert.match(perpsJs, /peakMetricsApplied/, 'closed pairs must flag peak-to-close metrics');
 assert.match(perpsJs, /function filterFreshClosedPairs\(pairs, knownClosedKeys\)/, 'known closed pairs must skip full payload on incremental fetches');
 assert.match(perpsJs, /closedPairRefreshes/, 'known closed pairs must still receive refreshed session metrics from the server');
 assert.match(aaveProxyJs, /knownClosedKeys\.length/, 'incremental closed-pair requests must bypass the shared dashboard cache');
@@ -1797,7 +1805,9 @@ assert.match(indexHtml, /function perpsClosedPairSessionDays\(/, 'closed APR mus
 assert.match(indexHtml, /perpsClosedPairSessionApr\(pair\)/, 'Closed tab must show session APR under Net PnL');
 assert.match(indexHtml, /perps-pos-closed-cell/, 'Closed tab rows must align values under headers without duplicate labels');
 assert.match(indexHtml, /function perpsNormalizeClosedPairForDisplay\(pair\)/, 'Closed tab must recompute session PnL from dailyPerformanceSeries at render time');
-assert.match(indexHtml, /perpsPairLatestSessionPnl\(next\)/, 'Closed tab funding must use the same latest-session logic as Position Performance');
+assert.match(positionPeakWindowJs, /applyPeakToCloseMetrics/, 'peak window helper must attribute closed stats from 24h peak');
+assert.match(variationalHedgeJs, /applyVariationalPeakToClosePair/, 'variational closed pairs must apply peak-to-close metrics');
+assert.match(indexHtml, /peakMetricsApplied/, 'closed display must preserve peak-to-close totals');
 assert.match(perpsJs, /function closedPairSessionApr\(/, 'closed pairs must compute session APR server-side');
 assert.match(indexHtml, /pair\.closeSlippage/, 'Closed tab must show closing slippage separately');
 assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response must include closed pairs');
@@ -1844,7 +1854,7 @@ assert.match(indexHtml, /perpsTogglePositionChartFees/, 'position performance mu
 assert.match(perpsJs, /Math\.min\(\.\.\.candidates\)/, 'position open time must use earliest fill or funding on either leg');
 assert.match(perpsJs, /const perfDays = Math\.min\(PERPS_MAX_FILL_HISTORY_DAYS, Math\.max\(fillHistoryDays, openDays\)\)/, 'per-pair performance series must span from pair open through fill history');
 assert.match(perpsJs, /buildPairDailyPerformanceSeries\(dailySeriesInputs, p\.symbol, perfDays\)/, 'per-pair performance series must use computed performance window');
-assert.match(perpsJs, /dailyPerformanceSeries,\s*\n\s*funding,/s, 'closed pairs must attach dailyPerformanceSeries for Position Performance session totals');
+assert.match(perpsJs, /peakPair\.peakMetricsApplied[\s\S]*dailyPerformanceSeries: filteredSeries/s, 'closed pairs must attach peak-window dailyPerformanceSeries');
 assert.ok(indexHtml.includes('function perpsSyncTotalPnlForRange(data, range)'), 'Total PnL must follow the selected stat time window');
 assert.ok(indexHtml.includes('perpsSyncTotalPnlForRange(data, _perpsStatRange)'), 'stats bar must sync Total PnL from the active stat range');
 assert.doesNotMatch(indexHtml, /perpsSyncTotalPnlRolling24h/, 'Total PnL must not stay fixed to rolling 24h');
@@ -3019,8 +3029,8 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
 
 {
   const { findTrackedCloseLeg, buildVariationalClosedPair } = require('../lib/variational-hedge.js');
-  const openedAt = Date.parse('2026-07-01T16:10:37.783Z');
   const closedAt = Date.parse('2026-07-08T13:54:13.174Z');
+  const openBuyAt = closedAt - 20 * 3600000;
   const hedge = {
     id: 'var-pyth-multi',
     symbol: 'PYTH',
@@ -3028,7 +3038,7 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
     trackedSize: 50000,
     variationalSize: -50000,
     variationalEntryPx: 0.03911,
-    openedAt,
+    openedAt: openBuyAt,
     status: 'pending_close',
     pendingCloseAt: closedAt,
     trackedLastSnapshot: { side: 'long', size: 50000, entryPx: 0.039129 },
@@ -3049,8 +3059,7 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
       state: { positions: [] },
       fills: {
         fills: [
-          { symbol: 'PYTH', time: openedAt - 3600000, side: 'B', sz: 50000, px: 0.04, fee: preOpenFee, closedPnl: 0 },
-          { symbol: 'PYTH', time: openedAt + 3600000, side: 'B', sz: 50000, px: 0.039, fee: inWindowOpenFee, closedPnl: 0 },
+          { symbol: 'PYTH', time: openBuyAt, side: 'B', sz: 50000, px: 0.039, fee: inWindowOpenFee, closedPnl: 0 },
           ...closeFills,
         ],
       },
@@ -3061,7 +3070,7 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   const closeLeg = findTrackedCloseLeg(data, hedge);
   assert.equal(closeLeg?.closeLegEstimated, false, 'multi-fill HL close must be trusted from API closedPnl');
   assert.ok(Math.abs(closeLeg.realizedPnl - 135.32146) < 1e-4, 'HL close PnL must sum closing-fill closedPnl');
-  assert.ok(Math.abs(closeLeg.fees - expectedFees) < 1e-4, 'fees must sum hedge-window fills only');
+  assert.ok(Math.abs(closeLeg.fees - expectedFees) < 1e-4, 'fees must sum fills from peak window');
   assert.equal(closeLeg.size, 50000);
   const pair = buildVariationalClosedPair(
     { ...hedge, status: 'closed', closedAt },
@@ -3069,6 +3078,8 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
     { symbol: 'PYTH', markPx: 0.043 },
     data,
   );
+  assert.equal(pair.peakMetricsApplied, true, 'variational closed pair must use peak-to-close metrics');
+  assert.equal(pair.size, 50000, 'peak size matches close when no larger 24h position');
   assert.equal(pair.closeLegEstimated, false, 'closed pair must not flag HL leg as estimated');
   assert.ok(Math.abs(pair.longLeg.realizedPnl - 135.32146) < 1e-4);
   assert.ok(Math.abs(pair.fees - expectedFees) < 1e-4);

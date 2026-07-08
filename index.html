@@ -20,6 +20,7 @@
 <script src="lib/defi-protocol-keys.js"></script>
 <script src="lib/variational-funding-clock.js"></script>
 <script src="lib/closed-leg-reconstruct.js"></script>
+<script src="lib/position-peak-window.js"></script>
 <script src="lib/variational-hedge.js"></script>
 <script src="lib/variational-equity.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -32257,7 +32258,7 @@ function perpsSanitizeVariationalClosedPairs(data) {
 
 function perpsNormalizeClosedPairForDisplay(pair) {
     const next = perpsGuardClosedPairRecord({ ...pair });
-    if (Array.isArray(next.dailyPerformanceSeries) && next.dailyPerformanceSeries.length) {
+    if (!next.peakMetricsApplied && Array.isArray(next.dailyPerformanceSeries) && next.dailyPerformanceSeries.length) {
         const session = perpsPairLatestSessionPnl(next);
         if (session?.source === 'session') {
             next.funding = session.funding;
