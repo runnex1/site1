@@ -32188,7 +32188,9 @@ function perpsClosedLegHtml(leg, pair) {
     if (!Number.isFinite(leg.realizedPnl)) {
         return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val muted" title="Variational exit price missing or estimated">—</span></div>`;
     }
-    const pnlLabel = leg.closeLegEstimated || leg.fundingEstimated ? 'est. ' : '';
+    const pnlLabel = (leg.venue === 'variational'
+        ? !leg.variationalExitDerived && !Number.isFinite(Number(leg.avgClosePx))
+        : leg.closeLegEstimated) ? 'est. ' : '';
     return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val ${perpsSignedCls(leg.realizedPnl ?? 0)}">${pnlLabel}${perpsFmtUsd(leg.realizedPnl ?? 0)}</span></div>`;
 }
 
