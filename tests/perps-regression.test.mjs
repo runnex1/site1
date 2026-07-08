@@ -608,10 +608,10 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   }, 30);
   assert.equal(enriched[0].peakMetricsApplied, true, 'closed UNI must use 24h peak-to-close stats');
   assert.equal(enriched[0].size, 100, 'closed UNI size must be 24h peak position');
-  assert.equal(enriched[0].funding, 6, 'closed UNI funding must sum HL payments from peak to close');
+  assert.equal(enriched[0].funding, 3, 'closed UNI funding must sum both legs from peak to close');
   assert.equal(enriched[0].fees, 4.5, 'closed UNI fees must sum fills from peak to close');
   assert.equal(enriched[0].closeSlippage, 2, 'closed UNI slippage must sum realized PnL from peak to close');
-  assert.equal(enriched[0].netPnl, 2 + 6 - 4.5, 'closed net PnL must use peak-window funding and fees');
+  assert.equal(enriched[0].netPnl, 2 + 3 - 4.5, 'closed net PnL must use peak-window funding and fees');
 }
 
 {
@@ -657,6 +657,48 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.ok(Array.isArray(enriched.dailyPerformanceSeries) && enriched.dailyPerformanceSeries.length, 'closed JUP must carry dailyPerformanceSeries');
   assert.ok(enriched.funding > 0, 'closed JUP funding must include payments from peak to close');
   assert.equal(enriched.fees, 1, 'closed JUP fees must sum nado fills in the 24h peak window');
+}
+
+{
+  const closeTime = Date.parse('2026-07-06T16:08:15.000Z');
+  const openTime = Date.parse('2026-07-03T11:55:25.000Z');
+  const peakTime = Date.parse('2026-07-06T15:59:42.428Z');
+  const nadoPayments = [
+    { symbol: 'JUP', time: openTime + 3600000, usdc: 1.2 },
+    { symbol: 'JUP', time: closeTime - 7200000, usdc: 0.8 },
+  ];
+  const extendedPayments = [
+    { symbol: 'JUP', time: openTime + 7200000, usdc: 0.5 },
+    { symbol: 'JUP', time: closeTime - 3600000, usdc: 0.3 },
+  ];
+  const pair = {
+    symbol: 'JUP',
+    openTime,
+    closeTime,
+    closeSlippage: -12.37,
+    longLeg: { venue: 'nado', side: 'long', size: 35000, realizedPnl: -125 },
+    shortLeg: { venue: 'extended', side: 'short', size: 35000, realizedPnl: 112 },
+  };
+  const { applyPeakToCloseMetrics } = require('../lib/position-peak-window.js');
+  const { fundingForClosedLeg } = require('../lib/closed-leg-reconstruct.js');
+  const nadoCloseFills = [
+    { symbol: 'JUP', time: closeTime - 20000, size: -10000, fee: 0.2, realizedPnl: -5 },
+    { symbol: 'JUP', time: closeTime, size: -14000, fee: 0.15, realizedPnl: -7 },
+  ];
+  const extendedOpenFills = [
+    { symbol: 'JUP', time: peakTime - 12000, side: 'buy', sz: 15000, fee: 0.8 },
+    { symbol: 'JUP', time: peakTime, side: 'buy', sz: 3183, fee: 0.27 },
+  ];
+  const peaked = applyPeakToCloseMetrics(
+    pair,
+    { nado: nadoCloseFills, extended: extendedOpenFills },
+    { nado: nadoPayments, extended: extendedPayments },
+    { fundingForClosedLeg },
+  );
+  assert.ok(peaked.funding > 1, 'sparse close fills must still accrue funding from hedge open');
+  assert.ok(peaked.fees > 1, 'fees must use hedge open when peak window is only minutes');
+  assert.equal(peaked.fundingSinceMs, openTime, 'degenerate peak window must expand funding to pair open');
+  assert.equal(peaked.closeSlippage, -7, 'slippage must stay on peak-to-close realized fills only');
 }
 
 {
@@ -1806,6 +1848,7 @@ assert.match(indexHtml, /perpsClosedPairSessionApr\(pair\)/, 'Closed tab must sh
 assert.match(indexHtml, /perps-pos-closed-cell/, 'Closed tab rows must align values under headers without duplicate labels');
 assert.match(indexHtml, /function perpsNormalizeClosedPairForDisplay\(pair\)/, 'Closed tab must recompute session PnL from dailyPerformanceSeries at render time');
 assert.match(positionPeakWindowJs, /applyPeakToCloseMetrics/, 'peak window helper must attribute closed stats from 24h peak');
+assert.match(positionPeakWindowJs, /resolveFundingFeesWindowStart/, 'peak metrics must expand funding window when fill history is sparse');
 assert.match(variationalHedgeJs, /applyVariationalPeakToClosePair/, 'variational closed pairs must apply peak-to-close metrics');
 assert.match(variationalHedgeJs, /variationalLegCloseSlippagePnl/, 'variational closed leg PnL must be 0.12% slip vs HL close only');
 assert.match(indexHtml, /peakMetricsApplied/, 'closed display must preserve peak-to-close totals');
