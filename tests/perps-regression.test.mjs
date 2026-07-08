@@ -1851,6 +1851,7 @@ assert.match(positionPeakWindowJs, /applyPeakToCloseMetrics/, 'peak window helpe
 assert.match(positionPeakWindowJs, /resolveFundingFeesWindowStart/, 'peak metrics must expand funding window when fill history is sparse');
 assert.match(variationalHedgeJs, /applyVariationalPeakToClosePair/, 'variational closed pairs must apply peak-to-close metrics');
 assert.match(variationalHedgeJs, /variationalLegCloseSlippagePnl/, 'variational closed leg PnL must be 0.12% slip vs HL close only');
+assert.match(variationalHedgeJs, /peakRealizedPnl/, 'variational closed pairs must keep peak realized separate from hedge close slippage');
 assert.match(indexHtml, /peakMetricsApplied/, 'closed display must preserve peak-to-close totals');
 assert.match(perpsJs, /function closedPairSessionApr\(/, 'closed pairs must compute session APR server-side');
 assert.match(indexHtml, /pair\.closeSlippage/, 'Closed tab must show closing slippage separately');
@@ -3177,11 +3178,14 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   const hlLeg = pair.longLeg?.venue === 'hyperliquid' ? pair.longLeg : pair.shortLeg;
   assert.equal(pair.peakMetricsApplied, true);
   assert.equal(varLeg.size, 50000, 'variational leg size must stay at hedge trackedSize, not 24h peak');
-  assert.ok(pair.size >= 50000, 'pair display size may reflect 24h peak');
-  assert.ok(hlLeg.size >= 50000, 'exchange leg uses peak-window size');
-  assert.ok(Math.abs(varLeg.avgClosePx - hlClosePx * 1.0012) < 1e-6, 'variational exit from final HL close VWAP + 0.12%');
+  assert.equal(hlLeg.size, 50000, 'exchange leg display size must stay at hedge trackedSize');
+  assert.ok(pair.size > 50000, 'pair display size may reflect 24h peak');
+  assert.equal(hlLeg.realizedPnl, 257.41, 'exchange leg PnL must use hedge close cluster, not peak window');
   const varSlipOnly = -hlClosePx * 50000 * 0.0012;
   assert.ok(Math.abs(varLeg.realizedPnl - varSlipOnly) < 0.05, 'variational PnL must be 0.12% slippage at hedge size, not full entry-to-exit');
+  assert.ok(Math.abs(pair.closeSlippage - (257.41 + varSlipOnly)) < 0.05, 'close slippage must be hedge close plus variational slip only');
+  assert.ok(pair.peakRealizedPnl > pair.closeSlippage, 'net PnL may include peak-window trading beyond hedge close slippage');
+  assert.ok(Math.abs(pair.netPnl - (pair.peakRealizedPnl + varSlipOnly + pair.funding - pair.fees)) < 0.05, 'net PnL must use peak realized plus variational slip');
 }
 
 {
