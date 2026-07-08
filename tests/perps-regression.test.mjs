@@ -3009,9 +3009,69 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   assert.equal(result.paired.filter((p) => p.symbol === 'PYTH').length, 0, 'closed PYTH must not render as live pair');
   assert.ok(result.newClosedPairs.some((p) => p.symbol === 'PYTH'), 'PYTH must move to closed pairs automatically');
   const closed = result.newClosedPairs.find((p) => p.symbol === 'PYTH');
+  const hlLeg = closed.longLeg?.venue === 'hyperliquid' ? closed.longLeg : closed.shortLeg;
+  assert.equal(hlLeg?.closeLegEstimated, false, 'HL close PnL must come from fill closedPnl, not est.');
+  assert.equal(hlLeg?.realizedPnl, 257.41, 'HL realized must match API closedPnl on close fill');
   const varLeg = closed.shortLeg?.venue === 'variational' ? closed.shortLeg : closed.longLeg;
   assert.ok(Math.abs(varLeg.avgClosePx - 0.044 * 1.0012) < 1e-6, 'Variational exit must be HL close + 0.12% for short leg');
   assert.ok(Math.abs(varLeg.realizedPnl + 247.14) < 1, 'Variational leg PnL must reflect 0.12% slippage vs HL close');
+}
+
+{
+  const { findTrackedCloseLeg, buildVariationalClosedPair } = require('../lib/variational-hedge.js');
+  const openedAt = Date.parse('2026-07-01T16:10:37.783Z');
+  const closedAt = Date.parse('2026-07-08T13:54:13.174Z');
+  const hedge = {
+    id: 'var-pyth-multi',
+    symbol: 'PYTH',
+    trackedVenue: 'hyperliquid',
+    trackedSize: 50000,
+    variationalSize: -50000,
+    variationalEntryPx: 0.03911,
+    openedAt,
+    status: 'pending_close',
+    pendingCloseAt: closedAt,
+    trackedLastSnapshot: { side: 'long', size: 50000, entryPx: 0.039129 },
+  };
+  const closeFills = [
+    { symbol: 'PYTH', time: closedAt - 11000, side: 'A', sz: 10000, px: 0.041836, fee: 0.180731, closedPnl: 27.07 },
+    { symbol: 'PYTH', time: closedAt - 9000, side: 'A', sz: 10000, px: 0.041836, fee: 0.180731, closedPnl: 27.07 },
+    { symbol: 'PYTH', time: closedAt - 4000, side: 'A', sz: 10000, px: 0.041829, fee: 0.1807, closedPnl: 27 },
+    { symbol: 'PYTH', time: closedAt - 3000, side: 'A', sz: 10000, px: 0.041836146, fee: 0.180732, closedPnl: 27.07146 },
+    { symbol: 'PYTH', time: closedAt, side: 'A', sz: 10000, px: 0.04184, fee: 0.180748, closedPnl: 27.11 },
+  ];
+  const preOpenFee = 8.5753;
+  const inWindowOpenFee = 4.2;
+  const closeFeeSum = closeFills.reduce((sum, f) => sum + Math.abs(f.fee || 0), 0);
+  const expectedFees = inWindowOpenFee + closeFeeSum;
+  const data = {
+    hyperliquid: {
+      state: { positions: [] },
+      fills: {
+        fills: [
+          { symbol: 'PYTH', time: openedAt - 3600000, side: 'B', sz: 50000, px: 0.04, fee: preOpenFee, closedPnl: 0 },
+          { symbol: 'PYTH', time: openedAt + 3600000, side: 'B', sz: 50000, px: 0.039, fee: inWindowOpenFee, closedPnl: 0 },
+          ...closeFills,
+        ],
+      },
+      funding: { payments: [] },
+    },
+    closedPairs: [],
+  };
+  const closeLeg = findTrackedCloseLeg(data, hedge);
+  assert.equal(closeLeg?.closeLegEstimated, false, 'multi-fill HL close must be trusted from API closedPnl');
+  assert.ok(Math.abs(closeLeg.realizedPnl - 135.32146) < 1e-4, 'HL close PnL must sum closing-fill closedPnl');
+  assert.ok(Math.abs(closeLeg.fees - expectedFees) < 1e-4, 'fees must sum hedge-window fills only');
+  assert.equal(closeLeg.size, 50000);
+  const pair = buildVariationalClosedPair(
+    { ...hedge, status: 'closed', closedAt },
+    closeLeg,
+    { symbol: 'PYTH', markPx: 0.043 },
+    data,
+  );
+  assert.equal(pair.closeLegEstimated, false, 'closed pair must not flag HL leg as estimated');
+  assert.ok(Math.abs(pair.longLeg.realizedPnl - 135.32146) < 1e-4);
+  assert.ok(Math.abs(pair.fees - expectedFees) < 1e-4);
 }
 
 {
