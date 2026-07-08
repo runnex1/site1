@@ -1851,7 +1851,7 @@ assert.match(positionPeakWindowJs, /applyPeakToCloseMetrics/, 'peak window helpe
 assert.match(positionPeakWindowJs, /resolveFundingFeesWindowStart/, 'peak metrics must expand funding window when fill history is sparse');
 assert.match(variationalHedgeJs, /applyVariationalPeakToClosePair/, 'variational closed pairs must apply peak-to-close metrics');
 assert.match(variationalHedgeJs, /variationalLegCloseSlippagePnl/, 'variational closed leg PnL must be 0.12% slip vs HL close only');
-assert.match(variationalHedgeJs, /peakRealizedPnl/, 'variational closed pairs must keep peak realized separate from hedge close slippage');
+assert.match(variationalHedgeJs, /computeVariationalClosedPairFunding/, 'variational closed pairs must accrue funding from hedge open through close');
 assert.match(indexHtml, /peakMetricsApplied/, 'closed display must preserve peak-to-close totals');
 assert.match(perpsJs, /function closedPairSessionApr\(/, 'closed pairs must compute session APR server-side');
 assert.match(indexHtml, /pair\.closeSlippage/, 'Closed tab must show closing slippage separately');
@@ -3184,8 +3184,7 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   const varSlipOnly = -hlClosePx * 50000 * 0.0012;
   assert.ok(Math.abs(varLeg.realizedPnl - varSlipOnly) < 0.05, 'variational PnL must be 0.12% slippage at hedge size, not full entry-to-exit');
   assert.ok(Math.abs(pair.closeSlippage - (257.41 + varSlipOnly)) < 0.05, 'close slippage must be hedge close plus variational slip only');
-  assert.ok(pair.peakRealizedPnl > pair.closeSlippage, 'net PnL may include peak-window trading beyond hedge close slippage');
-  assert.ok(Math.abs(pair.netPnl - (pair.peakRealizedPnl + varSlipOnly + pair.funding - pair.fees)) < 0.05, 'net PnL must use peak realized plus variational slip');
+  assert.ok(Math.abs(pair.netPnl - (pair.closeSlippage + pair.funding - pair.fees)) < 0.05, 'net PnL must match displayed slippage, funding, and fees');
 }
 
 {
@@ -3216,6 +3215,52 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   const slipOnly = -hlClose * 50000 * 0.0012;
   assert.ok(Math.abs(pair.shortLeg.realizedPnl - slipOnly) < 0.05, 'variational leg PnL must be 0.12% slippage vs HL close only');
   assert.ok(Math.abs(pair.closeSlippage - (257.41 + slipOnly)) < 0.05, 'close slippage must sum HL realized and variational slip');
+  assert.ok(Math.abs(pair.netPnl - (pair.closeSlippage + pair.funding - pair.fees)) < 0.05, 'net PnL must match slippage plus funding minus fees');
+}
+
+{
+  const { buildVariationalClosedPair, freezeVariationalClosedFunding } = require('../lib/variational-hedge.js');
+  const openedAt = Date.parse('2026-07-01T00:00:00Z');
+  const closedAt = Date.parse('2026-07-08T23:05:00.000Z');
+  const hedge = {
+    id: 'zro-var',
+    symbol: 'ZRO',
+    trackedVenue: 'hyperliquid',
+    trackedSize: 34000,
+    variationalSize: 34000,
+    variationalEntryPx: 0.95,
+    openedAt,
+    status: 'closed',
+    closedAt,
+  };
+  const hlPayments = [
+    { symbol: 'ZRO', time: openedAt + 3600000, usdc: 12 },
+    { symbol: 'ZRO', time: closedAt - 3600000, usdc: 8.5 },
+  ];
+  const closeLeg = {
+    venue: 'hyperliquid',
+    symbol: 'ZRO',
+    side: 'short',
+    size: 34000,
+    avgClosePx: 0.93,
+    realizedPnl: -6.62,
+    closeTime: closedAt,
+    fees: 13.63,
+    closeLegEstimated: false,
+    fromExchangeClosingFills: true,
+  };
+  const data = {
+    hyperliquid: {
+      fills: { fills: [] },
+      funding: { payments: hlPayments },
+    },
+  };
+  const listing = { symbol: 'ZRO', markPx: 0.93, fundingRateInterval: 0.0001, fundingIntervalS: 28800 };
+  freezeVariationalClosedFunding(hedge, listing, data, closedAt, 34000);
+  const pair = buildVariationalClosedPair(hedge, closeLeg, listing, data);
+  assert.ok(pair.funding > 15, 'closed variational pair must include full-session HL funding');
+  assert.ok(Math.abs(pair.netPnl - (pair.closeSlippage + pair.funding - pair.fees)) < 0.05, 'ZRO net must not inflate beyond displayed components');
+  assert.equal(hedge.closedFundingUsd, pair.funding, 'hedge must freeze total funding at close');
 }
 
 console.log('PASS: perps accounting and dashboard regression checks');
