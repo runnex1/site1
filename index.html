@@ -6468,6 +6468,27 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loops-lending-panel .loops-panel-title { color:var(--t1); }
 .loops-lending-note { color:var(--t3); font-size:0.62rem; letter-spacing:0.04em; text-transform:uppercase; }
 .loops-lending-panel[hidden] { display:none !important; }
+.loops-pendle-panel { min-height:0; margin-top:12px; border-color:rgba(167,139,250,0.22); }
+.loops-pendle-panel .loops-panel-title { color:var(--t1); }
+.loops-pendle-note { color:var(--t3); font-size:0.62rem; letter-spacing:0.04em; text-transform:uppercase; }
+.loops-pendle-panel[hidden] { display:none !important; }
+.loops-pendle-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:12px; align-items:start; }
+.pendle-pos-card { border:1px solid rgba(167,139,250,0.18); border-radius:7px; background:linear-gradient(180deg,rgba(12,10,24,.98),rgba(8,6,16,.99)); padding:0.85rem 1rem; }
+.pendle-pos-head { display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.65rem; }
+.pendle-pos-title { font-family:var(--ff-display); font-size:0.82rem; font-weight:850; letter-spacing:0.06em; text-transform:uppercase; color:var(--t1); }
+.pendle-pos-sub { margin-top:0.2rem; color:var(--t3); font-family:var(--ff-mono); font-size:0.58rem; letter-spacing:0.04em; text-transform:uppercase; }
+.pendle-pos-apy { font-family:var(--ff-mono); font-size:1rem; font-weight:850; color:#c4b5fd; white-space:nowrap; }
+.pendle-pos-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0.55rem; }
+.pendle-pos-metric { min-width:0; }
+.pendle-pos-metric-label { color:var(--t3); font-family:var(--ff-mono); font-size:0.54rem; letter-spacing:0.08em; text-transform:uppercase; }
+.pendle-pos-metric-val { margin-top:0.15rem; color:var(--t1); font-family:var(--ff-mono); font-size:0.72rem; font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pendle-pos-tag { display:inline-flex; align-items:center; gap:0.25rem; padding:0.12rem 0.42rem; border-radius:4px; border:1px solid rgba(167,139,250,0.24); background:rgba(167,139,250,0.08); color:#c4b5fd; font-family:var(--ff-mono); font-size:0.54rem; font-weight:750; letter-spacing:0.06em; text-transform:uppercase; }
+.pendle-pos-tag.closed { border-color:rgba(148,163,184,0.18); background:rgba(148,163,184,0.06); color:var(--t3); }
+.pendle-pos-wallet { margin-top:0.55rem; color:var(--t3); font-family:var(--ff-mono); font-size:0.58rem; }
+@media (max-width: 900px) {
+  .loops-pendle-grid { grid-template-columns:1fr; }
+  .pendle-pos-metrics { grid-template-columns:1fr 1fr; }
+}
 .loops-panel-head { min-height:56px; display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.86rem 1.08rem; border-bottom:1px solid rgba(148,163,184,0.13); background:rgba(7,18,26,0.72); }
 .loops-panel-title { display:flex; align-items:baseline; gap:0.72rem; font-family:var(--ff-display); font-size:1.02rem; line-height:1; font-weight:850; letter-spacing:0.1em; text-transform:uppercase; color:var(--t1); }
 .loops-count { padding:0.18rem 0.56rem; border:1px solid rgba(56,189,248,0.24); border-radius:5px; background:rgba(56,189,248,0.08); color:var(--sky); font-family:var(--ff-mono); font-size:0.66rem; font-weight:850; letter-spacing:0; text-transform:none; }
@@ -8524,6 +8545,15 @@ body[data-active-tab="loops"] .page-content,
               </div>
             </div>
             <div id="loopsLendingGrid" class="loops-grid"></div>
+          </div>
+          <div id="loopsPendleSection" class="loops-panel loops-pendle-panel" hidden>
+            <div class="loops-panel-head">
+              <div class="loops-panel-title">Pendle <span class="loops-count" id="loopsPendleCount">0 positions</span></div>
+              <div class="loops-head-actions">
+                <div class="loops-updated loops-pendle-note" id="loopsPendleUpdated">wallet PT · YT · LP</div>
+              </div>
+            </div>
+            <div id="loopsPendleGrid" class="loops-pendle-grid"></div>
           </div>
         </div>
       </div>
@@ -15069,12 +15099,13 @@ let loopApiState = {
     triedAuto: false,
     updatedAt: null,
     positions: [],
+    pendle: null,
     errors: [],
     coverage: null,
 };
 const LOOP_SNAPSHOTS_KEY = 'vault-loop-snapshots';
 const LOOP_USDE_USDM_PURGE_KEY = 'vault-loop-snapshots-usde-usdm-purged';
-const LOOP_API_STATE_KEY = 'vault-loop-api-state-v3';
+const LOOP_API_STATE_KEY = 'vault-loop-api-state-v4';
 const LOOP_API_LAST_SYNC_KEY = 'vault-loop-last-auto-sync';
 const LOOP_MANUAL_APY_KEY = 'vault-loop-manual-supply-apy';
 const LOOP_AUTO_SYNC_MIN_MS = 15 * 60 * 1000;
@@ -15148,6 +15179,7 @@ function loopsHydrateApiStateFromLocal() {
         if (!Array.isArray(saved.positions) || !saved.positions.length) return;
         loopApiState.updatedAt = Number(saved.updatedAt) || loopApiState.updatedAt;
         loopApiState.positions = saved.positions;
+        loopApiState.pendle = saved.pendle || null;
         loopApiState.errors = Array.isArray(saved.errors) ? saved.errors : [];
         loopApiState.coverage = saved.coverage || loopApiState.coverage;
     } catch (e) {}
@@ -15158,6 +15190,7 @@ function loopsPersistApiState() {
         localStorage.setItem(LOOP_API_STATE_KEY, JSON.stringify({
             updatedAt: loopApiState.updatedAt,
             positions: loopApiState.positions,
+            pendle: loopApiState.pendle,
             errors: loopApiState.errors,
             coverage: loopApiState.coverage,
         }));
@@ -15875,10 +15908,14 @@ function loopPairHtml(suppliedPositions, borrowedPositions) {
     return loopPairLegHtml(fallback, 'supply', 32, suppliedPos || borrowedPos);
 }
 
-function loopSupplyLegApyHtml(suppliedApr, manualKey = '', hasManual = false) {
+function loopSupplyLegApyHtml(suppliedApr, manualKey = '', hasManual = false, suppliedPositions = []) {
     if (!Number.isFinite(suppliedApr)) return '';
     const canEdit = hasManual || Math.abs(suppliedApr) < 0.5;
-    const text = `Supply <strong>${suppliedApr.toFixed(2)}%</strong>`;
+    const pendleLeg = (suppliedPositions || []).find(item => Number(item?.pendleApy) > 0.01);
+    const pendleTag = pendleLeg
+        ? ` <span title="Pendle implied fixed yield to maturity">(Pendle PT)</span>`
+        : '';
+    const text = `Supply <strong>${suppliedApr.toFixed(2)}%</strong>${pendleTag}`;
     if (!canEdit || !manualKey) return text;
     return `<button type="button" class="loop-summary-apy-edit" onclick="loopSetManualSupplyApy('${dashEsc(manualKey)}', ${Number(suppliedApr).toFixed(8)})" title="Set manual Supply APY from now onward">${text}</button>`;
 }
@@ -15907,8 +15944,8 @@ function loopNetValueTooltipHtml(breakdown, fmtV) {
     </div>`;
 }
 
-function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey = '', hasManualSupplyApy = false, borrowedPositions = []) {
-    const supplyLine = loopSupplyLegApyHtml(suppliedApr, manualKey, hasManualSupplyApy);
+function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey = '', hasManualSupplyApy = false, borrowedPositions = [], suppliedPositions = []) {
+    const supplyLine = loopSupplyLegApyHtml(suppliedApr, manualKey, hasManualSupplyApy, suppliedPositions);
     const borrowLine = loopBorrowLegApyHtml(borrowedApr, borrowedPositions);
     const fmt = fmtV || (v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     const netTip = loopNetValueTooltipHtml(netBreakdown, fmt);
@@ -16218,6 +16255,7 @@ function loopApiToDisplayPosition(pos) {
         nativeApy: item.nativeApy,
         merklApy: item.merklApy,
         defillamaApy: item.defillamaApy,
+        pendleApy: item.pendleApy,
         sub: 'Supplied',
     }));
     const borrowedPositions = borrowed.map(item => ({
@@ -16345,6 +16383,7 @@ async function syncLoopApiPositions({ silent = false, persistSnapshot = !silent 
     const btn = document.getElementById('loopsSyncBtn');
     if (!wallets.length) {
         loopApiState.positions = [];
+        loopApiState.pendle = null;
         loopApiState.errors = [{ provider: 'loops', message: 'Add at least one Yield wallet first.' }];
         if (!silent) alert('Add at least one Yield wallet first.');
         renderLoops();
@@ -16361,6 +16400,7 @@ async function syncLoopApiPositions({ silent = false, persistSnapshot = !silent 
         if (!response.ok) throw new Error(json.error || `Loop API HTTP ${response.status}`);
         loopApiState.updatedAt = Number(json.updatedAt) || Date.now();
         loopApiState.positions = Array.isArray(json.positions) ? json.positions : [];
+        loopApiState.pendle = json.pendle || null;
         loopApiState.errors = Array.isArray(json.errors) ? json.errors : [];
         loopApiState.coverage = json.coverage || null;
         loopsPersistApiState();
@@ -19334,7 +19374,7 @@ function buildLoopCardHtml(loop, fmtV, { lendingOnly = false } = {}) {
     const netBreakdown = merklUnclaimed > 0.01
         ? { aave: aaveNetValue, merkl: merklUnclaimed, claimed: merklClaimed, total: displayNetValue }
         : null;
-    const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey, hasManualSupplyApy, borrowedPositions);
+    const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey, hasManualSupplyApy, borrowedPositions, suppliedPositions);
     const headApyLabel = lendingOnly ? 'Supply APY' : 'Net APY';
     const headStatsHtml = lendingOnly
         ? `<div class="loop-head-stats"><div class="loop-head-stat apy ${apyCls}"><div class="loop-head-stat-label">${headApyLabel}</div><div class="loop-head-stat-val">${apyText}</div></div></div>`
@@ -19358,6 +19398,75 @@ function buildLoopCardHtml(loop, fmtV, { lendingOnly = false } = {}) {
                 ${summaryHtml}
             </div>
         </div>`;
+}
+
+function loopPendleExpiryLabel(expiry) {
+    if (!expiry) return '-';
+    const d = new Date(expiry);
+    if (Number.isNaN(d.getTime())) return '-';
+    const days = Math.round((d - Date.now()) / 86400000);
+    const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    if (days < 0) return `${date} · expired`;
+    if (days === 0) return `${date} · today`;
+    return `${date} · ${days}d`;
+}
+
+function buildPendlePositionCardHtml(row, fmtV) {
+    const apy = Number(row.impliedApy);
+    const apyText = Number.isFinite(apy) ? apy.toFixed(2) + '%' : '-';
+    const valueText = row.valueUsd > 0.01 ? fmtV(row.valueUsd) : (row.balanceUnits > 0 ? row.balanceUnits.toLocaleString('en-US', { maximumFractionDigits: 4 }) + ' ' + row.legType : '-');
+    const statusTag = row.open
+        ? `<span class="pendle-pos-tag">Open</span>`
+        : `<span class="pendle-pos-tag closed">Closed</span>`;
+    return `<div class="pendle-pos-card">
+        <div class="pendle-pos-head">
+            <div>
+                <div class="pendle-pos-title">${dashEsc(row.symbol || row.legType)}</div>
+                <div class="pendle-pos-sub">${dashEsc(row.marketName || 'Pendle')} · ${dashEsc(row.chainName || row.chainId)} · ${dashEsc(row.legType)}</div>
+            </div>
+            <div class="pendle-pos-apy">${apyText}</div>
+        </div>
+        <div class="pendle-pos-metrics">
+            <div class="pendle-pos-metric"><div class="pendle-pos-metric-label">Value</div><div class="pendle-pos-metric-val">${dashEsc(valueText)}</div></div>
+            <div class="pendle-pos-metric"><div class="pendle-pos-metric-label">Expiry</div><div class="pendle-pos-metric-val">${dashEsc(loopPendleExpiryLabel(row.expiry))}</div></div>
+            <div class="pendle-pos-metric"><div class="pendle-pos-metric-label">Status</div><div class="pendle-pos-metric-val">${statusTag}</div></div>
+        </div>
+        <div class="pendle-pos-wallet">${dashEsc(loopApiShortWallet(row.wallet))} · ${dashEsc(row.protocol || 'Pendle')}</div>
+    </div>`;
+}
+
+function renderPendleSection(fmtV) {
+    const section = document.getElementById('loopsPendleSection');
+    const grid = document.getElementById('loopsPendleGrid');
+    const countEl = document.getElementById('loopsPendleCount');
+    const updatedEl = document.getElementById('loopsPendleUpdated');
+    if (!section || !grid) return;
+    const fmt = fmtV || (v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    const pendle = loopApiState.pendle;
+    const rows = (pendle?.wallets || []).flatMap(w => (w.positions || []).map(p => ({ ...p, wallet: p.wallet || w.wallet })));
+    const openRows = rows.filter(r => r.open);
+    const displayRows = openRows.length ? openRows : rows;
+    const hasWallets = loopYieldWalletAddresses().length > 0;
+    if (!displayRows.length) {
+        if (!hasWallets || !pendle) {
+            section.hidden = true;
+            grid.innerHTML = '';
+            if (countEl) countEl.textContent = '0 positions';
+            return;
+        }
+        section.hidden = false;
+        if (countEl) countEl.textContent = '0 positions';
+        const stamp = pendle?.updatedAt ? new Date(pendle.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        if (updatedEl) updatedEl.textContent = (stamp ? `synced ${stamp}` : 'Pendle API') + ' · no wallet-held PT/YT/LP';
+        grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;padding:1.25rem 1rem;"><div class="empty-icon">◇</div><div>No direct Pendle wallet positions.<br><small style="color:var(--t3);font-size:0.75rem;margin-top:0.5rem;display:block;">PT used as loop collateral (e.g. Morpho) is held by the lending protocol — fixed PT yield is shown on the loop cards above.</small></div></div>`;
+        return;
+    }
+    section.hidden = false;
+    if (countEl) countEl.textContent = displayRows.length + (displayRows.length === 1 ? ' position' : ' positions');
+    const stamp = pendle?.updatedAt ? new Date(pendle.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    const marketHint = pendle?.marketCount ? ` · ${pendle.marketCount} markets` : '';
+    if (updatedEl) updatedEl.textContent = (stamp ? `synced ${stamp}` : 'Pendle API') + marketHint + (openRows.length ? '' : ' · showing closed');
+    grid.innerHTML = displayRows.map(row => buildPendlePositionCardHtml(row, fmt)).join('');
 }
 
 function renderLoops() {
@@ -19464,6 +19573,7 @@ function renderLoops() {
             lendingGrid.innerHTML = lendingRows.map(loop => buildLoopCardHtml(loop, fmtV, { lendingOnly: true })).join('');
         }
     }
+    renderPendleSection(fmtV);
 }
 
 let _protocolView = 'current'; // 'current' | 'snapshot'

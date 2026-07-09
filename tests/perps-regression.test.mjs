@@ -898,6 +898,13 @@ assert.match(loopRatesJs, /function canonicalNativeYieldApy\(/, 'native yield to
 assert.match(loopRatesJs, /canonicalNativeYieldApy\(chainId, leg, index\)/, 'defillama leg lookup must prefer canonical native yield before address pools');
 assert.match(loopRatesJs, /function shouldEnrichLegWithDefillama\(/, 'DeFiLlama enrichment must skip plain collateral like WBTC');
 assert.match(loopRatesJs, /const dlApy = percent\(dlApyRaw\)/, 'DeFiLlama APY must normalize to protocol percent units');
+assert.match(loopRatesJs, /require\('\.\/pendle'\)/, 'loop rates must integrate Pendle APY enrichment');
+assert.match(loopRatesJs, /enrichPositionWithPendle/, 'PT loops must use Pendle implied APY for supply leg');
+assert.match(loopRatesJs, /pendleSource: 'api-v2\.pendle\.finance\/core'/, 'loop coverage must report Pendle source');
+assert.match(indexHtml, /id="loopsPendleSection"/, 'Loops tab must render a Pendle positions section');
+assert.match(indexHtml, /function renderPendleSection\(/, 'Loops must render Pendle wallet positions');
+assert.match(indexHtml, /vault-loop-api-state-v4/, 'loop API local cache must bust when Pendle data is added');
+assert.match(aaveProxyJs, /LOOP_RATES_CACHE_VERSION = 'v4'/, 'loop-rates server cache must bust for Pendle enrichment');
 assert.match(indexHtml, /id="loopsLendingSection"/, 'Loops tab must render a separate lending-only section');
 assert.match(indexHtml, /function loopImportedLendingPositions\(/, 'Loops must include imported supply-only lending positions');
 assert.match(indexHtml, /function buildLoopCardHtml\(/, 'Loops must share one card renderer for loops and lending rows');
@@ -2371,7 +2378,7 @@ assert.match(eventLogJs, /walletSuffix4\(g\.wallet\)/, 'server event log must ap
 }
 
 try {
-  const loopResult = await fetchLoopRates(['0x523c4fD04438aAB5e96CADCcDC92c855390Fb459']);
+  const loopResult = await fetchLoopRates({ wallets: ['0x523c4fD04438aAB5e96CADCcDC92c855390Fb459'] });
   for (const p of loopResult.positions || []) {
     const supplied = Number(p.totalSupplied || 0);
     const borrowed = Number(p.totalBorrowed || 0);
@@ -2382,8 +2389,59 @@ try {
       assert.ok(Math.abs(net + merkl - Number(p.economicNetValue)) < 0.05, `economicNetValue must include Merkl for ${p.id || p.marketName}`);
     }
   }
+  const ptLoop = (loopResult.positions || []).find((p) => /PT/i.test(p.marketName || ''));
+  if (ptLoop) {
+    assert.ok(Number(ptLoop.pendleImpliedApy) > 1, `PT loop must include Pendle implied APY for ${ptLoop.marketName}`);
+    assert.ok(Number(ptLoop.supplyApy) > 1, `PT loop supply APY must be enriched for ${ptLoop.marketName}`);
+  }
+  assert.ok(loopResult.pendle && Array.isArray(loopResult.pendle.wallets), 'loop rates must return Pendle wallet payload');
 } catch (e) {
   throw new Error(`loop net value live check failed: ${e.message || e}`);
+}
+
+{
+  const {
+    buildMarketIndex,
+    enrichPositionWithPendle,
+    isPtNamedLoop,
+    marketRecordFromApi,
+  } = require('../lib/pendle.js');
+  const { recomputePositionApy } = require('../lib/loop-rates.js');
+  const market = marketRecordFromApi({
+    name: 'USDat',
+    protocol: 'Saturn',
+    address: '0x9afe7a057a09cf5da748d952078c9c99938b4329',
+    expiry: '2026-08-27T00:00:00.000Z',
+    pt: '1-0x1d69402390657308c91179aa184bf992908c1e08',
+    yt: '1-0x076a3ea71e83ca09319b161e40f5fb3bb943d3c6',
+    details: { impliedApy: 0.0783 },
+  });
+  const index = buildMarketIndex([{
+    name: 'USDat',
+    protocol: 'Saturn',
+    address: '0x9afe7a057a09cf5da748d952078c9c99938b4329',
+    expiry: '2026-08-27T00:00:00.000Z',
+    pt: '1-0x1d69402390657308c91179aa184bf992908c1e08',
+    yt: '1-0x076a3ea71e83ca09319b161e40f5fb3bb943d3c6',
+    details: { impliedApy: 0.0783 },
+  }]);
+  assert.equal(market.impliedApy, 0.0783);
+  assert.ok(isPtNamedLoop({ marketName: 'PT-USDat-27AUG2026 / USDC' }));
+  const enriched = enrichPositionWithPendle({
+    marketName: 'PT-USDat-27AUG2026 / USDC',
+    totalSupplied: 30000,
+    totalBorrowed: 26000,
+    borrowedCostUsd: 1800,
+    supplied: [{
+      symbol: 'PT-USDat-27AUG2026',
+      value: 30000,
+      apy: 0,
+      address: '0x1D69402390657308C91179aa184bF992908c1e08',
+    }],
+    borrowed: [{ symbol: 'USDC', value: 26000, apy: 6.9 }],
+  }, index, recomputePositionApy);
+  assert.ok(Math.abs(enriched.supplyApy - 7.83) < 0.2, 'Pendle enrichment must set PT supply APY from impliedApy');
+  assert.ok(enriched.netApy > -5, 'PT loop net APY must improve after Pendle fixed yield');
 }
 
 const {
