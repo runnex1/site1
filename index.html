@@ -5298,6 +5298,7 @@ body {
 .dash-event-filter { border:1px solid var(--border-mid); background:rgba(255,255,255,0.025); color:var(--t3); border-radius:999px; padding:3px 8px; font-family:var(--ff-mono); font-size:0.6rem; white-space:nowrap; cursor:pointer; }
 .dash-event-filter.active { color:var(--teal); border-color:rgba(0,212,170,0.32); background:rgba(0,212,170,0.08); }
 .dash-event-filter.muted { opacity:0.38; text-decoration:line-through; }
+.dash-event-filter.empty { opacity:0.45; }
 .dash-daily .daily-brief { background: transparent; border: none; padding: 0; margin: 0; }
 .dash-daily .daily-brief-header { padding: 0.85rem 1rem 0.55rem; border-bottom: 1px solid rgba(148,163,184,0.12); margin: 0; }
 .dash-daily .brief-news-section { padding: 0.7rem 0.85rem 0.85rem; margin: 0; }
@@ -15882,8 +15883,15 @@ function loopSupplyLegApyHtml(suppliedApr, manualKey = '', hasManual = false) {
     return `<button type="button" class="loop-summary-apy-edit" onclick="loopSetManualSupplyApy('${dashEsc(manualKey)}', ${Number(suppliedApr).toFixed(8)})" title="Set manual Supply APY from now onward">${text}</button>`;
 }
 
-function loopBorrowLegApyHtml(borrowedApr) {
-    return Number.isFinite(borrowedApr) ? `Borrow <strong>${borrowedApr.toFixed(2)}%</strong>` : '';
+function loopBorrowLegApyHtml(borrowedApr, borrowedPositions) {
+    if (!Number.isFinite(borrowedApr)) return '';
+    const leg = (borrowedPositions || []).find(item => Number(item?.merklApy) > 0.01);
+    if (leg && Number(leg.merklApy) > 0.01) {
+        const incentive = Number(leg.merklApy).toFixed(2);
+        const base = Number(leg.nativeApy ?? (borrowedApr + Number(leg.merklApy)));
+        return `Borrow <strong>${borrowedApr.toFixed(2)}%</strong> <span title="Base ${base.toFixed(2)}% − ${incentive}% Merkl borrow incentive">(−${incentive}% Merkl)</span>`;
+    }
+    return `Borrow <strong>${borrowedApr.toFixed(2)}%</strong>`;
 }
 
 function loopNetValueTooltipHtml(breakdown, fmtV) {
@@ -15899,9 +15907,9 @@ function loopNetValueTooltipHtml(breakdown, fmtV) {
     </div>`;
 }
 
-function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey = '', hasManualSupplyApy = false) {
+function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey = '', hasManualSupplyApy = false, borrowedPositions = []) {
     const supplyLine = loopSupplyLegApyHtml(suppliedApr, manualKey, hasManualSupplyApy);
-    const borrowLine = loopBorrowLegApyHtml(borrowedApr);
+    const borrowLine = loopBorrowLegApyHtml(borrowedApr, borrowedPositions);
     const fmt = fmtV || (v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     const netTip = loopNetValueTooltipHtml(netBreakdown, fmt);
     const netValHtml = netTip
@@ -16220,6 +16228,8 @@ function loopApiToDisplayPosition(pos) {
         symbol: item.symbol || '',
         priceUsd: Number(item.priceUsd ?? item.usdPrice ?? item.price) || null,
         liveApy: item.apy,
+        nativeApy: item.nativeApy,
+        merklApy: item.merklApy,
         sub: 'Borrowed',
     }));
     const totalApr = Number(pos.netApy);
@@ -16626,15 +16636,36 @@ function eventFilterLabel(kind) {
     return String(kind || 'Event').replace(/\bPM\b/g, 'Polymarket');
 }
 
+// Always show these monitor sections even when the 48h history has no rows yet.
+const DASHBOARD_EVENT_KINDS = [
+    'Alert Triggered',
+    'Order Filled',
+    'PM Price Move',
+    'PM Resolved',
+    'DeFi Health Warning',
+    'Position Expiring',
+    'Position Expired',
+    'Unlock Scheduled',
+    'Kobeissi BREAKING',
+];
+
 function renderDashboardEventFilters(items) {
     const el = document.getElementById('dashboardEventFilters');
     if (!el) return;
-    const kinds = [...new Set((items || []).map(e => e.kind).filter(Boolean))].sort();
-    const buttons = [{ kind: 'all', label: 'All' }, ...kinds.map(kind => ({ kind, label: eventFilterLabel(kind) }))];
+    const counts = {};
+    for (const e of items || []) {
+        if (e?.kind) counts[e.kind] = (counts[e.kind] || 0) + 1;
+    }
+    const kinds = [...new Set([...DASHBOARD_EVENT_KINDS, ...Object.keys(counts)])];
+    const buttons = [{ kind: 'all', label: 'All' }, ...kinds.map(kind => ({ kind, label: eventFilterLabel(kind), count: counts[kind] || 0 }))];
     el.innerHTML = buttons.map(b => {
         const active = _dashboardEventFilter === b.kind;
         const muted = b.kind !== 'all' && _dashboardMutedEventTypes.includes(b.kind);
-        return `<button class="dash-event-filter ${active ? 'active' : ''} ${muted ? 'muted' : ''}" onclick="setDashboardEventFilter(decodeURIComponent('${dashUri(b.kind)}'))" ondblclick="toggleDashboardEventMute(decodeURIComponent('${dashUri(b.kind)}'), event)" title="${muted ? 'Hidden. Click to show again.' : 'Double-click to temporarily hide this type.'}">${dashEsc(b.label)}</button>`;
+        const empty = b.kind !== 'all' && !b.count;
+        const title = muted
+            ? 'Hidden. Click to show again.'
+            : (empty ? 'No events in the last 48 hours.' : 'Double-click to temporarily hide this type.');
+        return `<button class="dash-event-filter ${active ? 'active' : ''} ${muted ? 'muted' : ''} ${empty ? 'empty' : ''}" onclick="setDashboardEventFilter(decodeURIComponent('${dashUri(b.kind)}'))" ondblclick="toggleDashboardEventMute(decodeURIComponent('${dashUri(b.kind)}'), event)" title="${title}">${dashEsc(b.label)}</button>`;
     }).join('');
 }
 
@@ -16803,7 +16834,10 @@ async function renderDashboardEventLog() {
         const visibleItems = allItems.filter(e => _dashboardEventFilter !== 'all' || !_dashboardMutedEventTypes.includes(e.kind));
         const sorted = _dashboardEventFilter === 'all' ? visibleItems : visibleItems.filter(e => e.kind === _dashboardEventFilter);
         if (!sorted.length) {
-            el.innerHTML = _evCard('All Clear', 'fill', 'var(--green)', 'rgba(34,197,94,0.1)', 'No alerts, warnings or fills detected. Monitors are quiet.', now);
+            const msg = _dashboardEventFilter === 'all'
+                ? 'No alerts, warnings or fills detected. Monitors are quiet.'
+                : `No ${eventFilterLabel(_dashboardEventFilter)} events in the last 48 hours.`;
+            el.innerHTML = _evCard('All Clear', 'fill', 'var(--green)', 'rgba(34,197,94,0.1)', msg, now);
             return;
         }
         el.innerHTML = sorted.map(it => _evCardFromItem(it)).join('');
@@ -16990,16 +17024,17 @@ async function renderDashboardEventLog() {
     // ── Merge fresh items into 48h server history ─────────────────────────────
     const history = await _evHistSave(freshItems);
 
-    if (!history.length) {
-        el.innerHTML = _evCard('All Clear', 'fill', 'var(--green)', 'rgba(34,197,94,0.1)', 'No alerts, warnings or fills detected. Monitors are quiet.', now);
-        return;
-    }
-
-    // Sort newest first, render all (panel scrolls)
     const allItems = _evDedupeItems(history).sort((a, b) => (b.ts || 0) - (a.ts || 0));
     renderDashboardEventFilters(allItems);
     const visibleItems = allItems.filter(e => _dashboardEventFilter !== 'all' || !_dashboardMutedEventTypes.includes(e.kind));
     const sorted = _dashboardEventFilter === 'all' ? visibleItems : visibleItems.filter(e => e.kind === _dashboardEventFilter);
+    if (!sorted.length) {
+        const msg = _dashboardEventFilter === 'all'
+            ? 'No alerts, warnings or fills detected. Monitors are quiet.'
+            : `No ${eventFilterLabel(_dashboardEventFilter)} events in the last 48 hours.`;
+        el.innerHTML = _evCard('All Clear', 'fill', 'var(--green)', 'rgba(34,197,94,0.1)', msg, now);
+        return;
+    }
     el.innerHTML = sorted.map(it => _evCardFromItem(it)).join('');
 }
 
@@ -19299,7 +19334,7 @@ function buildLoopCardHtml(loop, fmtV, { lendingOnly = false } = {}) {
     const netBreakdown = merklUnclaimed > 0.01
         ? { aave: aaveNetValue, merkl: merklUnclaimed, claimed: merklClaimed, total: displayNetValue }
         : null;
-    const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey, hasManualSupplyApy);
+    const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey, hasManualSupplyApy, borrowedPositions);
     const headApyLabel = lendingOnly ? 'Supply APY' : 'Net APY';
     const headStatsHtml = lendingOnly
         ? `<div class="loop-head-stats"><div class="loop-head-stat apy ${apyCls}"><div class="loop-head-stat-label">${headApyLabel}</div><div class="loop-head-stat-val">${apyText}</div></div></div>`

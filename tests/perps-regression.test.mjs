@@ -885,6 +885,9 @@ assert.match(loopRatesJs, /fluidPositionSource: 'fluid-official-api'/, 'Fluid po
 assert.doesNotMatch(loopRatesJs, /DEFINITIV_API_KEY/, 'Fluid loops must not require a Definitiv API key');
 assert.match(loopRatesJs, /api\.merkl\.xyz/, 'Loop APR must include Merkl reward campaigns');
 assert.match(loopRatesJs, /rewards\/active-opportunities/, 'Merkl enrichment must use active opportunities for live reward APR');
+assert.match(loopRatesJs, /\/v4\/opportunities\?chainId=/, 'Merkl borrow incentives must use global protocol opportunities');
+assert.match(loopRatesJs, /function applyMerklBorrowMeta\(/, 'Merkl borrow incentives must reduce effective borrow APY');
+assert.match(loopRatesJs, /vaultAddress/, 'Fluid vault positions must expose vault address for Merkl borrow matching');
 assert.match(loopRatesJs, /\/v4\/users\/\$\{wallet\}\/rewards\?chainId=/, 'Merkl net value must use user rewards endpoint for unclaimed balance');
 assert.match(loopRatesJs, /merklUnclaimedUsdFromBreakdown/, 'Merkl rewards must subtract claimed from amount per breakdown');
 assert.match(loopRatesJs, /merkl-user-rewards-unclaimed/, 'loop coverage must report unclaimed Merkl reward source');
@@ -1613,6 +1616,41 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   const claimedUsd = merklClaimedUsdFromReward(reward);
   assert.ok(rewardUsd > 104 && rewardUsd < 106, 'Merkl reward unclaimed must match amount minus claimed at reward level');
   assert.ok(claimedUsd > 594 && claimedUsd < 596, 'Merkl claimed must use reward.claimed, not gross amount');
+}
+
+{
+  const { buildMerklAprIndex, enrichPositionWithMerkl } = require('../lib/loop-rates.js');
+  const reUsdGhoVault = '0x767Dd0DeC9f68Bb85028708066337A758e06ad7b';
+  const gho = '0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f';
+  const index = buildMerklAprIndex([], [{
+    id: '17928738814123048543',
+    chainId: 1,
+    status: 'LIVE',
+    action: 'BORROW',
+    type: 'FLUIDVAULT_BORROW',
+    apr: 1.21,
+    name: 'Borrow GHO from Fluid reUSD/GHO Vault',
+    explorerAddress: reUsdGhoVault,
+    tokens: [{ address: gho, symbol: 'GHO' }],
+  }]);
+  const position = {
+    protocol: 'Fluid',
+    wallet: '0xabc',
+    chainId: 1,
+    vaultAddress: reUsdGhoVault,
+    totalSupplied: 100000,
+    totalBorrowed: 50000,
+    suppliedYieldUsd: 500000,
+    borrowedCostUsd: 250000,
+    supplyApy: 5,
+    borrowApy: 5,
+    supplied: [{ symbol: 'reUSD', value: 100000, apy: 5 }],
+    borrowed: [{ symbol: 'GHO', value: 50000, apy: 5, address: gho }],
+  };
+  enrichPositionWithMerkl(position, index);
+  assert.ok(Math.abs(position.borrowApy - 3.79) < 0.05, `Fluid GHO borrow APY must net Merkl incentive, got ${position.borrowApy}`);
+  assert.equal(position.borrowed[0].merklApy, 1.21, 'borrow leg must record Merkl incentive APR');
+  assert.equal(position.borrowed[0].nativeApy, 5, 'borrow leg must keep native APY before incentive');
 }
 
 {
