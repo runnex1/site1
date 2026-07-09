@@ -1651,6 +1651,7 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   assert.ok(Math.abs(position.borrowApy - 3.79) < 0.05, `Fluid GHO borrow APY must net Merkl incentive, got ${position.borrowApy}`);
   assert.equal(position.borrowed[0].merklApy, 1.21, 'borrow leg must record Merkl incentive APR');
   assert.equal(position.borrowed[0].nativeApy, 5, 'borrow leg must keep native APY before incentive');
+  assert.match(position.borrowed[0].merklCampaign || '', /reUSD\/GHO/i, 'borrow incentive must match the reUSD/GHO vault campaign');
 }
 
 {
