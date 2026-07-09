@@ -894,8 +894,9 @@ assert.match(loopRatesJs, /\/v4\/users\/\$\{wallet\}\/rewards\?chainId=/, 'Merkl
 assert.match(loopRatesJs, /merklUnclaimedUsdFromBreakdown/, 'Merkl rewards must subtract claimed from amount per breakdown');
 assert.match(loopRatesJs, /merkl-user-rewards-unclaimed/, 'loop coverage must report unclaimed Merkl reward source');
 assert.match(loopRatesJs, /fetchDefillamaYieldApyIndex/, 'yield-bearing collateral must use DeFiLlama APY when protocol supply APY is zero');
-assert.match(loopRatesJs, /function canonicalNativeYieldApy\(/, 'native yield tokens like reUSD must use a shared DeFiLlama APY across protocols');
-assert.match(loopRatesJs, /canonicalNativeYieldApy\(chainId, leg, index\)/, 'defillama leg lookup must prefer canonical native yield before address pools');
+assert.match(loopRatesJs, /function defillamaApyForLeg\(/, 'collateral legs must resolve DeFiLlama APY by symbol and address');
+assert.match(loopRatesJs, /defillamaLookupChainIds\(/, 'DeFiLlama lookup must fall back to mainnet for bridged collateral');
+assert.match(loopRatesJs, /function buildDefillamaChainNameToId\(/, 'DeFiLlama index must map all loop protocol chains');
 assert.match(loopRatesJs, /function shouldEnrichLegWithDefillama\(/, 'DeFiLlama enrichment must skip plain collateral like WBTC');
 assert.match(loopRatesJs, /const dlApy = percent\(dlApyRaw\)/, 'DeFiLlama APY must normalize to protocol percent units');
 assert.match(loopRatesJs, /require\('\.\/pendle'\)/, 'loop rates must integrate Pendle APY enrichment');
@@ -907,8 +908,8 @@ assert.match(indexHtml, /loopsShouldBlockStalePaint/, 'Loops must block stale im
 assert.match(indexHtml, /loopsSyncPlaceholderHtml/, 'Loops must show syncing placeholder');
 assert.match(indexHtml, /pendleHistoryPoints/, 'Pendle cards must use snapshot history like loop cards');
 assert.match(indexHtml, /pendleRowToDisplayPosition/, 'Pendle positions must reuse loop card renderer');
-assert.match(indexHtml, /vault-loop-api-state-v4/, 'loop API local cache must bust when Pendle data is added');
-assert.match(aaveProxyJs, /LOOP_RATES_CACHE_VERSION = 'v4'/, 'loop-rates server cache must bust for Pendle enrichment');
+assert.match(indexHtml, /vault-loop-api-state-v5/, 'loop API local cache must bust when DeFiLlama collateral enrichment changes');
+assert.match(aaveProxyJs, /LOOP_RATES_CACHE_VERSION = 'v5'/, 'loop-rates server cache must bust for DeFiLlama collateral enrichment');
 assert.match(indexHtml, /id="loopsLendingSection"/, 'Loops tab must render a separate lending-only section');
 assert.match(indexHtml, /function loopImportedLendingPositions\(/, 'Loops must include imported supply-only lending positions');
 assert.match(indexHtml, /function buildLoopCardHtml\(/, 'Loops must share one card renderer for loops and lending rows');
@@ -1099,6 +1100,77 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   enrichPositionWithDefillamaYield(position, index);
   assert.equal(position.supplied[0].apy, 0, 'WBTC collateral APY must stay at zero after enrichment');
   assert.ok(!position.defillamaBoost, 'WBTC/USDe loop must not be marked defillama-boosted from collateral');
+}
+
+{
+  const {
+    enrichPositionWithDefillamaYield,
+    shouldEnrichLegWithDefillama,
+    defillamaApyForLeg,
+    fetchDefillamaYieldApyIndex,
+  } = require('../lib/loop-rates.js');
+  const index = {
+    bySymbolChain: new Map([['1:STCUSD', { apy: 4.79601, score: 1004.79, project: 'cap' }]]),
+    byAddress: new Map(),
+  };
+  const stcLeg = {
+    symbol: 'stcUSD',
+    apy: 0,
+    address: '0x88887bE419578051FF9F4eb6C858A951921D8888',
+    isCollateral: true,
+    value: 100000,
+  };
+  assert.equal(shouldEnrichLegWithDefillama(4326, stcLeg, index), true, 'stcUSD MegaETH collateral must be eligible for DeFiLlama');
+  assert.ok(defillamaApyForLeg(4326, stcLeg, index) > 4, 'stcUSD must fall back to mainnet DeFiLlama APY');
+  const stcPos = {
+    chainId: 4326,
+    totalSupplied: 100000,
+    totalBorrowed: 50000,
+    supplied: [stcLeg],
+    borrowed: [{ symbol: 'USDm', value: 50000, apy: 2.5 }],
+    suppliedYieldUsd: 0,
+    borrowedCostUsd: 1250,
+    supplyApy: 0,
+    borrowApy: 2.5,
+    netApy: -1.25,
+  };
+  enrichPositionWithDefillamaYield(stcPos, index);
+  assert.ok(stcPos.defillamaBoost, 'stcUSD loop must be marked defillama-boosted');
+  assert.ok(stcPos.supplyApy > 4, 'stcUSD loop supply APY must use DeFiLlama yield');
+
+  const usd3Leg = {
+    symbol: 'USD3',
+    apy: 0,
+    role: 'collateral',
+    value: 5000,
+    address: '0x056B269Eb1f75477a8666ae8C7fE01b64dD55eCc',
+  };
+  const usd3Index = {
+    bySymbolChain: new Map([['1:USD3', { apy: 6.36, score: 1006.36, project: '3jane-lending' }]]),
+    byAddress: new Map(),
+  };
+  assert.equal(shouldEnrichLegWithDefillama(1, usd3Leg, usd3Index), true, 'USD3 Morpho collateral must be eligible for DeFiLlama');
+  const usd3Pos = {
+    chainId: 1,
+    totalSupplied: 5000,
+    totalBorrowed: 4000,
+    supplied: [usd3Leg],
+    borrowed: [{ symbol: 'USDC', value: 4000, apy: 8 }],
+    suppliedYieldUsd: 0,
+    borrowedCostUsd: 320,
+    supplyApy: 0,
+    borrowApy: 8,
+    netApy: -5,
+  };
+  enrichPositionWithDefillamaYield(usd3Pos, usd3Index);
+  assert.ok(usd3Pos.defillamaBoost, 'USD3 Morpho collateral must use DeFiLlama APY');
+  assert.ok(usd3Pos.supplyApy > 6, 'USD3 loop supply APY must reflect DeFiLlama yield');
+
+  const liveIndex = await fetchDefillamaYieldApyIndex();
+  assert.ok(!liveIndex.error, 'live DeFiLlama index must fetch');
+  assert.ok(liveIndex.bySymbolChain.get('4326:USDM')?.apy > 0.01, 'MegaETH pools must be indexed');
+  assert.ok(liveIndex.bySymbolChain.get('143:AUSD')?.apy > 0.01, 'Monad pools must be indexed');
+  assert.ok(liveIndex.bySymbolChain.get('1:STCUSD')?.apy > 0.01, 'stcUSD native yield must be indexed on mainnet');
 }
 
 {
