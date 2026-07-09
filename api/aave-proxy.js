@@ -27,7 +27,7 @@ const responseCache = new Map();
 const PERPS_DASHBOARD_CACHE_MS = 5 * 60 * 1000;
 const LOOP_RATES_CACHE_MS = 15 * 60 * 1000;
 const LOOP_RATES_KV_CACHE_MS = 15 * 60 * 1000;
-const LOOP_RATES_CACHE_VERSION = 'v2';
+const LOOP_RATES_CACHE_VERSION = 'v3';
 
 function isWallet(v) {
   return typeof v === 'string' && /^0x[a-fA-F0-9]{40}$/.test(v.trim());

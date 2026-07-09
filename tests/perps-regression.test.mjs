@@ -888,8 +888,8 @@ assert.match(loopRatesJs, /rewards\/active-opportunities/, 'Merkl enrichment mus
 assert.match(loopRatesJs, /\/v4\/opportunities\?chainId=/, 'Merkl borrow incentives must use global protocol opportunities');
 assert.match(loopRatesJs, /function applyMerklBorrowMeta\(/, 'Merkl borrow incentives must reduce effective borrow APY');
 assert.match(loopRatesJs, /vaultAddress/, 'Fluid vault positions must expose vault address for Merkl borrow matching');
-assert.match(loopRatesJs, /function isMerklExplorerRef\(/, 'Merkl borrow matching must accept Morpho market ids');
-assert.match(loopRatesJs, /positionHasMerklExplorerRef/, 'shared borrow assets must not inherit unrelated Merkl campaigns');
+assert.match(loopRatesJs, /function isMerklBorrowExplorerRef\(/, 'borrow Merkl campaigns must not index debt-token explorer addresses');
+assert.match(loopRatesJs, /isMerklBorrowExplorerRef\(opp, explorer\)/, 'shared debt-token explorer refs must be excluded from borrow Merkl index');
 assert.match(loopRatesJs, /\/v4\/users\/\$\{wallet\}\/rewards\?chainId=/, 'Merkl net value must use user rewards endpoint for unclaimed balance');
 assert.match(loopRatesJs, /merklUnclaimedUsdFromBreakdown/, 'Merkl rewards must subtract claimed from amount per breakdown');
 assert.match(loopRatesJs, /merkl-user-rewards-unclaimed/, 'loop coverage must report unclaimed Merkl reward source');
@@ -1688,6 +1688,36 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   enrichPositionWithMerkl(position, index);
   assert.equal(position.borrowed[0].merklApy, undefined, 'Morpho markets must not inherit unrelated USDC borrow campaigns');
   assert.ok(Math.abs(position.borrowApy - 6.99) < 0.01, `borrow APY must stay native without a market campaign, got ${position.borrowApy}`);
+}
+
+{
+  const { buildMerklAprIndex, enrichPositionWithMerkl } = require('../lib/loop-rates.js');
+  const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+  const index = buildMerklAprIndex([], [{
+    id: 'spx-usdc-borrow',
+    chainId: 1,
+    status: 'LIVE',
+    action: 'BORROW',
+    type: 'MORPHO',
+    apr: 25,
+    name: 'Borrow USDC on SPX/USDC 62.5%',
+    explorerAddress: usdc,
+    tokens: [{ address: usdc, symbol: 'USDC' }],
+  }]);
+  const borrowBucket = index.borrow.byExplorer;
+  assert.equal(borrowBucket.get(`*:1:${usdc}`), undefined, 'USDC-as-explorer borrow campaigns must not enter the borrow index');
+  const position = {
+    protocol: 'Unknown',
+    wallet: '0xabc',
+    chainId: 1,
+    totalSupplied: 1000,
+    totalBorrowed: 500,
+    borrowedCostUsd: 500 * 5,
+    borrowApy: 5,
+    borrowed: [{ symbol: 'USDC', value: 500, apy: 5, address: usdc }],
+  };
+  enrichPositionWithMerkl(position, index);
+  assert.equal(position.borrowed[0].merklApy, undefined, 'debt-token lookup must never attach borrow Merkl without a market/vault ref');
 }
 
 {
