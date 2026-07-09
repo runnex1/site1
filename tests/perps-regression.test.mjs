@@ -903,6 +903,10 @@ assert.match(loopRatesJs, /enrichPositionWithPendle/, 'PT loops must use Pendle 
 assert.match(loopRatesJs, /pendleSource: 'api-v2\.pendle\.finance\/core'/, 'loop coverage must report Pendle source');
 assert.match(indexHtml, /id="loopsPendleSection"/, 'Loops tab must render a Pendle positions section');
 assert.match(indexHtml, /function renderPendleSection\(/, 'Loops must render Pendle wallet positions');
+assert.match(indexHtml, /loopsShouldBlockStalePaint/, 'Loops must block stale import/cache paint while syncing');
+assert.match(indexHtml, /loopsSyncPlaceholderHtml/, 'Loops must show syncing placeholder');
+assert.match(indexHtml, /pendleHistoryPoints/, 'Pendle cards must use snapshot history like loop cards');
+assert.match(indexHtml, /pendleRowToDisplayPosition/, 'Pendle positions must reuse loop card renderer');
 assert.match(indexHtml, /vault-loop-api-state-v4/, 'loop API local cache must bust when Pendle data is added');
 assert.match(aaveProxyJs, /LOOP_RATES_CACHE_VERSION = 'v4'/, 'loop-rates server cache must bust for Pendle enrichment');
 assert.match(indexHtml, /id="loopsLendingSection"/, 'Loops tab must render a separate lending-only section');

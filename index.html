@@ -6472,23 +6472,19 @@ body[data-active-tab="prediction"] #predictionTab .section-title,
 .loops-pendle-panel .loops-panel-title { color:var(--t1); }
 .loops-pendle-note { color:var(--t3); font-size:0.62rem; letter-spacing:0.04em; text-transform:uppercase; }
 .loops-pendle-panel[hidden] { display:none !important; }
-.loops-pendle-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; padding:12px; align-items:start; }
-.pendle-pos-card { border:1px solid rgba(167,139,250,0.18); border-radius:7px; background:linear-gradient(180deg,rgba(12,10,24,.98),rgba(8,6,16,.99)); padding:0.85rem 1rem; }
-.pendle-pos-head { display:flex; align-items:flex-start; justify-content:space-between; gap:0.75rem; margin-bottom:0.65rem; }
-.pendle-pos-title { font-family:var(--ff-display); font-size:0.82rem; font-weight:850; letter-spacing:0.06em; text-transform:uppercase; color:var(--t1); }
-.pendle-pos-sub { margin-top:0.2rem; color:var(--t3); font-family:var(--ff-mono); font-size:0.58rem; letter-spacing:0.04em; text-transform:uppercase; }
-.pendle-pos-apy { font-family:var(--ff-mono); font-size:1rem; font-weight:850; color:#c4b5fd; white-space:nowrap; }
-.pendle-pos-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0.55rem; }
-.pendle-pos-metric { min-width:0; }
-.pendle-pos-metric-label { color:var(--t3); font-family:var(--ff-mono); font-size:0.54rem; letter-spacing:0.08em; text-transform:uppercase; }
-.pendle-pos-metric-val { margin-top:0.15rem; color:var(--t1); font-family:var(--ff-mono); font-size:0.72rem; font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.pendle-pos-tag { display:inline-flex; align-items:center; gap:0.25rem; padding:0.12rem 0.42rem; border-radius:4px; border:1px solid rgba(167,139,250,0.24); background:rgba(167,139,250,0.08); color:#c4b5fd; font-family:var(--ff-mono); font-size:0.54rem; font-weight:750; letter-spacing:0.06em; text-transform:uppercase; }
-.pendle-pos-tag.closed { border-color:rgba(148,163,184,0.18); background:rgba(148,163,184,0.06); color:var(--t3); }
-.pendle-pos-wallet { margin-top:0.55rem; color:var(--t3); font-family:var(--ff-mono); font-size:0.58rem; }
-@media (max-width: 900px) {
-  .loops-pendle-grid { grid-template-columns:1fr; }
-  .pendle-pos-metrics { grid-template-columns:1fr 1fr; }
+.loops-pendle-panel .loop-card { border-color:rgba(167,139,250,0.18); }
+.loops-pendle-panel .loop-card:hover { border-color:rgba(167,139,250,0.3); }
+.loops-sync-placeholder {
+  grid-column:1 / -1; min-height:220px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0.65rem;
+  padding:2rem 1rem; border:1px dashed rgba(95,205,190,0.22); border-radius:8px; background:rgba(7,18,26,0.45);
+  color:var(--t2); font-family:var(--ff-mono); font-size:0.78rem; text-align:center;
 }
+.loops-sync-placeholder strong { color:var(--teal); font-family:var(--ff-display); font-size:0.92rem; letter-spacing:0.08em; text-transform:uppercase; }
+.loops-sync-spinner {
+  width:28px; height:28px; border-radius:50%; border:2px solid rgba(95,205,190,0.18); border-top-color:var(--teal);
+  animation:loopsSyncSpin 0.8s linear infinite;
+}
+@keyframes loopsSyncSpin { to { transform:rotate(360deg); } }
 .loops-panel-head { min-height:56px; display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:0.86rem 1.08rem; border-bottom:1px solid rgba(148,163,184,0.13); background:rgba(7,18,26,0.72); }
 .loops-panel-title { display:flex; align-items:baseline; gap:0.72rem; font-family:var(--ff-display); font-size:1.02rem; line-height:1; font-weight:850; letter-spacing:0.1em; text-transform:uppercase; color:var(--t1); }
 .loops-count { padding:0.18rem 0.56rem; border:1px solid rgba(56,189,248,0.24); border-radius:5px; background:rgba(56,189,248,0.08); color:var(--sky); font-family:var(--ff-mono); font-size:0.66rem; font-weight:850; letter-spacing:0; text-transform:none; }
@@ -8553,7 +8549,7 @@ body[data-active-tab="loops"] .page-content,
                 <div class="loops-updated loops-pendle-note" id="loopsPendleUpdated">wallet PT · YT · LP</div>
               </div>
             </div>
-            <div id="loopsPendleGrid" class="loops-pendle-grid"></div>
+            <div id="loopsPendleGrid" class="loops-grid"></div>
           </div>
         </div>
       </div>
@@ -11711,8 +11707,8 @@ function switchTab(tab, opts = {}) {
         (async () => {
             try {
                 await loopsEnsureSnapshotsHydrated({ force: true });
-                renderLoops();
                 maybeAutoSyncLoopPositions();
+                renderLoops();
             } catch (e) { console.error('[Loops tab]', e); }
         })();
     }
@@ -15303,6 +15299,7 @@ function loopsMergeSnapshotBucketRecords(prev, incoming) {
         fetchedAt: Math.max(prevAt, inAt),
         wallets,
         positions: loopsMergeSnapshotBucketPositions(prev.positions, incoming.positions),
+        pendlePositions: loopsMergeSnapshotBucketPositions(prev.pendlePositions, incoming.pendlePositions),
     };
 }
 
@@ -15376,18 +15373,68 @@ function loopMapSnapshotPosition(p) {
     };
 }
 
+function pendlePositionHistoryKey(row) {
+    const wallet = String(row?.wallet || '').trim().toLowerCase();
+    const chainId = String(row?.chainId ?? '');
+    const marketId = String(row?.marketId || row?.marketAddress || '').trim().toLowerCase();
+    const legType = String(row?.legType || '').trim().toUpperCase();
+    return `pendle:${wallet}:${chainId}:${marketId}:${legType}`;
+}
+
+function loopMapPendleSnapshotPosition(row, wallet) {
+    const valueUsd = Number(row?.valueUsd || 0);
+    const impliedApy = row?.impliedApy == null ? null : Number(row.impliedApy);
+    const owner = row?.wallet || wallet;
+    const snapshot = {
+        wallet: owner,
+        chainId: row?.chainId,
+        marketId: row?.marketId,
+        marketAddress: row?.marketAddress,
+        legType: row?.legType,
+        symbol: row?.symbol,
+        marketName: row?.marketName,
+        valueUsd,
+        impliedApy,
+        open: row?.open !== false,
+    };
+    const id = pendlePositionHistoryKey(snapshot);
+    return {
+        id,
+        historyKey: id,
+        protocol: 'Pendle',
+        marketName: row?.marketName || row?.symbol || 'Pendle',
+        wallet: owner,
+        chainId: row?.chainId,
+        legType: row?.legType,
+        symbol: row?.symbol,
+        netValue: valueUsd,
+        economicNetValue: valueUsd,
+        totalSupplied: valueUsd,
+        totalBorrowed: 0,
+        supplyApy: impliedApy,
+        netApy: impliedApy,
+        lendingOnly: true,
+        open: row?.open !== false,
+    };
+}
+
 function loopsAppendSnapshotFromApiData(data) {
     const fetchedAt = Date.now();
     const key = loopsSnapshotBucketKey(fetchedAt);
     const positions = (data?.positions || [])
         .filter(loopSnapshotEligiblePosition)
         .map(loopMapSnapshotPosition);
-    if (!positions.length) return false;
+    const pendlePositions = (data?.pendle?.wallets || [])
+        .flatMap(w => (w.positions || [])
+            .filter(p => p.open !== false && (Number(p.valueUsd) > 0.01 || Number(p.balanceUnits) > 0))
+            .map(p => loopMapPendleSnapshotPosition(p, w.wallet)));
+    if (!positions.length && !pendlePositions.length) return false;
     const record = {
         bucket: key,
         fetchedAt,
         wallets: Array.isArray(data?.wallets) ? data.wallets : [],
         positions,
+        pendlePositions,
     };
     loopSnapshotsStore[key] = loopsMergeSnapshotBucketRecords(loopSnapshotsStore[key], record);
     const keys = Object.keys(loopSnapshotsStore).sort();
@@ -15570,6 +15617,41 @@ function loopHistoryPoints(positionOrId) {
         })
         .filter(p => p && p.ts && Number.isFinite(p.netValue))
         .sort((a, b) => a.ts - b.ts);
+}
+
+function pendleHistoryPoints(raw) {
+    const key = String(raw?.historyKey || raw?.id || pendlePositionHistoryKey(raw) || '').trim().toLowerCase();
+    if (!key) return [];
+    return Object.values(loopSnapshotsStore || {})
+        .map(snap => {
+            const pos = (snap.pendlePositions || []).find(p => {
+                const pk = String(p?.historyKey || p?.id || pendlePositionHistoryKey(p) || '').trim().toLowerCase();
+                return pk && pk === key;
+            });
+            if (!pos) return null;
+            const positionNetValue = Number(pos.netValue || pos.totalSupplied || 0);
+            return {
+                ts: Number(snap.fetchedAt) || 0,
+                netValue: Number(pos.economicNetValue ?? positionNetValue),
+                positionNetValue,
+                merklRewardsUsd: 0,
+                netApy: pos.netApy == null ? null : Number(pos.netApy),
+                supplyApy: pos.supplyApy == null ? null : Number(pos.supplyApy),
+                borrowApy: null,
+                totalSupplied: Number(pos.totalSupplied || positionNetValue || 0),
+                totalBorrowed: 0,
+                suppliedLegs: [],
+                borrowedLegs: [],
+            };
+        })
+        .filter(p => p && p.ts && Number.isFinite(p.netValue))
+        .sort((a, b) => a.ts - b.ts);
+}
+
+function loopCardHistoryPoints(loop) {
+    if (!loop?.live || !loop?.raw) return [];
+    if (loop.pendle || String(loop.raw.protocol || '').toLowerCase() === 'pendle') return pendleHistoryPoints(loop.raw);
+    return loopHistoryPoints(loop.raw);
 }
 
 const LOOP_SNAPSHOT_MS_PER_DAY = 86400000;
@@ -15821,6 +15903,7 @@ function loopCardOfficialUrl(loop) {
         fluid: 'https://fluid.io',
         jupiter: 'https://jup.ag/lend',
         kamino: 'https://app.kamino.finance',
+        pendle: 'https://app.pendle.finance/trade/markets',
     };
     return homes[name] || '';
 }
@@ -16390,6 +16473,7 @@ async function syncLoopApiPositions({ silent = false, persistSnapshot = !silent 
         return;
     }
     loopApiState.loading = true;
+    renderLoops();
     if (btn) { btn.disabled = true; btn.textContent = 'Syncing...'; }
     setTextSafe('loopsUpdated', 'syncing live APIs...');
     try {
@@ -16447,6 +16531,33 @@ function startLoopSnapshotScheduler() {
         if (!loopYieldWalletAddresses().length || loopApiState.loading) return;
         syncLoopApiPositions({ silent: true, persistSnapshot: true });
     }, LOOP_SNAPSHOT_INTERVAL_MS);
+}
+
+function loopsShouldBlockStalePaint() {
+    return !!loopApiState.loading && loopYieldWalletAddresses().length > 0;
+}
+
+function loopsSyncPlaceholderHtml(message = 'Syncing live positions…') {
+    return `<div class="loops-sync-placeholder"><div class="loops-sync-spinner" aria-hidden="true"></div><strong>${dashEsc(message)}</strong><span>Fetching loops, lending, and Pendle data from live APIs</span></div>`;
+}
+
+function loopsRenderSyncPlaceholder({ grid, lendingGrid, lendingSection, countEl, lendingCountEl, pendleSection, pendleGrid, pendleCountEl, setText }) {
+    if (countEl) countEl.textContent = '—';
+    if (lendingCountEl) lendingCountEl.textContent = '—';
+    if (pendleCountEl) pendleCountEl.textContent = '—';
+    setText('loopsKpiNet', '—');
+    setText('loopsKpiActive', 'syncing…');
+    setText('loopsKpiSupplied', '—');
+    setText('loopsKpiBorrowed', '—');
+    setText('loopsKpiApy', '—');
+    setText('loopsKpiHealth', '—');
+    setText('loopsKpiHealthSub', 'Waiting for live API');
+    setText('loopsUpdated', 'syncing live positions…');
+    if (grid) grid.innerHTML = loopsSyncPlaceholderHtml();
+    if (lendingSection) lendingSection.hidden = false;
+    if (lendingGrid) lendingGrid.innerHTML = loopsSyncPlaceholderHtml();
+    if (pendleSection) pendleSection.hidden = false;
+    if (pendleGrid) pendleGrid.innerHTML = loopsSyncPlaceholderHtml();
 }
 
 function maybeAutoSyncLoopPositions() {
@@ -19337,7 +19448,7 @@ function buildLoopCardHtml(loop, fmtV, { lendingOnly = false } = {}) {
     }
     const apyCls = Number.isFinite(totalApr) ? (totalApr > 0 ? '' : totalApr < 0 ? 'neg' : 'neu') : 'neu';
     const apyText = Number.isFinite(totalApr) ? totalApr.toFixed(2) + '%' : '-';
-    const rawHistoryPoints = loop.live && loop.raw ? loopHistoryPoints(loop.raw) : [];
+    const rawHistoryPoints = loop.live && loop.raw ? loopCardHistoryPoints(loop) : [];
     const displayNetValue = loopEffectiveNetValue(loop);
     const liveEndValue = loop.live && loop.raw ? displayNetValue : null;
     const liveEndTs = loopApiState.updatedAt || Date.now();
@@ -19411,37 +19522,83 @@ function loopPendleExpiryLabel(expiry) {
     return `${date} · ${days}d`;
 }
 
-function buildPendlePositionCardHtml(row, fmtV) {
-    const apy = Number(row.impliedApy);
-    const apyText = Number.isFinite(apy) ? apy.toFixed(2) + '%' : '-';
-    const valueText = row.valueUsd > 0.01 ? fmtV(row.valueUsd) : (row.balanceUnits > 0 ? row.balanceUnits.toLocaleString('en-US', { maximumFractionDigits: 4 }) + ' ' + row.legType : '-');
-    const statusTag = row.open
-        ? `<span class="pendle-pos-tag">Open</span>`
-        : `<span class="pendle-pos-tag closed">Closed</span>`;
-    return `<div class="pendle-pos-card">
-        <div class="pendle-pos-head">
-            <div>
-                <div class="pendle-pos-title">${dashEsc(row.symbol || row.legType)}</div>
-                <div class="pendle-pos-sub">${dashEsc(row.marketName || 'Pendle')} · ${dashEsc(row.chainName || row.chainId)} · ${dashEsc(row.legType)}</div>
-            </div>
-            <div class="pendle-pos-apy">${apyText}</div>
-        </div>
-        <div class="pendle-pos-metrics">
-            <div class="pendle-pos-metric"><div class="pendle-pos-metric-label">Value</div><div class="pendle-pos-metric-val">${dashEsc(valueText)}</div></div>
-            <div class="pendle-pos-metric"><div class="pendle-pos-metric-label">Expiry</div><div class="pendle-pos-metric-val">${dashEsc(loopPendleExpiryLabel(row.expiry))}</div></div>
-            <div class="pendle-pos-metric"><div class="pendle-pos-metric-label">Status</div><div class="pendle-pos-metric-val">${statusTag}</div></div>
-        </div>
-        <div class="pendle-pos-wallet">${dashEsc(loopApiShortWallet(row.wallet))} · ${dashEsc(row.protocol || 'Pendle')}</div>
-    </div>`;
+function pendleRowToDisplayPosition(row) {
+    const valueUsd = Number(row.valueUsd || 0);
+    const impliedApy = row.impliedApy == null ? null : Number(row.impliedApy);
+    const legSymbol = row.symbol || `${row.legType || 'PT'}-${row.marketName || 'Pendle'}`;
+    const raw = {
+        id: pendlePositionHistoryKey(row),
+        historyKey: pendlePositionHistoryKey(row),
+        protocol: 'Pendle',
+        marketName: `${row.marketName || 'Pendle'} · ${row.legType || 'PT'}`,
+        wallet: row.wallet,
+        chainId: row.chainId,
+        chainName: row.chainName,
+        totalSupplied: valueUsd,
+        totalBorrowed: 0,
+        netValue: valueUsd,
+        economicNetValue: valueUsd,
+        supplyApy: impliedApy,
+        netApy: impliedApy,
+        supplied: [{
+            symbol: legSymbol,
+            value: valueUsd,
+            amount: Number(row.balanceUnits || 0) || null,
+            apy: impliedApy,
+            pendleApy: /PT/i.test(String(row.legType || '')) ? impliedApy : null,
+            role: 'supply',
+        }],
+        borrowed: [],
+        lendingOnly: true,
+        pendleLegType: row.legType,
+        pendleExpiry: row.expiry,
+        officialUrl: 'https://app.pendle.finance/trade/markets',
+    };
+    return {
+        p: { name: 'Pendle' },
+        sectionLabel: row.marketName || 'Pendle',
+        netValue: valueUsd,
+        economicNetValue: valueUsd,
+        totalSupplied: valueUsd,
+        totalBorrowed: 0,
+        suppliedPositions: [{
+            pool: legSymbol,
+            tokens: Number(row.balanceUnits) > 0 ? [`${loopFormatTokenAmount(row.balanceUnits)} ${legSymbol}`] : [legSymbol],
+            amount: Number(row.balanceUnits || 0) || null,
+            value: valueUsd,
+            symbol: legSymbol,
+            liveApy: impliedApy,
+            pendleApy: /PT/i.test(String(row.legType || '')) ? impliedApy : null,
+            sub: 'Supplied',
+        }],
+        borrowedPositions: [],
+        health: null,
+        apy: {
+            totalApr: impliedApy,
+            suppliedApr: impliedApy,
+            borrowedApr: null,
+        },
+        network: [row.chainName || row.chainId, 'Pendle API', loopApiShortWallet(row.wallet)].filter(Boolean).join(' - '),
+        live: true,
+        pendle: true,
+        raw,
+    };
 }
 
-function renderPendleSection(fmtV) {
+function renderPendleSection(fmtV, { loading = false } = {}) {
     const section = document.getElementById('loopsPendleSection');
     const grid = document.getElementById('loopsPendleGrid');
     const countEl = document.getElementById('loopsPendleCount');
     const updatedEl = document.getElementById('loopsPendleUpdated');
     if (!section || !grid) return;
     const fmt = fmtV || (v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    if (loading || loopsShouldBlockStalePaint()) {
+        section.hidden = false;
+        if (countEl) countEl.textContent = '—';
+        if (updatedEl) updatedEl.textContent = 'syncing…';
+        grid.innerHTML = loopsSyncPlaceholderHtml();
+        return;
+    }
     const pendle = loopApiState.pendle;
     const rows = (pendle?.wallets || []).flatMap(w => (w.positions || []).map(p => ({ ...p, wallet: p.wallet || w.wallet })));
     const openRows = rows.filter(r => r.open);
@@ -19466,15 +19623,20 @@ function renderPendleSection(fmtV) {
     const stamp = pendle?.updatedAt ? new Date(pendle.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
     const marketHint = pendle?.marketCount ? ` · ${pendle.marketCount} markets` : '';
     if (updatedEl) updatedEl.textContent = (stamp ? `synced ${stamp}` : 'Pendle API') + marketHint + (openRows.length ? '' : ' · showing closed');
-    grid.innerHTML = displayRows.map(row => buildPendlePositionCardHtml(row, fmt)).join('');
+    grid.innerHTML = displayRows
+        .map(row => buildLoopCardHtml(pendleRowToDisplayPosition(row), fmt, { lendingOnly: true }))
+        .join('');
 }
 
 function renderLoops() {
     const grid = document.getElementById('loopsGrid');
     const lendingGrid = document.getElementById('loopsLendingGrid');
     const lendingSection = document.getElementById('loopsLendingSection');
+    const pendleSection = document.getElementById('loopsPendleSection');
+    const pendleGrid = document.getElementById('loopsPendleGrid');
     const countEl = document.getElementById('loopsCount');
     const lendingCountEl = document.getElementById('loopsLendingCount');
+    const pendleCountEl = document.getElementById('loopsPendleCount');
     if (!grid) return;
     if (!_loopSnapshotsHydrated) loopsLoadSnapshotsLocal();
     else if (!Object.keys(loopSnapshotsStore || {}).length) loopsLoadSnapshotsLocal();
@@ -19485,6 +19647,13 @@ function renderLoops() {
 
     const fmtV = v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    if (loopsShouldBlockStalePaint()) {
+        loopsRenderSyncPlaceholder({
+            grid, lendingGrid, lendingSection, countEl, lendingCountEl,
+            pendleSection, pendleGrid, pendleCountEl, setText,
+        });
+        return;
+    }
     const setHealthClass = (el, cls) => {
         if (!el) return;
         el.classList.remove('safe', 'warn', 'danger');
