@@ -888,6 +888,8 @@ assert.match(loopRatesJs, /rewards\/active-opportunities/, 'Merkl enrichment mus
 assert.match(loopRatesJs, /\/v4\/opportunities\?chainId=/, 'Merkl borrow incentives must use global protocol opportunities');
 assert.match(loopRatesJs, /function applyMerklBorrowMeta\(/, 'Merkl borrow incentives must reduce effective borrow APY');
 assert.match(loopRatesJs, /vaultAddress/, 'Fluid vault positions must expose vault address for Merkl borrow matching');
+assert.match(loopRatesJs, /function isMerklExplorerRef\(/, 'Merkl borrow matching must accept Morpho market ids');
+assert.match(loopRatesJs, /positionHasMerklExplorerRef/, 'shared borrow assets must not inherit unrelated Merkl campaigns');
 assert.match(loopRatesJs, /\/v4\/users\/\$\{wallet\}\/rewards\?chainId=/, 'Merkl net value must use user rewards endpoint for unclaimed balance');
 assert.match(loopRatesJs, /merklUnclaimedUsdFromBreakdown/, 'Merkl rewards must subtract claimed from amount per breakdown');
 assert.match(loopRatesJs, /merkl-user-rewards-unclaimed/, 'loop coverage must report unclaimed Merkl reward source');
@@ -1652,6 +1654,40 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   assert.equal(position.borrowed[0].merklApy, 1.21, 'borrow leg must record Merkl incentive APR');
   assert.equal(position.borrowed[0].nativeApy, 5, 'borrow leg must keep native APY before incentive');
   assert.match(position.borrowed[0].merklCampaign || '', /reUSD\/GHO/i, 'borrow incentive must match the reUSD/GHO vault campaign');
+}
+
+{
+  const { buildMerklAprIndex, enrichPositionWithMerkl } = require('../lib/loop-rates.js');
+  const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48';
+  const morphoMarket = '0x69ef7fd17b42cd7df6d885aee1b11380837afbc1664b25587041cf193b31617b';
+  const index = buildMerklAprIndex([], [{
+    id: 'spx-usdc-borrow',
+    chainId: 1,
+    status: 'LIVE',
+    action: 'BORROW',
+    type: 'MORPHO',
+    apr: 25,
+    name: 'Borrow USDC on SPX/USDC 62.5%',
+    explorerAddress: usdc,
+    tokens: [{ address: usdc, symbol: 'USDC' }],
+  }]);
+  const position = {
+    protocol: 'Morpho',
+    wallet: '0xabc',
+    chainId: 1,
+    marketId: morphoMarket,
+    totalSupplied: 30000,
+    totalBorrowed: 26000,
+    suppliedYieldUsd: 0,
+    borrowedCostUsd: 26000 * 6.99,
+    supplyApy: 0,
+    borrowApy: 6.99,
+    supplied: [{ symbol: 'PT-USDat-27AUG2026', value: 30000, apy: 0, address: '0x1D69402390657308C91179aa184bF992908c1e08' }],
+    borrowed: [{ symbol: 'USDC', value: 26000, apy: 6.99, address: usdc }],
+  };
+  enrichPositionWithMerkl(position, index);
+  assert.equal(position.borrowed[0].merklApy, undefined, 'Morpho markets must not inherit unrelated USDC borrow campaigns');
+  assert.ok(Math.abs(position.borrowApy - 6.99) < 0.01, `borrow APY must stay native without a market campaign, got ${position.borrowApy}`);
 }
 
 {
