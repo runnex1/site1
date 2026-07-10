@@ -948,6 +948,8 @@ assert.match(loopSnapshotsJs, /isSolanaWallet/, 'loop snapshots must accept Sola
 assert.match(indexHtml, /loopsPurgeUsdeUsdmSnapshotHistory/, 'loops tab must purge inflated USDe/USDm history from local snapshots');
 assert.match(loopSnapshotsJs, /LOOP_SNAPSHOT_BUCKET_HOURS = 2/, 'loop snapshots must bucket history on 2h intervals');
 assert.match(loopSnapshotsJs, /function appendLoopSnapshotStore\(store, data/, 'loop snapshots must append server-side history');
+assert.match(loopSnapshotsJs, /pendleSnapshotPositionsFromRates/, 'loop snapshots must persist Pendle wallet positions');
+assert.match(loopSnapshotsJs, /pendlePositions: mergeLoopSnapshotBucketPositions/, 'loop snapshot merge must union pendle positions');
 assert.match(loopSnapshotsJs, /function loopPositionHistoryKey\(/, 'loop snapshots must use stable history keys across Fluid NFT id changes');
 assert.match(loopSnapshotsJs, /fluid-vault:/, 'Fluid loop history keys must include vault NFT id');
 assert.match(loopRatesJs, /function fluidVaultPositionId\(/, 'Fluid vault positions must use unique ids per NFT');
@@ -1549,6 +1551,66 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
     unionStore,
   );
   assert.ok(mergedUnion[unionBucket].positions.length >= 2, 'server/client merge must union bucket positions');
+
+  const pendleStore = appendLoopSnapshotStore({}, {
+    wallets: ['0xcadde3b7858ed6b664d8db3ebda876902a58528c'],
+    positions: [],
+    pendle: {
+      wallets: [{
+        wallet: '0xcadde3b7858ed6b664d8db3ebda876902a58528c',
+        positions: [{
+          wallet: '0xcadde3b7858ed6b664d8db3ebda876902a58528c',
+          chainId: 1,
+          marketId: '1-0xabc',
+          marketAddress: '0xabc',
+          legType: 'PT',
+          symbol: 'PT-USDat',
+          marketName: 'USDat',
+          valueUsd: 12000,
+          impliedApy: 7.8,
+          open: true,
+        }],
+      }],
+    },
+  });
+  const pendleBucket = Object.keys(pendleStore)[0];
+  assert.equal(pendleStore[pendleBucket].pendlePositions.length, 1, 'Pendle-only snapshot must persist pendlePositions');
+  assert.equal(pendleStore[pendleBucket].pendlePositions[0].protocol, 'Pendle');
+  assert.equal(pendleStore[pendleBucket].pendlePositions[0].historyKey, 'pendle:0xcadde3b7858ed6b664d8db3ebda876902a58528c:1:1-0xabc:PT');
+
+  const mixedStore = appendLoopSnapshotStore(pendleStore, {
+    wallets: ['0xcadde3b7858ed6b664d8db3ebda876902a58528c'],
+    positions: [{
+      id: 'morpho:0xcadd:1:0xmarket',
+      protocol: 'Morpho',
+      marketName: 'PT-USDat / USDC',
+      wallet: '0xcadde3b7858ed6b664d8db3ebda876902a58528c',
+      chainId: 1,
+      totalBorrowed: 1000,
+      totalSupplied: 8000,
+      netValue: 7000,
+    }],
+    pendle: {
+      wallets: [{
+        wallet: '0xcadde3b7858ed6b664d8db3ebda876902a58528c',
+        positions: [{
+          wallet: '0xcadde3b7858ed6b664d8db3ebda876902a58528c',
+          chainId: 1,
+          marketId: '1-0xabc',
+          marketAddress: '0xabc',
+          legType: 'PT',
+          symbol: 'PT-USDat',
+          marketName: 'USDat',
+          valueUsd: 12500,
+          impliedApy: 7.9,
+          open: true,
+        }],
+      }],
+    },
+  });
+  assert.equal(mixedStore[pendleBucket].positions.length, 1, 'mixed append must keep loop positions');
+  assert.equal(mixedStore[pendleBucket].pendlePositions.length, 1, 'mixed append must keep pendle positions');
+  assert.equal(mixedStore[pendleBucket].pendlePositions[0].netValue, 12500, 'pendle snapshot must update value on merge');
 }
 
 {
