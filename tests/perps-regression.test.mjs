@@ -1350,6 +1350,14 @@ assert.match(indexHtml, /WATCHER_PM_MIN_USD_KEY/, 'PM min-$ filter must use loca
 assert.match(indexHtml, /function watcherPmFilterActivityByWallet\(/, 'PM wallets must filter activity on double-click');
 assert.match(indexHtml, /ondblclick="watcherPmFilterActivityByWallet/, 'PM wallet rows must use double-click handler');
 assert.match(indexHtml, /function watcherPmClearActivityFilter\(/, 'PM activity filter must be clearable');
+assert.match(indexHtml, /id="watcherPmTimeframeGroup"/, 'Wallet Watchlist must expose PM activity timeframe toggles');
+assert.match(indexHtml, /function watcherPmSetActivityDays\(/, 'PM activity timeframe must be switchable');
+assert.match(indexHtml, /WATCHER_PM_ACTIVITY_DAYS_KEY/, 'PM activity timeframe must persist in localStorage');
+assert.match(indexHtml, /function watcherPmGetActivityLookbackSec\(/, 'PM activity must derive lookback from timeframe');
+assert.match(indexHtml, /fetchFilledOrders\(wallets,\s*watcherPmGetActivityLookbackSec\(\)\)/, 'PM activity fetch must use selected timeframe');
+assert.match(indexHtml, /function watcherPmFetchWalletPositions\(/, 'PM wallet expand must fetch positions from data-api');
+assert.match(indexHtml, /watcher-v2-wallet-positions/, 'PM wallet expand must render positions panel');
+assert.match(indexHtml, /WATCHER_PM_POSITION_MIN_USD\s*=\s*100/, 'PM expanded positions must filter at $100');
 assert.doesNotMatch(indexHtml, /watcherPmWalletSubhead/, 'Wallet Watchlist must not show separate Polymarket Wallets subhead');
 assert.doesNotMatch(indexHtml, /watcher-v2-subhead-title">Polymarket Wallets/, 'Wallet Watchlist must not show separate Polymarket Wallets section header');
 assert.doesNotMatch(indexHtml, /watcherPmWalletRows/, 'Wallet Watchlist must not render separate PM wallet rows container');
