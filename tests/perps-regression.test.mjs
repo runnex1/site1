@@ -1176,6 +1176,12 @@ assert.match(indexHtml, /if \(Array\.isArray\(watcherWallets\) && watcherWallets
 assert.match(indexHtml, /JSON\.stringify\(\{ watcherWallets \}\)/, 'loop sync must POST yield wallets so cron can snapshot server-side');
 assert.match(syncJs, /shouldPersistWatcherWallets/, 'sync must guard watcher wallets against empty accidental erase');
 assert.match(syncArrayGuardJs, /watcherWalletsClear/, 'sync must allow explicit watcher wallet clear from Watcher UI');
+assert.match(indexHtml, /function watcherWatchlistWallets\(/, 'Wallet Watchlist must filter out Loops yield and PM wallets');
+assert.match(indexHtml, /function watcherIsLoopOrPmCategory\(/, 'Wallet Watchlist must classify yield/pm categories');
+assert.match(indexHtml, /unified\.innerHTML = watchlist\.map/, 'Wallet Watchlist rows must render filtered watchlist only');
+assert.match(indexHtml, /openWatcherWalletModal\('other'\)/, 'Wallet Watchlist add must use other category');
+assert.doesNotMatch(indexHtml, /watcherWalletRows[\s\S]{0,400}openWatcherWalletModal\('yield'\)/, 'Wallet Watchlist must not offer Add Yield Wallet in-panel');
+assert.doesNotMatch(indexHtml, /watcherWalletRows[\s\S]{0,400}openWatcherWalletModal\('pm'\)/, 'Wallet Watchlist must not offer Add PM Wallet in-panel');
 const loopsWorkflow = readFileSync(join(ROOT, '.github', 'workflows', 'loops-snapshot.yml'), 'utf8');
 assert.match(loopsWorkflow, /5 \*\/2 \* \* \*/, 'GitHub cron must run every 2 hours');
 assert.match(loopsWorkflow, /loop-cron-snapshot/, 'loop cron backup must use vercel rewrite to loopCronSnapshot');

@@ -8837,7 +8837,7 @@ body[data-active-tab="loops"] .page-content,
                 <div class="watcher-v2-panel-head">
                   <div>
                     <div class="watcher-v2-panel-title">Wallet Watchlist</div>
-                    <div class="watcher-v2-panel-note">Wallets plus recent PM activity</div>
+                    <div class="watcher-v2-panel-note">Other wallets for DeBank tracking</div>
                   </div>
                   <span class="watcher-v2-pill blue" id="wtab-wallets-badge">0 wallets</span>
                 </div>
@@ -8854,8 +8854,7 @@ body[data-active-tab="loops"] .page-content,
                 <div class="watcher-v2-scroll" id="watcherWalletRows"></div>
                 <div class="watcher-v2-foot">
                   <div class="watcher-v2-actions">
-                    <button type="button" class="watcher-v2-btn secondary" onclick="openWatcherWalletModal('yield')">Add Yield Wallet</button>
-                    <button type="button" class="watcher-v2-btn fuchsia" onclick="openWatcherWalletModal('pm')">Add PM Wallet</button>
+                    <button type="button" class="watcher-v2-btn indigo" onclick="openWatcherWalletModal('other')">Add Wallet</button>
                   </div>
                 </div>
               </div>
@@ -9480,7 +9479,7 @@ body[data-active-tab="loops"] .page-content,
       <input type="text" class="form-input" id="wwLabelInput" placeholder="e.g. My Pendle Wallet"
         onkeydown="if(event.key==='Enter') addWatcherWallet()">
     </div>
-    <input type="hidden" id="wwCategoryInput" value="yield">
+    <input type="hidden" id="wwCategoryInput" value="other">
     <div class="form-actions">
       <button class="btn btn-secondary" onclick="closeModal('watcherWallet')">Close</button>
       <button class="btn btn-primary" id="wwAddBtn" onclick="addWatcherWallet()">Add Wallet</button>
@@ -22795,7 +22794,16 @@ function loadWatchlist() {
 }
 
 // ── Watcher Wallets ──────────────────────────────────────────────────────────
-// Each entry: { id, address, label, category: 'yield'|'pm', addedAt }
+// Each entry: { id, address, label, category: 'yield'|'pm'|'other', addedAt }
+
+function watcherIsLoopOrPmCategory(category) {
+    const cat = String(category || '').toLowerCase();
+    return cat === 'yield' || cat === 'pm' || /^(polymarket|prediction|prediction markets)$/.test(cat);
+}
+
+function watcherWatchlistWallets() {
+    return (Array.isArray(watcherWallets) ? watcherWallets : []).filter(w => !watcherIsLoopOrPmCategory(w.category));
+}
 
 function saveWatcherWallets() {
     try { localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets)); } catch(e) {}
@@ -22813,7 +22821,7 @@ function loadWatcherWallets() {
 }
 
 function updateWatcherWalletCount() {
-    const total = Array.isArray(watcherWallets) ? watcherWallets.length : 0;
+    const total = watcherWatchlistWallets().length;
     const badge = document.getElementById('wtab-wallets-badge');
     if (badge) badge.textContent = total + (total === 1 ? ' wallet' : ' wallets');
 }
@@ -22824,13 +22832,18 @@ function openWatcherWalletModal(category) {
     const addBtn  = document.getElementById('wwAddBtn');
     const catEl   = document.getElementById('wwCategoryInput');
     if (catEl) catEl.value = category;
-    if (titleEl) titleEl.textContent = category === 'yield' ? '🌾 Add Yield Farming Wallet' : '🎯 Add Prediction Market Wallet';
+    if (titleEl) titleEl.textContent = category === 'yield' ? '🌾 Add Yield Farming Wallet'
+        : category === 'pm' ? '🎯 Add Prediction Market Wallet'
+        : '👛 Add Wallet';
     if (subEl)   subEl.textContent   = category === 'yield'
         ? 'Track EVM (0x…) or Solana yield wallets — Aave, Morpho, Fluid, Kamino, Jupiter Lend, and more.'
-        : 'Track wallets active on Polymarket or Opinion.trade.';
+        : category === 'pm'
+        ? 'Track wallets active on Polymarket or Opinion.trade.'
+        : 'Track any wallet for DeBank overview — separate from Loops yield or Prediction Market wallets.';
     if (addBtn) {
-        addBtn.style.background = category === 'yield' ? 'var(--teal)' : 'var(--fuchsia)';
-        addBtn.style.borderColor = category === 'yield' ? 'var(--teal)' : 'var(--fuchsia)';
+        const accent = category === 'yield' ? 'var(--teal)' : category === 'pm' ? 'var(--fuchsia)' : 'var(--wv-blue)';
+        addBtn.style.background = accent;
+        addBtn.style.borderColor = accent;
     }
     // Render existing wallets for this category in the list
     renderWatcherWalletList(category);
@@ -22872,7 +22885,7 @@ function addWatcherWallet() {
     const catEl   = document.getElementById('wwCategoryInput');
     const address  = (addrEl?.value || '').trim();
     const label    = (labelEl?.value || '').trim();
-    const category = catEl?.value || 'yield';
+    const category = catEl?.value || 'other';
 
     if (!address) { addrEl?.focus(); return; }
     if (watcherWallets.find(w => w.address.toLowerCase() === address.toLowerCase() && w.category === category)) {
@@ -22907,33 +22920,29 @@ function renderWatcherWallets() {
     const unified = document.getElementById('watcherWalletRows');
     if (!unified) return;
 
-    if (!watcherWallets.length) {
-        unified.innerHTML = `<div class="watcher-v2-empty">No wallets saved yet.<br><span style="font-size:0.72rem;opacity:0.7">Add yield or PM wallets below.</span></div>`;
+    const watchlist = watcherWatchlistWallets();
+    if (!watchlist.length) {
+        unified.innerHTML = `<div class="watcher-v2-empty">No wallets saved yet.<br><span style="font-size:0.72rem;opacity:0.7">Add other wallets below — Loops yield and PM wallets stay in their own tabs.</span></div>`;
         updateWatcherSummaryText();
         watcherApplyFilters();
         return;
     }
 
-    unified.innerHTML = watcherWallets.map(w => {
+    unified.innerHTML = watchlist.map(w => {
         const label = w.label || (w.address.slice(0, 6) + '…' + w.address.slice(-4));
         const short = w.address.slice(0, 6) + '…' + w.address.slice(-4);
-        const isYield = w.category === 'yield';
         const isAddr = w.address.startsWith('0x') || w.address.startsWith('0X');
         const debankUrl = isAddr ? `https://debank.com/profile/${w.address}` : null;
         const addedDate = new Date(w.addedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const searchHay = `${label} ${w.address} ${w.category} debank polymarket`.toLowerCase();
-        const iconCls = isYield ? 'yield' : 'pm';
-        const iconTxt = isYield ? 'YF' : 'PM';
-        const badgeCls = isYield ? 'green' : 'blue';
-        const badgeTxt = isYield ? 'Yield' : 'PM';
+        const searchHay = `${label} ${w.address} debank wallet watchlist`.toLowerCase();
         return `<div class="watcher-v2-wallet-row" data-watcher-kind="wallet" data-watcher-search="${dashEsc(searchHay)}" data-watcher-pinned="0">
-            <div class="watcher-v2-icon ${iconCls}">${iconTxt}</div>
+            <div class="watcher-v2-icon tool">WL</div>
             <div>
                 <div class="watcher-v2-row-title">${dashEsc(label)}</div>
-                <div class="watcher-v2-row-meta">${isYield ? 'DeFi' : 'Polymarket'}${w.label ? ' · ' + dashEsc(short) : ''} · Added ${addedDate}</div>
+                <div class="watcher-v2-row-meta">DeBank${w.label ? ' · ' + dashEsc(short) : ''} · Added ${addedDate}</div>
             </div>
             <div style="display:flex;align-items:center;gap:0.35rem;">
-                <span class="watcher-v2-badge ${badgeCls}">${badgeTxt}</span>
+                <span class="watcher-v2-badge blue">Wallet</span>
                 ${debankUrl ? `<a href="${debankUrl}" target="_blank" rel="noopener" class="watcher-v2-row-btn" title="Open DeBank">↗</a>` : ''}
                 <button type="button" class="watcher-v2-row-btn danger" onclick="removeWatcherWallet('${w.id}')" title="Remove">×</button>
             </div>
@@ -29481,7 +29490,13 @@ function updateWatcherSummaryText() {
     if (!el) return;
     let wl = 0, ww = 0, links = 0;
     try { wl = Array.isArray(watchlist) ? watchlist.length : syncLsJson('wl-data', '[]').length; } catch (e) { wl = syncLsJson('wl-data', '[]').length; }
-    try { ww = Array.isArray(watcherWallets) ? watcherWallets.length : syncLsJson('vault-watcher-wallets', '[]').length; } catch (e) { ww = syncLsJson('vault-watcher-wallets', '[]').length; }
+    try {
+        const raw = Array.isArray(watcherWallets) ? watcherWallets : syncLsJson('vault-watcher-wallets', '[]');
+        ww = (Array.isArray(raw) ? raw : []).filter(w => !watcherIsLoopOrPmCategory(w?.category)).length;
+    } catch (e) {
+        const raw = syncLsJson('vault-watcher-wallets', '[]');
+        ww = (Array.isArray(raw) ? raw : []).filter(w => !watcherIsLoopOrPmCategory(w?.category)).length;
+    }
     links = syncWatcherLinksCount();
     const n = wl + ww + links;
     el.textContent = `${n} saved item${n === 1 ? '' : 's'} · organized by collection`;
