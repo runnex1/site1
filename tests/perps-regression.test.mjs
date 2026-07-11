@@ -1330,7 +1330,25 @@ assert.match(indexHtml, /newsFeedKwInput[\s\S]{0,120}oninput="newsFeedSyncKeywor
   assert.equal(kwCtx.newsFeedPassesKeywordFilter(item, { keywords: ['test-sync'], searchBody: false }), false, 'test-sync keyword must zero non-matching headlines');
   assert.equal(kwCtx.newsFeedPassesKeywordFilter({ ...item, title: 'test-sync headline update' }, { keywords: ['test-sync'], searchBody: false }), true, 'test-sync keyword must match headlines containing keyword');
 }
-assert.match(indexHtml, /function mergeWatcherWalletsByKey\(/, 'watcher wallets must merge local and server on hydrate');
+assert.match(indexHtml, /async function persistWatcherWalletsCloud\(/, 'watcher wallets must persist via dedicated cloud POST');
+assert.match(indexHtml, /const fromLs = syncLsJson\('vault-watcher-wallets', '\[\]'\)/, 'cloud hydrate must merge watcher wallets from localStorage');
+assert.match(indexHtml, /mergeWatcherWalletsByKey\(fromLs, fromMem\)/, 'cloud hydrate must union localStorage and in-memory watcher wallets');
+{
+  const { mergeWatcherWalletsForSync } = require('../lib/watcher-wallet-sync.js');
+  const existing = [{ id: '1', address: '0x1111111111111111111111111111111111111111', category: 'yield', addedAt: 1 }];
+  const incoming = [{
+    id: 'pm-tsybka',
+    address: '0xd5ccdf772f795547e299de57f47966e24de8dea4',
+    label: 'tsybka',
+    category: 'pm',
+    profileUrl: 'https://polymarket.com/@tsybka',
+    sourceInput: 'https://polymarket.com/@tsybka',
+    addedAt: Date.now(),
+  }];
+  const merged = mergeWatcherWalletsForSync(existing, incoming);
+  assert.equal(merged.length, 2, 'server watcher merge must keep existing and new PM wallets');
+  assert.equal(merged.some(w => w.label === 'tsybka'), true, 'server watcher merge must retain PM profile metadata');
+}
 assert.match(indexHtml, /async function saveWatcherWallets\(/, 'watcher wallet save must await cloud sync');
 assert.match(indexHtml, /await saveWatcherWallets\(\)/, 'watcher wallet mutations must await server persist');
 assert.match(indexHtml, /async function addWatcherWallet\(/, 'addWatcherWallet must be async so PM wallets persist before refresh');

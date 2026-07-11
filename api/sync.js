@@ -20,6 +20,7 @@ const {
   shouldPersistWatcherLinks,
 } = require('../lib/sync-array-guard');
 const { mergeNewsFeedStores } = require('../lib/news-feed-sync');
+const { mergeWatcherWalletsForSync } = require('../lib/watcher-wallet-sync');
 const { collectEvents } = require('../lib/event-log');
 const { fetchPolymarketWalletBalances } = require('../lib/polymarket-balance');
 const { resolvePolymarketProfile } = require('../lib/polymarket-profile');
@@ -994,9 +995,11 @@ module.exports = async function handler(req, res) {
 
     // Watcher wallets (ignore empty payloads that would erase saved yield/PM wallets)
     if (shouldPersistWatcherWallets(body.watcherWallets, body)) {
-      await kvSet('vault:watcherwallets', JSON.stringify(body.watcherWallets));
+      const existingWatcherWallets = parseJson(await kvGet('vault:watcherwallets'), []);
+      const mergedWatcherWallets = mergeWatcherWalletsForSync(existingWatcherWallets, body.watcherWallets);
+      await kvSet('vault:watcherwallets', JSON.stringify(mergedWatcherWallets));
       saved.watcherWallets = true;
-      const yieldWallets = loopYieldWalletsFromWatcherList(body.watcherWallets);
+      const yieldWallets = loopYieldWalletsFromWatcherList(mergedWatcherWallets);
       if (yieldWallets.length) {
         await persistLoopYieldWallets(kvSet, yieldWallets);
         saved.loopYieldWallets = true;

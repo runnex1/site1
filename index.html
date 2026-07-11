@@ -10354,6 +10354,7 @@ let watcherSearchQuery = '';
 let watcherPmMinUsd = 0;
 let watcherPmActivityDays = 1;
 let watcherPmActivityFilterWallet = '';
+let _vaultLoadDataReady = false;
 let _watcherPmActivityTrades = [];
 let _watcherPmPositionsCache = {};
 const WATCHER_PM_MIN_USD_KEY = 'watcher-pm-min-usd';
@@ -10820,7 +10821,9 @@ function applyCloudPortfolioAux(parsed) {
     };
     apply('watcherLinks', () => {
         if (!Array.isArray(parsed._watcherLinks)) return;
-        const local = Array.isArray(watcherLinks) ? watcherLinks : syncLsJson('watcher-links', '[]');
+        const fromLs = syncLsJson('watcher-links', '[]');
+        const fromMem = Array.isArray(watcherLinks) ? watcherLinks : [];
+        const local = mergeWatcherEntriesById(fromLs, fromMem);
         watcherLinks = mergeWatcherEntriesById(local, parsed._watcherLinks);
         localStorage.setItem('watcher-links', JSON.stringify(watcherLinks));
         renderWatcherLinks();
@@ -10828,7 +10831,9 @@ function applyCloudPortfolioAux(parsed) {
     });
     apply('watcherWallets', () => {
         if (!Array.isArray(parsed._watcherWallets)) return;
-        const local = Array.isArray(watcherWallets) ? watcherWallets : syncLsJson('vault-watcher-wallets', '[]');
+        const fromLs = syncLsJson('vault-watcher-wallets', '[]');
+        const fromMem = Array.isArray(watcherWallets) ? watcherWallets : [];
+        const local = mergeWatcherWalletsByKey(fromLs, fromMem);
         watcherWallets = mergeWatcherWalletsByKey(local, parsed._watcherWallets);
         localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets));
         renderWatcherWallets();
@@ -10840,7 +10845,9 @@ function applyCloudPortfolioAux(parsed) {
     });
     apply('watchlist', () => {
         if (!Array.isArray(parsed._watchlist)) return;
-        const local = Array.isArray(watchlist) ? watchlist : syncLsJson('wl-data', '[]');
+        const fromLs = syncLsJson('wl-data', '[]');
+        const fromMem = Array.isArray(watchlist) ? watchlist : [];
+        const local = mergeWatchlistEntries(fromLs, fromMem);
         watchlist = mergeWatchlistEntries(local, parsed._watchlist);
         localStorage.setItem('wl-data', JSON.stringify(watchlist));
         delete parsed._watchlist;
@@ -11116,6 +11123,7 @@ async function loadData() {
 
     loadDomeConfig();
     _perpsBootPromise.catch(() => {});
+    _vaultLoadDataReady = true;
 }
 
 async function saveData(syncOpts = {}) {
@@ -22992,9 +23000,37 @@ function watcherWatchlistWallets() {
     return (Array.isArray(watcherWallets) ? watcherWallets : []).filter(w => !watcherIsLoopOrPmCategory(w.category));
 }
 
+async function persistWatcherWalletsCloud() {
+    if (location.protocol === 'file:') return true;
+    const wallets = syncLsJson('vault-watcher-wallets', '[]');
+    const body = { watcherWallets: Array.isArray(wallets) ? wallets : [] };
+    if (!body.watcherWallets.length) body.watcherWalletsClear = true;
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok || payload?.ok === false) {
+            console.warn('[Vault] Watcher wallet cloud save failed:', payload?.error || res.status);
+            return false;
+        }
+        if (body.watcherWallets.length && payload?.saved?.watcherWallets !== true) {
+            console.warn('[Vault] Watcher wallet cloud save not acknowledged');
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.warn('[Vault] Watcher wallet cloud save error:', e);
+        return false;
+    }
+}
+
 async function saveWatcherWallets() {
     try { localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets)); } catch(e) {}
     const clearEmpty = !(Array.isArray(watcherWallets) && watcherWallets.length);
+    await persistWatcherWalletsCloud();
     await saveData({ watcherWalletsClear: clearEmpty });
     updateWatcherWalletCount();
 }
@@ -23002,7 +23038,10 @@ async function saveWatcherWallets() {
 function loadWatcherWallets() {
     try {
         const raw = localStorage.getItem('vault-watcher-wallets');
-        if (raw) watcherWallets = JSON.parse(raw);
+        if (raw) {
+            const fromLs = JSON.parse(raw);
+            watcherWallets = mergeWatcherWalletsByKey(fromLs, watcherWallets);
+        }
     } catch(e) {}
     renderWatcherWallets();
 }
@@ -35654,6 +35693,7 @@ function switchWTab(name, btn) {
 // =============================================================================
 function recoverPortfolioOnPageShow(event) {
     if (location.protocol === 'file:') return;
+    if (!_vaultLoadDataReady) return;
     const totalEl = document.getElementById('totalNetWorth');
     const totalRaw = Number(totalEl?.getAttribute('data-raw') || 0);
     const needsPaint = portfolioHasEntries() && (!Number.isFinite(totalRaw) || totalRaw <= 0);
