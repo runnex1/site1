@@ -5141,9 +5141,10 @@ body {
 .news-feed-panel-count { font-family:var(--ff-mono); font-size:10px; color:var(--t3); }
 .news-feed-saved-head-actions { display:flex; align-items:center; gap:6px; }
 .news-feed-saved-add {
-  width:20px; height:20px; border-radius:999px; border:1px solid var(--border-mid);
+  width:20px; height:20px; min-width:20px; min-height:20px; border-radius:999px; border:1px solid var(--border-mid);
   background:rgba(255,255,255,0.02); color:var(--t3); font-size:13px; line-height:1;
   cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+  position:relative; z-index:2; flex-shrink:0;
 }
 .news-feed-saved-add:hover { border-color:rgba(0,212,170,0.35); color:var(--teal); background:var(--teal-10); }
 .news-feed-saved-list { flex:1; overflow:auto; padding:0.6rem 0.75rem 0.75rem; }
@@ -8999,7 +9000,7 @@ body[data-active-tab="loops"] .page-content,
                 <span class="news-feed-panel-title">Saved</span>
                 <div class="news-feed-saved-head-actions">
                   <span class="news-feed-panel-count" id="newsFeedSavedCount">0</span>
-                  <button type="button" class="news-feed-saved-add" onclick="newsFeedAddNote()" title="Add note">+</button>
+                  <button type="button" class="news-feed-saved-add" id="newsFeedSavedAddBtn" title="Add note">+</button>
                 </div>
               </div>
               <div class="news-feed-saved-list" id="newsFeedSavedList">
@@ -11928,6 +11929,7 @@ function switchTab(tab, opts = {}) {
         refreshEtfLivePrices();
     }
     if (tab === 'news') {
+        if (typeof newsFeedBindSavedPanel === 'function') newsFeedBindSavedPanel();
         if (typeof newsFeedRenderSaved === 'function') newsFeedRenderSaved();
         if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
     }
@@ -27873,6 +27875,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') xHandleAdd(); });
     xHandleRender();
     if (typeof newsFeedBindSaveClicks === 'function') newsFeedBindSaveClicks();
+    if (typeof newsFeedBindSavedPanel === 'function') newsFeedBindSavedPanel();
     let mobileChartResizeT;
     window.addEventListener('resize', () => {
         clearTimeout(mobileChartResizeT);
@@ -27936,6 +27939,7 @@ let _newsFeedSourceHealth = {};
 let _newsFeedSettingsDraft = null;
 let _newsFeedLensLastTap = { cat: null, ts: 0 };
 let _newsFeedSaveBound = false;
+let _newsFeedSavedPanelBound = false;
 let _newsFeedTelegramModalCategory = null;
 let _newsFeedRemoveSourcePending = null;
 let _newsFeedKobeissiActiveKey = null;
@@ -27969,12 +27973,19 @@ function newsFeedPersistSettingsDraft(options = {}) {
     }
 }
 
+function newsFeedNormalizeKobeissiTitle(title) {
+    return String(title || '').replace(/\s+/g, ' ').trim();
+}
+
 function newsFeedKobeissiKey(item) {
-    const title = String(item?.title || '').trim();
+    const title = newsFeedNormalizeKobeissiTitle(item?.title).toLowerCase();
     const url = newsFeedNormalizeUrl(item?.url || '');
-    if (title && url) return `${url}#${encodeURIComponent(title)}`;
-    if (title) return `kobeissi:${encodeURIComponent(title)}`;
-    return url || '';
+    const tweetMatch = url.match(/t\.me\/[^/]+\/(\d+)/i);
+    if (tweetMatch) return `kobeissi:${tweetMatch[1]}`;
+    if (url && title) return `${url}#${encodeURIComponent(title)}`;
+    if (url) return url;
+    if (title) return `kobeissi:#${encodeURIComponent(title)}`;
+    return '';
 }
 
 function newsFeedLoadKobeissiState() {
@@ -28494,11 +28505,11 @@ function newsFeedAddNote() {
         createdAt: now,
         updatedAt: now,
     };
-    let saved = newsFeedLoadSaved();
+    const saved = newsFeedLoadSaved();
     saved.unshift(note);
-    newsFeedPersistSaved(saved);
     _newsFeedNoteFocusId = note.id;
-    newsFeedRenderSaved();
+    newsFeedRenderSaved(saved);
+    newsFeedPersistSaved(saved);
 }
 
 function newsFeedUpdateNote(encodedId, fields, options = {}) {
@@ -28529,6 +28540,19 @@ function newsFeedRemoveSavedNote(encodedId) {
     saved.splice(idx, 1);
     newsFeedPersistSaved(saved);
     newsFeedRenderSaved();
+}
+
+function newsFeedBindSavedPanel() {
+    if (_newsFeedSavedPanelBound) return;
+    const panel = document.getElementById('newsFeedSavedPanel');
+    if (!panel) return;
+    _newsFeedSavedPanelBound = true;
+    panel.addEventListener('click', e => {
+        const addBtn = e.target.closest('.news-feed-saved-add');
+        if (!addBtn) return;
+        e.preventDefault();
+        newsFeedAddNote();
+    });
 }
 
 function newsFeedBindSaveClicks() {
@@ -28728,11 +28752,13 @@ function newsFeedRenderSavedNoteCard(note) {
     </div>`;
 }
 
-function newsFeedRenderSaved() {
+function newsFeedRenderSaved(savedOverride) {
     const listEl = document.getElementById('newsFeedSavedList');
     const countEl = document.getElementById('newsFeedSavedCount');
     if (!listEl) return;
-    const saved = newsFeedLoadSaved().slice().sort((a, b) => newsFeedSavedUpdatedAt(b) - newsFeedSavedUpdatedAt(a));
+    const saved = (Array.isArray(savedOverride) ? savedOverride : newsFeedLoadSaved())
+        .slice()
+        .sort((a, b) => newsFeedSavedUpdatedAt(b) - newsFeedSavedUpdatedAt(a));
     if (countEl) countEl.textContent = String(saved.length);
     if (!saved.length) {
         listEl.innerHTML = '<div class="news-feed-saved-empty">Save stories from the feed with the star button, or add a note with +.</div>';

@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -56,6 +57,77 @@ const positionPeakWindowJs = readFileSync(join(ROOT, 'lib', 'position-peak-windo
 const vercelJson = readFileSync(join(ROOT, 'vercel.json'), 'utf8');
 const watcherPreviewHtml = readFileSync(join(ROOT, 'ui-previews', 'watcher-preview.html'), 'utf8');
 const now = Date.now();
+
+function extractBalancedFunction(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  if (start < 0) throw new Error(`missing function ${name}`);
+  let brace = 0;
+  let started = false;
+  for (let i = start; i < source.length; i++) {
+    if (source[i] === '{') {
+      brace++;
+      started = true;
+    } else if (source[i] === '}') {
+      brace--;
+      if (started && brace === 0) return source.slice(start, i + 1);
+    }
+  }
+  throw new Error(`unclosed function ${name}`);
+}
+
+function createNewsFeedKobeissiHarness(source) {
+  const ctx = {
+    Date,
+    Number,
+    String,
+    encodeURIComponent: globalThis.encodeURIComponent,
+    __store: {},
+  };
+  vm.createContext(ctx);
+  vm.runInNewContext(`
+    const store = __store;
+    const NEWS_FEED_KOBEISSI_STATE_KEY = 'vault_news_kobeissi_v1';
+    const NEWS_FEED_KOBEISSI_TTL_MS = 60 * 60 * 1000;
+    let _newsFeedKobeissiActiveKey = null;
+    const localStorage = {
+      getItem(key) { return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null; },
+      setItem(key, value) { store[key] = value; },
+    };
+    function decodeHtmlEntities(text) {
+      return String(text || '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+    }
+    ${extractBalancedFunction(source, 'newsFeedNormalizeUrl')}
+    ${extractBalancedFunction(source, 'newsFeedNormalizeKobeissiTitle')}
+    ${extractBalancedFunction(source, 'newsFeedKobeissiKey')}
+    function newsFeedLoadKobeissiState() {
+      try {
+        const raw = localStorage.getItem(NEWS_FEED_KOBEISSI_STATE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (e) {
+        return {};
+      }
+    }
+    function newsFeedPersistKobeissiState(state) {
+      try { localStorage.setItem(NEWS_FEED_KOBEISSI_STATE_KEY, JSON.stringify(state)); } catch (e) {}
+    }
+    ${extractBalancedFunction(source, 'newsFeedShouldShowKobeissi')}
+    ${extractBalancedFunction(source, 'newsFeedRecordKobeissiShown')}
+    function resetKobeissiHarness() {
+      for (const key of Object.keys(store)) delete store[key];
+      _newsFeedKobeissiActiveKey = null;
+    }
+    function simulateRefresh() {
+      _newsFeedKobeissiActiveKey = null;
+    }
+  `, ctx);
+  return ctx;
+}
 
 function payment(usdc, time = now) {
   return { kind: usdc > 0 ? 'deposit' : 'withdraw', usdc, time };
@@ -998,6 +1070,49 @@ assert.match(indexHtml, /NEWS_FEED_PIN_BOOST_MAX_AGE_MS = 24 \* 60 \* 60 \* 1000
 assert.match(indexHtml, /function newsFeedPersistSettingsDraft\(/, 'feed settings changes must auto-save to local storage');
 assert.match(indexHtml, /function newsFeedShouldShowKobeissi\(/, 'Kobeissi headline must hide after refresh or 1h unless replaced');
 assert.match(indexHtml, /NEWS_FEED_KOBEISSI_TTL_MS = 60 \* 60 \* 1000/, 'Kobeissi headline boost must expire after 1 hour');
+assert.match(indexHtml, /function newsFeedNormalizeKobeissiTitle\(/, 'Kobeissi keys must normalize headline text');
+assert.match(indexHtml, /return `kobeissi:\$\{tweetMatch\[1\]\}`/, 'Kobeissi keys must prefer stable Telegram post ids');
+{
+  const kobeissi = createNewsFeedKobeissiHarness(indexHtml);
+  const item = {
+    title: 'BREAKING: The US stock market has added nearly $1 Trillion this week.',
+    url: 'https://t.me/KobeissiLetters/12345',
+    source: 'KobeissiLetters',
+  };
+  const altTitleItem = {
+    ...item,
+    title: 'BREAKING: The US stock market has added nearly $1 Trillion this week. Extra detail.',
+  };
+  const keyA = kobeissi.newsFeedKobeissiKey(item);
+  const keyB = kobeissi.newsFeedKobeissiKey({ ...item, url: 'https://t.me/kobeissiletters/12345/' });
+  const keyC = kobeissi.newsFeedKobeissiKey(altTitleItem);
+  assert.equal(keyA, 'kobeissi:12345', 'Kobeissi key must use Telegram post id');
+  assert.equal(keyA, keyB, 'Kobeissi key must ignore URL casing and trailing slash');
+  assert.equal(keyA, keyC, 'Kobeissi key must ignore title drift when post id is present');
+  kobeissi.resetKobeissiHarness();
+  assert.equal(kobeissi.newsFeedShouldShowKobeissi(item), true, 'first sight of Kobeissi headline must show');
+  kobeissi.newsFeedRecordKobeissiShown(item);
+  assert.equal(kobeissi.newsFeedShouldShowKobeissi(item), true, 'same session must keep showing within 1h');
+  kobeissi.simulateRefresh();
+  assert.equal(kobeissi.newsFeedShouldShowKobeissi(item), false, 'refresh must hide previously seen Kobeissi headline');
+  kobeissi.newsFeedPersistKobeissiState({ headlineKey: keyA, firstSeenAt: Date.now() - (61 * 60 * 1000) });
+  assert.equal(kobeissi.newsFeedShouldShowKobeissi(item), false, 'Kobeissi headline must hide after 1h even without refresh');
+  const nextItem = {
+    title: 'BREAKING: New headline replaces the old one.',
+    url: 'https://t.me/KobeissiLetters/67890',
+    source: 'KobeissiLetters',
+  };
+  assert.equal(kobeissi.newsFeedShouldShowKobeissi(nextItem), true, 'new Kobeissi headline must show after previous one expires');
+  kobeissi.resetKobeissiHarness();
+  const titleOnly = {
+    title: 'BREAKING: Fallback headline without post url.',
+    url: '',
+    source: 'KobeissiLetters',
+  };
+  const titleOnlyKey = kobeissi.newsFeedKobeissiKey(titleOnly);
+  assert.match(titleOnlyKey, /^kobeissi:#/, 'title-only Kobeissi fallback must not include volatile timestamps');
+  assert.equal(kobeissi.newsFeedKobeissiKey(titleOnly), kobeissi.newsFeedKobeissiKey({ ...titleOnly, publishedAt: '2026-07-10T20:41:00.000Z' }), 'title-only Kobeissi key must ignore publishedAt drift');
+}
 assert.match(indexHtml, /news-feed-seen-btn/, 'boosted news cards must show a Seen button');
 assert.match(indexHtml, /data-item-key/, 'news feed card actions must use stable item keys');
 assert.doesNotMatch(indexHtml, /NEWS_FEED_ALERT_RE/, 'hack/exploit auto-boost must be removed');
