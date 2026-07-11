@@ -983,6 +983,8 @@ assert.match(indexHtml, /NEWS_FEED_ALERT_RE/, 'news feed must detect hack/exploi
 assert.match(indexHtml, /function newsFeedHideItem\(/, 'news feed must let users hide headlines as not interested');
 assert.match(indexHtml, /news-feed-hide-btn/, 'news feed cards must show not-interested icon button');
 assert.match(indexHtml, /NEWS_FEED_HIDDEN_KEY/, 'news feed must persist hidden headlines');
+assert.match(indexHtml, /NEWS_FEED_HIDDEN_TTL_MS = 7 \* 24 \* 60 \* 60 \* 1000/, 'hidden headlines must expire after 7 days');
+assert.match(indexHtml, /function newsFeedPruneHidden\(/, 'news feed must prune expired hidden headlines');
 assert.match(indexHtml, /news-feed-tg-add/, 'Telegram add button must exist in feed settings');
 assert.match(indexHtml, /function newsFeedTelegramQueryParam\(/, 'news fetch must pass telegram channels with categories');
 assert.match(indexHtml, /vault_news_cache_v6/, 'news client cache must bust for source health metadata');
