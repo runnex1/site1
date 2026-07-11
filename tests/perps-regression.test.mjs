@@ -1020,8 +1020,10 @@ assert.match(indexHtml, /function newsFeedAddNote\(/, 'saved panel must support 
 assert.match(indexHtml, /function newsFeedUpdateNote\(/, 'saved notes must auto-save via update handler');
 assert.match(indexHtml, /function newsFeedRemoveSavedNote\(/, 'saved panel must support removing note cards');
 assert.match(indexHtml, /function newsFeedRenderSavedNoteCard\(/, 'saved panel must render note card markup');
+assert.match(indexHtml, /function newsFeedBindSavedPanel\(/, 'saved panel must bind + button clicks via delegation');
 assert.match(indexHtml, /news-feed-saved-add/, 'saved panel header must have + button to add notes');
 assert.match(indexHtml, /newsFeedAddNote\(\)/, '+ button must call newsFeedAddNote');
+assert.match(indexHtml, /newsFeedRenderSaved\(saved\)/, 'add note must re-render saved panel from in-memory list');
 assert.match(indexHtml, /newsFeedRemoveSavedNote\('?\$\{dashUri\(id\)\}'?\)/, 'note remove button must call remove note handler');
 assert.match(indexHtml, /news-feed-saved-note-card/, 'note cards must use distinct note card styling');
 assert.match(indexHtml, /news-feed-saved-tag note/, 'note cards must show NOTE tag');
