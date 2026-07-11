@@ -129,6 +129,50 @@ function createNewsFeedKobeissiHarness(source) {
   return ctx;
 }
 
+function createNewsFeedQuickLinksHarness(source) {
+  const ctx = {
+    Date,
+    Number,
+    String,
+    Math,
+    URL,
+    __store: {},
+  };
+  vm.createContext(ctx);
+  vm.runInNewContext(`
+    const store = __store;
+    const NEWS_FEED_QUICK_LINKS_KEY = 'vault_news_quick_links_v1';
+    const NEWS_FEED_QUICK_LINKS_MAX = 50;
+    let _newsFeedQuickLinksCache = null;
+    const localStorage = {
+      getItem(key) { return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null; },
+      setItem(key, value) { store[key] = value; },
+    };
+    function decodeHtmlEntities(text) {
+      return String(text || '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+    }
+    ${extractBalancedFunction(source, 'newsFeedNormalizeUrl')}
+    ${extractBalancedFunction(source, 'newsFeedQuickLinkUpdatedAt')}
+    ${extractBalancedFunction(source, 'newsFeedNewQuickLinkId')}
+    ${extractBalancedFunction(source, 'newsFeedQuickLinkHostname')}
+    ${extractBalancedFunction(source, 'newsFeedQuickLinkTruncateUrl')}
+    ${extractBalancedFunction(source, 'newsFeedQuickLinkDisplayLabel')}
+    ${extractBalancedFunction(source, 'newsFeedLoadQuickLinks')}
+    ${extractBalancedFunction(source, 'newsFeedPersistQuickLinks')}
+    function newsFeedTouchSyncMeta() {}
+    function resetQuickLinksHarness() {
+      for (const key of Object.keys(store)) delete store[key];
+      _newsFeedQuickLinksCache = null;
+    }
+  `, ctx);
+  return ctx;
+}
+
 function payment(usdc, time = now) {
   return { kind: usdc > 0 ? 'deposit' : 'withdraw', usdc, time };
 }
@@ -1031,6 +1075,60 @@ assert.match(indexHtml, /news-feed-saved-tag note/, 'note cards must show NOTE t
 assert.match(indexHtml, /kind: 'story'/, 'saved stories must persist with kind story');
 assert.match(indexHtml, /kind: 'note'/, 'saved notes must persist with kind note');
 assert.match(indexHtml, /newsFeedSavedUpdatedAt/, 'saved panel must sort mixed feed by updatedAt');
+assert.match(indexHtml, /NEWS_FEED_QUICK_LINKS_KEY = 'vault_news_quick_links_v1'/, 'quick links must persist to localStorage');
+assert.match(indexHtml, /NEWS_FEED_QUICK_LINKS_MAX = 50/, 'quick links must cap at 50 entries');
+assert.match(indexHtml, /id="newsFeedQuickLinksPanel"/, 'news feed must have quick links panel');
+assert.match(indexHtml, /news-feed-panel-title">Quick links</, 'quick links panel title must be Quick links');
+assert.doesNotMatch(indexHtml, /id="newsFeedContextPanel"/, 'old context panel must be removed');
+assert.doesNotMatch(indexHtml, /news-feed-context-empty/, 'old context empty state must be removed');
+assert.match(indexHtml, /function newsFeedLoadQuickLinks\(/, 'quick links must load from localStorage');
+assert.match(indexHtml, /function newsFeedPersistQuickLinks\(/, 'quick links must persist to localStorage');
+assert.match(indexHtml, /function newsFeedOpenQuickLinkModal\(/, 'quick links + button must open add modal');
+assert.match(indexHtml, /function newsFeedSubmitQuickLinkModal\(/, 'quick links modal must submit new link');
+assert.match(indexHtml, /function newsFeedRemoveQuickLink\(/, 'quick links must support removing links');
+assert.match(indexHtml, /function newsFeedRenderQuickLinks\(/, 'quick links must render link list');
+assert.match(indexHtml, /function newsFeedBindQuickLinksPanel\(/, 'quick links must bind + button via delegation');
+assert.match(indexHtml, /id="newsFeedQuickLinkModal"/, 'quick links add modal markup must exist');
+assert.match(indexHtml, /news-feed-quick-link-row/, 'quick links list must render row markup');
+assert.match(indexHtml, /news-feed-quick-link-open/, 'quick link rows must have open-in-new-tab control');
+assert.match(indexHtml, /newsFeedRemoveQuickLink\('?\$\{dashUri\(item\.id\)\}'?\)/, 'quick link remove must call remove handler with encoded id');
+assert.match(indexHtml, /newsFeedQuickLinkUpdatedAt/, 'quick links must sort by updatedAt desc');
+assert.match(indexHtml, /news-feed-quick-links-empty/, 'quick links must show helpful empty state');
+{
+  const ql = createNewsFeedQuickLinksHarness(indexHtml);
+  ql.resetQuickLinksHarness();
+  assert.equal(ql.newsFeedLoadQuickLinks().length, 0, 'quick links must start empty');
+  const now = Date.now();
+  const links = [{
+    id: 'ql_test_a',
+    url: 'https://defillama.com/',
+    label: 'DeFi Llama',
+    addedAt: now - 1000,
+    updatedAt: now - 1000,
+  }, {
+    id: 'ql_test_b',
+    url: 'https://etherscan.io',
+    label: '',
+    addedAt: now,
+    updatedAt: now,
+  }];
+  ql.newsFeedPersistQuickLinks(links);
+  const loaded = ql.newsFeedLoadQuickLinks();
+  assert.equal(loaded.length, 2, 'quick links must persist added entries');
+  assert.equal(loaded[0].id, 'ql_test_b', 'quick links must sort by updatedAt desc');
+  assert.equal(ql.newsFeedQuickLinkDisplayLabel(loaded[1]), 'DeFi Llama', 'quick links must use label when set');
+  assert.equal(ql.newsFeedQuickLinkDisplayLabel({ url: 'https://www.dune.com/foo' }), 'dune.com', 'quick links must fall back to hostname');
+  assert.match(ql.newsFeedQuickLinkTruncateUrl('https://example.com/very/long/path/that/should/be/truncated'), /…$/, 'quick links must truncate long URLs');
+  const capped = Array.from({ length: 55 }, (_, i) => ({
+    id: `ql_cap_${i}`,
+    url: `https://example.com/${i}`,
+    label: `Link ${i}`,
+    addedAt: now + i,
+    updatedAt: now + i,
+  }));
+  ql.newsFeedPersistQuickLinks(capped);
+  assert.equal(ql.newsFeedLoadQuickLinks().length, 50, 'quick links must cap persisted list at 50');
+}
 assert.match(newsJs, /function parseWindowHours\(/, 'news API must accept window hours query param');
 assert.match(newsJs, /feedItems/, 'news API must return full feed pool for news feed tab');
 assert.match(newsJs, /i\.type === 'defi' \|\| !isPricePrediction\(i\)/, 'defi headlines must bypass price-prediction filter');
