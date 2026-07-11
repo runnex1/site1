@@ -27851,6 +27851,8 @@ document.addEventListener('DOMContentLoaded', () => {
 const NEWS_FEED_SETTINGS_KEY = 'vault_news_feed_settings_v1';
 const NEWS_FEED_SAVED_KEY = 'vault_news_saved_v1';
 const NEWS_FEED_SEEN_KEY = 'vault_news_feed_seen_v1';
+const NEWS_FEED_PIN_BOOST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const NEWS_FEED_SEEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const NEWS_FEED_HIDDEN_KEY = 'vault_news_feed_hidden_v1';
 const NEWS_FEED_HIDDEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const NEWS_FEED_SOURCE_CATALOG = {
@@ -27913,18 +27915,64 @@ function newsFeedItemSourceKey(item, settings) {
     return tg ? tg.handle : source;
 }
 
+function newsFeedPruneSeen(seen, now = Date.now()) {
+    const out = {};
+    for (const [key, ts] of Object.entries(seen || {})) {
+        const t = Number(ts);
+        if (Number.isFinite(t) && now - t < NEWS_FEED_SEEN_TTL_MS) out[key] = t;
+    }
+    return out;
+}
+
 function newsFeedLoadSeen() {
     try {
         const raw = localStorage.getItem(NEWS_FEED_SEEN_KEY);
         const parsed = raw ? JSON.parse(raw) : {};
-        return parsed && typeof parsed === 'object' ? parsed : {};
+        const base = parsed && typeof parsed === 'object' ? parsed : {};
+        const pruned = newsFeedPruneSeen(base);
+        if (Object.keys(pruned).length !== Object.keys(base).length) {
+            try { localStorage.setItem(NEWS_FEED_SEEN_KEY, JSON.stringify(pruned)); } catch (e) {}
+        }
+        return pruned;
     } catch (e) {
         return {};
     }
 }
 
 function newsFeedPersistSeen(seen) {
-    try { localStorage.setItem(NEWS_FEED_SEEN_KEY, JSON.stringify(seen)); } catch (e) {}
+    try { localStorage.setItem(NEWS_FEED_SEEN_KEY, JSON.stringify(newsFeedPruneSeen(seen))); } catch (e) {}
+}
+
+function newsFeedItemPublishedMs(item) {
+    const ts = Date.parse(item?.publishedAt || item?.pubDate || '');
+    return Number.isFinite(ts) ? ts : 0;
+}
+
+function newsFeedSeenAliasesFromKey(key) {
+    const aliases = new Set();
+    const urlOnly = String(key || '').split('#')[0];
+    if (urlOnly && /^https?:\/\//i.test(urlOnly)) aliases.add(urlOnly);
+    const tgMatch = urlOnly.match(/^https:\/\/t\.me\/([^/]+)\/(\d+)/i);
+    if (tgMatch) aliases.add(`tg:${tgMatch[1].toLowerCase()}:${tgMatch[2]}`);
+    return [...aliases].filter(a => a && a !== key);
+}
+
+function newsFeedSeenKeysForItem(item) {
+    const keys = new Set();
+    const primary = newsFeedItemKey(item);
+    if (primary) keys.add(primary);
+    const rawUrl = newsFeedNormalizeUrl(item?.url || item?.link || '');
+    if (rawUrl) {
+        keys.add(rawUrl);
+        const tgMatch = rawUrl.match(/^https:\/\/t\.me\/([^/]+)\/(\d+)/i);
+        if (tgMatch) keys.add(`tg:${tgMatch[1].toLowerCase()}:${tgMatch[2]}`);
+    }
+    return [...keys];
+}
+
+function newsFeedIsItemSeen(item) {
+    const seen = newsFeedLoadSeen();
+    return newsFeedSeenKeysForItem(item).some(k => seen[k]);
 }
 
 function newsFeedPruneHidden(hidden, now = Date.now()) {
@@ -27978,7 +28026,9 @@ function newsFeedMarkSeenByKey(key) {
     const id = String(key || '').trim();
     if (!id) return;
     const seen = newsFeedLoadSeen();
-    seen[id] = Date.now();
+    const now = Date.now();
+    seen[id] = now;
+    for (const alias of newsFeedSeenAliasesFromKey(id)) seen[alias] = now;
     newsFeedPersistSeen(seen);
     newsFeedRenderCenterFeed();
 }
@@ -27992,8 +28042,9 @@ function newsFeedMarkSeen(url) {
 }
 
 function newsFeedBoostReason(item, settings) {
-    const key = newsFeedItemKey(item);
-    if (key && newsFeedLoadSeen()[key]) return null;
+    if (newsFeedIsItemSeen(item)) return null;
+    const publishedMs = newsFeedItemPublishedMs(item);
+    if (!publishedMs || Date.now() - publishedMs > NEWS_FEED_PIN_BOOST_MAX_AGE_MS) return null;
     const sourceKey = newsFeedItemSourceKey(item, settings);
     if (sourceKey && newsFeedIsSourcePinned(sourceKey, settings)) return 'pinned';
     return null;

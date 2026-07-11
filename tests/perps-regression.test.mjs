@@ -978,6 +978,8 @@ assert.match(indexHtml, /function newsFeedTogglePinnedSource\(/, 'feed settings 
 assert.match(indexHtml, /news-feed-source-pin/, 'each feed source row must have a pin button');
 assert.match(indexHtml, /function newsFeedMarkSeenByKey\(/, 'news feed must support marking boosted stories as seen');
 assert.match(indexHtml, /function newsFeedOrderForDisplay\(/, 'news feed must boost pinned sources until seen');
+assert.match(indexHtml, /NEWS_FEED_PIN_BOOST_MAX_AGE_MS = 24 \* 60 \* 60 \* 1000/, 'pinned boost must expire after 24 hours');
+assert.match(indexHtml, /function newsFeedIsItemSeen\(/, 'seen state must survive feed refresh via stable key aliases');
 assert.match(indexHtml, /news-feed-seen-btn/, 'boosted news cards must show a Seen button');
 assert.match(indexHtml, /data-item-key/, 'news feed card actions must use stable item keys');
 assert.doesNotMatch(indexHtml, /NEWS_FEED_ALERT_RE/, 'hack/exploit auto-boost must be removed');
