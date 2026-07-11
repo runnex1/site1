@@ -5328,12 +5328,10 @@ button.news-feed-lens-chip { cursor:pointer; }
   align-self:flex-start; font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
   padding:3px 7px; border-radius:999px; margin-top:-2px;
 }
-.news-feed-boost-badge.alert { background:rgba(244,63,94,0.12); color:#fb7185; border:1px solid rgba(244,63,94,0.28); }
 .news-feed-boost-badge.pinned { background:rgba(245,158,11,0.12); color:var(--amber); border:1px solid rgba(245,158,11,0.28); }
 .news-feed-card.boosted {
-  padding-left:14px; border-left:2px solid rgba(244,63,94,0.45);
+  padding-left:14px; border-left:2px solid rgba(245,158,11,0.45);
 }
-.news-feed-card.boosted.pinned-only { border-left-color:rgba(245,158,11,0.45); }
 .news-feed-seen-btn {
   font-size:9px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
   padding:4px 8px; border-radius:999px; border:1px solid rgba(148,163,184,0.22);
@@ -27855,7 +27853,6 @@ const NEWS_FEED_SAVED_KEY = 'vault_news_saved_v1';
 const NEWS_FEED_SEEN_KEY = 'vault_news_feed_seen_v1';
 const NEWS_FEED_HIDDEN_KEY = 'vault_news_feed_hidden_v1';
 const NEWS_FEED_HIDDEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const NEWS_FEED_ALERT_RE = /\b(hack(?:ed|ing|s)?|exploit(?:ed|s|ing)?)\b/i;
 const NEWS_FEED_SOURCE_CATALOG = {
     crypto: ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'Unchained', 'CryptoPanic'],
     defi: ['The Defiant', 'The Block', 'Protos', 'Bankless', 'CoinDesk · DeFi', 'Unchained · DeFi', 'Decrypt · DeFi', 'CoinTelegraph · DeFi'],
@@ -27968,33 +27965,35 @@ function newsFeedIsHidden(item) {
     return Boolean(key && newsFeedLoadHidden()[key]);
 }
 
-function newsFeedHideItem(url) {
-    const key = newsFeedItemKey({ url });
-    if (!key) return;
+function newsFeedHideItemByKey(key) {
+    const id = String(key || '').trim();
+    if (!id) return;
     const hidden = newsFeedLoadHidden();
-    hidden[key] = Date.now();
+    hidden[id] = Date.now();
     newsFeedPersistHidden(hidden);
     newsFeedRenderCenterFeed();
 }
 
-function newsFeedMarkSeen(url) {
-    const key = newsFeedItemKey({ url });
-    if (!key) return;
+function newsFeedMarkSeenByKey(key) {
+    const id = String(key || '').trim();
+    if (!id) return;
     const seen = newsFeedLoadSeen();
-    seen[key] = Date.now();
+    seen[id] = Date.now();
     newsFeedPersistSeen(seen);
     newsFeedRenderCenterFeed();
 }
 
-function newsFeedItemIsHackExploit(item) {
-    const text = decodeHtmlEntities(`${item?.title || ''} ${item?.desc || item?.description || item?.text || ''}`);
-    return NEWS_FEED_ALERT_RE.test(text);
+function newsFeedHideItem(url) {
+    newsFeedHideItemByKey(newsFeedItemKey({ url }));
+}
+
+function newsFeedMarkSeen(url) {
+    newsFeedMarkSeenByKey(newsFeedItemKey({ url }));
 }
 
 function newsFeedBoostReason(item, settings) {
     const key = newsFeedItemKey(item);
     if (key && newsFeedLoadSeen()[key]) return null;
-    if (newsFeedItemIsHackExploit(item)) return 'alert';
     const sourceKey = newsFeedItemSourceKey(item, settings);
     if (sourceKey && newsFeedIsSourcePinned(sourceKey, settings)) return 'pinned';
     return null;
@@ -28016,12 +28015,7 @@ function newsFeedOrderForDisplay(items, settings) {
         if (newsFeedBoostReason(item, settings)) boosted.push(item);
         else normal.push(item);
     }
-    boosted.sort((a, b) => {
-        const ar = newsFeedBoostReason(a, settings) === 'alert' ? 0 : 1;
-        const br = newsFeedBoostReason(b, settings) === 'alert' ? 0 : 1;
-        if (ar !== br) return ar - br;
-        return newsFeedCompareItems(a, b);
-    });
+    boosted.sort(newsFeedCompareItems);
     normal.sort(newsFeedCompareItems);
     return boosted.concat(normal);
 }
@@ -28165,11 +28159,12 @@ function newsFeedPersistSaved(list) {
 }
 
 function newsFeedNormalizeUrl(url) {
-    const raw = String(url || '').trim();
+    const raw = decodeHtmlEntities(String(url || '').trim());
     if (!raw || raw === '#') return '';
     try {
         const u = new URL(raw);
         u.hostname = u.hostname.toLowerCase();
+        if (u.pathname.length > 1 && u.pathname.endsWith('/')) u.pathname = u.pathname.slice(0, -1);
         let out = u.toString();
         if (out.endsWith('/') && u.pathname === '/') out = out.slice(0, -1);
         return out;
@@ -28179,7 +28174,23 @@ function newsFeedNormalizeUrl(url) {
 }
 
 function newsFeedItemKey(item) {
-    return newsFeedNormalizeUrl(item?.url || item?.link || '');
+    const rawUrl = String(item?.url || item?.link || '').trim();
+    let urlKey = newsFeedNormalizeUrl(rawUrl);
+    if (urlKey) {
+        if (/^https:\/\/t\.me\/[a-zA-Z0-9_]+$/i.test(urlKey)) {
+            const title = String(item?.title || '').trim();
+            const ts = String(item?.publishedAt || item?.pubDate || '').trim();
+            if (title) return `${urlKey}#${encodeURIComponent(title)}#${encodeURIComponent(ts)}`;
+        }
+        return urlKey;
+    }
+    const source = String(item?.source || '').trim();
+    const title = String(item?.title || '').trim();
+    const ts = String(item?.publishedAt || item?.pubDate || '').trim();
+    if (source && title) {
+        return `fallback:${encodeURIComponent(source)}:${encodeURIComponent(title)}:${encodeURIComponent(ts)}`;
+    }
+    return '';
 }
 
 function newsFeedIsSaved(item) {
@@ -28244,6 +28255,22 @@ function newsFeedBindSaveClicks() {
     if (!grid) return;
     _newsFeedSaveBound = true;
     grid.addEventListener('click', e => {
+        const seenBtn = e.target.closest('.news-feed-seen-btn');
+        if (seenBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            const key = seenBtn.getAttribute('data-item-key');
+            if (key) newsFeedMarkSeenByKey(key);
+            return;
+        }
+        const hideBtn = e.target.closest('.news-feed-hide-btn');
+        if (hideBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            const key = hideBtn.getAttribute('data-item-key');
+            if (key) newsFeedHideItemByKey(key);
+            return;
+        }
         const btn = e.target.closest('.news-feed-save-btn');
         if (!btn) return;
         e.preventDefault();
@@ -28458,7 +28485,8 @@ function newsFeedRenderCenterCard(item, opts = {}) {
     const boost = featured ? null : newsFeedBoostReason(item, settings);
     const saved = newsFeedIsSaved(item);
     const time = newsFeedTimeLabel(item);
-    const url = newsFeedItemKey(item) || '#';
+    const itemKey = newsFeedItemKey(item);
+    const href = newsFeedNormalizeUrl(item?.url || item?.link || '') || (itemKey.startsWith('fallback:') ? '#' : itemKey) || '#';
     const tag = type === 'kobeissi' ? 'kobeissi' : type;
     const tg = newsFeedIsTelegramItem(item, settings);
     const tagLabel = item.type === 'kobeissi'
@@ -28470,19 +28498,16 @@ function newsFeedRenderCenterCard(item, opts = {}) {
         ? `<span>matched: ${dashNewsText(item._matchedKeywords.join(', '))}</span>` : '';
     const snippet = newsFeedExpandSnippet(item);
     const desc = snippet ? `<div class="news-feed-card-snippet">${dashNewsText(snippet)}</div>` : '';
-    const boostBadge = boost === 'alert'
-        ? '<span class="news-feed-boost-badge alert">⚠ Security</span>'
-        : boost === 'pinned'
-            ? '<span class="news-feed-boost-badge pinned">📌 Pinned</span>'
-            : '';
+    const boostBadge = boost === 'pinned'
+        ? '<span class="news-feed-boost-badge pinned">📌 Pinned</span>'
+        : '';
     const cardCls = [
         'news-feed-card',
         featured ? 'featured' : '',
         boost ? 'boosted' : '',
-        boost === 'pinned' ? 'pinned-only' : '',
     ].filter(Boolean).join(' ');
-    const seenBtn = boost
-        ? `<button type="button" class="news-feed-seen-btn" onclick="event.stopPropagation(); newsFeedMarkSeen('${dashEsc(url)}')" title="Mark as seen — moves to chronological order">Seen</button>`
+    const seenBtn = boost && itemKey
+        ? `<button type="button" class="news-feed-seen-btn" data-item-key="${dashEsc(itemKey)}" title="Mark as seen — moves to chronological order">Seen</button>`
         : '';
     return `<article class="${cardCls}" onclick="newsFeedCardClick(event, this)">
         <span class="news-feed-card-tag ${dashEsc(tag)}">${dashNewsText(tagLabel)}</span>
@@ -28497,9 +28522,9 @@ function newsFeedRenderCenterCard(item, opts = {}) {
             </div>
             <div class="news-feed-card-actions">
                 ${seenBtn}
-                <button type="button" class="news-feed-icon-btn news-feed-hide-btn" onclick="event.stopPropagation(); newsFeedHideItem('${dashEsc(url)}')" title="Not interested">⊘</button>
-                <button type="button" class="news-feed-icon-btn news-feed-save-btn${saved ? ' saved' : ''}" title="${saved ? 'Unsave' : 'Save'}" data-url="${dashEsc(url)}">${saved ? '★' : '☆'}</button>
-                <a class="news-feed-icon-btn" href="${dashEsc(url)}" target="_blank" rel="noopener" title="Open" onclick="event.stopPropagation()">↗</a>
+                <button type="button" class="news-feed-icon-btn news-feed-hide-btn" data-item-key="${dashEsc(itemKey)}" title="Not interested">⊘</button>
+                <button type="button" class="news-feed-icon-btn news-feed-save-btn${saved ? ' saved' : ''}" title="${saved ? 'Unsave' : 'Save'}" data-url="${dashEsc(href)}">${saved ? '★' : '☆'}</button>
+                <a class="news-feed-icon-btn" href="${dashEsc(href)}" target="_blank" rel="noopener" title="Open" onclick="event.stopPropagation()">↗</a>
             </div>
         </div>
     </article>`;

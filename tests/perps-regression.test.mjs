@@ -976,10 +976,11 @@ assert.match(indexHtml, /removedSources/, 'feed settings must persist removed RS
 assert.match(indexHtml, /pinnedSources/, 'feed settings must persist pinned sources');
 assert.match(indexHtml, /function newsFeedTogglePinnedSource\(/, 'feed settings must let users pin sources to top');
 assert.match(indexHtml, /news-feed-source-pin/, 'each feed source row must have a pin button');
-assert.match(indexHtml, /function newsFeedMarkSeen\(/, 'news feed must support marking boosted stories as seen');
-assert.match(indexHtml, /function newsFeedOrderForDisplay\(/, 'news feed must boost hack/exploit and pinned sources until seen');
+assert.match(indexHtml, /function newsFeedMarkSeenByKey\(/, 'news feed must support marking boosted stories as seen');
+assert.match(indexHtml, /function newsFeedOrderForDisplay\(/, 'news feed must boost pinned sources until seen');
 assert.match(indexHtml, /news-feed-seen-btn/, 'boosted news cards must show a Seen button');
-assert.match(indexHtml, /NEWS_FEED_ALERT_RE/, 'news feed must detect hack/exploit headlines');
+assert.match(indexHtml, /data-item-key/, 'news feed card actions must use stable item keys');
+assert.doesNotMatch(indexHtml, /NEWS_FEED_ALERT_RE/, 'hack/exploit auto-boost must be removed');
 assert.match(indexHtml, /function newsFeedHideItem\(/, 'news feed must let users hide headlines as not interested');
 assert.match(indexHtml, /news-feed-hide-btn/, 'news feed cards must show not-interested icon button');
 assert.match(indexHtml, /NEWS_FEED_HIDDEN_KEY/, 'news feed must persist hidden headlines');
