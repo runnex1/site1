@@ -940,6 +940,10 @@ assert.match(indexHtml, /function newsFeedSetTimeWindow\(/, 'news feed lens must
 assert.match(indexHtml, /function newsFeedNormalizeUrl\(/, 'news feed save must normalize article URLs');
 assert.match(indexHtml, /news-feed-save-btn/, 'save star must use delegated click handler');
 assert.match(indexHtml, /function newsFeedBindSaveClicks\(/, 'news feed must bind save button clicks on grid');
+assert.match(indexHtml, /function newsFeedRemoveSavedByUrl\(/, 'saved panel must support removing saved headlines');
+assert.match(indexHtml, /news-feed-saved-remove/, 'each saved headline card must have a remove button');
+assert.match(indexHtml, /newsFeedRemoveSavedByUrl\('?\$\{dashUri\(item\.url\)\}'?\)/, 'saved remove button must call remove handler with encoded url');
+assert.match(indexHtml, /newsFeedRenderSaved\(\);\s*\n\s*newsFeedRenderCenterFeed\(\)/, 'removing saved headline must refresh saved panel and feed stars');
 assert.match(newsJs, /function parseWindowHours\(/, 'news API must accept window hours query param');
 assert.match(newsJs, /feedItems/, 'news API must return full feed pool for news feed tab');
 assert.match(newsJs, /i\.type === 'defi' \|\| !isPricePrediction\(i\)/, 'defi headlines must bypass price-prediction filter');
@@ -979,7 +983,9 @@ assert.match(indexHtml, /news-feed-source-pin/, 'each feed source row must have 
 assert.match(indexHtml, /function newsFeedMarkSeenByKey\(/, 'news feed must support marking boosted stories as seen');
 assert.match(indexHtml, /function newsFeedOrderForDisplay\(/, 'news feed must boost pinned sources until seen');
 assert.match(indexHtml, /NEWS_FEED_PIN_BOOST_MAX_AGE_MS = 24 \* 60 \* 60 \* 1000/, 'pinned boost must expire after 24 hours');
-assert.match(indexHtml, /function newsFeedIsItemSeen\(/, 'seen state must survive feed refresh via stable key aliases');
+assert.match(indexHtml, /function newsFeedPersistSettingsDraft\(/, 'feed settings changes must auto-save to local storage');
+assert.match(indexHtml, /function newsFeedShouldShowKobeissi\(/, 'Kobeissi headline must hide after refresh or 1h unless replaced');
+assert.match(indexHtml, /NEWS_FEED_KOBEISSI_TTL_MS = 60 \* 60 \* 1000/, 'Kobeissi headline boost must expire after 1 hour');
 assert.match(indexHtml, /news-feed-seen-btn/, 'boosted news cards must show a Seen button');
 assert.match(indexHtml, /data-item-key/, 'news feed card actions must use stable item keys');
 assert.doesNotMatch(indexHtml, /NEWS_FEED_ALERT_RE/, 'hack/exploit auto-boost must be removed');

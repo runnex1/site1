@@ -5147,6 +5147,16 @@ body {
 }
 .news-feed-saved-card:hover { background:rgba(255,255,255,0.03); border-color:rgba(148,163,184,0.14); }
 .news-feed-saved-card.active { background:var(--teal-10); border-color:rgba(0,212,170,0.22); }
+.news-feed-saved-row { position:relative; display:block; }
+.news-feed-saved-row .news-feed-saved-card { padding-right:1.6rem; }
+.news-feed-saved-remove {
+  position:absolute; right:8px; top:10px;
+  border:none; background:transparent; color:var(--t3); cursor:pointer;
+  font-size:7px; line-height:1; padding:0; opacity:0.45;
+  width:10px; height:10px; display:inline-flex; align-items:center; justify-content:center;
+  z-index:1;
+}
+.news-feed-saved-remove:hover { color:#f87171; opacity:0.95; }
 .news-feed-saved-tag {
   font-size:8px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
   padding:2px 6px; border-radius:4px; display:inline-block; margin-bottom:8px;
@@ -27855,6 +27865,8 @@ const NEWS_FEED_PIN_BOOST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const NEWS_FEED_SEEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const NEWS_FEED_HIDDEN_KEY = 'vault_news_feed_hidden_v1';
 const NEWS_FEED_HIDDEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const NEWS_FEED_KOBEISSI_STATE_KEY = 'vault_news_kobeissi_v1';
+const NEWS_FEED_KOBEISSI_TTL_MS = 60 * 60 * 1000;
 const NEWS_FEED_SOURCE_CATALOG = {
     crypto: ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'Unchained', 'CryptoPanic'],
     defi: ['The Defiant', 'The Block', 'Protos', 'Bankless', 'CoinDesk · DeFi', 'Unchained · DeFi', 'Decrypt · DeFi', 'CoinTelegraph · DeFi'],
@@ -27898,6 +27910,86 @@ let _newsFeedLensLastTap = { cat: null, ts: 0 };
 let _newsFeedSaveBound = false;
 let _newsFeedTelegramModalCategory = null;
 let _newsFeedRemoveSourcePending = null;
+let _newsFeedKobeissiActiveKey = null;
+let _newsFeedKobeissiExpiryTimer = null;
+
+function newsFeedSyncKeywordsFromInput() {
+    if (!_newsFeedSettingsDraft) return;
+    const input = document.getElementById('newsFeedKwInput');
+    if (!input) return;
+    const raw = String(input?.value || '').split(/[,;\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    _newsFeedSettingsDraft.keywords = [...new Set(raw)].slice(0, 30);
+}
+
+function newsFeedEnsureSettingsDraft() {
+    if (!_newsFeedSettingsDraft) {
+        _newsFeedSettingsDraft = JSON.parse(JSON.stringify(newsFeedLoadSettings()));
+    }
+    return _newsFeedSettingsDraft;
+}
+
+function newsFeedPersistSettingsDraft(options = {}) {
+    const { refreshFeed = true, rebuildForm = false, refetch = false } = options;
+    if (!_newsFeedSettingsDraft) return;
+    newsFeedSyncKeywordsFromInput();
+    newsFeedSaveSettings(_newsFeedSettingsDraft);
+    if (rebuildForm) newsFeedBuildSettingsForm();
+    if (refreshFeed) {
+        newsFeedRenderLens(_newsFeedSettingsDraft);
+        if (refetch && typeof fetchDailyNews === 'function') fetchDailyNews(true);
+        else newsFeedRenderCenterFeed();
+    }
+}
+
+function newsFeedKobeissiKey(item) {
+    const title = String(item?.title || '').trim();
+    const url = newsFeedNormalizeUrl(item?.url || '');
+    if (title && url) return `${url}#${encodeURIComponent(title)}`;
+    if (title) return `kobeissi:${encodeURIComponent(title)}`;
+    return url || '';
+}
+
+function newsFeedLoadKobeissiState() {
+    try {
+        const raw = localStorage.getItem(NEWS_FEED_KOBEISSI_STATE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function newsFeedPersistKobeissiState(state) {
+    try { localStorage.setItem(NEWS_FEED_KOBEISSI_STATE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+
+function newsFeedShouldShowKobeissi(item) {
+    if (!item) return false;
+    const key = newsFeedKobeissiKey(item);
+    if (!key) return false;
+    const state = newsFeedLoadKobeissiState();
+    if (state.headlineKey !== key) return true;
+    if (Date.now() - Number(state.firstSeenAt || 0) >= NEWS_FEED_KOBEISSI_TTL_MS) return false;
+    return _newsFeedKobeissiActiveKey === key;
+}
+
+function newsFeedRecordKobeissiShown(item) {
+    const key = newsFeedKobeissiKey(item);
+    if (!key) return;
+    _newsFeedKobeissiActiveKey = key;
+    const state = newsFeedLoadKobeissiState();
+    if (state.headlineKey !== key) {
+        newsFeedPersistKobeissiState({ headlineKey: key, firstSeenAt: Date.now() });
+    }
+}
+
+function newsFeedScheduleKobeissiExpiryCheck() {
+    if (_newsFeedKobeissiExpiryTimer) return;
+    _newsFeedKobeissiExpiryTimer = setInterval(() => {
+        if (!_newsFeedKobeissiItem || newsFeedShouldShowKobeissi(_newsFeedKobeissiItem)) return;
+        newsFeedRenderCenterFeed();
+    }, 60000);
+}
 
 function newsFeedVisibleRssSources(type, settings) {
     const removed = new Set(settings?.removedSources || []);
@@ -28300,6 +28392,19 @@ function newsFeedToggleSavedByUrl(url) {
     if (item) newsFeedToggleSaved(item);
 }
 
+function newsFeedRemoveSavedByUrl(encodedUrl) {
+    const url = decodeURIComponent(String(encodedUrl || ''));
+    const key = newsFeedNormalizeUrl(url);
+    if (!key) return;
+    let saved = newsFeedLoadSaved();
+    const idx = saved.findIndex(s => newsFeedNormalizeUrl(s.url) === key);
+    if (idx < 0) return;
+    saved.splice(idx, 1);
+    newsFeedPersistSaved(saved);
+    newsFeedRenderSaved();
+    newsFeedRenderCenterFeed();
+}
+
 function newsFeedBindSaveClicks() {
     if (_newsFeedSaveBound) return;
     const grid = document.getElementById('newsFeedGrid');
@@ -28494,11 +28599,14 @@ function newsFeedRenderSaved() {
     listEl.innerHTML = saved.map(item => {
         const type = newsFeedNormalizeType(item.type);
         const time = newsFeedTimeLabel(item);
-        return `<a class="news-feed-saved-card" href="${dashEsc(item.url)}" target="_blank" rel="noopener">
-            <span class="news-feed-saved-tag ${dashEsc(type)}">${dashEsc(type)}</span>
-            <div class="news-feed-saved-meta">${dashNewsText(item.source || '')}${time ? ` · ${time}` : ''}</div>
-            <div class="news-feed-saved-title">${dashNewsText(item.title || 'Untitled')}</div>
-        </a>`;
+        return `<div class="news-feed-saved-row">
+            <a class="news-feed-saved-card" href="${dashEsc(item.url)}" target="_blank" rel="noopener">
+                <span class="news-feed-saved-tag ${dashEsc(type)}">${dashEsc(type)}</span>
+                <div class="news-feed-saved-meta">${dashNewsText(item.source || '')}${time ? ` · ${time}` : ''}</div>
+                <div class="news-feed-saved-title">${dashNewsText(item.title || 'Untitled')}</div>
+            </a>
+            <button type="button" class="news-feed-saved-remove" onclick="event.preventDefault(); event.stopPropagation(); newsFeedRemoveSavedByUrl('${dashUri(item.url)}')" title="Remove from saved">✕</button>
+        </div>`;
     }).join('');
 }
 
@@ -28590,8 +28698,10 @@ function newsFeedRenderCenterFeed() {
     const cards = [];
     if (_newsFeedKobeissiItem && settings.categories?.macro !== false) {
         const kobeissi = { ..._newsFeedKobeissiItem, type: 'kobeissi' };
-        if (newsFeedPassesKeywordFilter(kobeissi, settings)) {
+        if (newsFeedPassesKeywordFilter(kobeissi, settings) && newsFeedShouldShowKobeissi(kobeissi)) {
+            newsFeedRecordKobeissiShown(kobeissi);
             cards.push(newsFeedRenderCenterCard(kobeissi, { featured: true }));
+            newsFeedScheduleKobeissiExpiryCheck();
         }
     }
     if (!filtered.length && !cards.length) {
@@ -28689,6 +28799,11 @@ function newsFeedOpenSettings() {
 function newsFeedCloseSettings() {
     newsFeedCloseTelegramModal();
     newsFeedCloseRemoveSourceModal();
+    if (_newsFeedSettingsDraft) {
+        newsFeedSyncKeywordsFromInput();
+        newsFeedSaveSettings(_newsFeedSettingsDraft);
+        newsFeedRenderCenterFeed();
+    }
     const drawer = document.getElementById('newsFeedSettingsDrawer');
     if (drawer) { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); }
     _newsFeedSettingsDraft = null;
@@ -28799,54 +28914,45 @@ function newsFeedSubmitTelegramModal() {
 }
 
 function newsFeedToggleCategory(key) {
-    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
-    _newsFeedSettingsDraft.categories[key] = !_newsFeedSettingsDraft.categories[key];
-    newsFeedBuildSettingsForm();
+    const s = newsFeedEnsureSettingsDraft();
+    s.categories[key] = !s.categories[key];
+    newsFeedPersistSettingsDraft({ refreshFeed: true, rebuildForm: true });
 }
 
 function newsFeedToggleSource(label, checked) {
-    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
-    _newsFeedSettingsDraft.sources[label] = checked;
+    const s = newsFeedEnsureSettingsDraft();
+    s.sources[label] = checked;
+    newsFeedPersistSettingsDraft({ refreshFeed: true, rebuildForm: false });
 }
 
 function newsFeedTogglePinnedSource(encodedId) {
     const id = decodeURIComponent(String(encodedId || ''));
     if (!id) return;
-    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = JSON.parse(JSON.stringify(newsFeedLoadSettings()));
-    _newsFeedSettingsDraft.pinnedSources = Array.isArray(_newsFeedSettingsDraft.pinnedSources)
-        ? _newsFeedSettingsDraft.pinnedSources
-        : [];
-    const idx = _newsFeedSettingsDraft.pinnedSources.indexOf(id);
-    if (idx >= 0) _newsFeedSettingsDraft.pinnedSources.splice(idx, 1);
-    else _newsFeedSettingsDraft.pinnedSources.push(id);
-    newsFeedSaveSettings(_newsFeedSettingsDraft);
-    newsFeedBuildSettingsForm();
-    newsFeedRenderCenterFeed();
+    const s = newsFeedEnsureSettingsDraft();
+    s.pinnedSources = Array.isArray(s.pinnedSources) ? s.pinnedSources : [];
+    const idx = s.pinnedSources.indexOf(id);
+    if (idx >= 0) s.pinnedSources.splice(idx, 1);
+    else s.pinnedSources.push(id);
+    newsFeedPersistSettingsDraft({ refreshFeed: true, rebuildForm: true });
 }
 
 function newsFeedToggleTelegramChannel(handle, enabled) {
-    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
-    _newsFeedSettingsDraft.telegram = (_newsFeedSettingsDraft.telegram || []).map(t =>
+    const s = newsFeedEnsureSettingsDraft();
+    s.telegram = (s.telegram || []).map(t =>
         t.handle === handle ? { ...t, enabled } : t,
     );
+    newsFeedPersistSettingsDraft({ refreshFeed: true, rebuildForm: false, refetch: true });
 }
 
 function newsFeedToggleSetting(key) {
-    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
-    _newsFeedSettingsDraft[key] = !_newsFeedSettingsDraft[key];
-    newsFeedBuildSettingsForm();
+    const s = newsFeedEnsureSettingsDraft();
+    s[key] = !s[key];
+    newsFeedPersistSettingsDraft({ refreshFeed: true, rebuildForm: true });
 }
 
 function newsFeedApplySettings() {
-    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
-    const input = document.getElementById('newsFeedKwInput');
-    const raw = String(input?.value || '').split(/[,;\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
-    _newsFeedSettingsDraft.keywords = [...new Set(raw)].slice(0, 30);
-    newsFeedSaveSettings(_newsFeedSettingsDraft);
-    _newsFeedSettingsDraft = null;
     newsFeedCloseSettings();
     if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
-    else newsFeedRenderCenterFeed();
 }
 
 document.addEventListener('keydown', e => {
