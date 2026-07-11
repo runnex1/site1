@@ -28826,6 +28826,12 @@ function newsFeedIsTelegramItem(item, settings) {
     return Boolean(newsFeedTelegramEntry(settings, item.source));
 }
 
+function newsFeedSanitizeKeywords(keywords) {
+    return (keywords || [])
+        .map((k) => String(k).trim().toLowerCase())
+        .filter((k) => k && k !== 'test-sync');
+}
+
 function newsFeedLoadSettings() {
     try {
         const raw = localStorage.getItem(NEWS_FEED_SETTINGS_KEY);
@@ -28835,7 +28841,7 @@ function newsFeedLoadSettings() {
         const merged = {
             categories: { ...base.categories, ...(parsed.categories || {}) },
             sources: { ...base.sources, ...(parsed.sources || {}) },
-            keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(k => String(k).trim().toLowerCase()).filter(Boolean) : [],
+            keywords: newsFeedSanitizeKeywords(parsed.keywords),
             searchBody: Boolean(parsed.searchBody),
             timeWindowHours: NEWS_FEED_TIME_WINDOWS.some(w => w.hours === Number(parsed.timeWindowHours))
                 ? Number(parsed.timeWindowHours)
@@ -29628,7 +29634,13 @@ function newsFeedClearKeywordFilters() {
     const s = newsFeedLoadSettings();
     if (!s.keywords?.length) return;
     s.keywords = [];
+    if (_newsFeedSettingsDraft) {
+        _newsFeedSettingsDraft.keywords = [];
+        const input = document.getElementById('newsFeedKwInput');
+        if (input) input.value = '';
+    }
     newsFeedSaveSettings(s);
+    newsFeedScheduleCloudSync();
     newsFeedRenderCenterFeed();
 }
 
@@ -30268,13 +30280,127 @@ function watcherPmWalletAddresses() {
     });
 }
 
+function watcherPmGetActivityLookbackSec() {
+    const days = Math.max(1, Number(watcherPmActivityDays) || 1);
+    return days * 86400;
+}
+
+function watcherPmTimeframeLabel() {
+    const days = Math.max(1, Number(watcherPmActivityDays) || 1);
+    return `${days}d`;
+}
+
+function watcherPmSyncTimeframeUi() {
+    document.querySelectorAll('.watcher-v2-tf-pill[data-watcher-pm-days]').forEach(btn => {
+        const days = Number(btn.getAttribute('data-watcher-pm-days'));
+        btn.classList.toggle('active', days === watcherPmActivityDays);
+    });
+}
+
+function watcherPmSetActivityDays(days, btn) {
+    watcherPmActivityDays = [1, 3, 7].includes(Number(days)) ? Number(days) : 1;
+    try { localStorage.setItem(WATCHER_PM_ACTIVITY_DAYS_KEY, String(watcherPmActivityDays)); } catch (e) {}
+    watcherPmSyncTimeframeUi();
+    if (btn) btn.classList.add('active');
+    renderWatcherPmActivity();
+}
+
 function watcherPmLoadPrefs() {
     try {
         const raw = localStorage.getItem(WATCHER_PM_MIN_USD_KEY);
         if (raw != null) watcherPmMinUsd = Math.max(0, Number(raw) || 0);
     } catch (e) {}
+    try {
+        const daysRaw = localStorage.getItem(WATCHER_PM_ACTIVITY_DAYS_KEY);
+        if (daysRaw != null) {
+            const d = Number(daysRaw);
+            if ([1, 3, 7].includes(d)) watcherPmActivityDays = d;
+        }
+    } catch (e) {}
     const input = document.getElementById('watcherPmMinUsdInput');
     if (input) input.value = watcherPmMinUsd > 0 ? String(watcherPmMinUsd) : '';
+    watcherPmSyncTimeframeUi();
+}
+
+function watcherPmPositionValue(p) {
+    const currentValue = parseFloat(p.currentValue ?? p.current_value ?? 0);
+    if (Number.isFinite(currentValue) && currentValue > 0) return currentValue;
+    const size = parseFloat(p.size || 0);
+    const curPrice = parseFloat(p.curPrice ?? p.cur_price ?? 0);
+    if (Number.isFinite(size) && size > 0 && Number.isFinite(curPrice) && curPrice > 0) return size * curPrice;
+    const avgPrice = parseFloat(p.avgPrice ?? p.avg_price ?? 0);
+    if (Number.isFinite(size) && size > 0 && Number.isFinite(avgPrice) && avgPrice > 0) return size * avgPrice;
+    return 0;
+}
+
+async function watcherPmFetchWalletPositions(wallet) {
+    const key = String(wallet || '').toLowerCase();
+    if (!key) return [];
+    const cached = _watcherPmPositionsCache[key];
+    if (cached && Date.now() - cached.ts < 60000) return cached.positions;
+    const positions = [];
+    let offset = 0;
+    while (true) {
+        const url = `https://data-api.polymarket.com/positions?user=${encodeURIComponent(wallet)}&limit=100&offset=${offset}&sizeThreshold=0.01`;
+        const page = await pmFetch(url);
+        if (!Array.isArray(page) || page.length === 0) break;
+        positions.push(...page);
+        if (page.length < 100) break;
+        offset += 100;
+    }
+    _watcherPmPositionsCache[key] = { positions, ts: Date.now() };
+    return positions;
+}
+
+function watcherPmRenderPositionsHtml(positions) {
+    const filtered = (positions || [])
+        .map(p => ({ p, value: watcherPmPositionValue(p) }))
+        .filter(x => x.value >= WATCHER_PM_POSITION_MIN_USD)
+        .sort((a, b) => b.value - a.value);
+    if (!filtered.length) {
+        return `<div class="watcher-v2-pos-empty">No open positions ≥ $${WATCHER_PM_POSITION_MIN_USD}.</div>`;
+    }
+    return filtered.map(({ p, value }) => {
+        const title = p.title || p.marketTitle || 'Unknown market';
+        const side = (p.outcome || p.side || '').toUpperCase() || '—';
+        const size = parseFloat(p.size || 0);
+        const sizeStr = Number.isFinite(size) && size > 0
+            ? (size >= 1000 ? Math.round(size).toLocaleString('en-US') : size.toFixed(1)) + ' sh'
+            : '—';
+        const valueStr = value >= 1000 ? '$' + Math.round(value).toLocaleString('en-US') : '$' + value.toFixed(2);
+        return `<div class="watcher-v2-pos-row">
+            <div class="watcher-v2-pos-title">${dashEsc(title)}</div>
+            <div class="watcher-v2-pos-side">${dashEsc(side)}</div>
+            <div class="watcher-v2-pos-size">${dashEsc(sizeStr)}</div>
+            <div class="watcher-v2-pos-value">${dashEsc(valueStr)}</div>
+        </div>`;
+    }).join('');
+}
+
+async function watcherPmLoadExpandedPositions() {
+    const key = watcherPmActivityFilterWallet;
+    if (!key) return;
+    const w = (watcherWallets || []).find(x => (x.category || '').toLowerCase() === 'pm'
+        && x.address.toLowerCase() === key);
+    if (!w) return;
+    const el = document.getElementById(`watcherPmPositions-${w.id}`);
+    if (!el) return;
+    const body = el.querySelector('.watcher-v2-pos-loading') || el.querySelector('.watcher-v2-pos-empty')
+        || el.querySelector('.watcher-v2-pos-row')?.parentElement;
+    const contentSlot = el.querySelector('.watcher-v2-pos-body') || document.createElement('div');
+    if (!contentSlot.classList.contains('watcher-v2-pos-body')) {
+        contentSlot.className = 'watcher-v2-pos-body';
+        el.appendChild(contentSlot);
+    }
+    contentSlot.innerHTML = `<div class="watcher-v2-pos-loading">Loading positions…</div>`;
+    try {
+        const positions = await watcherPmFetchWalletPositions(w.address);
+        if (watcherPmActivityFilterWallet !== key) return;
+        contentSlot.innerHTML = watcherPmRenderPositionsHtml(positions);
+    } catch (e) {
+        if (watcherPmActivityFilterWallet !== key) return;
+        contentSlot.innerHTML = `<div class="watcher-v2-pos-empty">Could not load positions.</div>`;
+    }
 }
 
 function watcherPmSetMinUsd(value) {
@@ -30297,6 +30423,7 @@ function watcherPmFilterActivityByWallet(address) {
     watcherPmUpdateActivityFilterUi();
     watcherPmRenderFilteredActivity();
     renderWatcherWallets();
+    if (watcherPmActivityFilterWallet) watcherPmLoadExpandedPositions();
 }
 
 function watcherPmClearActivityFilter() {
@@ -30317,10 +30444,12 @@ function watcherPmUpdateActivityFilterUi() {
         const name = w?.label || dashShortAddr(watcherPmActivityFilterWallet);
         if (bar) bar.style.display = '';
         if (label) label.textContent = `Showing activity for ${name}`;
-        if (sub) sub.textContent = 'filtered wallet';
+        if (sub) sub.textContent = `filtered wallet · ${watcherPmTimeframeLabel()}`;
     } else {
         if (bar) bar.style.display = 'none';
-        if (sub) sub.textContent = pmCount ? `${pmCount} watched wallet${pmCount === 1 ? '' : 's'}` : 'all watched wallets';
+        if (sub) sub.textContent = pmCount
+            ? `${pmCount} watched wallet${pmCount === 1 ? '' : 's'} · ${watcherPmTimeframeLabel()}`
+            : `all watched wallets · ${watcherPmTimeframeLabel()}`;
     }
 }
 
@@ -30345,7 +30474,7 @@ function watcherPmRenderActivityRows(trades) {
         if (watcherPmActivityFilterWallet) hints.push('this wallet');
         if (watcherPmMinUsd > 0) hints.push(`≥ $${watcherPmMinUsd}`);
         const hint = hints.length ? ` (${hints.join(', ')})` : '';
-        el.innerHTML = `<div class="watcher-v2-empty" style="padding:0.75rem;">No trades match${hint} in the last 48h.</div>`;
+        el.innerHTML = `<div class="watcher-v2-empty" style="padding:0.75rem;">No trades match${hint} in the last ${watcherPmTimeframeLabel()}.</div>`;
         return;
     }
     el.innerHTML = filtered.map(t => {
