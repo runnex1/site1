@@ -1348,12 +1348,19 @@ assert.match(indexHtml, /mergeWatcherWalletsByKey\(fromLs, fromMem\)/, 'cloud hy
   const merged = mergeWatcherWalletsForSync(existing, incoming);
   assert.equal(merged.length, 2, 'server watcher merge must keep existing and new PM wallets');
   assert.equal(merged.some(w => w.label === 'tsybka'), true, 'server watcher merge must retain PM profile metadata');
+  const sameProxy = mergeWatcherWalletsForSync(
+    [{ id: '1', address: '0xabc', category: 'pm', sourceInput: 'https://polymarket.com/@a', profileUrl: 'https://polymarket.com/@a', addedAt: 1 }],
+    [{ id: '2', address: '0xabc', category: 'pm', sourceInput: 'https://polymarket.com/@b', profileUrl: 'https://polymarket.com/@b', addedAt: 2 }],
+  );
+  assert.equal(sameProxy.length, 2, 'PM merge must keep distinct profiles even with same proxy wallet');
 }
+assert.match(indexHtml, /function watcherPmWalletIdentityKey\(/, 'PM wallet add must dedupe by profile identity');
+assert.match(indexHtml, /_watcherWalletMutationDepth/, 'cloud hydrate must defer while watcher wallet save is in flight');
 assert.match(indexHtml, /async function saveWatcherWallets\(/, 'watcher wallet save must await cloud sync');
 assert.match(indexHtml, /await saveWatcherWallets\(\)/, 'watcher wallet mutations must await server persist');
 assert.match(indexHtml, /async function addWatcherWallet\(/, 'addWatcherWallet must be async so PM wallets persist before refresh');
 assert.match(indexHtml, /async function removeWatcherWallet\(/, 'removeWatcherWallet must await cloud sync');
-assert.match(indexHtml, /watcherWallets:\s*_ls\('vault-watcher-wallets', '\[\]'\)/, 'saveData must read watcher wallets from localStorage after saveWatcherWallets');
+assert.match(indexHtml, /mergeWatcherWalletsByKey\(fromLs, fromMem\)/, 'saveData must union localStorage and in-memory watcher wallets');
 {
   const watcherCtx = { watcherWallets: [] };
   vm.runInNewContext(`

@@ -10355,6 +10355,7 @@ let watcherPmMinUsd = 0;
 let watcherPmActivityDays = 1;
 let watcherPmActivityFilterWallet = '';
 let _vaultLoadDataReady = false;
+let _watcherWalletMutationDepth = 0;
 let _watcherPmActivityTrades = [];
 let _watcherPmPositionsCache = {};
 const WATCHER_PM_MIN_USD_KEY = 'watcher-pm-min-usd';
@@ -10549,13 +10550,37 @@ function mergeWatcherWalletsByKey(local, server) {
     const byKey = new Map();
     for (const item of [...(Array.isArray(local) ? local : []), ...(Array.isArray(server) ? server : [])]) {
         if (!item || typeof item !== 'object') continue;
-        const key = `${String(item.address || '').toLowerCase()}|${String(item.category || '').toLowerCase()}`;
+        const cat = String(item.category || '').toLowerCase();
+        let key = '';
+        if (cat === 'pm') {
+            const src = String(item.sourceInput || item.profileUrl || '').trim().toLowerCase();
+            if (src) key = `pm:${src}`;
+            else if (item.id) key = `pm:id:${String(item.id)}`;
+        }
+        if (!key) {
+            key = `${String(item.address || '').toLowerCase()}|${cat}`;
+        }
         if (!key || key === '|') continue;
         const ts = Number(item.addedAt) || 0;
         const prev = byKey.get(key);
         if (!prev || ts >= Number(prev.addedAt) || 0) byKey.set(key, item);
     }
     return [...byKey.values()];
+}
+function watcherPmWalletIdentityKey(input, resolved) {
+    const src = String(input || resolved?.sourceInput || resolved?.profileUrl || '').trim().toLowerCase();
+    if (src) return src;
+    return String(resolved?.profileUrl || '').trim().toLowerCase();
+}
+function watcherFindDuplicatePmWallet(proxyWallet, identityKey) {
+    const proxy = String(proxyWallet || '').toLowerCase();
+    const identity = String(identityKey || '').toLowerCase();
+    return watcherWallets.find((w) => {
+        if ((w.category || '').toLowerCase() !== 'pm') return false;
+        const existingIdentity = String(w.sourceInput || w.profileUrl || '').trim().toLowerCase();
+        if (identity && existingIdentity && identity === existingIdentity) return true;
+        return Boolean(proxy && w.address?.toLowerCase() === proxy && !identity);
+    });
 }
 function mergeWatchlistEntries(local, server) {
     return mergeWatcherEntriesById(local, server, 'addedAt');
@@ -10831,6 +10856,7 @@ function applyCloudPortfolioAux(parsed) {
     });
     apply('watcherWallets', () => {
         if (!Array.isArray(parsed._watcherWallets)) return;
+        if (_watcherWalletMutationDepth > 0) return;
         const fromLs = syncLsJson('vault-watcher-wallets', '[]');
         const fromMem = Array.isArray(watcherWallets) ? watcherWallets : [];
         const local = mergeWatcherWalletsByKey(fromLs, fromMem);
@@ -11153,8 +11179,12 @@ async function saveData(syncOpts = {}) {
         Object.assign(payload, {
             // Watchlist
             watchlist:      (() => { try { return Array.isArray(watchlist) ? watchlist : _ls('wl-data', '[]'); } catch (e) { return _ls('wl-data', '[]'); } })(),
-            // Watcher infrastructure — read localStorage (saveWatcherWallets writes before saveData)
-            watcherWallets: _ls('vault-watcher-wallets', '[]'),
+            // Watcher infrastructure — union in-memory + localStorage so async PM resolves cannot race stale reads
+            watcherWallets: (() => {
+                const fromLs = _ls('vault-watcher-wallets', '[]');
+                const fromMem = Array.isArray(watcherWallets) ? watcherWallets : [];
+                return mergeWatcherWalletsByKey(fromLs, fromMem);
+            })(),
             watcherLinks:   (() => { try { return Array.isArray(watcherLinks) ? watcherLinks : _ls('watcher-links', '[]'); } catch (e) { return _ls('watcher-links', '[]'); } })(),
             // Aave cap alert markets
             aaveMarkets:    _ls('aavecap-markets-v1', '[]'),
@@ -23000,10 +23030,9 @@ function watcherWatchlistWallets() {
     return (Array.isArray(watcherWallets) ? watcherWallets : []).filter(w => !watcherIsLoopOrPmCategory(w.category));
 }
 
-async function persistWatcherWalletsCloud() {
+async function persistWatcherWalletsCloud(wallets = watcherWallets) {
     if (location.protocol === 'file:') return true;
-    const wallets = syncLsJson('vault-watcher-wallets', '[]');
-    const body = { watcherWallets: Array.isArray(wallets) ? wallets : [] };
+    const body = { watcherWallets: Array.isArray(wallets) ? [...wallets] : [] };
     if (!body.watcherWallets.length) body.watcherWalletsClear = true;
     try {
         const res = await fetch('/api/sync', {
@@ -23028,10 +23057,16 @@ async function persistWatcherWalletsCloud() {
 }
 
 async function saveWatcherWallets() {
-    try { localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets)); } catch(e) {}
-    const clearEmpty = !(Array.isArray(watcherWallets) && watcherWallets.length);
-    await persistWatcherWalletsCloud();
-    await saveData({ watcherWalletsClear: clearEmpty });
+    const snapshot = Array.isArray(watcherWallets) ? [...watcherWallets] : [];
+    try { localStorage.setItem('vault-watcher-wallets', JSON.stringify(snapshot)); } catch(e) {}
+    const clearEmpty = !snapshot.length;
+    _watcherWalletMutationDepth++;
+    try {
+        await persistWatcherWalletsCloud(snapshot);
+        await saveData({ watcherWalletsClear: clearEmpty });
+    } finally {
+        _watcherWalletMutationDepth = Math.max(0, _watcherWalletMutationDepth - 1);
+    }
     updateWatcherWalletCount();
 }
 
@@ -23229,20 +23264,26 @@ async function addWatcherWallet() {
                 return;
             }
             const proxyWallet = String(resolved.proxyWallet).toLowerCase();
-            if (watcherWallets.find(w => w.address.toLowerCase() === proxyWallet && w.category === 'pm')) {
-                alert('Wallet already in this section.');
+            const identityKey = watcherPmWalletIdentityKey(address, resolved);
+            if (watcherFindDuplicatePmWallet(proxyWallet, identityKey)) {
+                alert('This Polymarket profile is already in your watchlist.');
                 return;
             }
-            watcherWallets.push({
-                id: Date.now().toString(),
-                address: proxyWallet,
-                label: label || resolved.label || '',
-                category: 'pm',
-                profileUrl: resolved.profileUrl || null,
-                sourceInput: address,
-                addedAt: Date.now(),
-            });
-            await saveWatcherWallets();
+            _watcherWalletMutationDepth++;
+            try {
+                watcherWallets.push({
+                    id: Date.now().toString() + '-' + Math.random().toString(36).slice(2, 7),
+                    address: proxyWallet,
+                    label: label || resolved.label || '',
+                    category: 'pm',
+                    profileUrl: resolved.profileUrl || null,
+                    sourceInput: address,
+                    addedAt: Date.now(),
+                });
+                await saveWatcherWallets();
+            } finally {
+                _watcherWalletMutationDepth = Math.max(0, _watcherWalletMutationDepth - 1);
+            }
             if (addrEl) addrEl.value = '';
             if (labelEl) labelEl.value = '';
             renderWatcherWalletList('pm');
