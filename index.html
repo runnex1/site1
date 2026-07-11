@@ -574,12 +574,13 @@ html { height: 100%; }
 .watcher-v2-wallet-row.pm-activity-filter { background:rgba(183,140,255,0.08); box-shadow:inset 3px 0 0 rgba(183,140,255,0.55); }
 .watcher-v2-wallet-row.pm-expanded { background:rgba(183,140,255,0.1); box-shadow:inset 3px 0 0 rgba(183,140,255,0.7); }
 .watcher-v2-wallet-positions {
-  margin:0 0.85rem 0.55rem 2.75rem; padding:0.45rem 0.55rem; border-radius:8px;
+  margin:0 0.85rem 0.55rem 2.75rem; padding:0.55rem 0.65rem; border-radius:8px;
   border:1px solid rgba(183,140,255,0.28); background:rgba(183,140,255,0.06);
+  display:flex; flex-direction:column; gap:0.15rem;
 }
 .watcher-v2-pos-head {
   display:flex; align-items:center; justify-content:space-between; gap:0.45rem;
-  margin-bottom:0.35rem; font-family:var(--ff-mono); font-size:0.62rem; font-weight:900;
+  margin-bottom:0.45rem; font-family:var(--ff-mono); font-size:0.62rem; font-weight:900;
   letter-spacing:0.08em; text-transform:uppercase; color:var(--wv-violet);
 }
 .watcher-v2-pos-head button {
@@ -587,8 +588,8 @@ html { height: 100%; }
   background:rgba(183,140,255,0.12); color:var(--wv-violet); font-family:var(--ff-mono); font-size:0.62rem; font-weight:800; cursor:pointer;
 }
 .watcher-v2-pos-row {
-  display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; gap:0.45rem;
-  padding:0.35rem 0; border-top:1px solid rgba(134,159,179,0.11); align-items:center; font-size:0.76rem;
+  display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; gap:0.55rem;
+  padding:0.55rem 0; border-top:1px solid rgba(134,159,179,0.11); align-items:center; font-size:0.76rem;
 }
 .watcher-v2-pos-row:first-of-type { border-top:none; }
 .watcher-v2-pos-title { font-weight:800; color:var(--t1); line-height:1.25; }
@@ -669,7 +670,12 @@ body[data-active-tab="news"] #newsTab,
   height:100%; min-height:0;
 }
 
-/* Watcher tab: hide market ticker, match dashboard surface */
+/* Watcher tab: hide topbar + market ticker, match dashboard surface */
+body[data-active-tab="watcher"] .topbar,
+.page-content.tab-watcher .topbar,
+.page-content:has(#watcherTab.active) .topbar {
+  display:none !important;
+}
 body[data-active-tab="watcher"] .market-ticker-strip,
 .page-content.tab-watcher .market-ticker-strip,
 .page-content:has(#watcherTab.active) .market-ticker-strip {
