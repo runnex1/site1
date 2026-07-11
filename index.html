@@ -5141,22 +5141,22 @@ body {
 .news-feed-panel-count { font-family:var(--ff-mono); font-size:10px; color:var(--t3); }
 .news-feed-saved-list { flex:1; overflow:auto; padding:0.55rem 0.65rem 0.7rem; }
 .news-feed-saved-card {
-  padding:0.55rem 0.5rem; border-radius:6px; border:1px solid transparent;
+  padding:0.7rem 0.55rem; border-radius:6px; border:1px solid transparent;
   border-bottom:1px solid rgba(148,163,184,0.08);
-  margin-bottom:0; cursor:pointer;
+  margin-bottom:2px; cursor:pointer; display:block; text-decoration:none;
 }
 .news-feed-saved-card:hover { background:rgba(255,255,255,0.03); border-color:rgba(148,163,184,0.14); }
 .news-feed-saved-card.active { background:var(--teal-10); border-color:rgba(0,212,170,0.22); }
 .news-feed-saved-tag {
-  font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
-  padding:2px 6px; border-radius:4px; display:inline-block; margin-bottom:5px;
+  font-size:8px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  padding:2px 6px; border-radius:4px; display:inline-block; margin-bottom:6px;
 }
 .news-feed-saved-tag.crypto { background:var(--teal-10); color:var(--teal); }
 .news-feed-saved-tag.defi { background:var(--fuchsia-10); color:var(--fuchsia); }
 .news-feed-saved-tag.macro { background:var(--indigo-10); color:var(--indigo); }
 .news-feed-saved-tag.tg { background:rgba(56,189,248,0.12); color:var(--sky); }
-.news-feed-saved-title { font-size:12px; line-height:1.35; font-weight:600; margin-bottom:3px; color:var(--t1); }
-.news-feed-saved-meta { font-size:10px; color:var(--t3); font-family:var(--ff-mono); }
+.news-feed-saved-title { font-size:11px; line-height:1.55; font-weight:400; margin-bottom:5px; color:var(--t2); letter-spacing:0.01em; }
+.news-feed-saved-meta { font-size:9px; color:var(--t3); font-family:var(--ff-mono); line-height:1.4; opacity:0.85; }
 .news-feed-saved-empty { padding:0.55rem 0.5rem; font-size:0.76rem; color:var(--t3); line-height:1.45; }
 .news-feed-context-empty {
   font-size:0.76rem; color:var(--t3); line-height:1.45;
@@ -5169,13 +5169,32 @@ body {
 .news-feed-center-head-main { flex:1; min-width:0; }
 .news-feed-center-head h1 { margin:0 0 6px; font-size:23px; font-weight:900; letter-spacing:-.02em; color:var(--t1); }
 .news-feed-center-head p { margin:0; font-size:12px; color:var(--t3); line-height:1.5; }
-.news-feed-lens { margin-top:14px; display:flex; flex-wrap:wrap; gap:6px; }
+.news-feed-lens { margin-top:14px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .news-feed-lens-chip {
   font-family:var(--ff-mono); font-size:10px; padding:4px 10px; border-radius:999px;
   border:1px solid var(--border-mid); color:var(--t3); background:rgba(255,255,255,0.02);
 }
+button.news-feed-lens-chip { cursor:pointer; }
 .news-feed-lens-chip.on { color:var(--teal); border-color:rgba(0,212,170,0.3); background:var(--teal-10); }
+.news-feed-lens-chip.on.macro { color:var(--indigo); border-color:rgba(108,114,255,0.35); background:var(--indigo-10); }
+.news-feed-lens-chip.on.defi { color:var(--fuchsia); border-color:rgba(217,70,239,0.35); background:var(--fuchsia-10); }
 .news-feed-lens-chip.off { opacity:.55; }
+.news-feed-lens-chip.muted { color:var(--t1); border-color:var(--border-mid); background:rgba(255,255,255,0.02); opacity:1; }
+.news-feed-lens-chip.keyword { padding-right:22px; position:relative; color:var(--teal); }
+.news-feed-lens-x {
+  position:absolute; right:5px; top:50%; transform:translateY(-50%);
+  width:14px; height:14px; border-radius:50%; border:none; background:transparent;
+  color:var(--t3); font-size:11px; line-height:1; cursor:pointer; padding:0;
+  display:flex; align-items:center; justify-content:center;
+}
+.news-feed-lens-x:hover { color:var(--t1); background:rgba(255,255,255,0.08); }
+.news-feed-lens-search { display:inline-flex; align-items:center; gap:4px; }
+.news-feed-lens-add {
+  width:20px; height:20px; border-radius:999px; border:1px solid var(--border-mid);
+  background:rgba(255,255,255,0.02); color:var(--t3); font-size:13px; line-height:1;
+  cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+}
+.news-feed-lens-add:hover { border-color:rgba(0,212,170,0.35); color:var(--teal); background:var(--teal-10); }
 .news-feed-settings-btn {
   flex-shrink:0; display:flex; align-items:center; gap:7px;
   padding:8px 12px; border-radius:8px;
@@ -5222,8 +5241,12 @@ body {
   display:none;
 }
 .news-feed-card.expanded .news-feed-card-snippet {
-  display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;
+  display:block; overflow:hidden;
 }
+.news-feed-source-item a {
+  color:var(--t2); text-decoration:none;
+}
+.news-feed-source-item a:hover { color:var(--teal); text-decoration:underline; }
 .news-feed-card-footer {
   display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:2px;
 }
@@ -13644,6 +13667,25 @@ window.updateUI = function updateUI() {
 function dashEsc(v) {
     return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
+function decodeHtmlEntities(v) {
+    return String(v ?? '')
+        .replace(/&#(\d+);/g, (_, n) => {
+            const code = Number(n);
+            return Number.isFinite(code) && code >= 0 && code <= 0x10FFFF ? String.fromCodePoint(code) : `&#${n};`;
+        })
+        .replace(/&#x([0-9a-f]+);/gi, (_, h) => {
+            const code = parseInt(h, 16);
+            return Number.isFinite(code) && code >= 0 && code <= 0x10FFFF ? String.fromCodePoint(code) : `&#x${h};`;
+        })
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#x27;|&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+}
+function dashNewsText(v) {
+    return dashEsc(decodeHtmlEntities(v));
+}
 function dashUri(v) {
     return encodeURIComponent(String(v ?? ''));
 }
@@ -15107,6 +15149,7 @@ const LOOP_USDE_USDM_PURGE_KEY = 'vault-loop-snapshots-usde-usdm-purged';
 const LOOP_API_STATE_KEY = 'vault-loop-api-state-v5';
 const LOOP_API_LAST_SYNC_KEY = 'vault-loop-last-auto-sync';
 const LOOP_MANUAL_APY_KEY = 'vault-loop-manual-supply-apy';
+const LOOP_MIN_DISPLAY_USD = 10;
 const LOOP_AUTO_SYNC_MIN_MS = 15 * 60 * 1000;
 let loopSnapshotsStore = {};
 let _loopSnapshotsHydratePromise = null;
@@ -15595,6 +15638,14 @@ function loopEffectiveNetValue(loop) {
     return Number(loop?.netValue ?? 0);
 }
 
+function loopMeetsDisplayMinimum(loop) {
+    return Math.abs(loopEffectiveNetValue(loop)) > LOOP_MIN_DISPLAY_USD;
+}
+
+function loopPendleMeetsDisplayMinimum(row) {
+    return Math.abs(Number(row?.valueUsd || 0)) > LOOP_MIN_DISPLAY_USD;
+}
+
 function loopHistoryPoints(positionOrId) {
     const live = typeof positionOrId === 'object' ? positionOrId : { id: String(positionOrId || '') };
     if (!live?.id && !live?.protocol) return [];
@@ -16007,7 +16058,7 @@ function loopSupplyLegApyHtml(suppliedApr, manualKey = '', hasManual = false, su
 }
 
 function loopBorrowLegApyHtml(borrowedApr, borrowedPositions) {
-    if (!Number.isFinite(borrowedApr)) return '';
+    if (!Number.isFinite(borrowedApr) || borrowedApr <= 0.01) return '';
     const leg = (borrowedPositions || []).find(item => Number(item?.merklApy) > 0.01);
     if (leg && Number(leg.merklApy) > 0.01) {
         const incentive = Number(leg.merklApy).toFixed(2);
@@ -16030,9 +16081,9 @@ function loopNetValueTooltipHtml(breakdown, fmtV) {
     </div>`;
 }
 
-function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey = '', hasManualSupplyApy = false, borrowedPositions = [], suppliedPositions = []) {
+function loopSummaryPaneHtml(netValueFmt, suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey = '', hasManualSupplyApy = false, borrowedPositions = [], suppliedPositions = [], hideBorrow = false) {
     const supplyLine = loopSupplyLegApyHtml(suppliedApr, manualKey, hasManualSupplyApy, suppliedPositions);
-    const borrowLine = loopBorrowLegApyHtml(borrowedApr, borrowedPositions);
+    const borrowLine = hideBorrow ? '' : loopBorrowLegApyHtml(borrowedApr, borrowedPositions);
     const fmt = fmtV || (v => '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     const netTip = loopNetValueTooltipHtml(netBreakdown, fmt);
     const netValHtml = netTip
@@ -19488,7 +19539,7 @@ function buildLoopCardHtml(loop, fmtV, { lendingOnly = false } = {}) {
     const netBreakdown = merklUnclaimed > 0.01
         ? { aave: aaveNetValue, merkl: merklUnclaimed, claimed: merklClaimed, total: displayNetValue }
         : null;
-    const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey, hasManualSupplyApy, borrowedPositions, suppliedPositions);
+    const summaryHtml = loopSummaryPaneHtml(fmtV(displayNetValue), suppliedApr, borrowedApr, realizedHtml, netBreakdown, fmtV, manualKey, hasManualSupplyApy, borrowedPositions, suppliedPositions, lendingOnly);
     const headApyLabel = lendingOnly ? 'Supply APY' : 'Net APY';
     const headStatsHtml = lendingOnly
         ? `<div class="loop-head-stats"><div class="loop-head-stat apy ${apyCls}"><div class="loop-head-stat-label">${headApyLabel}</div><div class="loop-head-stat-val">${apyText}</div></div></div>`
@@ -19605,7 +19656,7 @@ function renderPendleSection(fmtV, { loading = false } = {}) {
     const pendle = loopApiState.pendle;
     const rows = (pendle?.wallets || []).flatMap(w => (w.positions || []).map(p => ({ ...p, wallet: p.wallet || w.wallet })));
     const openRows = rows.filter(r => r.open);
-    const displayRows = openRows.length ? openRows : rows;
+    const displayRows = (openRows.length ? openRows : rows).filter(loopPendleMeetsDisplayMinimum);
     const hasWallets = loopYieldWalletAddresses().length > 0;
     if (!displayRows.length) {
         if (!hasWallets || !pendle) {
@@ -19683,10 +19734,10 @@ function renderLoops() {
     });
     const importedLoops = usingLive ? [] : loopImportedPositions();
     const importedLending = usingLive ? [] : loopImportedLendingPositions();
-    const loops = liveLoops.length || supplementalImported.length
+    const loops = (liveLoops.length || supplementalImported.length
         ? [...liveLoops, ...supplementalImported]
-        : importedLoops;
-    const lendingRows = liveLending.length ? liveLending : importedLending;
+        : importedLoops).filter(loopMeetsDisplayMinimum);
+    const lendingRows = (liveLending.length ? liveLending : importedLending).filter(loopMeetsDisplayMinimum);
 
     if (!loops.length) {
         if (countEl) countEl.textContent = '0 positions';
@@ -27688,10 +27739,33 @@ const NEWS_FEED_SOURCE_CATALOG = {
     defi: ['The Defiant', 'Blockworks', 'DL News', 'Google News DeFi'],
     macro: ['Reuters Business', 'Reuters Politics', 'BBC Business', 'BBC World', 'Investing.com', 'WSJ Markets', 'CNBC Finance', 'MarketWatch', 'NYT World', 'FT'],
 };
+const NEWS_FEED_SOURCE_URLS = {
+    'CoinDesk': 'https://www.coindesk.com',
+    'CoinTelegraph': 'https://cointelegraph.com',
+    'Decrypt': 'https://decrypt.co',
+    'The Block': 'https://www.theblock.co',
+    'Unchained': 'https://unchainedcrypto.com',
+    'CryptoPanic': 'https://cryptopanic.com',
+    'The Defiant': 'https://thedefiant.io',
+    'Blockworks': 'https://blockworks.co',
+    'DL News': 'https://www.dlnews.com',
+    'Google News DeFi': 'https://news.google.com',
+    'Reuters Business': 'https://www.reuters.com/business',
+    'Reuters Politics': 'https://www.reuters.com/world',
+    'BBC Business': 'https://www.bbc.com/news/business',
+    'BBC World': 'https://www.bbc.com/news/world',
+    'Investing.com': 'https://www.investing.com',
+    'WSJ Markets': 'https://www.wsj.com',
+    'CNBC Finance': 'https://www.cnbc.com',
+    'MarketWatch': 'https://www.marketwatch.com',
+    'NYT World': 'https://www.nytimes.com/section/world',
+    'FT': 'https://www.ft.com',
+};
 const NEWS_FEED_CATEGORY_TYPES = ['crypto', 'defi', 'macro'];
 let _newsFeedRawPool = [];
 let _newsFeedKobeissiItem = null;
 let _newsFeedSettingsDraft = null;
+let _newsFeedLensLastTap = { cat: null, ts: 0 };
 
 function newsFeedDefaultSettings() {
     const sources = {};
@@ -27783,20 +27857,43 @@ function newsFeedToggleSaved(item) {
 }
 
 function newsFeedToggleSavedByUrl(url) {
-    const item = newsFeedFindItemByUrl(url);
+    const key = decodeURIComponent(String(url || '').trim());
+    if (!key || key === '#') return;
+    let item = newsFeedFindItemByUrl(key);
+    if (!item) {
+        for (const card of document.querySelectorAll('.news-feed-card')) {
+            const btn = card.querySelector('.news-feed-card-actions button[data-url]');
+            const btnUrl = String(btn?.getAttribute('data-url') || '').trim();
+            if (!btnUrl || btnUrl !== key) continue;
+            const tagEl = card.querySelector('.news-feed-card-tag');
+            const tagCls = tagEl?.className || '';
+            item = {
+                url: key,
+                title: card.querySelector('.news-feed-card-title')?.textContent?.trim() || '',
+                source: card.querySelector('.news-feed-card-meta span')?.textContent?.trim() || '',
+                type: /defi/.test(tagCls) ? 'defi' : /macro|kobeissi/.test(tagCls) ? 'macro' : 'crypto',
+            };
+            break;
+        }
+    }
     if (item) newsFeedToggleSaved(item);
 }
 
-function newsFeedMatchedKeywords(item, keywords, searchBody) {
-    const text = `${item.title || ''} ${searchBody ? (item.desc || item.description || '') : ''}`.toLowerCase();
+function newsFeedItemSearchText(item) {
+    return decodeHtmlEntities(`${item.title || ''} ${item.desc || item.description || item.text || ''}`).toLowerCase();
+}
+
+function newsFeedMatchedKeywords(item, keywords) {
+    const text = newsFeedItemSearchText(item);
     return (keywords || []).filter(kw => kw && text.includes(kw));
 }
 
 function newsFeedPassesKeywordFilter(item, settings) {
     const s = settings || newsFeedLoadSettings();
-    const matches = newsFeedMatchedKeywords(item, s.keywords, s.searchBody);
+    const matches = newsFeedMatchedKeywords(item, s.keywords);
     item._matchedKeywords = matches;
-    return !(s.keywords?.length && !matches.length && !s.includeNonMatching);
+    if (!s.keywords?.length) return true;
+    return matches.length > 0;
 }
 
 function newsFeedNormalizeType(type) {
@@ -27831,16 +27928,66 @@ function newsFeedRenderLens(settings) {
     const el = document.getElementById('newsFeedLens');
     if (!el) return;
     const s = settings || newsFeedLoadSettings();
+    const enabledCats = NEWS_FEED_CATEGORY_TYPES.filter(c => s.categories?.[c]);
+    const soloActive = enabledCats.length === 1;
     const chips = [];
     for (const c of NEWS_FEED_CATEGORY_TYPES) {
-        chips.push(`<span class="news-feed-lens-chip ${s.categories?.[c] ? 'on' : 'off'}">${c.charAt(0).toUpperCase() + c.slice(1)}${s.categories?.[c] ? '' : ' off'}</span>`);
+        const on = Boolean(s.categories?.[c]);
+        let cls = on ? `on ${c}` : 'off';
+        if (soloActive && !on) cls = 'muted';
+        chips.push(`<button type="button" class="news-feed-lens-chip ${cls}" onclick="newsFeedLensCategoryClick('${c}')">${c.charAt(0).toUpperCase() + c.slice(1)}</button>`);
     }
-    if (s.keywords?.length) {
-        chips.push(`<span class="news-feed-lens-chip on">Keywords: ${dashEsc(s.keywords.slice(0, 4).join(', '))}${s.keywords.length > 4 ? '…' : ''}</span>`);
+    for (const kw of (s.keywords || [])) {
+        chips.push(`<span class="news-feed-lens-chip on keyword">
+            <span>${dashNewsText(kw)}</span>
+            <button type="button" class="news-feed-lens-x" onclick="newsFeedRemoveKeyword('${dashUri(kw)}')" title="Remove keyword">×</button>
+        </span>`);
     }
-    chips.push(`<span class="news-feed-lens-chip ${s.searchBody ? 'on' : ''}">${s.searchBody ? 'Title + body' : 'Title only'}</span>`);
-    if (s.keywords?.length && !s.includeNonMatching) chips.push('<span class="news-feed-lens-chip on">Keyword filter</span>');
+    chips.push(`<span class="news-feed-lens-search">
+        <span class="news-feed-lens-chip ${s.searchBody ? 'on' : ''}">${s.searchBody ? 'Title + body' : 'Title only'}</span>
+        <button type="button" class="news-feed-lens-add" onclick="newsFeedPromptKeyword()" title="Add keyword filter">+</button>
+    </span>`);
     el.innerHTML = chips.join('');
+}
+
+function newsFeedLensCategoryClick(cat) {
+    if (cat === '__kw__') return;
+    const now = Date.now();
+    const s = newsFeedLoadSettings();
+    const soloThis = NEWS_FEED_CATEGORY_TYPES.filter(c => s.categories?.[c]).length === 1 && s.categories?.[cat];
+    if (_newsFeedLensLastTap.cat === cat && now - _newsFeedLensLastTap.ts < 4000) {
+        if (soloThis) {
+            NEWS_FEED_CATEGORY_TYPES.forEach(c => { s.categories[c] = true; });
+        } else {
+            NEWS_FEED_CATEGORY_TYPES.forEach(c => { s.categories[c] = c === cat; });
+        }
+        _newsFeedLensLastTap = { cat: null, ts: 0 };
+    } else {
+        s.categories[cat] = !s.categories[cat];
+        if (!NEWS_FEED_CATEGORY_TYPES.some(c => s.categories[c])) s.categories[cat] = true;
+        _newsFeedLensLastTap = { cat, ts: now };
+    }
+    newsFeedSaveSettings(s);
+    newsFeedRenderCenterFeed();
+}
+
+function newsFeedPromptKeyword() {
+    const kw = prompt('Add keyword filter (matches title or body):');
+    if (!kw || !String(kw).trim()) return;
+    const s = newsFeedLoadSettings();
+    const word = String(kw).trim().toLowerCase();
+    if (!s.keywords.includes(word)) s.keywords = [...(s.keywords || []), word].slice(0, 30);
+    s.includeNonMatching = false;
+    newsFeedSaveSettings(s);
+    newsFeedRenderCenterFeed();
+}
+
+function newsFeedRemoveKeyword(encodedKw) {
+    const kw = decodeURIComponent(String(encodedKw || '')).toLowerCase();
+    const s = newsFeedLoadSettings();
+    s.keywords = (s.keywords || []).filter(k => k !== kw);
+    newsFeedSaveSettings(s);
+    newsFeedRenderCenterFeed();
 }
 
 function newsFeedTimeLabel(item) {
@@ -27864,8 +28011,8 @@ function newsFeedRenderSaved() {
         const time = newsFeedTimeLabel(item);
         return `<a class="news-feed-saved-card" href="${dashEsc(item.url)}" target="_blank" rel="noopener">
             <span class="news-feed-saved-tag ${dashEsc(type)}">${dashEsc(type)}</span>
-            <div class="news-feed-saved-title">${dashEsc(item.title || 'Untitled')}</div>
-            <div class="news-feed-saved-meta">${dashEsc(item.source || '')}${time ? ` · ${time}` : ''}</div>
+            <div class="news-feed-saved-title">${dashNewsText(item.title || 'Untitled')}</div>
+            <div class="news-feed-saved-meta">${dashNewsText(item.source || '')}${time ? ` · ${time}` : ''}</div>
         </a>`;
     }).join('');
 }
@@ -27880,6 +28027,23 @@ function newsFeedCardClick(event, cardEl) {
     newsFeedToggleCard(cardEl);
 }
 
+function newsFeedFirstTwoPhrases(text) {
+    const clean = decodeHtmlEntities(String(text || '').trim());
+    if (!clean) return '';
+    const parts = clean.split(/(?<=[.!?…])\s+/).map(p => p.trim()).filter(Boolean);
+    return parts.slice(0, 2).join(' ').trim();
+}
+
+function newsFeedExpandSnippet(item) {
+    const title = decodeHtmlEntities(String(item.title || '').trim());
+    const body = decodeHtmlEntities(String(item.desc || item.description || item.text || '').trim());
+    const full = body && body !== title ? `${title} ${body}` : (body || title);
+    const phrases = newsFeedFirstTwoPhrases(full);
+    if (phrases) return phrases;
+    if (item.type === 'tg' || item.type === 'kobeissi') return 'Open in Telegram for the full post.';
+    return '';
+}
+
 function newsFeedRenderCenterCard(item, opts = {}) {
     const type = newsFeedNormalizeType(item.type);
     const featured = Boolean(opts.featured);
@@ -27889,20 +28053,21 @@ function newsFeedRenderCenterCard(item, opts = {}) {
     const tag = type === 'kobeissi' ? 'kobeissi' : type;
     const tagLabel = item.type === 'kobeissi' ? '⚡ Kobeissi' : (type.charAt(0).toUpperCase() + type.slice(1));
     const matched = (item._matchedKeywords || []).length
-        ? `<span>matched: ${dashEsc(item._matchedKeywords.join(', '))}</span>` : '';
-    const desc = item.desc ? `<div class="news-feed-card-snippet">${dashEsc(item.desc)}</div>` : '';
+        ? `<span>matched: ${dashNewsText(item._matchedKeywords.join(', '))}</span>` : '';
+    const snippet = newsFeedExpandSnippet(item);
+    const desc = snippet ? `<div class="news-feed-card-snippet">${dashNewsText(snippet)}</div>` : '';
     return `<article class="news-feed-card${featured ? ' featured' : ''}" onclick="newsFeedCardClick(event, this)">
-        <span class="news-feed-card-tag ${dashEsc(tag)}">${dashEsc(tagLabel)}</span>
-        <div class="news-feed-card-title">${dashEsc(item.title || '')}</div>
+        <span class="news-feed-card-tag ${dashEsc(tag)}">${dashNewsText(tagLabel)}</span>
+        <div class="news-feed-card-title">${dashNewsText(item.title || '')}</div>
         ${desc}
         <div class="news-feed-card-footer">
             <div class="news-feed-card-meta">
-                <span>${dashEsc(item.source || '')}</span>
+                <span>${dashNewsText(item.source || '')}</span>
                 ${time ? `<span>${time}</span>` : ''}
                 ${matched}
             </div>
             <div class="news-feed-card-actions">
-                <button type="button" class="news-feed-icon-btn${saved ? ' saved' : ''}" title="${saved ? 'Unsave' : 'Save'}" data-url="${dashEsc(url)}" onclick="event.stopPropagation(); newsFeedToggleSavedByUrl(this.dataset.url)">${saved ? '★' : '☆'}</button>
+                <button type="button" class="news-feed-icon-btn${saved ? ' saved' : ''}" title="${saved ? 'Unsave' : 'Save'}" data-url="${dashEsc(url)}" onclick="event.stopPropagation(); newsFeedToggleSavedByUrl('${dashUri(url)}')">${saved ? '★' : '☆'}</button>
                 <a class="news-feed-icon-btn" href="${dashEsc(url)}" target="_blank" rel="noopener" title="Open" onclick="event.stopPropagation()">↗</a>
             </div>
         </div>
@@ -27948,7 +28113,10 @@ function newsFeedBuildSettingsForm() {
         const labels = NEWS_FEED_SOURCE_CATALOG[type] || [];
         return `<div class="news-feed-set-section">
             <div class="news-feed-set-label">Sources · ${type.charAt(0).toUpperCase() + type.slice(1)}</div>
-            ${labels.map(label => `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)">${dashEsc(label)}</label>`).join('')}
+            ${labels.map(label => {
+                const href = NEWS_FEED_SOURCE_URLS[label] || '#';
+                return `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)"><a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${dashEsc(label)}</a></label>`;
+            }).join('')}
         </div>`;
     };
     body.innerHTML = `
@@ -28072,9 +28240,9 @@ async function fetchDailyNews(force = false) {
             <a class="brief-news-card" href="${item.url}" target="_blank" rel="noopener">
                 <span class="brief-news-card-tag ${item.type}">${tag}</span>
                 <div class="brief-news-card-body">
-                    <div class="brief-news-card-title">${item.title}</div>
+                    <div class="brief-news-card-title">${dashNewsText(item.title)}</div>
                     <div class="brief-news-card-meta">
-                        <span class="brief-news-card-source">${item.source}</span>
+                        <span class="brief-news-card-source">${dashNewsText(item.source)}</span>
                         ${time ? `<span>${time}</span>` : ''}
                     </div>
                 </div>
@@ -28094,7 +28262,16 @@ async function fetchDailyNews(force = false) {
             const hit = posts.find(p => /breaking/i.test(p.text));
             if (!hit) return null;
             const headline = hit.text.split(/(?<=[.!?])\s+/)[0].trim();
-            return { title: headline, url: hit.url, type: 'kobeissi', source: 'KobeissiLetters', publishedAt: hit.publishedAt || '' };
+            const rest = hit.text.slice(headline.length).trim();
+            return {
+                title: headline,
+                desc: rest || hit.text,
+                text: hit.text,
+                url: hit.url,
+                type: 'kobeissi',
+                source: 'KobeissiLetters',
+                publishedAt: hit.publishedAt || '',
+            };
         } catch(e) { return null; }
     }
 
@@ -28106,9 +28283,9 @@ async function fetchDailyNews(force = false) {
             <a class="brief-news-card" href="${item.url}" target="_blank" rel="noopener" style="border-color:rgba(245,158,11,0.2)">
                 <span class="brief-news-card-tag kobeissi">⚡ Kobeissi</span>
                 <div class="brief-news-card-body">
-                    <div class="brief-news-card-title">${item.title}</div>
+                    <div class="brief-news-card-title">${dashNewsText(item.title)}</div>
                     <div class="brief-news-card-meta">
-                        <span class="brief-news-card-source">${item.source}</span>
+                        <span class="brief-news-card-source">${dashNewsText(item.source)}</span>
                         ${newsTimeLabel(item) ? `<span>${newsTimeLabel(item)}</span>` : ''}
                     </div>
                 </div>
