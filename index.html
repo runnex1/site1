@@ -5139,6 +5139,13 @@ body {
   text-transform:uppercase; color:#9dacbb;
 }
 .news-feed-panel-count { font-family:var(--ff-mono); font-size:10px; color:var(--t3); }
+.news-feed-saved-head-actions { display:flex; align-items:center; gap:6px; }
+.news-feed-saved-add {
+  width:20px; height:20px; border-radius:999px; border:1px solid var(--border-mid);
+  background:rgba(255,255,255,0.02); color:var(--t3); font-size:13px; line-height:1;
+  cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+}
+.news-feed-saved-add:hover { border-color:rgba(0,212,170,0.35); color:var(--teal); background:var(--teal-10); }
 .news-feed-saved-list { flex:1; overflow:auto; padding:0.6rem 0.75rem 0.75rem; }
 .news-feed-saved-card {
   padding:0.75rem 0.6rem; border-radius:6px; border:1px solid transparent;
@@ -5168,6 +5175,22 @@ body {
 .news-feed-saved-meta { font-size:9px; color:var(--t3); font-family:var(--ff-mono); line-height:1.45; opacity:0.85; margin-bottom:10px; }
 .news-feed-saved-title { font-size:11px; line-height:1.5; font-weight:400; margin:0; color:var(--t2); letter-spacing:0.01em; }
 .news-feed-saved-empty { padding:0.55rem 0.5rem; font-size:0.76rem; color:var(--t3); line-height:1.45; }
+.news-feed-saved-note-card {
+  background:rgba(255,255,255,0.015); cursor:default;
+}
+.news-feed-saved-note-card:hover { background:rgba(255,255,255,0.025); border-color:rgba(148,163,184,0.14); }
+.news-feed-saved-tag.note { background:rgba(251,191,36,0.12); color:#fbbf24; }
+.news-feed-saved-note-title {
+  width:100%; box-sizing:border-box; border:none; background:transparent; color:var(--t1);
+  font-size:11px; font-weight:600; margin:0 0 6px; padding:0; outline:none; font-family:inherit;
+}
+.news-feed-saved-note-title::placeholder { color:var(--t3); font-weight:400; }
+.news-feed-saved-note-body {
+  width:100%; box-sizing:border-box; border:none; background:transparent; color:var(--t2);
+  font-size:10px; line-height:1.55; padding:0; resize:vertical; min-height:48px;
+  outline:none; font-family:inherit;
+}
+.news-feed-saved-note-body::placeholder { color:var(--t3); }
 .news-feed-context-empty {
   font-size:0.76rem; color:var(--t3); line-height:1.45;
 }
@@ -8974,10 +8997,13 @@ body[data-active-tab="loops"] .page-content,
             <section class="news-feed-panel saved-panel" id="newsFeedSavedPanel">
               <div class="news-feed-panel-head">
                 <span class="news-feed-panel-title">Saved</span>
-                <span class="news-feed-panel-count" id="newsFeedSavedCount">0</span>
+                <div class="news-feed-saved-head-actions">
+                  <span class="news-feed-panel-count" id="newsFeedSavedCount">0</span>
+                  <button type="button" class="news-feed-saved-add" onclick="newsFeedAddNote()" title="Add note">+</button>
+                </div>
               </div>
               <div class="news-feed-saved-list" id="newsFeedSavedList">
-                <div class="news-feed-saved-empty">Save stories from the feed with the star button.</div>
+                <div class="news-feed-saved-empty">Save stories from the feed with the star button, or add a note with +.</div>
               </div>
             </section>
 
@@ -27860,6 +27886,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // =============================================================================
 const NEWS_FEED_SETTINGS_KEY = 'vault_news_feed_settings_v1';
 const NEWS_FEED_SAVED_KEY = 'vault_news_saved_v1';
+const NEWS_FEED_SAVED_MAX = 200;
+const NEWS_FEED_SAVED_MAX_NOTES = 50;
 const NEWS_FEED_SEEN_KEY = 'vault_news_feed_seen_v1';
 const NEWS_FEED_PIN_BOOST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const NEWS_FEED_SEEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -28288,17 +28316,59 @@ function newsFeedLoadSaved() {
     try {
         const raw = localStorage.getItem(NEWS_FEED_SAVED_KEY);
         const list = raw ? JSON.parse(raw) : [];
-        return Array.isArray(list) ? list.filter(i => i && i.url).map(i => ({
-            ...i,
-            url: newsFeedNormalizeUrl(i.url) || i.url,
-        })) : [];
+        if (!Array.isArray(list)) return [];
+        let migrated = false;
+        const out = list.map(i => {
+            if (!i || typeof i !== 'object') return null;
+            if (!i.kind) {
+                if (!i.url) return null;
+                migrated = true;
+                const savedAt = Number(i.savedAt) || Date.now();
+                return {
+                    ...i,
+                    kind: 'story',
+                    url: newsFeedNormalizeUrl(i.url) || i.url,
+                    updatedAt: Number(i.updatedAt) || savedAt,
+                };
+            }
+            if (i.kind === 'story' && i.url) {
+                return {
+                    ...i,
+                    url: newsFeedNormalizeUrl(i.url) || i.url,
+                    updatedAt: Number(i.updatedAt) || Number(i.savedAt) || Date.now(),
+                };
+            }
+            if (i.kind === 'note' && i.id) {
+                return {
+                    ...i,
+                    updatedAt: Number(i.updatedAt) || Number(i.createdAt) || Date.now(),
+                };
+            }
+            return null;
+        }).filter(Boolean);
+        if (migrated) newsFeedPersistSaved(out);
+        return out;
     } catch (e) {
         return [];
     }
 }
 
 function newsFeedPersistSaved(list) {
-    try { localStorage.setItem(NEWS_FEED_SAVED_KEY, JSON.stringify(list.slice(0, 200))); } catch (e) {}
+    const notes = list.filter(i => i?.kind === 'note').slice(0, NEWS_FEED_SAVED_MAX_NOTES);
+    const stories = list.filter(i => i?.kind === 'story' || (!i?.kind && i?.url));
+    const combined = stories.concat(notes)
+        .sort((a, b) => newsFeedSavedUpdatedAt(b) - newsFeedSavedUpdatedAt(a))
+        .slice(0, NEWS_FEED_SAVED_MAX);
+    try { localStorage.setItem(NEWS_FEED_SAVED_KEY, JSON.stringify(combined)); } catch (e) {}
+}
+
+function newsFeedSavedUpdatedAt(item) {
+    if (item?.kind === 'note') return Number(item.updatedAt) || Number(item.createdAt) || 0;
+    return Number(item?.updatedAt) || Number(item?.savedAt) || 0;
+}
+
+function newsFeedSavedStories() {
+    return newsFeedLoadSaved().filter(i => i.kind === 'story' || (!i.kind && i.url));
 }
 
 function newsFeedNormalizeUrl(url) {
@@ -28338,7 +28408,7 @@ function newsFeedItemKey(item) {
 
 function newsFeedIsSaved(item) {
     const key = newsFeedItemKey(item);
-    return key && newsFeedLoadSaved().some(s => newsFeedNormalizeUrl(s.url) === key);
+    return key && newsFeedSavedStories().some(s => newsFeedNormalizeUrl(s.url) === key);
 }
 
 function newsFeedFindItemByUrl(url) {
@@ -28347,22 +28417,24 @@ function newsFeedFindItemByUrl(url) {
     const hit = (_newsFeedRawPool || []).find(i => newsFeedItemKey(i) === key);
     if (hit) return hit;
     if (_newsFeedKobeissiItem && newsFeedItemKey(_newsFeedKobeissiItem) === key) return _newsFeedKobeissiItem;
-    return newsFeedLoadSaved().find(s => newsFeedNormalizeUrl(s.url) === key) || null;
+    return newsFeedSavedStories().find(s => newsFeedNormalizeUrl(s.url) === key) || null;
 }
 
 function newsFeedToggleSaved(item) {
     const key = newsFeedItemKey(item);
     if (!key) return;
     let saved = newsFeedLoadSaved();
-    const idx = saved.findIndex(s => newsFeedNormalizeUrl(s.url) === key);
+    const idx = saved.findIndex(s => (s.kind === 'story' || !s.kind) && newsFeedNormalizeUrl(s.url) === key);
     if (idx >= 0) saved.splice(idx, 1);
     else saved.unshift({
+        kind: 'story',
         url: key,
         title: item.title || '',
         type: item.type || 'macro',
         source: item.source || '',
         publishedAt: item.publishedAt || item.pubDate || '',
         savedAt: Date.now(),
+        updatedAt: Date.now(),
     });
     newsFeedPersistSaved(saved);
     newsFeedRenderSaved();
@@ -28397,12 +28469,66 @@ function newsFeedRemoveSavedByUrl(encodedUrl) {
     const key = newsFeedNormalizeUrl(url);
     if (!key) return;
     let saved = newsFeedLoadSaved();
-    const idx = saved.findIndex(s => newsFeedNormalizeUrl(s.url) === key);
+    const idx = saved.findIndex(s => (s.kind === 'story' || !s.kind) && newsFeedNormalizeUrl(s.url) === key);
     if (idx < 0) return;
     saved.splice(idx, 1);
     newsFeedPersistSaved(saved);
     newsFeedRenderSaved();
     newsFeedRenderCenterFeed();
+}
+
+let _newsFeedNoteSaveTimers = {};
+let _newsFeedNoteFocusId = null;
+
+function newsFeedNewNoteId() {
+    return `note_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function newsFeedAddNote() {
+    const now = Date.now();
+    const note = {
+        kind: 'note',
+        id: newsFeedNewNoteId(),
+        title: '',
+        body: '',
+        createdAt: now,
+        updatedAt: now,
+    };
+    let saved = newsFeedLoadSaved();
+    saved.unshift(note);
+    newsFeedPersistSaved(saved);
+    _newsFeedNoteFocusId = note.id;
+    newsFeedRenderSaved();
+}
+
+function newsFeedUpdateNote(encodedId, fields, options = {}) {
+    const id = decodeURIComponent(String(encodedId || ''));
+    if (!id) return;
+    const apply = () => {
+        let saved = newsFeedLoadSaved();
+        const idx = saved.findIndex(n => n.kind === 'note' && n.id === id);
+        if (idx < 0) return;
+        Object.assign(saved[idx], fields || {}, { updatedAt: Date.now() });
+        newsFeedPersistSaved(saved);
+    };
+    if (options.debounce) {
+        clearTimeout(_newsFeedNoteSaveTimers[id]);
+        _newsFeedNoteSaveTimers[id] = setTimeout(apply, 400);
+    } else {
+        clearTimeout(_newsFeedNoteSaveTimers[id]);
+        apply();
+    }
+}
+
+function newsFeedRemoveSavedNote(encodedId) {
+    const id = decodeURIComponent(String(encodedId || ''));
+    if (!id) return;
+    let saved = newsFeedLoadSaved();
+    const idx = saved.findIndex(n => n.kind === 'note' && n.id === id);
+    if (idx < 0) return;
+    saved.splice(idx, 1);
+    newsFeedPersistSaved(saved);
+    newsFeedRenderSaved();
 }
 
 function newsFeedBindSaveClicks() {
@@ -28586,17 +28712,35 @@ function newsFeedTimeLabel(item) {
     return new Date(ts).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
 }
 
+function newsFeedRenderSavedNoteCard(note) {
+    const id = note.id;
+    return `<div class="news-feed-saved-row news-feed-saved-note-row" data-note-id="${dashEsc(id)}">
+        <div class="news-feed-saved-card news-feed-saved-note-card">
+            <span class="news-feed-saved-tag note">NOTE</span>
+            <input type="text" class="news-feed-saved-note-title" placeholder="Title (optional)" value="${dashEsc(note.title || '')}"
+                oninput="newsFeedUpdateNote('${dashUri(id)}', { title: this.value }, { debounce: true })"
+                onblur="newsFeedUpdateNote('${dashUri(id)}', { title: this.value })" />
+            <textarea class="news-feed-saved-note-body" placeholder="Write a note…" rows="3"
+                oninput="newsFeedUpdateNote('${dashUri(id)}', { body: this.value }, { debounce: true })"
+                onblur="newsFeedUpdateNote('${dashUri(id)}', { body: this.value })">${dashEsc(note.body || '')}</textarea>
+        </div>
+        <button type="button" class="news-feed-saved-remove" onclick="event.preventDefault(); event.stopPropagation(); newsFeedRemoveSavedNote('${dashUri(id)}')" title="Remove note">✕</button>
+    </div>`;
+}
+
 function newsFeedRenderSaved() {
     const listEl = document.getElementById('newsFeedSavedList');
     const countEl = document.getElementById('newsFeedSavedCount');
     if (!listEl) return;
-    const saved = newsFeedLoadSaved();
+    const saved = newsFeedLoadSaved().slice().sort((a, b) => newsFeedSavedUpdatedAt(b) - newsFeedSavedUpdatedAt(a));
     if (countEl) countEl.textContent = String(saved.length);
     if (!saved.length) {
-        listEl.innerHTML = '<div class="news-feed-saved-empty">Save stories from the feed with the star button.</div>';
+        listEl.innerHTML = '<div class="news-feed-saved-empty">Save stories from the feed with the star button, or add a note with +.</div>';
+        _newsFeedNoteFocusId = null;
         return;
     }
     listEl.innerHTML = saved.map(item => {
+        if (item.kind === 'note') return newsFeedRenderSavedNoteCard(item);
         const type = newsFeedNormalizeType(item.type);
         const time = newsFeedTimeLabel(item);
         return `<div class="news-feed-saved-row">
@@ -28608,6 +28752,15 @@ function newsFeedRenderSaved() {
             <button type="button" class="news-feed-saved-remove" onclick="event.preventDefault(); event.stopPropagation(); newsFeedRemoveSavedByUrl('${dashUri(item.url)}')" title="Remove from saved">✕</button>
         </div>`;
     }).join('');
+    if (_newsFeedNoteFocusId) {
+        const focusId = _newsFeedNoteFocusId;
+        _newsFeedNoteFocusId = null;
+        requestAnimationFrame(() => {
+            const row = listEl.querySelector(`.news-feed-saved-note-row[data-note-id="${CSS.escape(focusId)}"]`);
+            const body = row?.querySelector('.news-feed-saved-note-body');
+            if (body) body.focus();
+        });
+    }
 }
 
 function newsFeedToggleCard(cardEl) {

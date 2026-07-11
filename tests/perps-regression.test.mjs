@@ -944,6 +944,18 @@ assert.match(indexHtml, /function newsFeedRemoveSavedByUrl\(/, 'saved panel must
 assert.match(indexHtml, /news-feed-saved-remove/, 'each saved headline card must have a remove button');
 assert.match(indexHtml, /newsFeedRemoveSavedByUrl\('?\$\{dashUri\(item\.url\)\}'?\)/, 'saved remove button must call remove handler with encoded url');
 assert.match(indexHtml, /newsFeedRenderSaved\(\);\s*\n\s*newsFeedRenderCenterFeed\(\)/, 'removing saved headline must refresh saved panel and feed stars');
+assert.match(indexHtml, /function newsFeedAddNote\(/, 'saved panel must support adding note cards');
+assert.match(indexHtml, /function newsFeedUpdateNote\(/, 'saved notes must auto-save via update handler');
+assert.match(indexHtml, /function newsFeedRemoveSavedNote\(/, 'saved panel must support removing note cards');
+assert.match(indexHtml, /function newsFeedRenderSavedNoteCard\(/, 'saved panel must render note card markup');
+assert.match(indexHtml, /news-feed-saved-add/, 'saved panel header must have + button to add notes');
+assert.match(indexHtml, /newsFeedAddNote\(\)/, '+ button must call newsFeedAddNote');
+assert.match(indexHtml, /newsFeedRemoveSavedNote\('?\$\{dashUri\(id\)\}'?\)/, 'note remove button must call remove note handler');
+assert.match(indexHtml, /news-feed-saved-note-card/, 'note cards must use distinct note card styling');
+assert.match(indexHtml, /news-feed-saved-tag note/, 'note cards must show NOTE tag');
+assert.match(indexHtml, /kind: 'story'/, 'saved stories must persist with kind story');
+assert.match(indexHtml, /kind: 'note'/, 'saved notes must persist with kind note');
+assert.match(indexHtml, /newsFeedSavedUpdatedAt/, 'saved panel must sort mixed feed by updatedAt');
 assert.match(newsJs, /function parseWindowHours\(/, 'news API must accept window hours query param');
 assert.match(newsJs, /feedItems/, 'news API must return full feed pool for news feed tab');
 assert.match(newsJs, /i\.type === 'defi' \|\| !isPricePrediction\(i\)/, 'defi headlines must bypass price-prediction filter');
