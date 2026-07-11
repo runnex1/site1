@@ -963,8 +963,11 @@ assert.doesNotMatch(indexHtml, /includeNonMatching/, 'include-non-matching setti
 assert.match(indexHtml, /news-feed-source-warn/, 'stale news sources must show yellow warning in feed settings');
 assert.match(newsJs, /function parseTelegramChannelParam\(/, 'news API must parse telegram channel categories from tg query');
 assert.match(newsJs, /fetchTelegramChannelPosts/, 'news API must scrape Telegram channels directly instead of RSSHub-only');
-assert.match(indexHtml, /function newsFeedPromptAddTelegram\(/, 'feed settings must let users add Telegram channels');
-assert.match(indexHtml, /Sources · Telegram/, 'feed settings must show Telegram sources section with add button');
+assert.match(indexHtml, /function newsFeedOpenTelegramModal\(/, 'feed settings must open per-category Telegram add modal');
+assert.match(indexHtml, /function newsFeedSubmitTelegramModal\(/, 'feed settings must submit Telegram channel from modal');
+assert.doesNotMatch(indexHtml, /Sources · Telegram/, 'standalone Telegram sources section must be removed');
+assert.match(indexHtml, /newsFeedOpenTelegramModal\('\$\{type\}'\)/, 'each source section must have + button opening Telegram modal for that category');
+assert.match(indexHtml, /id="newsFeedTelegramModal"/, 'Telegram add modal markup must exist');
 assert.match(indexHtml, /news-feed-tg-add/, 'Telegram add button must exist in feed settings');
 assert.match(indexHtml, /function newsFeedTelegramQueryParam\(/, 'news fetch must pass telegram channels with categories');
 assert.match(indexHtml, /vault_news_cache_v6/, 'news client cache must bust for source health metadata');

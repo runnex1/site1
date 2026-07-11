@@ -5307,14 +5307,37 @@ button.news-feed-lens-chip { cursor:pointer; }
   line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
 }
 .news-feed-tg-add:hover { border-color:rgba(0,212,170,0.35); background:var(--teal-10); }
-.news-feed-tg-cat {
-  margin-left:auto; font-size:9px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
-  color:var(--t3); padding:2px 6px; border-radius:999px; border:1px solid var(--border);
-}
 .news-feed-tg-remove {
   border:none; background:transparent; color:var(--t3); cursor:pointer; font-size:12px; padding:0 2px;
 }
 .news-feed-tg-remove:hover { color:#f87171; }
+.news-feed-tg-modal {
+  position:fixed; inset:0; z-index:12000; display:none; align-items:center; justify-content:center;
+  background:rgba(2,8,14,0.72); backdrop-filter:blur(4px); padding:16px;
+}
+.news-feed-tg-modal.open { display:flex; }
+.news-feed-tg-modal-card {
+  width:min(420px, 100%); background:var(--surf-2); border:1px solid var(--border-mid);
+  border-radius:12px; box-shadow:0 18px 48px rgba(0,0,0,0.45); padding:14px 14px 12px;
+}
+.news-feed-tg-modal-head {
+  display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;
+}
+.news-feed-tg-modal-head h4 { margin:0; font-size:13px; font-weight:800; color:var(--t1); }
+.news-feed-tg-modal-hint { margin:0 0 10px; font-size:11px; color:var(--t3); line-height:1.45; }
+.news-feed-tg-modal-input {
+  width:100%; background:var(--surf-3); border:1px solid var(--border-mid);
+  border-radius:8px; color:var(--t1); font-family:var(--ff-mono); font-size:11px;
+  padding:9px 10px; margin-bottom:12px;
+}
+.news-feed-tg-modal-actions { display:flex; justify-content:flex-end; gap:8px; }
+.news-feed-tg-modal-btn {
+  border:1px solid var(--border-mid); background:var(--surf-3); color:var(--t2);
+  border-radius:8px; padding:7px 12px; font-size:11px; font-weight:700; cursor:pointer;
+}
+.news-feed-tg-modal-btn.primary {
+  border:none; background:linear-gradient(135deg,var(--teal),#00a88a); color:#04120e;
+}
 .news-feed-kw-input {
   width:100%; background:var(--surf-3); border:1px solid var(--border-mid);
   border-radius:8px; color:var(--t1); font-family:var(--ff-mono); font-size:11px;
@@ -8940,6 +8963,20 @@ body[data-active-tab="loops"] .page-content,
                 </div>
                 <div class="news-feed-settings-body" id="newsFeedSettingsBody"></div>
               </aside>
+              <div class="news-feed-tg-modal" id="newsFeedTelegramModal" aria-hidden="true" onclick="if(event.target===this) newsFeedCloseTelegramModal()">
+                <div class="news-feed-tg-modal-card" role="dialog" aria-labelledby="newsFeedTelegramModalTitle">
+                  <div class="news-feed-tg-modal-head">
+                    <h4 id="newsFeedTelegramModalTitle">Add Telegram channel</h4>
+                    <button type="button" class="news-feed-icon-btn" onclick="newsFeedCloseTelegramModal()" title="Close">✕</button>
+                  </div>
+                  <p class="news-feed-tg-modal-hint">Paste a public Telegram link or @handle. It will appear under the topic you chose.</p>
+                  <input class="news-feed-tg-modal-input" id="newsFeedTelegramModalInput" type="text" placeholder="https://t.me/defimon_alerts" onkeydown="if(event.key==='Enter'){event.preventDefault();newsFeedSubmitTelegramModal();}">
+                  <div class="news-feed-tg-modal-actions">
+                    <button type="button" class="news-feed-tg-modal-btn" onclick="newsFeedCloseTelegramModal()">Cancel</button>
+                    <button type="button" class="news-feed-tg-modal-btn primary" onclick="newsFeedSubmitTelegramModal()">Add channel</button>
+                  </div>
+                </div>
+              </div>
             </section>
 
             <section class="news-feed-panel context-panel" id="newsFeedContextPanel">
@@ -27811,6 +27848,15 @@ let _newsFeedSourceHealth = {};
 let _newsFeedSettingsDraft = null;
 let _newsFeedLensLastTap = { cat: null, ts: 0 };
 let _newsFeedSaveBound = false;
+let _newsFeedTelegramModalCategory = null;
+
+function newsFeedCategoryTitle(type) {
+    return type === 'defi' ? 'DeFi' : type === 'macro' ? 'Macro' : 'Crypto';
+}
+
+function newsFeedTelegramForCategory(settings, type) {
+    return (settings?.telegram || []).filter(t => t.category === type);
+}
 
 function newsFeedDefaultSettings() {
     const sources = {};
@@ -28302,16 +28348,33 @@ function newsFeedBuildSettingsForm() {
     };
     const sourceSection = type => {
         const labels = NEWS_FEED_SOURCE_CATALOG[type] || [];
+        const topic = newsFeedCategoryTitle(type);
+        const telegramRows = newsFeedTelegramForCategory(s, type).map(t => {
+            const href = `https://t.me/${encodeURIComponent(t.handle)}`;
+            const health = _newsFeedSourceHealth?.[t.handle];
+            const warn = health && !health.ok
+                ? `<span class="news-feed-source-warn" title="No posts from this channel in the past 7 days${health.note ? ` (${health.note})` : ''}">?</span>`
+                : '';
+            return `<label class="news-feed-source-item">
+                <input type="checkbox" ${t.enabled !== false ? 'checked' : ''} onchange="newsFeedToggleTelegramChannel('${dashEsc(t.handle)}', this.checked)">
+                <a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">✈ ${dashEsc(t.handle)}</a>${warn}
+                <button type="button" class="news-feed-tg-remove" onclick="event.preventDefault(); newsFeedRemoveTelegramChannel('${dashEsc(t.handle)}')" title="Remove">✕</button>
+            </label>`;
+        }).join('');
+        const rssRows = labels.map(label => {
+            const href = NEWS_FEED_SOURCE_URLS[label] || '#';
+            const health = _newsFeedSourceHealth?.[label];
+            const warn = health && !health.ok
+                ? `<span class="news-feed-source-warn" title="No articles from this source in the past 7 days${health.note ? ` (${health.note})` : ''}">?</span>`
+                : '';
+            return `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)"><a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${dashEsc(label)}</a>${warn}</label>`;
+        }).join('');
         return `<div class="news-feed-set-section">
-            <div class="news-feed-set-label">Sources · ${type.charAt(0).toUpperCase() + type.slice(1)}</div>
-            ${labels.map(label => {
-                const href = NEWS_FEED_SOURCE_URLS[label] || '#';
-                const health = _newsFeedSourceHealth?.[label];
-                const warn = health && !health.ok
-                    ? `<span class="news-feed-source-warn" title="No articles from this source in the past 7 days${health.note ? ` (${health.note})` : ''}">?</span>`
-                    : '';
-                return `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)"><a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${dashEsc(label)}</a>${warn}</label>`;
-            }).join('')}
+            <div class="news-feed-set-label-row">
+                <div class="news-feed-set-label">Sources · ${topic}</div>
+                <button type="button" class="news-feed-tg-add" onclick="newsFeedOpenTelegramModal('${type}')" title="Add Telegram channel for ${topic}">+</button>
+            </div>
+            ${rssRows}${telegramRows}
         </div>`;
     };
     body.innerHTML = `
@@ -28324,27 +28387,6 @@ function newsFeedBuildSettingsForm() {
             </div>
         </div>
         ${NEWS_FEED_CATEGORY_TYPES.map(sourceSection).join('')}
-        <div class="news-feed-set-section">
-            <div class="news-feed-set-label-row">
-                <div class="news-feed-set-label">Sources · Telegram</div>
-                <button type="button" class="news-feed-tg-add" onclick="newsFeedPromptAddTelegram()" title="Add Telegram channel">+</button>
-            </div>
-            ${(s.telegram || []).length
-                ? (s.telegram || []).map(t => {
-                    const href = `https://t.me/${encodeURIComponent(t.handle)}`;
-                    const health = _newsFeedSourceHealth?.[t.handle];
-                    const warn = health && !health.ok
-                        ? `<span class="news-feed-source-warn" title="No posts from this channel in the past 7 days${health.note ? ` (${health.note})` : ''}">?</span>`
-                        : '';
-                    return `<label class="news-feed-source-item">
-                        <input type="checkbox" ${t.enabled !== false ? 'checked' : ''} onchange="newsFeedToggleTelegramChannel('${dashEsc(t.handle)}', this.checked)">
-                        <a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">✈ ${dashEsc(t.handle)}</a>
-                        <span class="news-feed-tg-cat">${dashEsc(t.category || 'defi')}</span>${warn}
-                        <button type="button" class="news-feed-tg-remove" onclick="event.preventDefault(); newsFeedRemoveTelegramChannel('${dashEsc(t.handle)}')" title="Remove">✕</button>
-                    </label>`;
-                }).join('')
-                : '<div class="news-feed-kw-chips" style="margin-bottom:0;color:var(--t3)">No Telegram channels yet. Paste a t.me link with +.</div>'}
-        </div>
         <div class="news-feed-set-section">
             <div class="news-feed-set-label">Keywords</div>
             <input class="news-feed-kw-input" id="newsFeedKwInput" type="text" placeholder="aave, ethena, funding" value="${dashEsc((s.keywords || []).join(', '))}">
@@ -28365,9 +28407,67 @@ function newsFeedOpenSettings() {
 }
 
 function newsFeedCloseSettings() {
+    newsFeedCloseTelegramModal();
     const drawer = document.getElementById('newsFeedSettingsDrawer');
     if (drawer) { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); }
     _newsFeedSettingsDraft = null;
+}
+
+function newsFeedOpenTelegramModal(category) {
+    const cat = String(category || '').toLowerCase();
+    if (!NEWS_FEED_CATEGORY_TYPES.includes(cat)) return;
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = JSON.parse(JSON.stringify(newsFeedLoadSettings()));
+    _newsFeedTelegramModalCategory = cat;
+    const modal = document.getElementById('newsFeedTelegramModal');
+    const title = document.getElementById('newsFeedTelegramModalTitle');
+    const input = document.getElementById('newsFeedTelegramModalInput');
+    if (title) title.textContent = `Add Telegram · ${newsFeedCategoryTitle(cat)}`;
+    if (input) {
+        input.value = '';
+        setTimeout(() => input.focus(), 0);
+    }
+    if (modal) {
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function newsFeedCloseTelegramModal() {
+    _newsFeedTelegramModalCategory = null;
+    const modal = document.getElementById('newsFeedTelegramModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function newsFeedSubmitTelegramModal() {
+    const category = _newsFeedTelegramModalCategory;
+    if (!NEWS_FEED_CATEGORY_TYPES.includes(category)) return;
+    const input = document.getElementById('newsFeedTelegramModalInput');
+    const raw = String(input?.value || '').trim();
+    if (!raw) return;
+    const handle = newsFeedNormalizeTelegramHandle(raw);
+    if (!handle) {
+        alert('Could not read that Telegram channel. Use a t.me link or @handle.');
+        return;
+    }
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    _newsFeedSettingsDraft.telegram = Array.isArray(_newsFeedSettingsDraft.telegram) ? _newsFeedSettingsDraft.telegram : [];
+    const existingIdx = _newsFeedSettingsDraft.telegram.findIndex(t => t.handle === handle);
+    if (existingIdx >= 0) {
+        _newsFeedSettingsDraft.telegram[existingIdx] = { handle, category, enabled: true };
+    } else {
+        if (_newsFeedSettingsDraft.telegram.length >= 12) {
+            alert('Maximum 12 Telegram channels supported.');
+            return;
+        }
+        _newsFeedSettingsDraft.telegram.push({ handle, category, enabled: true });
+    }
+    newsFeedSaveSettings(_newsFeedSettingsDraft);
+    newsFeedCloseTelegramModal();
+    newsFeedBuildSettingsForm();
+    if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
 }
 
 function newsFeedToggleCategory(key) {
@@ -28381,29 +28481,6 @@ function newsFeedToggleSource(label, checked) {
     _newsFeedSettingsDraft.sources[label] = checked;
 }
 
-function newsFeedPromptAddTelegram() {
-    const raw = prompt('Paste Telegram channel link or @handle (e.g. https://t.me/defimon_alerts):');
-    if (!raw || !String(raw).trim()) return;
-    const handle = newsFeedNormalizeTelegramHandle(raw);
-    if (!handle) return;
-    const categoryRaw = prompt('Category for this channel: crypto, defi, or macro', 'defi');
-    const category = NEWS_FEED_CATEGORY_TYPES.includes(String(categoryRaw || '').toLowerCase())
-        ? String(categoryRaw).toLowerCase()
-        : 'defi';
-    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
-    _newsFeedSettingsDraft.telegram = Array.isArray(_newsFeedSettingsDraft.telegram) ? _newsFeedSettingsDraft.telegram : [];
-    if (_newsFeedSettingsDraft.telegram.some(t => t.handle === handle)) {
-        alert('That channel is already in your feed.');
-        return;
-    }
-    if (_newsFeedSettingsDraft.telegram.length >= 12) {
-        alert('Maximum 12 Telegram channels supported.');
-        return;
-    }
-    _newsFeedSettingsDraft.telegram.push({ handle, category, enabled: true });
-    newsFeedBuildSettingsForm();
-}
-
 function newsFeedToggleTelegramChannel(handle, enabled) {
     if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
     _newsFeedSettingsDraft.telegram = (_newsFeedSettingsDraft.telegram || []).map(t =>
@@ -28414,7 +28491,9 @@ function newsFeedToggleTelegramChannel(handle, enabled) {
 function newsFeedRemoveTelegramChannel(handle) {
     if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
     _newsFeedSettingsDraft.telegram = (_newsFeedSettingsDraft.telegram || []).filter(t => t.handle !== handle);
+    newsFeedSaveSettings(_newsFeedSettingsDraft);
     newsFeedBuildSettingsForm();
+    if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
 }
 
 function newsFeedToggleSetting(key) {
