@@ -5307,10 +5307,10 @@ button.news-feed-lens-chip { cursor:pointer; }
   line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
 }
 .news-feed-tg-add:hover { border-color:rgba(0,212,170,0.35); background:var(--teal-10); }
-.news-feed-tg-remove {
-  border:none; background:transparent; color:var(--t3); cursor:pointer; font-size:12px; padding:0 2px;
+.news-feed-source-remove, .news-feed-tg-remove {
+  margin-left:auto; border:none; background:transparent; color:var(--t3); cursor:pointer; font-size:12px; padding:0 2px;
 }
-.news-feed-tg-remove:hover { color:#f87171; }
+.news-feed-source-remove:hover, .news-feed-tg-remove:hover { color:#f87171; }
 .news-feed-tg-modal {
   position:fixed; inset:0; z-index:12000; display:none; align-items:center; justify-content:center;
   background:rgba(2,8,14,0.72); backdrop-filter:blur(4px); padding:16px;
@@ -5337,6 +5337,9 @@ button.news-feed-lens-chip { cursor:pointer; }
 }
 .news-feed-tg-modal-btn.primary {
   border:none; background:linear-gradient(135deg,var(--teal),#00a88a); color:#04120e;
+}
+.news-feed-tg-modal-btn.danger {
+  border:none; background:linear-gradient(135deg,#f87171,#ef4444); color:#1a0505;
 }
 .news-feed-kw-input {
   width:100%; background:var(--surf-3); border:1px solid var(--border-mid);
@@ -8974,6 +8977,19 @@ body[data-active-tab="loops"] .page-content,
                   <div class="news-feed-tg-modal-actions">
                     <button type="button" class="news-feed-tg-modal-btn" onclick="newsFeedCloseTelegramModal()">Cancel</button>
                     <button type="button" class="news-feed-tg-modal-btn primary" onclick="newsFeedSubmitTelegramModal()">Add channel</button>
+                  </div>
+                </div>
+              </div>
+              <div class="news-feed-tg-modal" id="newsFeedRemoveSourceModal" aria-hidden="true" onclick="if(event.target===this) newsFeedCloseRemoveSourceModal()">
+                <div class="news-feed-tg-modal-card" role="dialog" aria-labelledby="newsFeedRemoveSourceTitle">
+                  <div class="news-feed-tg-modal-head">
+                    <h4 id="newsFeedRemoveSourceTitle">Remove source</h4>
+                    <button type="button" class="news-feed-icon-btn" onclick="newsFeedCloseRemoveSourceModal()" title="Close">✕</button>
+                  </div>
+                  <p class="news-feed-tg-modal-hint">Remove <strong id="newsFeedRemoveSourceName"></strong> from your feed settings? You can re-enable built-in sources only by resetting feed settings.</p>
+                  <div class="news-feed-tg-modal-actions">
+                    <button type="button" class="news-feed-tg-modal-btn" onclick="newsFeedCloseRemoveSourceModal()">Cancel</button>
+                    <button type="button" class="news-feed-tg-modal-btn danger" onclick="newsFeedSubmitRemoveSourceModal()">Remove source</button>
                   </div>
                 </div>
               </div>
@@ -27849,6 +27865,12 @@ let _newsFeedSettingsDraft = null;
 let _newsFeedLensLastTap = { cat: null, ts: 0 };
 let _newsFeedSaveBound = false;
 let _newsFeedTelegramModalCategory = null;
+let _newsFeedRemoveSourcePending = null;
+
+function newsFeedVisibleRssSources(type, settings) {
+    const removed = new Set(settings?.removedSources || []);
+    return (NEWS_FEED_SOURCE_CATALOG[type] || []).filter(label => !removed.has(label));
+}
 
 function newsFeedCategoryTitle(type) {
     return type === 'defi' ? 'DeFi' : type === 'macro' ? 'Macro' : 'Crypto';
@@ -27870,6 +27892,7 @@ function newsFeedDefaultSettings() {
         searchBody: false,
         timeWindowHours: 24,
         telegram: [],
+        removedSources: [],
     };
 }
 
@@ -27949,6 +27972,9 @@ function newsFeedLoadSettings() {
                 : 24,
             telegram: Array.isArray(parsed.telegram)
                 ? parsed.telegram.map(newsFeedNormalizeTelegramEntry).filter(Boolean)
+                : [],
+            removedSources: Array.isArray(parsed.removedSources)
+                ? parsed.removedSources.map(s => String(s).trim()).filter(Boolean)
                 : [],
         };
         return newsFeedMigrateLegacyTelegram(merged);
@@ -28346,8 +28372,10 @@ function newsFeedBuildSettingsForm() {
         const on = s.categories?.[key];
         return `<button type="button" class="news-feed-cat-btn${on ? ' on ' + key : ''}" data-cat="${key}" onclick="newsFeedToggleCategory('${key}')">${label}</button>`;
     };
+    const sourceRemoveBtn = (kind, id) =>
+        `<button type="button" class="news-feed-source-remove" onclick="event.preventDefault(); newsFeedOpenRemoveSourceModal('${kind}', '${dashUri(id)}')" title="Remove source">✕</button>`;
     const sourceSection = type => {
-        const labels = NEWS_FEED_SOURCE_CATALOG[type] || [];
+        const labels = newsFeedVisibleRssSources(type, s);
         const topic = newsFeedCategoryTitle(type);
         const telegramRows = newsFeedTelegramForCategory(s, type).map(t => {
             const href = `https://t.me/${encodeURIComponent(t.handle)}`;
@@ -28358,7 +28386,7 @@ function newsFeedBuildSettingsForm() {
             return `<label class="news-feed-source-item">
                 <input type="checkbox" ${t.enabled !== false ? 'checked' : ''} onchange="newsFeedToggleTelegramChannel('${dashEsc(t.handle)}', this.checked)">
                 <a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">✈ ${dashEsc(t.handle)}</a>${warn}
-                <button type="button" class="news-feed-tg-remove" onclick="event.preventDefault(); newsFeedRemoveTelegramChannel('${dashEsc(t.handle)}')" title="Remove">✕</button>
+                ${sourceRemoveBtn('telegram', t.handle)}
             </label>`;
         }).join('');
         const rssRows = labels.map(label => {
@@ -28367,7 +28395,7 @@ function newsFeedBuildSettingsForm() {
             const warn = health && !health.ok
                 ? `<span class="news-feed-source-warn" title="No articles from this source in the past 7 days${health.note ? ` (${health.note})` : ''}">?</span>`
                 : '';
-            return `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)"><a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${dashEsc(label)}</a>${warn}</label>`;
+            return `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)"><a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${dashEsc(label)}</a>${warn}${sourceRemoveBtn('rss', label)}</label>`;
         }).join('');
         return `<div class="news-feed-set-section">
             <div class="news-feed-set-label-row">
@@ -28408,9 +28436,57 @@ function newsFeedOpenSettings() {
 
 function newsFeedCloseSettings() {
     newsFeedCloseTelegramModal();
+    newsFeedCloseRemoveSourceModal();
     const drawer = document.getElementById('newsFeedSettingsDrawer');
     if (drawer) { drawer.classList.remove('open'); drawer.setAttribute('aria-hidden', 'true'); }
     _newsFeedSettingsDraft = null;
+}
+
+function newsFeedOpenRemoveSourceModal(kind, encodedId) {
+    const id = decodeURIComponent(String(encodedId || ''));
+    if (!id) return;
+    const catKind = String(kind || '').toLowerCase();
+    if (catKind !== 'rss' && catKind !== 'telegram') return;
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = JSON.parse(JSON.stringify(newsFeedLoadSettings()));
+    _newsFeedRemoveSourcePending = { kind: catKind, id };
+    const nameEl = document.getElementById('newsFeedRemoveSourceName');
+    const modal = document.getElementById('newsFeedRemoveSourceModal');
+    if (nameEl) nameEl.textContent = catKind === 'telegram' ? `✈ ${id}` : id;
+    if (modal) {
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function newsFeedCloseRemoveSourceModal() {
+    _newsFeedRemoveSourcePending = null;
+    const modal = document.getElementById('newsFeedRemoveSourceModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function newsFeedSubmitRemoveSourceModal() {
+    const pending = _newsFeedRemoveSourcePending;
+    if (!pending) return;
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    if (pending.kind === 'telegram') {
+        _newsFeedSettingsDraft.telegram = (_newsFeedSettingsDraft.telegram || []).filter(t => t.handle !== pending.id);
+    } else {
+        _newsFeedSettingsDraft.removedSources = Array.isArray(_newsFeedSettingsDraft.removedSources)
+            ? _newsFeedSettingsDraft.removedSources
+            : [];
+        if (!_newsFeedSettingsDraft.removedSources.includes(pending.id)) {
+            _newsFeedSettingsDraft.removedSources.push(pending.id);
+        }
+        _newsFeedSettingsDraft.sources = _newsFeedSettingsDraft.sources || {};
+        _newsFeedSettingsDraft.sources[pending.id] = false;
+    }
+    newsFeedSaveSettings(_newsFeedSettingsDraft);
+    newsFeedCloseRemoveSourceModal();
+    newsFeedBuildSettingsForm();
+    if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
 }
 
 function newsFeedOpenTelegramModal(category) {
@@ -28488,14 +28564,6 @@ function newsFeedToggleTelegramChannel(handle, enabled) {
     );
 }
 
-function newsFeedRemoveTelegramChannel(handle) {
-    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
-    _newsFeedSettingsDraft.telegram = (_newsFeedSettingsDraft.telegram || []).filter(t => t.handle !== handle);
-    newsFeedSaveSettings(_newsFeedSettingsDraft);
-    newsFeedBuildSettingsForm();
-    if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
-}
-
 function newsFeedToggleSetting(key) {
     if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
     _newsFeedSettingsDraft[key] = !_newsFeedSettingsDraft[key];
@@ -28515,7 +28583,18 @@ function newsFeedApplySettings() {
 }
 
 document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') newsFeedCloseSettings();
+    if (e.key !== 'Escape') return;
+    const removeModal = document.getElementById('newsFeedRemoveSourceModal');
+    if (removeModal?.classList.contains('open')) {
+        newsFeedCloseRemoveSourceModal();
+        return;
+    }
+    const tgModal = document.getElementById('newsFeedTelegramModal');
+    if (tgModal?.classList.contains('open')) {
+        newsFeedCloseTelegramModal();
+        return;
+    }
+    newsFeedCloseSettings();
 });
 
 // =============================================================================

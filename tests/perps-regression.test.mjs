@@ -968,6 +968,11 @@ assert.match(indexHtml, /function newsFeedSubmitTelegramModal\(/, 'feed settings
 assert.doesNotMatch(indexHtml, /Sources · Telegram/, 'standalone Telegram sources section must be removed');
 assert.match(indexHtml, /newsFeedOpenTelegramModal\('\$\{type\}'\)/, 'each source section must have + button opening Telegram modal for that category');
 assert.match(indexHtml, /id="newsFeedTelegramModal"/, 'Telegram add modal markup must exist');
+assert.match(indexHtml, /function newsFeedOpenRemoveSourceModal\(/, 'feed settings must open remove-source confirmation modal');
+assert.match(indexHtml, /function newsFeedSubmitRemoveSourceModal\(/, 'feed settings must confirm source removal from modal');
+assert.match(indexHtml, /id="newsFeedRemoveSourceModal"/, 'remove-source confirmation modal markup must exist');
+assert.match(indexHtml, /news-feed-source-remove/, 'each feed source row must have a remove button');
+assert.match(indexHtml, /removedSources/, 'feed settings must persist removed RSS sources');
 assert.match(indexHtml, /news-feed-tg-add/, 'Telegram add button must exist in feed settings');
 assert.match(indexHtml, /function newsFeedTelegramQueryParam\(/, 'news fetch must pass telegram channels with categories');
 assert.match(indexHtml, /vault_news_cache_v6/, 'news client cache must bust for source health metadata');
