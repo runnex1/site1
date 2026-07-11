@@ -935,7 +935,14 @@ assert.match(indexHtml, /function newsFeedLensCategoryClick\(/, 'news feed lens 
 assert.match(indexHtml, /function newsFeedPromptKeyword\(/, 'news feed lens must support adding keywords via + button');
 assert.match(indexHtml, /function newsFeedRemoveKeyword\(/, 'news feed lens must support removing keywords via X button');
 assert.match(indexHtml, /function newsFeedFirstTwoPhrases\(/, 'expanded news cards must show first two phrases only');
-assert.match(indexHtml, /newsFeedToggleSavedByUrl\('\$\{dashUri\(url\)\}'\)/, 'save star must pass encoded URL to toggle handler');
+assert.match(indexHtml, /NEWS_FEED_TIME_WINDOWS/, 'news feed must support selectable time windows');
+assert.match(indexHtml, /function newsFeedSetTimeWindow\(/, 'news feed lens must switch time window');
+assert.match(indexHtml, /function newsFeedNormalizeUrl\(/, 'news feed save must normalize article URLs');
+assert.match(indexHtml, /news-feed-save-btn/, 'save star must use delegated click handler');
+assert.match(indexHtml, /function newsFeedBindSaveClicks\(/, 'news feed must bind save button clicks on grid');
+assert.match(newsJs, /function parseWindowHours\(/, 'news API must accept window hours query param');
+assert.match(newsJs, /feedItems/, 'news API must return full feed pool for news feed tab');
+assert.match(indexHtml, /vault_news_cache_v5/, 'news client cache must bust for feedItems/time window');
 assert.match(indexHtml, /function buildSimpleDrawerTableHtml\(sec, ctx\)/, 'deposit-only protocol drawers must use aligned table layout');
 assert.match(indexHtml, /kind: 'lending'/, 'protocol display entries must tag leveraged lending rows');
 assert.match(indexHtml, /protocolEntrySummary\(entry\)/, 'protocol rows must show per-loop position summary');

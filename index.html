@@ -5109,7 +5109,7 @@ body {
 .news-feed-layout {
   flex:1; min-height:0;
   display:grid;
-  grid-template-columns:248px minmax(0,1fr) 168px;
+  grid-template-columns:minmax(300px, 360px) minmax(0,1fr) 148px;
   gap:28px;
   align-items:stretch;
 }
@@ -5139,24 +5139,24 @@ body {
   text-transform:uppercase; color:#9dacbb;
 }
 .news-feed-panel-count { font-family:var(--ff-mono); font-size:10px; color:var(--t3); }
-.news-feed-saved-list { flex:1; overflow:auto; padding:0.55rem 0.65rem 0.7rem; }
+.news-feed-saved-list { flex:1; overflow:auto; padding:0.6rem 0.75rem 0.75rem; }
 .news-feed-saved-card {
-  padding:0.7rem 0.55rem; border-radius:6px; border:1px solid transparent;
+  padding:0.75rem 0.6rem; border-radius:6px; border:1px solid transparent;
   border-bottom:1px solid rgba(148,163,184,0.08);
-  margin-bottom:2px; cursor:pointer; display:block; text-decoration:none;
+  margin-bottom:4px; cursor:pointer; display:block; text-decoration:none;
 }
 .news-feed-saved-card:hover { background:rgba(255,255,255,0.03); border-color:rgba(148,163,184,0.14); }
 .news-feed-saved-card.active { background:var(--teal-10); border-color:rgba(0,212,170,0.22); }
 .news-feed-saved-tag {
   font-size:8px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
-  padding:2px 6px; border-radius:4px; display:inline-block; margin-bottom:6px;
+  padding:2px 6px; border-radius:4px; display:inline-block; margin-bottom:8px;
 }
 .news-feed-saved-tag.crypto { background:var(--teal-10); color:var(--teal); }
 .news-feed-saved-tag.defi { background:var(--fuchsia-10); color:var(--fuchsia); }
 .news-feed-saved-tag.macro { background:var(--indigo-10); color:var(--indigo); }
 .news-feed-saved-tag.tg { background:rgba(56,189,248,0.12); color:var(--sky); }
-.news-feed-saved-title { font-size:11px; line-height:1.55; font-weight:400; margin-bottom:5px; color:var(--t2); letter-spacing:0.01em; }
-.news-feed-saved-meta { font-size:9px; color:var(--t3); font-family:var(--ff-mono); line-height:1.4; opacity:0.85; }
+.news-feed-saved-meta { font-size:9px; color:var(--t3); font-family:var(--ff-mono); line-height:1.45; opacity:0.85; margin-bottom:10px; }
+.news-feed-saved-title { font-size:11px; line-height:1.5; font-weight:400; margin:0; color:var(--t2); letter-spacing:0.01em; }
 .news-feed-saved-empty { padding:0.55rem 0.5rem; font-size:0.76rem; color:var(--t3); line-height:1.45; }
 .news-feed-context-empty {
   font-size:0.76rem; color:var(--t3); line-height:1.45;
@@ -5195,6 +5195,8 @@ button.news-feed-lens-chip { cursor:pointer; }
   cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
 }
 .news-feed-lens-add:hover { border-color:rgba(0,212,170,0.35); color:var(--teal); background:var(--teal-10); }
+.news-feed-lens-time { display:inline-flex; align-items:center; gap:4px; margin-left:2px; }
+.news-feed-lens-chip.time.on { color:var(--t1); border-color:rgba(148,163,184,0.35); background:rgba(255,255,255,0.04); }
 .news-feed-settings-btn {
   flex-shrink:0; display:flex; align-items:center; gap:7px;
   padding:8px 12px; border-radius:8px;
@@ -5311,7 +5313,7 @@ button.news-feed-lens-chip { cursor:pointer; }
 }
 @media (max-width:1100px) {
   .news-feed-root { max-width:min(1440px, calc(100% - 2rem)); padding:0 1.5rem 0.35rem; }
-  .news-feed-layout { grid-template-columns:228px minmax(0,1fr) 152px; gap:22px; }
+  .news-feed-layout { grid-template-columns:minmax(260px, 300px) minmax(0,1fr) 132px; gap:22px; }
 }
 @media (max-width:900px) {
   .news-feed-layout { grid-template-columns:1fr; grid-template-rows:auto 1fr auto; }
@@ -27704,14 +27706,14 @@ function xHandleAdd() {
     xHandleRender();
     input.value = '';
     // Clear cache and refresh so new handle's posts appear immediately
-    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
+    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
     fetchDailyNews();
 }
 function xHandleRemove(handle) {
     const handles = xHandleLoad().filter(h => h !== handle);
     xHandleSave(handles);
     xHandleRender();
-    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
+    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
     fetchDailyNews();
 }
 // Allow pressing Enter in the X handle input
@@ -27721,6 +27723,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const inp = document.getElementById('xHandleInput');
     if (inp) inp.addEventListener('keydown', e => { if (e.key === 'Enter') xHandleAdd(); });
     xHandleRender();
+    if (typeof newsFeedBindSaveClicks === 'function') newsFeedBindSaveClicks();
     let mobileChartResizeT;
     window.addEventListener('resize', () => {
         clearTimeout(mobileChartResizeT);
@@ -27762,10 +27765,17 @@ const NEWS_FEED_SOURCE_URLS = {
     'FT': 'https://www.ft.com',
 };
 const NEWS_FEED_CATEGORY_TYPES = ['crypto', 'defi', 'macro'];
+const NEWS_FEED_TIME_WINDOWS = [
+    { hours: 8, label: '8h' },
+    { hours: 24, label: '24h' },
+    { hours: 48, label: '2d' },
+    { hours: 168, label: '7d' },
+];
 let _newsFeedRawPool = [];
 let _newsFeedKobeissiItem = null;
 let _newsFeedSettingsDraft = null;
 let _newsFeedLensLastTap = { cat: null, ts: 0 };
+let _newsFeedSaveBound = false;
 
 function newsFeedDefaultSettings() {
     const sources = {};
@@ -27778,6 +27788,7 @@ function newsFeedDefaultSettings() {
         keywords: [],
         searchBody: false,
         includeNonMatching: false,
+        timeWindowHours: 24,
     };
 }
 
@@ -27795,6 +27806,9 @@ function newsFeedLoadSettings() {
             includeNonMatching: parsed.includeNonMatching != null
                 ? Boolean(parsed.includeNonMatching)
                 : false,
+            timeWindowHours: NEWS_FEED_TIME_WINDOWS.some(w => w.hours === Number(parsed.timeWindowHours))
+                ? Number(parsed.timeWindowHours)
+                : 24,
         };
     } catch (e) {
         return newsFeedDefaultSettings();
@@ -27809,7 +27823,10 @@ function newsFeedLoadSaved() {
     try {
         const raw = localStorage.getItem(NEWS_FEED_SAVED_KEY);
         const list = raw ? JSON.parse(raw) : [];
-        return Array.isArray(list) ? list.filter(i => i && i.url) : [];
+        return Array.isArray(list) ? list.filter(i => i && i.url).map(i => ({
+            ...i,
+            url: newsFeedNormalizeUrl(i.url) || i.url,
+        })) : [];
     } catch (e) {
         return [];
     }
@@ -27819,29 +27836,43 @@ function newsFeedPersistSaved(list) {
     try { localStorage.setItem(NEWS_FEED_SAVED_KEY, JSON.stringify(list.slice(0, 200))); } catch (e) {}
 }
 
+function newsFeedNormalizeUrl(url) {
+    const raw = String(url || '').trim();
+    if (!raw || raw === '#') return '';
+    try {
+        const u = new URL(raw);
+        u.hostname = u.hostname.toLowerCase();
+        let out = u.toString();
+        if (out.endsWith('/') && u.pathname === '/') out = out.slice(0, -1);
+        return out;
+    } catch {
+        return raw;
+    }
+}
+
 function newsFeedItemKey(item) {
-    return String(item?.url || item?.link || '').trim();
+    return newsFeedNormalizeUrl(item?.url || item?.link || '');
 }
 
 function newsFeedIsSaved(item) {
     const key = newsFeedItemKey(item);
-    return key && newsFeedLoadSaved().some(s => s.url === key);
+    return key && newsFeedLoadSaved().some(s => newsFeedNormalizeUrl(s.url) === key);
 }
 
 function newsFeedFindItemByUrl(url) {
-    const key = String(url || '').trim();
+    const key = newsFeedNormalizeUrl(url);
     if (!key) return null;
     const hit = (_newsFeedRawPool || []).find(i => newsFeedItemKey(i) === key);
     if (hit) return hit;
     if (_newsFeedKobeissiItem && newsFeedItemKey(_newsFeedKobeissiItem) === key) return _newsFeedKobeissiItem;
-    return newsFeedLoadSaved().find(s => s.url === key) || null;
+    return newsFeedLoadSaved().find(s => newsFeedNormalizeUrl(s.url) === key) || null;
 }
 
 function newsFeedToggleSaved(item) {
     const key = newsFeedItemKey(item);
     if (!key) return;
     let saved = newsFeedLoadSaved();
-    const idx = saved.findIndex(s => s.url === key);
+    const idx = saved.findIndex(s => newsFeedNormalizeUrl(s.url) === key);
     if (idx >= 0) saved.splice(idx, 1);
     else saved.unshift({
         url: key,
@@ -27857,13 +27888,13 @@ function newsFeedToggleSaved(item) {
 }
 
 function newsFeedToggleSavedByUrl(url) {
-    const key = decodeURIComponent(String(url || '').trim());
-    if (!key || key === '#') return;
+    const key = newsFeedNormalizeUrl(url);
+    if (!key) return;
     let item = newsFeedFindItemByUrl(key);
     if (!item) {
         for (const card of document.querySelectorAll('.news-feed-card')) {
-            const btn = card.querySelector('.news-feed-card-actions button[data-url]');
-            const btnUrl = String(btn?.getAttribute('data-url') || '').trim();
+            const btn = card.querySelector('.news-feed-save-btn');
+            const btnUrl = newsFeedNormalizeUrl(btn?.getAttribute('data-url') || '');
             if (!btnUrl || btnUrl !== key) continue;
             const tagEl = card.querySelector('.news-feed-card-tag');
             const tagCls = tagEl?.className || '';
@@ -27877,6 +27908,21 @@ function newsFeedToggleSavedByUrl(url) {
         }
     }
     if (item) newsFeedToggleSaved(item);
+}
+
+function newsFeedBindSaveClicks() {
+    if (_newsFeedSaveBound) return;
+    const grid = document.getElementById('newsFeedGrid');
+    if (!grid) return;
+    _newsFeedSaveBound = true;
+    grid.addEventListener('click', e => {
+        const btn = e.target.closest('.news-feed-save-btn');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const url = btn.getAttribute('data-url');
+        if (url) newsFeedToggleSavedByUrl(url);
+    });
 }
 
 function newsFeedItemSearchText(item) {
@@ -27947,7 +27993,22 @@ function newsFeedRenderLens(settings) {
         <span class="news-feed-lens-chip ${s.searchBody ? 'on' : ''}">${s.searchBody ? 'Title + body' : 'Title only'}</span>
         <button type="button" class="news-feed-lens-add" onclick="newsFeedPromptKeyword()" title="Add keyword filter">+</button>
     </span>`);
+    chips.push(`<span class="news-feed-lens-time">${NEWS_FEED_TIME_WINDOWS.map(w => {
+        const on = Number(s.timeWindowHours) === w.hours;
+        return `<button type="button" class="news-feed-lens-chip time${on ? ' on' : ''}" onclick="newsFeedSetTimeWindow(${w.hours})">${w.label}</button>`;
+    }).join('')}</span>`);
     el.innerHTML = chips.join('');
+}
+
+function newsFeedSetTimeWindow(hours) {
+    const h = Number(hours);
+    if (!NEWS_FEED_TIME_WINDOWS.some(w => w.hours === h)) return;
+    const s = newsFeedLoadSettings();
+    if (s.timeWindowHours === h) return;
+    s.timeWindowHours = h;
+    newsFeedSaveSettings(s);
+    if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
+    else newsFeedRenderCenterFeed();
 }
 
 function newsFeedLensCategoryClick(cat) {
@@ -28011,8 +28072,8 @@ function newsFeedRenderSaved() {
         const time = newsFeedTimeLabel(item);
         return `<a class="news-feed-saved-card" href="${dashEsc(item.url)}" target="_blank" rel="noopener">
             <span class="news-feed-saved-tag ${dashEsc(type)}">${dashEsc(type)}</span>
-            <div class="news-feed-saved-title">${dashNewsText(item.title || 'Untitled')}</div>
             <div class="news-feed-saved-meta">${dashNewsText(item.source || '')}${time ? ` · ${time}` : ''}</div>
+            <div class="news-feed-saved-title">${dashNewsText(item.title || 'Untitled')}</div>
         </a>`;
     }).join('');
 }
@@ -28067,7 +28128,7 @@ function newsFeedRenderCenterCard(item, opts = {}) {
                 ${matched}
             </div>
             <div class="news-feed-card-actions">
-                <button type="button" class="news-feed-icon-btn${saved ? ' saved' : ''}" title="${saved ? 'Unsave' : 'Save'}" data-url="${dashEsc(url)}" onclick="event.stopPropagation(); newsFeedToggleSavedByUrl('${dashUri(url)}')">${saved ? '★' : '☆'}</button>
+                <button type="button" class="news-feed-icon-btn news-feed-save-btn${saved ? ' saved' : ''}" title="${saved ? 'Unsave' : 'Save'}" data-url="${dashEsc(url)}">${saved ? '★' : '☆'}</button>
                 <a class="news-feed-icon-btn" href="${dashEsc(url)}" target="_blank" rel="noopener" title="Open" onclick="event.stopPropagation()">↗</a>
             </div>
         </div>
@@ -28092,11 +28153,13 @@ function newsFeedRenderCenterFeed() {
         return;
     }
     grid.innerHTML = cards.concat(filtered.map(item => newsFeedRenderCenterCard(item))).join('');
+    newsFeedBindSaveClicks();
 }
 
 function newsFeedRenderPage(items, kobeissiItem) {
     _newsFeedRawPool = items || [];
     _newsFeedKobeissiItem = kobeissiItem || null;
+    newsFeedBindSaveClicks();
     newsFeedRenderSaved();
     newsFeedRenderCenterFeed();
 }
@@ -28199,8 +28262,9 @@ async function fetchDailyNews(force = false) {
     const briefPortfolioEl = document.getElementById('briefPortfolioGrid');
     if (!briefGrid && !feedGrid) return;
 
-    const CACHE_KEY  = 'vault_news_cache_v4';
+    const CACHE_KEY  = 'vault_news_cache_v5';
     const CACHE_TTL  = 60 * 60 * 1000; // 1 hour
+    const timeWindowHours = newsFeedLoadSettings().timeWindowHours || 24;
     const tgChannels = xHandleLoad();
     const holdings = getDailyBriefHoldings();
 
@@ -28319,13 +28383,14 @@ async function fetchDailyNews(force = false) {
             : '<div class="brief-news-loading">No important holding-specific headlines in the last 24h.</div>';
     }
 
-    function renderItems(items, kobeissiItem, portfolioItems = []) {
+    function renderItems(items, kobeissiItem, portfolioItems = [], feedItems = null) {
         renderKobeissi(kobeissiItem);
         if (typeof renderDashboardEventLog === 'function') renderDashboardEventLog();
         const filtered = (items || []).filter(i => i.type !== 'kobeissi');
+        const feedPool = (feedItems || filtered).filter(i => i.type !== 'kobeissi');
         const pool = [];
         const seen = new Set();
-        for (const item of [...(portfolioItems || []), ...filtered]) {
+        for (const item of [...(portfolioItems || []), ...feedPool]) {
             const key = String(item?.url || item?.link || item?.title || '').trim();
             if (!key || seen.has(key)) continue;
             seen.add(key);
@@ -28334,7 +28399,7 @@ async function fetchDailyNews(force = false) {
         renderPortfolioToGrid(briefPortfolioEl, portfolioItems, 2);
         renderNewsToGrid(briefGrid, filtered, 4);
         if (feedGrid) newsFeedRenderPage(pool, kobeissiItem);
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items: filtered, portfolioItems, ts: Date.now(), handles: tgChannels, holdings })); } catch(e) {}
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items: filtered, feedItems: feedPool, portfolioItems, ts: Date.now(), handles: tgChannels, holdings, timeWindowHours })); } catch(e) {}
     }
 
     // ── Always fetch Kobeissi in parallel with everything else ────────────────
@@ -28344,12 +28409,13 @@ async function fetchDailyNews(force = false) {
     try {
         const cached = localStorage.getItem(CACHE_KEY);
         if (cached) {
-            const { items, portfolioItems, ts, handles, holdings: cachedHoldings } = JSON.parse(cached);
+            const { items, portfolioItems, feedItems, ts, handles, holdings: cachedHoldings, timeWindowHours: cachedWindow } = JSON.parse(cached);
             const same = JSON.stringify(handles || []) === JSON.stringify(tgChannels);
             const sameHoldings = JSON.stringify(cachedHoldings || []) === JSON.stringify(holdings);
-            if (!force && Date.now() - ts < CACHE_TTL && items && same && sameHoldings) {
+            const sameWindow = Number(cachedWindow || 24) === Number(timeWindowHours);
+            if (!force && Date.now() - ts < CACHE_TTL && items && same && sameHoldings && sameWindow) {
                 const kobeissiItem = await kobeissiPromise;
-                renderItems(items, kobeissiItem, portfolioItems || []);
+                renderItems(items, kobeissiItem, portfolioItems || [], feedItems || items);
                 return;
             }
         }
@@ -28361,6 +28427,7 @@ async function fetchDailyNews(force = false) {
             const params = new URLSearchParams();
             if (tgChannels.length) params.set('tg', tgChannels.join(','));
             if (holdings.length) params.set('holdings', holdings.join(','));
+            params.set('window', String(timeWindowHours));
             const base = `/api/news${params.toString() ? '?' + params.toString() : ''}`;
             const [newsRes, kobeissiItem] = await Promise.all([
                 fetch(base, { cache: 'no-store', signal: AbortSignal.timeout(25000) }),
@@ -28368,7 +28435,7 @@ async function fetchDailyNews(force = false) {
             ]);
             if (newsRes.ok) {
                 const newsData = await newsRes.json();
-                renderItems(newsData.items || [], kobeissiItem, newsData.portfolioItems || []);
+                renderItems(newsData.items || [], kobeissiItem, newsData.portfolioItems || [], newsData.feedItems || newsData.items || []);
                 return;
             }
         } catch(e) {

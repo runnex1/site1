@@ -79,7 +79,7 @@ async function safeFetch(url, timeout = 9000) {
   }
 }
 
-function parseRSS(xml) {
+function parseRSS(xml, maxItems = 30) {
   const items = [];
   const itemRegex = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
   let itemMatch;
@@ -94,12 +94,12 @@ function parseRSS(xml) {
     const link = get('link') || get('guid') || '#';
     const pubDate = get('pubDate') || get('dc:date') || get('updated') || get('published');
     if (title) items.push({ title, desc: desc.slice(0, 240), link, pubDate });
-    if (items.length >= 8) break;
+    if (items.length >= maxItems) break;
   }
   return items;
 }
 
-function parseAtom(xml) {
+function parseAtom(xml, maxItems = 30) {
   const items = [];
   const entryRegex = /<entry\b[^>]*>([\s\S]*?)<\/entry>/gi;
   let entryMatch;
@@ -115,17 +115,17 @@ function parseAtom(xml) {
     const link = cleanText(linkMatch?.[1] || get('link') || get('id') || '#');
     const pubDate = get('published') || get('updated');
     if (title) items.push({ title, desc: desc.slice(0, 240), link, pubDate });
-    if (items.length >= 8) break;
+    if (items.length >= maxItems) break;
   }
   return items;
 }
 
-async function fetchRSSFeed(url) {
+async function fetchRSSFeed(url, maxItems = 30) {
   const urls = [url, `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`];
   for (const u of urls) {
     const text = await safeFetch(u);
-    if (text && /<item\b/i.test(text)) return parseRSS(text);
-    if (text && /<entry\b/i.test(text)) return parseAtom(text);
+    if (text && /<item\b/i.test(text)) return parseRSS(text, maxItems);
+    if (text && /<entry\b/i.test(text)) return parseAtom(text, maxItems);
   }
   return [];
 }
@@ -145,9 +145,20 @@ function publishedAt(pubDate) {
   return ts ? new Date(ts).toISOString() : '';
 }
 
-function isWithinLast24h(item, now = Date.now()) {
+function isWithinWindow(item, windowMs = 24 * 60 * 60 * 1000, now = Date.now()) {
   const ts = parseTs(item.pubDate);
-  return ts !== null && ts <= now + 5 * 60 * 1000 && now - ts <= 24 * 60 * 60 * 1000;
+  return ts !== null && ts <= now + 5 * 60 * 1000 && now - ts <= windowMs;
+}
+
+function isWithinLast24h(item, now = Date.now()) {
+  return isWithinWindow(item, 24 * 60 * 60 * 1000, now);
+}
+
+function parseWindowHours(raw) {
+  const h = Number(raw);
+  if (!Number.isFinite(h)) return 24;
+  if ([8, 24, 48, 168].includes(h)) return h;
+  return 24;
 }
 
 function isPricePrediction(item) {
@@ -319,13 +330,20 @@ async function checkWithGroq(prompt, groqKey) {
   return (data.choices?.[0]?.message?.content || '{}').replace(/```json|```/g, '').trim();
 }
 
-async function rankDailyBriefItems(items, holdingTerms) {
+async function rankDailyBriefItems(items, holdingTerms, windowHours = 24) {
+  const windowMs = windowHours * 60 * 60 * 1000;
   const clean = dedupeNews((items || [])
     .filter(i => i && i.title)
-    .filter(i => isWithinLast24h(i))
+    .filter(i => isWithinWindow(i, windowMs))
     .filter(i => !isPricePrediction(i)))
     .map((i, idx) => ({ ...i, idx, marketImpactScore: marketMovingScore(i) }))
     .sort((a, b) => b.marketImpactScore - a.marketImpactScore);
+
+  const feedItems = [...clean].sort((a, b) => {
+    const bt = parseTs(b.pubDate) || 0;
+    const at = parseTs(a.pubDate) || 0;
+    return bt - at || b.marketImpactScore - a.marketImpactScore;
+  });
 
   const fallback = () => {
     const order = { tg: 0, crypto: 1, defi: 2, macro: 3 };
@@ -339,7 +357,7 @@ async function rankDailyBriefItems(items, holdingTerms) {
       .flatMap(type => (byType[type] || []).slice(0, 4))
       .sort((a, b) => (order[a.type] ?? 9) - (order[b.type] ?? 9) || b.marketImpactScore - a.marketImpactScore), clean);
     const portfolioItems = selectPortfolioItems(clean, holdingTerms, items);
-    return { items, portfolioItems };
+    return { items, portfolioItems, feedItems };
   };
 
   const key = process.env.GROQ_API_KEY;
@@ -374,7 +392,7 @@ async function rankDailyBriefItems(items, holdingTerms) {
       .filter(i => matchesHolding(i, holdingTerms))
       .filter(i => i.marketImpactScore >= 4)
       .filter(i => !overlapsAny(i, mainItems));
-    return { items: mainItems, portfolioItems: aiPortfolio.length ? aiPortfolio.slice(0, 2) : selectPortfolioItems(clean, holdingTerms, mainItems) };
+    return { items: mainItems, portfolioItems: aiPortfolio.length ? aiPortfolio.slice(0, 2) : selectPortfolioItems(clean, holdingTerms, mainItems), feedItems };
   } catch (e) {
     console.warn('[news] Daily Brief AI ranking failed:', e.message);
     return fallback();
@@ -392,6 +410,7 @@ module.exports = async function handler(req, res) {
   const queryHoldings = holdingsFromQuery(req.query?.holdings || '');
   const serverHoldings = queryHoldings.length ? [] : await holdingsFromServer();
   const holdingTerms = expandHoldingTerms([...queryHoldings, ...serverHoldings]);
+  const windowHours = parseWindowHours(req.query?.window);
 
   const sources = [...SOURCES_WITH_TYPE];
   for (const handle of tgChannels) {
@@ -415,6 +434,6 @@ module.exports = async function handler(req, res) {
   );
 
   const rawItems = settled.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
-  const ranked = await rankDailyBriefItems(rawItems, holdingTerms);
-  return res.status(200).json({ ok: true, ...ranked, ts: Date.now() });
+  const ranked = await rankDailyBriefItems(rawItems, holdingTerms, windowHours);
+  return res.status(200).json({ ok: true, ...ranked, windowHours, ts: Date.now() });
 };
