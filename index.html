@@ -5339,7 +5339,12 @@ button.news-feed-lens-chip { cursor:pointer; }
 .news-feed-icon-btn.saved { color:var(--amber); border-color:rgba(245,158,11,0.3); background:rgba(245,158,11,0.1); }
 .news-feed-hide-btn { font-size:15px; }
 .news-feed-hide-btn:hover { border-color:rgba(244,63,94,0.35); color:#fb7185; background:rgba(244,63,94,0.08); }
-.news-feed-loading { font-size:11px; color:var(--t3); padding:8px 4px; }
+.news-feed-loading { font-size:11px; color:var(--t3); padding:8px 4px; line-height:1.45; }
+.news-feed-empty-clear {
+  margin-top:6px; display:inline-block; padding:4px 10px; border-radius:6px;
+  border:1px solid rgba(99,183,255,0.35); background:rgba(99,183,255,0.1);
+  color:var(--t1); font-family:var(--ff-mono); font-size:10px; font-weight:700; cursor:pointer;
+}
 .news-feed-settings-drawer {
   position:absolute; top:0; right:0; bottom:0; width:min(340px,92%);
   background:rgba(12,13,18,0.97); border-left:1px solid rgba(0,212,170,0.22);
@@ -28394,7 +28399,7 @@ function newsFeedApplyMergedBundle(bundle) {
     if (!bundle || typeof bundle !== 'object') return;
     if (bundle.settings) {
         try { localStorage.setItem(NEWS_FEED_SETTINGS_KEY, JSON.stringify(bundle.settings)); } catch (e) {}
-        newsFeedSyncTelegramVault(bundle.settings);
+        newsFeedSaveSettings(newsFeedLoadSettings());
     }
     if (Array.isArray(bundle.saved)) {
         _newsFeedSavedCache = bundle.saved;
