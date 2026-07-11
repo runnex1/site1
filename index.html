@@ -5297,6 +5297,24 @@ button.news-feed-lens-chip { cursor:pointer; }
   background:rgba(234,179,8,0.18); color:#eab308; font-size:10px; font-weight:800;
   line-height:1; cursor:help; flex-shrink:0;
 }
+.news-feed-set-label-row {
+  display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:7px;
+}
+.news-feed-set-label-row .news-feed-set-label { margin-bottom:0; }
+.news-feed-tg-add {
+  width:20px; height:20px; border-radius:6px; border:1px solid var(--border-mid);
+  background:var(--surf-3); color:var(--teal); font-size:14px; font-weight:800;
+  line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
+}
+.news-feed-tg-add:hover { border-color:rgba(0,212,170,0.35); background:var(--teal-10); }
+.news-feed-tg-cat {
+  margin-left:auto; font-size:9px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--t3); padding:2px 6px; border-radius:999px; border:1px solid var(--border);
+}
+.news-feed-tg-remove {
+  border:none; background:transparent; color:var(--t3); cursor:pointer; font-size:12px; padding:0 2px;
+}
+.news-feed-tg-remove:hover { color:#f87171; }
 .news-feed-kw-input {
   width:100%; background:var(--surf-3); border:1px solid var(--border-mid);
   border-radius:8px; color:var(--t1); font-family:var(--ff-mono); font-size:11px;
@@ -27711,15 +27729,24 @@ function xHandleAdd() {
     xHandleSave(handles);
     xHandleRender();
     input.value = '';
-    // Clear cache and refresh so new handle's posts appear immediately
-    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
+    const feedSettings = newsFeedLoadSettings();
+    const handle = newsFeedNormalizeTelegramHandle(raw);
+    if (handle && !(feedSettings.telegram || []).some(t => t.handle === handle)) {
+        feedSettings.telegram = [...(feedSettings.telegram || []), { handle, category: 'crypto', enabled: true }];
+        newsFeedSaveSettings(feedSettings);
+    }
+    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5', 'vault_news_cache_v6'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
     fetchDailyNews();
 }
 function xHandleRemove(handle) {
+    const norm = newsFeedNormalizeTelegramHandle(handle);
     const handles = xHandleLoad().filter(h => h !== handle);
     xHandleSave(handles);
     xHandleRender();
-    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
+    const feedSettings = newsFeedLoadSettings();
+    feedSettings.telegram = (feedSettings.telegram || []).filter(t => t.handle !== norm);
+    newsFeedSaveSettings(feedSettings);
+    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5', 'vault_news_cache_v6'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
     fetchDailyNews();
 }
 // Allow pressing Enter in the X handle input
@@ -27790,7 +27817,68 @@ function newsFeedDefaultSettings() {
         keywords: [],
         searchBody: false,
         timeWindowHours: 24,
+        telegram: [],
     };
+}
+
+function newsFeedNormalizeTelegramHandle(raw) {
+    let val = String(raw || '').trim();
+    const tmeMatch = val.match(/t\.me\/(?:s\/)?([a-zA-Z0-9_]+)/i);
+    return (tmeMatch ? tmeMatch[1] : val.replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, '')).toLowerCase();
+}
+
+function newsFeedNormalizeTelegramEntry(entry) {
+    const handle = newsFeedNormalizeTelegramHandle(entry?.handle || entry);
+    if (!handle) return null;
+    const category = NEWS_FEED_CATEGORY_TYPES.includes(String(entry?.category || '').toLowerCase())
+        ? String(entry.category).toLowerCase()
+        : 'defi';
+    return { handle, category, enabled: entry?.enabled !== false };
+}
+
+function newsFeedMigrateLegacyTelegram(settings) {
+    const telegram = Array.isArray(settings.telegram) ? settings.telegram.map(newsFeedNormalizeTelegramEntry).filter(Boolean) : [];
+    if (telegram.length) return { ...settings, telegram };
+    const legacy = (typeof xHandleLoad === 'function' ? xHandleLoad() : [])
+        .map(h => newsFeedNormalizeTelegramEntry({ handle: h, category: /kobeissi/i.test(h) ? 'macro' : 'crypto' }))
+        .filter(Boolean);
+    return { ...settings, telegram: legacy };
+}
+
+function newsFeedEnabledTelegram(settings) {
+    return newsFeedMigrateLegacyTelegram(settings || newsFeedLoadSettings()).telegram
+        .filter(t => t.enabled !== false);
+}
+
+function newsFeedTelegramQueryParam(settings) {
+    return newsFeedEnabledTelegram(settings)
+        .map(t => `${t.handle}:${t.category || 'defi'}`)
+        .join(',');
+}
+
+function newsFeedTelegramEntry(settings, source) {
+    const key = String(source || '').toLowerCase();
+    return newsFeedMigrateLegacyTelegram(settings || newsFeedLoadSettings()).telegram
+        .find(t => t.handle.toLowerCase() === key) || null;
+}
+
+function newsFeedSyncTelegramVault(settings) {
+    if (typeof xHandleSave !== 'function') return;
+    const handles = newsFeedEnabledTelegram(settings).map(t => t.handle);
+    xHandleSave(handles);
+}
+
+function newsFeedItemCategory(item, settings) {
+    const tg = newsFeedTelegramEntry(settings, item.source);
+    if (tg) return tg.category;
+    const t = String(item.type || 'macro').toLowerCase();
+    if (NEWS_FEED_CATEGORY_TYPES.includes(t)) return t;
+    if (t === 'kobeissi') return 'macro';
+    return 'macro';
+}
+
+function newsFeedIsTelegramItem(item, settings) {
+    return Boolean(newsFeedTelegramEntry(settings, item.source));
 }
 
 function newsFeedLoadSettings() {
@@ -27799,7 +27887,7 @@ function newsFeedLoadSettings() {
         if (!raw) return newsFeedDefaultSettings();
         const parsed = JSON.parse(raw);
         const base = newsFeedDefaultSettings();
-        return {
+        const merged = {
             categories: { ...base.categories, ...(parsed.categories || {}) },
             sources: { ...base.sources, ...(parsed.sources || {}) },
             keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(k => String(k).trim().toLowerCase()).filter(Boolean) : [],
@@ -27807,14 +27895,20 @@ function newsFeedLoadSettings() {
             timeWindowHours: NEWS_FEED_TIME_WINDOWS.some(w => w.hours === Number(parsed.timeWindowHours))
                 ? Number(parsed.timeWindowHours)
                 : 24,
+            telegram: Array.isArray(parsed.telegram)
+                ? parsed.telegram.map(newsFeedNormalizeTelegramEntry).filter(Boolean)
+                : [],
         };
+        return newsFeedMigrateLegacyTelegram(merged);
     } catch (e) {
         return newsFeedDefaultSettings();
     }
 }
 
 function newsFeedSaveSettings(settings) {
-    try { localStorage.setItem(NEWS_FEED_SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+    const next = newsFeedMigrateLegacyTelegram(settings);
+    try { localStorage.setItem(NEWS_FEED_SETTINGS_KEY, JSON.stringify(next)); } catch (e) {}
+    newsFeedSyncTelegramVault(next);
 }
 
 function newsFeedLoadSaved() {
@@ -27960,22 +28054,27 @@ function newsFeedPassesKeywordFilter(item, settings) {
     return matches.length > 0;
 }
 
-function newsFeedNormalizeType(type) {
+function newsFeedNormalizeType(type, item, settings) {
+    if (item && settings) return newsFeedItemCategory(item, settings);
     const t = String(type || 'macro').toLowerCase();
     if (NEWS_FEED_CATEGORY_TYPES.includes(t)) return t;
-    if (t === 'tg' || t === 'x') return 'crypto';
     if (t === 'kobeissi') return 'macro';
     return 'macro';
 }
 
 function newsFeedApplyFilters(items, settings) {
-    const s = settings || newsFeedLoadSettings();
+    const s = newsFeedMigrateLegacyTelegram(settings || newsFeedLoadSettings());
     const enabledCats = NEWS_FEED_CATEGORY_TYPES.filter(c => s.categories?.[c]);
     return (items || []).filter(item => {
-        const type = newsFeedNormalizeType(item.type);
+        const type = newsFeedItemCategory(item, s);
         if (!enabledCats.includes(type)) return false;
-        const source = String(item.source || '').trim();
-        if (source && s.sources && Object.prototype.hasOwnProperty.call(s.sources, source) && s.sources[source] === false) return false;
+        const tg = newsFeedTelegramEntry(s, item.source);
+        if (tg) {
+            if (tg.enabled === false) return false;
+        } else {
+            const source = String(item.source || '').trim();
+            if (source && s.sources && Object.prototype.hasOwnProperty.call(s.sources, source) && s.sources[source] === false) return false;
+        }
         if (!newsFeedPassesKeywordFilter(item, s)) return false;
         return true;
     }).sort((a, b) => {
@@ -28118,18 +28217,24 @@ function newsFeedExpandSnippet(item) {
     const full = body && body !== title ? `${title} ${body}` : (body || title);
     const phrases = newsFeedFirstTwoPhrases(full);
     if (phrases) return phrases;
-    if (item.type === 'tg' || item.type === 'kobeissi') return 'Open in Telegram for the full post.';
+    if (newsFeedIsTelegramItem(item, newsFeedLoadSettings()) || item.type === 'kobeissi') return 'Open in Telegram for the full post.';
     return '';
 }
 
 function newsFeedRenderCenterCard(item, opts = {}) {
-    const type = newsFeedNormalizeType(item.type);
+    const settings = newsFeedLoadSettings();
+    const type = newsFeedItemCategory(item, settings);
     const featured = Boolean(opts.featured);
     const saved = newsFeedIsSaved(item);
     const time = newsFeedTimeLabel(item);
     const url = newsFeedItemKey(item) || '#';
     const tag = type === 'kobeissi' ? 'kobeissi' : type;
-    const tagLabel = item.type === 'kobeissi' ? '⚡ Kobeissi' : (type.charAt(0).toUpperCase() + type.slice(1));
+    const tg = newsFeedIsTelegramItem(item, settings);
+    const tagLabel = item.type === 'kobeissi'
+        ? '⚡ Kobeissi'
+        : tg
+            ? `✈ ${dashEsc(item.source || 'Telegram')}`
+            : (type.charAt(0).toUpperCase() + type.slice(1));
     const matched = (item._matchedKeywords || []).length
         ? `<span>matched: ${dashNewsText(item._matchedKeywords.join(', '))}</span>` : '';
     const snippet = newsFeedExpandSnippet(item);
@@ -28214,6 +28319,27 @@ function newsFeedBuildSettingsForm() {
         </div>
         ${NEWS_FEED_CATEGORY_TYPES.map(sourceSection).join('')}
         <div class="news-feed-set-section">
+            <div class="news-feed-set-label-row">
+                <div class="news-feed-set-label">Sources · Telegram</div>
+                <button type="button" class="news-feed-tg-add" onclick="newsFeedPromptAddTelegram()" title="Add Telegram channel">+</button>
+            </div>
+            ${(s.telegram || []).length
+                ? (s.telegram || []).map(t => {
+                    const href = `https://t.me/${encodeURIComponent(t.handle)}`;
+                    const health = _newsFeedSourceHealth?.[t.handle];
+                    const warn = health && !health.ok
+                        ? `<span class="news-feed-source-warn" title="No posts from this channel in the past 7 days${health.note ? ` (${health.note})` : ''}">?</span>`
+                        : '';
+                    return `<label class="news-feed-source-item">
+                        <input type="checkbox" ${t.enabled !== false ? 'checked' : ''} onchange="newsFeedToggleTelegramChannel('${dashEsc(t.handle)}', this.checked)">
+                        <a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">✈ ${dashEsc(t.handle)}</a>
+                        <span class="news-feed-tg-cat">${dashEsc(t.category || 'defi')}</span>${warn}
+                        <button type="button" class="news-feed-tg-remove" onclick="event.preventDefault(); newsFeedRemoveTelegramChannel('${dashEsc(t.handle)}')" title="Remove">✕</button>
+                    </label>`;
+                }).join('')
+                : '<div class="news-feed-kw-chips" style="margin-bottom:0;color:var(--t3)">No Telegram channels yet. Paste a t.me link with +.</div>'}
+        </div>
+        <div class="news-feed-set-section">
             <div class="news-feed-set-label">Keywords</div>
             <input class="news-feed-kw-input" id="newsFeedKwInput" type="text" placeholder="aave, ethena, funding" value="${dashEsc((s.keywords || []).join(', '))}">
             <div class="news-feed-kw-chips" id="newsFeedKwChips">${(s.keywords || []).map(k => `<span class="news-feed-kw-chip">${dashEsc(k)}</span>`).join('')}</div>
@@ -28249,6 +28375,42 @@ function newsFeedToggleSource(label, checked) {
     _newsFeedSettingsDraft.sources[label] = checked;
 }
 
+function newsFeedPromptAddTelegram() {
+    const raw = prompt('Paste Telegram channel link or @handle (e.g. https://t.me/defimon_alerts):');
+    if (!raw || !String(raw).trim()) return;
+    const handle = newsFeedNormalizeTelegramHandle(raw);
+    if (!handle) return;
+    const categoryRaw = prompt('Category for this channel: crypto, defi, or macro', 'defi');
+    const category = NEWS_FEED_CATEGORY_TYPES.includes(String(categoryRaw || '').toLowerCase())
+        ? String(categoryRaw).toLowerCase()
+        : 'defi';
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    _newsFeedSettingsDraft.telegram = Array.isArray(_newsFeedSettingsDraft.telegram) ? _newsFeedSettingsDraft.telegram : [];
+    if (_newsFeedSettingsDraft.telegram.some(t => t.handle === handle)) {
+        alert('That channel is already in your feed.');
+        return;
+    }
+    if (_newsFeedSettingsDraft.telegram.length >= 12) {
+        alert('Maximum 12 Telegram channels supported.');
+        return;
+    }
+    _newsFeedSettingsDraft.telegram.push({ handle, category, enabled: true });
+    newsFeedBuildSettingsForm();
+}
+
+function newsFeedToggleTelegramChannel(handle, enabled) {
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    _newsFeedSettingsDraft.telegram = (_newsFeedSettingsDraft.telegram || []).map(t =>
+        t.handle === handle ? { ...t, enabled } : t,
+    );
+}
+
+function newsFeedRemoveTelegramChannel(handle) {
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    _newsFeedSettingsDraft.telegram = (_newsFeedSettingsDraft.telegram || []).filter(t => t.handle !== handle);
+    newsFeedBuildSettingsForm();
+}
+
 function newsFeedToggleSetting(key) {
     if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
     _newsFeedSettingsDraft[key] = !_newsFeedSettingsDraft[key];
@@ -28263,7 +28425,8 @@ function newsFeedApplySettings() {
     newsFeedSaveSettings(_newsFeedSettingsDraft);
     _newsFeedSettingsDraft = null;
     newsFeedCloseSettings();
-    newsFeedRenderCenterFeed();
+    if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
+    else newsFeedRenderCenterFeed();
 }
 
 document.addEventListener('keydown', e => {
@@ -28281,8 +28444,9 @@ async function fetchDailyNews(force = false) {
 
     const CACHE_KEY  = 'vault_news_cache_v6';
     const CACHE_TTL  = 60 * 60 * 1000; // 1 hour
-    const timeWindowHours = newsFeedLoadSettings().timeWindowHours || 24;
-    const tgChannels = xHandleLoad();
+    const feedSettings = newsFeedLoadSettings();
+    const timeWindowHours = feedSettings.timeWindowHours || 24;
+    const tgQuery = newsFeedTelegramQueryParam(feedSettings);
     const holdings = getDailyBriefHoldings();
 
     const labelMap = { crypto: 'Crypto', defi: 'DeFi', macro: 'Macro', tg: 'Telegram', x: '𝕏', kobeissi: '⚡ Kobeissi' };
@@ -28417,7 +28581,7 @@ async function fetchDailyNews(force = false) {
         renderPortfolioToGrid(briefPortfolioEl, portfolioItems, 2);
         renderNewsToGrid(briefGrid, filtered, 4);
         if (feedGrid) newsFeedRenderPage(pool, kobeissiItem);
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items: filtered, feedItems: feedPool, portfolioItems, sourceHealth: _newsFeedSourceHealth, ts: Date.now(), handles: tgChannels, holdings, timeWindowHours })); } catch(e) {}
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items: filtered, feedItems: feedPool, portfolioItems, sourceHealth: _newsFeedSourceHealth, ts: Date.now(), telegram: feedSettings.telegram || [], holdings, timeWindowHours })); } catch(e) {}
     }
 
     // ── Always fetch Kobeissi in parallel with everything else ────────────────
@@ -28427,11 +28591,11 @@ async function fetchDailyNews(force = false) {
     try {
         const cached = localStorage.getItem(CACHE_KEY);
         if (cached) {
-            const { items, portfolioItems, feedItems, sourceHealth, ts, handles, holdings: cachedHoldings, timeWindowHours: cachedWindow } = JSON.parse(cached);
-            const same = JSON.stringify(handles || []) === JSON.stringify(tgChannels);
+            const { items, portfolioItems, feedItems, sourceHealth, ts, telegram: cachedTelegram, holdings: cachedHoldings, timeWindowHours: cachedWindow } = JSON.parse(cached);
+            const sameTg = JSON.stringify(cachedTelegram || []) === JSON.stringify(feedSettings.telegram || []);
             const sameHoldings = JSON.stringify(cachedHoldings || []) === JSON.stringify(holdings);
             const sameWindow = Number(cachedWindow || 24) === Number(timeWindowHours);
-            if (!force && Date.now() - ts < CACHE_TTL && items && same && sameHoldings && sameWindow) {
+            if (!force && Date.now() - ts < CACHE_TTL && items && sameTg && sameHoldings && sameWindow) {
                 const kobeissiItem = await kobeissiPromise;
                 if (sourceHealth) _newsFeedSourceHealth = sourceHealth;
                 renderItems(items, kobeissiItem, portfolioItems || [], feedItems || items, sourceHealth || _newsFeedSourceHealth);
@@ -28444,7 +28608,7 @@ async function fetchDailyNews(force = false) {
     if (location.protocol === 'https:') {
         try {
             const params = new URLSearchParams();
-            if (tgChannels.length) params.set('tg', tgChannels.join(','));
+            if (tgQuery) params.set('tg', tgQuery);
             if (holdings.length) params.set('holdings', holdings.join(','));
             params.set('window', String(timeWindowHours));
             const base = `/api/news${params.toString() ? '?' + params.toString() : ''}`;

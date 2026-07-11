@@ -955,6 +955,12 @@ assert.match(newsJs, /function buildSourceHealth\(/, 'news API must compute sour
 assert.match(indexHtml, /function newsFeedKeywordMatchesSource\(/, 'keyword filter must match news source names');
 assert.doesNotMatch(indexHtml, /includeNonMatching/, 'include-non-matching setting must be removed');
 assert.match(indexHtml, /news-feed-source-warn/, 'stale news sources must show yellow warning in feed settings');
+assert.match(newsJs, /function parseTelegramChannelParam\(/, 'news API must parse telegram channel categories from tg query');
+assert.match(newsJs, /fetchTelegramChannelPosts/, 'news API must scrape Telegram channels directly instead of RSSHub-only');
+assert.match(indexHtml, /function newsFeedPromptAddTelegram\(/, 'feed settings must let users add Telegram channels');
+assert.match(indexHtml, /Sources · Telegram/, 'feed settings must show Telegram sources section with add button');
+assert.match(indexHtml, /news-feed-tg-add/, 'Telegram add button must exist in feed settings');
+assert.match(indexHtml, /function newsFeedTelegramQueryParam\(/, 'news fetch must pass telegram channels with categories');
 assert.match(indexHtml, /vault_news_cache_v6/, 'news client cache must bust for source health metadata');
 assert.match(indexHtml, /function buildSimpleDrawerTableHtml\(sec, ctx\)/, 'deposit-only protocol drawers must use aligned table layout');
 assert.match(indexHtml, /kind: 'lending'/, 'protocol display entries must tag leveraged lending rows');

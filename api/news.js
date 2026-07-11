@@ -131,6 +131,91 @@ function tgChannelRSSUrl(handle) {
   return `https://rsshub.app/telegram/channel/${clean}`;
 }
 
+function parseTelegramChannelParam(raw) {
+  return String(raw || '').split(',').map(s => s.trim()).filter(Boolean).map((entry) => {
+    const idx = entry.lastIndexOf(':');
+    if (idx > 0) {
+      const suffix = entry.slice(idx + 1).toLowerCase();
+      if (['crypto', 'defi', 'macro'].includes(suffix)) {
+        const handle = entry.slice(0, idx)
+          .replace(/^(?:https?:\/\/)?t\.me\/(?:s\/)?/i, '')
+          .replace(/^@/, '')
+          .replace(/[^a-zA-Z0-9_]/g, '');
+        if (handle) return { handle, category: suffix };
+      }
+    }
+    const handle = entry
+      .replace(/^(?:https?:\/\/)?t\.me\/(?:s\/)?/i, '')
+      .replace(/^@/, '')
+      .replace(/[^a-zA-Z0-9_]/g, '');
+    if (!handle) return null;
+    return { handle, category: /kobeissi/i.test(handle) ? 'macro' : 'crypto' };
+  }).filter(Boolean);
+}
+
+async function fetchTelegramChannelPosts(channel, maxPosts = 12) {
+  const clean = String(channel || '').replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, '');
+  if (!clean) return [];
+  const url = `https://t.me/s/${clean}`;
+  try {
+    const r = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+    });
+    if (!r.ok) return [];
+    const html = await r.text();
+    const messageBlocks = [...html.matchAll(/<div class="tgme_widget_message_wrap[^"]*">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g)].map(m => m[0]);
+    const posts = messageBlocks.slice(-30).reverse().reduce((acc, block) => {
+      if (acc.length >= maxPosts) return acc;
+      const textMatch = block.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+      if (!textMatch) return acc;
+      const rawText = cleanText(textMatch[1].replace(/<br\s*\/?>/gi, '\n'));
+      if (!rawText) return acc;
+      const urlMatch = block.match(/href="(https:\/\/t\.me\/[^"]+\/(\d+))"/);
+      const postUrl = urlMatch ? urlMatch[1] : `https://t.me/${clean}`;
+      const dateMatch = block.match(/<time[^>]*datetime="([^"]+)"/);
+      const pubDate = dateMatch ? dateMatch[1] : '';
+      if (!pubDate || !Number.isFinite(Date.parse(pubDate))) return acc;
+      const parts = rawText.split(/\n+/).filter(Boolean);
+      const title = (parts[0] || rawText).slice(0, 220);
+      const desc = rawText.slice(title.length).trim().slice(0, 240);
+      acc.push({ title, desc, link: postUrl, pubDate });
+      return acc;
+    }, []);
+    return posts;
+  } catch {
+    return [];
+  }
+}
+
+async function fetchSourceItems(src) {
+  if (src.kind === 'telegram') {
+    const items = await fetchTelegramChannelPosts(src.handle);
+    return items.map(i => ({
+      title: i.title,
+      desc: i.desc,
+      url: i.link || '#',
+      type: src.type,
+      source: src.label,
+      pubDate: i.pubDate,
+      publishedAt: publishedAt(i.pubDate),
+    }));
+  }
+  const items = await fetchRSSFeed(src.url);
+  return items.map(i => ({
+    title: i.title,
+    desc: i.desc,
+    url: i.link || '#',
+    type: src.type,
+    source: src.label,
+    pubDate: i.pubDate,
+    publishedAt: publishedAt(i.pubDate),
+  }));
+}
+
 function parseTs(pubDate) {
   const ts = Date.parse(pubDate || '');
   return Number.isFinite(ts) ? ts : null;
@@ -420,32 +505,25 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
 
-  const tgParam = req.query?.tg || '';
-  const tgChannels = tgParam ? String(tgParam).split(',').map(s => s.trim()).filter(Boolean) : [];
+  const tgChannels = parseTelegramChannelParam(req.query?.tg || '');
   const queryHoldings = holdingsFromQuery(req.query?.holdings || '');
   const serverHoldings = queryHoldings.length ? [] : await holdingsFromServer();
   const holdingTerms = expandHoldingTerms([...queryHoldings, ...serverHoldings]);
   const windowHours = parseWindowHours(req.query?.window);
 
   const sources = [...SOURCES_WITH_TYPE];
-  for (const handle of tgChannels) {
-    const clean = String(handle || '').replace(/^(?:https?:\/\/)?t\.me\/(?:s\/)?/i, '').replace(/^@/, '').trim();
-    if (clean) sources.push({ url: tgChannelRSSUrl(clean), label: clean, type: /kobeissi/i.test(clean) ? 'macro' : 'tg' });
+  for (const { handle, category } of tgChannels) {
+    if (!handle) continue;
+    sources.push({
+      kind: 'telegram',
+      handle,
+      label: handle,
+      type: category,
+    });
   }
 
   const settled = await Promise.allSettled(
-    sources.map(async src => {
-      const items = await fetchRSSFeed(src.url);
-      return items.map(i => ({
-        title: i.title,
-        desc: i.desc,
-        url: i.link || '#',
-        type: src.type,
-        source: src.label,
-        pubDate: i.pubDate,
-        publishedAt: publishedAt(i.pubDate),
-      }));
-    })
+    sources.map(async (src) => fetchSourceItems(src)),
   );
 
   const rawItems = settled.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
