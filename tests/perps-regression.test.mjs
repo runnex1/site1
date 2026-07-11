@@ -1313,6 +1313,7 @@ const mergedSettingsTie = mergeNewsFeedStores(
 assert.deepEqual(mergedSettingsTie.settings.keywords, ['bitcoin'], 'settings tie must prefer local keywords');
 assert.match(indexHtml, /newsFeedPickNewerList\(/, 'client merge must pick newer saved/quickLinks lists');
 assert.match(indexHtml, /newsFeedScheduleCloudSync\(\);\s*\n\s*newsFeedRenderCenterFeed\(\)/, 'keyword add/remove must schedule cloud sync');
+assert.match(indexHtml, /function newsFeedSanitizeKeywords\(/, 'news feed must strip test-sync keyword artifact on load');
 assert.match(indexHtml, /newsFeedKwInput[\s\S]{0,120}oninput="newsFeedSyncKeywordsFromInput/, 'feed settings keyword input must persist on change');
 {
   const kwCtx = vm.createContext({ String });

@@ -559,7 +559,43 @@ html { height: 100%; }
 .watcher-v2-row-title { font-size:0.88rem; font-weight:850; color:var(--t1); }
 .watcher-v2-row-title a.watcher-v2-pm-link { color:var(--wv-violet); text-decoration:none; }
 .watcher-v2-row-title a.watcher-v2-pm-link:hover { text-decoration:underline; }
+.watcher-v2-head-actions { display:flex; align-items:center; gap:0.45rem; flex-shrink:0; }
+.watcher-v2-timeframe { display:flex; align-items:center; gap:0.2rem; }
+.watcher-v2-tf-pill {
+  height:22px; padding:0 0.45rem; border-radius:999px; border:1px solid rgba(89,240,200,0.28);
+  background:rgba(89,240,200,0.06); color:var(--wv-muted); font-family:var(--ff-mono); font-size:0.62rem;
+  font-weight:800; cursor:pointer; transition:background 0.14s, border-color 0.14s, color 0.14s;
+}
+.watcher-v2-tf-pill:hover { background:rgba(89,240,200,0.12); border-color:rgba(89,240,200,0.4); color:var(--t1); }
+.watcher-v2-tf-pill.active { background:rgba(89,240,200,0.14); border-color:rgba(89,240,200,0.45); color:var(--wv-teal); }
+.watcher-v2-wallet-wrap { border-bottom:1px solid var(--wv-line); }
+.watcher-v2-wallet-wrap:last-child { border-bottom:none; }
+.watcher-v2-wallet-wrap.pm-expanded .watcher-v2-wallet-row { border-bottom:none; }
 .watcher-v2-wallet-row.pm-activity-filter { background:rgba(183,140,255,0.08); box-shadow:inset 3px 0 0 rgba(183,140,255,0.55); }
+.watcher-v2-wallet-row.pm-expanded { background:rgba(183,140,255,0.1); box-shadow:inset 3px 0 0 rgba(183,140,255,0.7); }
+.watcher-v2-wallet-positions {
+  margin:0 0.85rem 0.55rem 2.75rem; padding:0.45rem 0.55rem; border-radius:8px;
+  border:1px solid rgba(183,140,255,0.28); background:rgba(183,140,255,0.06);
+}
+.watcher-v2-pos-head {
+  display:flex; align-items:center; justify-content:space-between; gap:0.45rem;
+  margin-bottom:0.35rem; font-family:var(--ff-mono); font-size:0.62rem; font-weight:900;
+  letter-spacing:0.08em; text-transform:uppercase; color:var(--wv-violet);
+}
+.watcher-v2-pos-head button {
+  height:20px; padding:0 0.4rem; border-radius:5px; border:1px solid rgba(183,140,255,0.35);
+  background:rgba(183,140,255,0.12); color:var(--wv-violet); font-family:var(--ff-mono); font-size:0.62rem; font-weight:800; cursor:pointer;
+}
+.watcher-v2-pos-row {
+  display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; gap:0.45rem;
+  padding:0.35rem 0; border-top:1px solid rgba(134,159,179,0.11); align-items:center; font-size:0.76rem;
+}
+.watcher-v2-pos-row:first-of-type { border-top:none; }
+.watcher-v2-pos-title { font-weight:800; color:var(--t1); line-height:1.25; }
+.watcher-v2-pos-side { font-family:var(--ff-mono); font-size:0.66rem; font-weight:800; color:var(--wv-blue); white-space:nowrap; }
+.watcher-v2-pos-size { font-family:var(--ff-mono); font-size:0.66rem; font-weight:700; color:var(--wv-muted); white-space:nowrap; }
+.watcher-v2-pos-value { font-family:var(--ff-mono); font-size:0.68rem; font-weight:900; color:var(--wv-green); white-space:nowrap; }
+.watcher-v2-pos-empty, .watcher-v2-pos-loading { font-family:var(--ff-mono); font-size:0.66rem; color:var(--wv-muted); font-weight:700; padding:0.2rem 0; }
 .watcher-v2-row-meta { margin-top:0.1rem; font-family:var(--ff-mono); font-size:0.68rem; color:var(--wv-muted); }
 .watcher-v2-badge { padding:0.2rem 0.5rem; border-radius:7px; border:1px solid var(--wv-line-hi); font-family:var(--ff-mono); font-size:0.65rem; font-weight:800; color:var(--t1); white-space:nowrap; }
 .watcher-v2-badge.green { color:var(--wv-green); border-color:rgba(85,214,111,0.28); background:rgba(85,214,111,0.07); }
@@ -8885,7 +8921,14 @@ body[data-active-tab="loops"] .page-content,
                     <div class="watcher-v2-panel-title">Wallet Watchlist</div>
                     <div class="watcher-v2-panel-note">DeBank and Polymarket wallets</div>
                   </div>
-                  <span class="watcher-v2-pill blue" id="wtab-wallets-badge">0 wallets</span>
+                  <div class="watcher-v2-head-actions">
+                    <div class="watcher-v2-timeframe" id="watcherPmTimeframeGroup" role="group" aria-label="Activity timeframe">
+                      <button type="button" class="watcher-v2-tf-pill active" data-watcher-pm-days="1" onclick="watcherPmSetActivityDays(1, this)">1d</button>
+                      <button type="button" class="watcher-v2-tf-pill" data-watcher-pm-days="3" onclick="watcherPmSetActivityDays(3, this)">3d</button>
+                      <button type="button" class="watcher-v2-tf-pill" data-watcher-pm-days="7" onclick="watcherPmSetActivityDays(7, this)">7d</button>
+                    </div>
+                    <span class="watcher-v2-pill blue" id="wtab-wallets-badge">0 wallets</span>
+                  </div>
                 </div>
                 <div class="watcher-v2-activity">
                   <div class="watcher-v2-activity-head">
@@ -10303,9 +10346,13 @@ let watcherLinks = [];
 let watcherFilter = 'all';
 let watcherSearchQuery = '';
 let watcherPmMinUsd = 0;
+let watcherPmActivityDays = 1;
 let watcherPmActivityFilterWallet = '';
 let _watcherPmActivityTrades = [];
+let _watcherPmPositionsCache = {};
 const WATCHER_PM_MIN_USD_KEY = 'watcher-pm-min-usd';
+const WATCHER_PM_ACTIVITY_DAYS_KEY = 'watcher-pm-activity-days';
+const WATCHER_PM_POSITION_MIN_USD = 100;
 let _wlPollTimer = null;
 let _wlCharts = {};
 let _predictionIntelSeq = 0;
@@ -12743,9 +12790,10 @@ function groupFilledTradesByWindow(trades, groupMs = PM_ORDER_FILL_GROUP_MS) {
     return groups.sort((a, b) => Number(b.latestTs || 0) - Number(a.latestTs || 0));
 }
 
-// ── Filled orders: activity?type=TRADE in last 48h ───────────────────────────
-async function fetchFilledOrders(wallets) {
-    const since = Math.floor(Date.now() / 1000) - PM_TRADE_LOOKBACK_SEC;
+// ── Filled orders: activity?type=TRADE in selected lookback window ───────────
+async function fetchFilledOrders(wallets, lookbackSec) {
+    const windowSec = Number.isFinite(lookbackSec) && lookbackSec > 0 ? lookbackSec : watcherPmGetActivityLookbackSec();
+    const since = Math.floor(Date.now() / 1000) - windowSec;
     const trades = [];
     for (const wallet of wallets) {
         let offset = 0;
@@ -12753,7 +12801,7 @@ async function fetchFilledOrders(wallets) {
             const url = `https://data-api.polymarket.com/activity?user=${encodeURIComponent(wallet)}&type=TRADE&limit=500&offset=${offset}&start=${since}&sortBy=TIMESTAMP&sortDirection=DESC`;
             const page = await pmFetch(url);
             if (!Array.isArray(page) || page.length === 0) break;
-            // Filter to only trades within 48h (API start param should handle it, but double-check)
+            // Filter to only trades within lookback window (API start param should handle it, but double-check)
             const recent = page.filter(t => (t.timestamp || 0) >= since);
             trades.push(...recent.map(t => ({ ...t, _wallet: wallet })));
             if (page.length < 500 || recent.length < page.length) break;
