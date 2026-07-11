@@ -7,10 +7,7 @@ const SOURCES_WITH_TYPE = [
   { url: 'https://theblock.co/rss.xml',                             label: 'The Block',        type: 'crypto' },
   { url: 'https://unchainedcrypto.com/feed/',                       label: 'Unchained',        type: 'crypto' },
   { url: 'https://cryptopanic.com/news/rss/',                       label: 'CryptoPanic',      type: 'crypto' },
-  { url: 'https://thedefiant.io/api/feed',                          label: 'The Defiant',      type: 'defi' },
-  { url: 'https://blockworks.co/feed',                              label: 'Blockworks',       type: 'defi' },
   { url: 'https://www.dlnews.com/arc/outboundfeeds/rss/',           label: 'DL News',          type: 'defi' },
-  { url: 'https://news.google.com/rss/search?q=DeFi%20protocol%20upgrade%20OR%20DeFi%20exploit%20OR%20DeFi%20TVL%20OR%20DeFi%20token&hl=en-US&gl=US&ceid=US:en', label: 'Google News DeFi', type: 'defi' },
   { url: 'https://feeds.reuters.com/reuters/businessNews',          label: 'Reuters Business', type: 'macro' },
   { url: 'https://feeds.reuters.com/reuters/politicsNews',          label: 'Reuters Politics', type: 'macro' },
   { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',          label: 'BBC Business',     type: 'macro' },
@@ -335,7 +332,7 @@ async function rankDailyBriefItems(items, holdingTerms, windowHours = 24) {
   const clean = dedupeNews((items || [])
     .filter(i => i && i.title)
     .filter(i => isWithinWindow(i, windowMs))
-    .filter(i => !isPricePrediction(i)))
+    .filter(i => i.type === 'defi' || !isPricePrediction(i)))
     .map((i, idx) => ({ ...i, idx, marketImpactScore: marketMovingScore(i) }))
     .sort((a, b) => b.marketImpactScore - a.marketImpactScore);
 

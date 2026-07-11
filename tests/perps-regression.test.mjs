@@ -942,6 +942,10 @@ assert.match(indexHtml, /news-feed-save-btn/, 'save star must use delegated clic
 assert.match(indexHtml, /function newsFeedBindSaveClicks\(/, 'news feed must bind save button clicks on grid');
 assert.match(newsJs, /function parseWindowHours\(/, 'news API must accept window hours query param');
 assert.match(newsJs, /feedItems/, 'news API must return full feed pool for news feed tab');
+assert.match(newsJs, /i\.type === 'defi' \|\| !isPricePrediction\(i\)/, 'defi headlines must bypass price-prediction filter');
+assert.match(newsJs, /label: 'DL News',\s+type: 'defi'/, 'defi must use DL News as sole RSS source');
+assert.doesNotMatch(newsJs, /The Defiant|Blockworks|Google News DeFi/, 'removed defi sources must not remain in news API');
+assert.match(indexHtml, /defi: \['DL News'\]/, 'news feed settings must list only DL News for defi');
 assert.match(indexHtml, /vault_news_cache_v5/, 'news client cache must bust for feedItems/time window');
 assert.match(indexHtml, /function buildSimpleDrawerTableHtml\(sec, ctx\)/, 'deposit-only protocol drawers must use aligned table layout');
 assert.match(indexHtml, /kind: 'lending'/, 'protocol display entries must tag leveraged lending rows');
