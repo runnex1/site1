@@ -1331,6 +1331,36 @@ assert.match(indexHtml, /newsFeedKwInput[\s\S]{0,120}oninput="newsFeedSyncKeywor
   assert.equal(kwCtx.newsFeedPassesKeywordFilter({ ...item, title: 'test-sync headline update' }, { keywords: ['test-sync'], searchBody: false }), true, 'test-sync keyword must match headlines containing keyword');
 }
 assert.match(indexHtml, /function mergeWatcherWalletsByKey\(/, 'watcher wallets must merge local and server on hydrate');
+assert.match(indexHtml, /async function saveWatcherWallets\(/, 'watcher wallet save must await cloud sync');
+assert.match(indexHtml, /await saveWatcherWallets\(\)/, 'watcher wallet mutations must await server persist');
+assert.match(indexHtml, /async function addWatcherWallet\(/, 'addWatcherWallet must be async so PM wallets persist before refresh');
+assert.match(indexHtml, /async function removeWatcherWallet\(/, 'removeWatcherWallet must await cloud sync');
+assert.match(indexHtml, /watcherWallets:\s*_ls\('vault-watcher-wallets', '\[\]'\)/, 'saveData must read watcher wallets from localStorage after saveWatcherWallets');
+{
+  const watcherCtx = { watcherWallets: [] };
+  vm.runInNewContext(`
+    ${extractBalancedFunction(indexHtml, 'mergeWatcherWalletsByKey')}
+    ${extractBalancedFunction(indexHtml, 'watcherIsLoopOrPmCategory')}
+    ${extractBalancedFunction(indexHtml, 'watcherWatchlistWallets')}
+  `, watcherCtx);
+  const pmWallet = {
+    id: 'pm-test-1',
+    address: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    label: 'TestPM',
+    category: 'pm',
+    profileUrl: 'https://polymarket.com/@TestPM',
+    sourceInput: 'https://polymarket.com/@TestPM',
+    addedAt: Date.now(),
+  };
+  const local = [pmWallet];
+  const serverStale = [{ id: 'yield-1', address: '0x1111111111111111111111111111111111111111', label: '', category: 'yield', addedAt: 1 }];
+  const merged = watcherCtx.mergeWatcherWalletsByKey(local, serverStale);
+  watcherCtx.watcherWallets = merged;
+  assert.equal(merged.some(w => w.category === 'pm' && w.profileUrl), true, 'PM wallet metadata must survive cloud merge');
+  assert.equal(watcherCtx.watcherWatchlistWallets().some(w => w.category === 'pm'), true, 'PM wallets must remain visible in Wallet Watchlist after merge');
+  const { shouldPersistWatcherWallets } = require('../lib/sync-array-guard.js');
+  assert.equal(shouldPersistWatcherWallets(merged), true, 'PM watcher wallets must be persistable via sync POST');
+}
 assert.match(indexHtml, /function watcherWatchlistWallets\(/, 'Wallet Watchlist must filter out Loops yield wallets');
 assert.match(indexHtml, /function watcherIsLoopOrPmCategory\(/, 'Wallet Watchlist must classify yield categories');
 assert.match(indexHtml, /return cat === 'yield'/, 'Wallet Watchlist must exclude only yield wallets from unified list');

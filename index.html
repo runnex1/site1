@@ -11145,8 +11145,8 @@ async function saveData(syncOpts = {}) {
         Object.assign(payload, {
             // Watchlist
             watchlist:      (() => { try { return Array.isArray(watchlist) ? watchlist : _ls('wl-data', '[]'); } catch (e) { return _ls('wl-data', '[]'); } })(),
-            // Watcher infrastructure
-            watcherWallets: (() => { try { return Array.isArray(watcherWallets) ? watcherWallets : _ls('vault-watcher-wallets', '[]'); } catch (e) { return _ls('vault-watcher-wallets', '[]'); } })(),
+            // Watcher infrastructure — read localStorage (saveWatcherWallets writes before saveData)
+            watcherWallets: _ls('vault-watcher-wallets', '[]'),
             watcherLinks:   (() => { try { return Array.isArray(watcherLinks) ? watcherLinks : _ls('watcher-links', '[]'); } catch (e) { return _ls('watcher-links', '[]'); } })(),
             // Aave cap alert markets
             aaveMarkets:    _ls('aavecap-markets-v1', '[]'),
@@ -22992,10 +22992,10 @@ function watcherWatchlistWallets() {
     return (Array.isArray(watcherWallets) ? watcherWallets : []).filter(w => !watcherIsLoopOrPmCategory(w.category));
 }
 
-function saveWatcherWallets() {
+async function saveWatcherWallets() {
     try { localStorage.setItem('vault-watcher-wallets', JSON.stringify(watcherWallets)); } catch(e) {}
     const clearEmpty = !(Array.isArray(watcherWallets) && watcherWallets.length);
-    saveData({ watcherWalletsClear: clearEmpty });
+    await saveData({ watcherWalletsClear: clearEmpty });
     updateWatcherWalletCount();
 }
 
@@ -23203,7 +23203,7 @@ async function addWatcherWallet() {
                 sourceInput: address,
                 addedAt: Date.now(),
             });
-            saveWatcherWallets();
+            await saveWatcherWallets();
             if (addrEl) addrEl.value = '';
             if (labelEl) labelEl.value = '';
             renderWatcherWalletList('pm');
@@ -23223,7 +23223,7 @@ async function addWatcherWallet() {
     }
 
     watcherWallets.push({ id: Date.now().toString(), address, label, category, addedAt: Date.now() });
-    saveWatcherWallets();
+    await saveWatcherWallets();
     if (category === 'yield') { loopApiState.triedAuto = false; loopApiState.positions = []; }
     if (addrEl) addrEl.value = '';
     if (labelEl) labelEl.value = '';
@@ -23232,10 +23232,10 @@ async function addWatcherWallet() {
     renderWatcherPmActivity();
 }
 
-function removeWatcherWallet(id) {
+async function removeWatcherWallet(id) {
     const entry = watcherWallets.find(w => w.id === id);
     watcherWallets = watcherWallets.filter(w => w.id !== id);
-    saveWatcherWallets();
+    await saveWatcherWallets();
     if (entry?.category === 'yield') { loopApiState.triedAuto = false; loopApiState.positions = []; renderLoops(); }
     if (entry?.category === 'pm' && entry.address?.toLowerCase() === watcherPmActivityFilterWallet) {
         watcherPmActivityFilterWallet = '';
