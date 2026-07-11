@@ -9,6 +9,12 @@ const SOURCES_WITH_TYPE = [
   { url: 'https://thedefiant.io/api/feed',                          label: 'The Defiant',      type: 'defi' },
   // Direct Block RSS is Cloudflare-blocked from serverless; Google News site feed works.
   { url: 'https://news.google.com/rss/search?q=site:theblock.co&hl=en-US&gl=US&ceid=US:en', label: 'The Block', type: 'defi' },
+  { url: 'https://protos.com/feed/',                                label: 'Protos',           type: 'defi' },
+  { url: 'https://www.bankless.com/feed',                           label: 'Bankless',         type: 'defi' },
+  { url: 'https://news.google.com/rss/search?q=site:coindesk.com+DeFi&hl=en-US&gl=US&ceid=US:en', label: 'CoinDesk · DeFi', type: 'defi' },
+  { url: 'https://news.google.com/rss/search?q=site:unchainedcrypto.com+DeFi&hl=en-US&gl=US&ceid=US:en', label: 'Unchained · DeFi', type: 'defi' },
+  { url: 'https://news.google.com/rss/search?q=site:decrypt.co+DeFi&hl=en-US&gl=US&ceid=US:en', label: 'Decrypt · DeFi', type: 'defi' },
+  { url: 'https://news.google.com/rss/search?q=site:cointelegraph.com+DeFi&hl=en-US&gl=US&ceid=US:en', label: 'CoinTelegraph · DeFi', type: 'defi' },
   { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',          label: 'BBC Business',     type: 'macro' },
   { url: 'https://feeds.bbci.co.uk/news/world/rss.xml',             label: 'BBC World',        type: 'macro' },
   { url: 'https://www.investing.com/rss/news_25.rss',               label: 'Investing.com',    type: 'macro' },

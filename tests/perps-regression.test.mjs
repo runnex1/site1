@@ -948,7 +948,13 @@ assert.match(newsJs, /label: 'The Block', type: 'defi'/, 'The Block must be a de
 assert.match(newsJs, /site:theblock\.co/, 'The Block RSS must use Google News site feed workaround');
 assert.doesNotMatch(newsJs, /theblock\.co\/rss\.xml|Reuters Business|Reuters Politics|feeds\.a\.dj\.com/, 'broken direct Block/Reuters/stale WSJ feeds must be removed');
 assert.match(newsJs, /feeds\.content\.dowjones\.io\/public\/rss\/RSSMarketsMain/, 'WSJ Markets must use live Dow Jones feed URL');
-assert.match(indexHtml, /defi: \['The Defiant', 'The Block'\]/, 'news feed settings must list The Defiant and The Block for defi');
+assert.match(newsJs, /label: 'Protos',\s+type: 'defi'/, 'defi must include Protos RSS source');
+assert.match(newsJs, /label: 'Bankless',\s+type: 'defi'/, 'defi must include Bankless RSS source');
+assert.match(newsJs, /label: 'CoinDesk · DeFi', type: 'defi'/, 'defi must include CoinDesk DeFi Google News feed');
+assert.match(newsJs, /label: 'Unchained · DeFi', type: 'defi'/, 'defi must include Unchained DeFi Google News feed');
+assert.match(newsJs, /label: 'Decrypt · DeFi', type: 'defi'/, 'defi must include Decrypt DeFi Google News feed');
+assert.match(newsJs, /label: 'CoinTelegraph · DeFi', type: 'defi'/, 'defi must include CoinTelegraph DeFi Google News feed');
+assert.match(indexHtml, /defi: \['The Defiant', 'The Block', 'Protos', 'Bankless', 'CoinDesk · DeFi', 'Unchained · DeFi', 'Decrypt · DeFi', 'CoinTelegraph · DeFi'\]/, 'news feed settings must list all defi sources');
 assert.doesNotMatch(indexHtml, /Reuters Business|Reuters Politics/, 'stale macro Reuters sources must be removed from feed settings');
 assert.match(newsJs, /sourceHealth/, 'news API must return per-source 7-day health for feed settings');
 assert.match(newsJs, /function buildSourceHealth\(/, 'news API must compute source health from RSS fetch results');

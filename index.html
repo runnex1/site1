@@ -27772,7 +27772,7 @@ const NEWS_FEED_SETTINGS_KEY = 'vault_news_feed_settings_v1';
 const NEWS_FEED_SAVED_KEY = 'vault_news_saved_v1';
 const NEWS_FEED_SOURCE_CATALOG = {
     crypto: ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'Unchained', 'CryptoPanic'],
-    defi: ['The Defiant', 'The Block'],
+    defi: ['The Defiant', 'The Block', 'Protos', 'Bankless', 'CoinDesk · DeFi', 'Unchained · DeFi', 'Decrypt · DeFi', 'CoinTelegraph · DeFi'],
     macro: ['BBC Business', 'BBC World', 'Investing.com', 'WSJ Markets', 'CNBC Finance', 'MarketWatch', 'NYT World', 'FT'],
 };
 const NEWS_FEED_SOURCE_URLS = {
@@ -27783,6 +27783,12 @@ const NEWS_FEED_SOURCE_URLS = {
     'Unchained': 'https://unchainedcrypto.com',
     'CryptoPanic': 'https://cryptopanic.com',
     'The Defiant': 'https://thedefiant.io',
+    'Protos': 'https://protos.com',
+    'Bankless': 'https://www.bankless.com',
+    'CoinDesk · DeFi': 'https://www.coindesk.com',
+    'Unchained · DeFi': 'https://unchainedcrypto.com',
+    'Decrypt · DeFi': 'https://decrypt.co',
+    'CoinTelegraph · DeFi': 'https://cointelegraph.com',
     'BBC Business': 'https://www.bbc.com/news/business',
     'BBC World': 'https://www.bbc.com/news/world',
     'Investing.com': 'https://www.investing.com',
@@ -28637,6 +28643,8 @@ async function fetchDailyNews(force = false) {
         { url: 'https://cointelegraph.com/rss',                   type: 'crypto', label: 'CoinTelegraph' },
         { url: 'https://thedefiant.io/api/feed',                  type: 'defi',   label: 'The Defiant'  },
         { url: 'https://news.google.com/rss/search?q=site:theblock.co&hl=en-US&gl=US&ceid=US:en', type: 'defi', label: 'The Block' },
+        { url: 'https://protos.com/feed/',                        type: 'defi',   label: 'Protos'       },
+        { url: 'https://www.bankless.com/feed',                   type: 'defi',   label: 'Bankless'     },
         { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',  type: 'macro',  label: 'BBC Business' },
         { url: 'https://www.investing.com/rss/news_25.rss',       type: 'macro',  label: 'Investing.com'},
         { url: 'https://decrypt.co/feed',                         type: 'crypto', label: 'Decrypt'      },
