@@ -5291,6 +5291,12 @@ button.news-feed-lens-chip { cursor:pointer; }
   border:1px solid var(--border); font-size:11px; color:var(--t3); margin-bottom:5px;
 }
 .news-feed-source-item input { accent-color:var(--teal); }
+.news-feed-source-warn {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:14px; height:14px; margin-left:4px; border-radius:50%;
+  background:rgba(234,179,8,0.18); color:#eab308; font-size:10px; font-weight:800;
+  line-height:1; cursor:help; flex-shrink:0;
+}
 .news-feed-kw-input {
   width:100%; background:var(--surf-3); border:1px solid var(--border-mid);
   border-radius:8px; color:var(--t1); font-family:var(--ff-mono); font-size:11px;
@@ -27770,6 +27776,7 @@ const NEWS_FEED_TIME_WINDOWS = [
 ];
 let _newsFeedRawPool = [];
 let _newsFeedKobeissiItem = null;
+let _newsFeedSourceHealth = {};
 let _newsFeedSettingsDraft = null;
 let _newsFeedLensLastTap = { cat: null, ts: 0 };
 let _newsFeedSaveBound = false;
@@ -27784,7 +27791,6 @@ function newsFeedDefaultSettings() {
         sources,
         keywords: [],
         searchBody: false,
-        includeNonMatching: false,
         timeWindowHours: 24,
     };
 }
@@ -27800,9 +27806,6 @@ function newsFeedLoadSettings() {
             sources: { ...base.sources, ...(parsed.sources || {}) },
             keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(k => String(k).trim().toLowerCase()).filter(Boolean) : [],
             searchBody: Boolean(parsed.searchBody),
-            includeNonMatching: parsed.includeNonMatching != null
-                ? Boolean(parsed.includeNonMatching)
-                : false,
             timeWindowHours: NEWS_FEED_TIME_WINDOWS.some(w => w.hours === Number(parsed.timeWindowHours))
                 ? Number(parsed.timeWindowHours)
                 : 24,
@@ -27922,18 +27925,38 @@ function newsFeedBindSaveClicks() {
     });
 }
 
-function newsFeedItemSearchText(item) {
+function newsFeedItemSearchText(item, settings) {
+    const s = settings || newsFeedLoadSettings();
+    const title = decodeHtmlEntities(item.title || '').toLowerCase();
+    if (!s.searchBody) return title;
     return decodeHtmlEntities(`${item.title || ''} ${item.desc || item.description || item.text || ''}`).toLowerCase();
 }
 
-function newsFeedMatchedKeywords(item, keywords) {
-    const text = newsFeedItemSearchText(item);
-    return (keywords || []).filter(kw => kw && text.includes(kw));
+function newsFeedNormalizeKey(text) {
+    return String(text || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function newsFeedKeywordMatchesSource(kw, sourceLabel) {
+    const k = newsFeedNormalizeKey(kw);
+    const s = newsFeedNormalizeKey(sourceLabel);
+    if (!k || !s || k.length < 2) return false;
+    return s === k || s.includes(k) || k.includes(s);
+}
+
+function newsFeedMatchedKeywords(item, keywords, settings) {
+    const text = newsFeedItemSearchText(item, settings);
+    const source = String(item.source || '').trim();
+    return (keywords || []).filter(kw => {
+        if (!kw) return false;
+        if (text.includes(kw)) return true;
+        if (source && newsFeedKeywordMatchesSource(kw, source)) return true;
+        return false;
+    });
 }
 
 function newsFeedPassesKeywordFilter(item, settings) {
     const s = settings || newsFeedLoadSettings();
-    const matches = newsFeedMatchedKeywords(item, s.keywords);
+    const matches = newsFeedMatchedKeywords(item, s.keywords, s);
     item._matchedKeywords = matches;
     if (!s.keywords?.length) return true;
     return matches.length > 0;
@@ -28030,12 +28053,11 @@ function newsFeedLensCategoryClick(cat) {
 }
 
 function newsFeedPromptKeyword() {
-    const kw = prompt('Add keyword filter (matches title or body):');
+    const kw = prompt('Add keyword filter (matches title, body, or news source):');
     if (!kw || !String(kw).trim()) return;
     const s = newsFeedLoadSettings();
     const word = String(kw).trim().toLowerCase();
     if (!s.keywords.includes(word)) s.keywords = [...(s.keywords || []), word].slice(0, 30);
-    s.includeNonMatching = false;
     newsFeedSaveSettings(s);
     newsFeedRenderCenterFeed();
 }
@@ -28175,7 +28197,11 @@ function newsFeedBuildSettingsForm() {
             <div class="news-feed-set-label">Sources · ${type.charAt(0).toUpperCase() + type.slice(1)}</div>
             ${labels.map(label => {
                 const href = NEWS_FEED_SOURCE_URLS[label] || '#';
-                return `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)"><a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${dashEsc(label)}</a></label>`;
+                const health = _newsFeedSourceHealth?.[label];
+                const warn = health && !health.ok
+                    ? `<span class="news-feed-source-warn" title="No articles from this source in the past 7 days${health.note ? ` (${health.note})` : ''}">?</span>`
+                    : '';
+                return `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)"><a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${dashEsc(label)}</a>${warn}</label>`;
             }).join('')}
         </div>`;
     };
@@ -28196,10 +28222,6 @@ function newsFeedBuildSettingsForm() {
             <div class="news-feed-toggle-row">
                 <span>Search title + body</span>
                 <div class="news-feed-toggle${s.searchBody ? ' on' : ''}" id="newsFeedToggleBody" onclick="newsFeedToggleSetting('searchBody')"></div>
-            </div>
-            <div class="news-feed-toggle-row">
-                <span>Include headlines without keyword match</span>
-                <div class="news-feed-toggle${s.includeNonMatching ? ' on' : ''}" id="newsFeedToggleIncludeNonMatching" onclick="newsFeedToggleSetting('includeNonMatching')"></div>
             </div>
         </div>
         <button type="button" class="news-feed-apply-btn" onclick="newsFeedApplySettings()">Apply filters</button>`;
@@ -28259,7 +28281,7 @@ async function fetchDailyNews(force = false) {
     const briefPortfolioEl = document.getElementById('briefPortfolioGrid');
     if (!briefGrid && !feedGrid) return;
 
-    const CACHE_KEY  = 'vault_news_cache_v5';
+    const CACHE_KEY  = 'vault_news_cache_v6';
     const CACHE_TTL  = 60 * 60 * 1000; // 1 hour
     const timeWindowHours = newsFeedLoadSettings().timeWindowHours || 24;
     const tgChannels = xHandleLoad();
@@ -28380,7 +28402,8 @@ async function fetchDailyNews(force = false) {
             : '<div class="brief-news-loading">No important holding-specific headlines in the last 24h.</div>';
     }
 
-    function renderItems(items, kobeissiItem, portfolioItems = [], feedItems = null) {
+    function renderItems(items, kobeissiItem, portfolioItems = [], feedItems = null, sourceHealth = null) {
+        if (sourceHealth && typeof sourceHealth === 'object') _newsFeedSourceHealth = sourceHealth;
         renderKobeissi(kobeissiItem);
         if (typeof renderDashboardEventLog === 'function') renderDashboardEventLog();
         const filtered = (items || []).filter(i => i.type !== 'kobeissi');
@@ -28396,7 +28419,7 @@ async function fetchDailyNews(force = false) {
         renderPortfolioToGrid(briefPortfolioEl, portfolioItems, 2);
         renderNewsToGrid(briefGrid, filtered, 4);
         if (feedGrid) newsFeedRenderPage(pool, kobeissiItem);
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items: filtered, feedItems: feedPool, portfolioItems, ts: Date.now(), handles: tgChannels, holdings, timeWindowHours })); } catch(e) {}
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items: filtered, feedItems: feedPool, portfolioItems, sourceHealth: _newsFeedSourceHealth, ts: Date.now(), handles: tgChannels, holdings, timeWindowHours })); } catch(e) {}
     }
 
     // ── Always fetch Kobeissi in parallel with everything else ────────────────
@@ -28406,13 +28429,14 @@ async function fetchDailyNews(force = false) {
     try {
         const cached = localStorage.getItem(CACHE_KEY);
         if (cached) {
-            const { items, portfolioItems, feedItems, ts, handles, holdings: cachedHoldings, timeWindowHours: cachedWindow } = JSON.parse(cached);
+            const { items, portfolioItems, feedItems, sourceHealth, ts, handles, holdings: cachedHoldings, timeWindowHours: cachedWindow } = JSON.parse(cached);
             const same = JSON.stringify(handles || []) === JSON.stringify(tgChannels);
             const sameHoldings = JSON.stringify(cachedHoldings || []) === JSON.stringify(holdings);
             const sameWindow = Number(cachedWindow || 24) === Number(timeWindowHours);
             if (!force && Date.now() - ts < CACHE_TTL && items && same && sameHoldings && sameWindow) {
                 const kobeissiItem = await kobeissiPromise;
-                renderItems(items, kobeissiItem, portfolioItems || [], feedItems || items);
+                if (sourceHealth) _newsFeedSourceHealth = sourceHealth;
+                renderItems(items, kobeissiItem, portfolioItems || [], feedItems || items, sourceHealth || _newsFeedSourceHealth);
                 return;
             }
         }
@@ -28432,7 +28456,7 @@ async function fetchDailyNews(force = false) {
             ]);
             if (newsRes.ok) {
                 const newsData = await newsRes.json();
-                renderItems(newsData.items || [], kobeissiItem, newsData.portfolioItems || [], newsData.feedItems || newsData.items || []);
+                renderItems(newsData.items || [], kobeissiItem, newsData.portfolioItems || [], newsData.feedItems || newsData.items || [], newsData.sourceHealth || {});
                 return;
             }
         } catch(e) {

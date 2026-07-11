@@ -946,7 +946,12 @@ assert.match(newsJs, /i\.type === 'defi' \|\| !isPricePrediction\(i\)/, 'defi he
 assert.match(newsJs, /label: 'DL News',\s+type: 'defi'/, 'defi must use DL News as sole RSS source');
 assert.doesNotMatch(newsJs, /The Defiant|Blockworks|Google News DeFi/, 'removed defi sources must not remain in news API');
 assert.match(indexHtml, /defi: \['DL News'\]/, 'news feed settings must list only DL News for defi');
-assert.match(indexHtml, /vault_news_cache_v5/, 'news client cache must bust for feedItems/time window');
+assert.match(newsJs, /sourceHealth/, 'news API must return per-source 7-day health for feed settings');
+assert.match(newsJs, /function buildSourceHealth\(/, 'news API must compute source health from RSS fetch results');
+assert.match(indexHtml, /function newsFeedKeywordMatchesSource\(/, 'keyword filter must match news source names');
+assert.doesNotMatch(indexHtml, /includeNonMatching/, 'include-non-matching setting must be removed');
+assert.match(indexHtml, /news-feed-source-warn/, 'stale news sources must show yellow warning in feed settings');
+assert.match(indexHtml, /vault_news_cache_v6/, 'news client cache must bust for source health metadata');
 assert.match(indexHtml, /function buildSimpleDrawerTableHtml\(sec, ctx\)/, 'deposit-only protocol drawers must use aligned table layout');
 assert.match(indexHtml, /kind: 'lending'/, 'protocol display entries must tag leveraged lending rows');
 assert.match(indexHtml, /protocolEntrySummary\(entry\)/, 'protocol rows must show per-loop position summary');

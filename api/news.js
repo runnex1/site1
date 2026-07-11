@@ -396,6 +396,25 @@ async function rankDailyBriefItems(items, holdingTerms, windowHours = 24) {
   }
 }
 
+function buildSourceHealth(sources, settled, windowMs = 7 * 24 * 60 * 60 * 1000, now = Date.now()) {
+  const health = {};
+  (sources || []).forEach((src, idx) => {
+    const result = settled?.[idx];
+    if (result?.status !== 'fulfilled') {
+      health[src.label] = { ok: false, recent7d: 0, note: 'fetch_failed' };
+      return;
+    }
+    const items = result.value || [];
+    const recent7d = items.filter((i) => isWithinWindow({ pubDate: i.pubDate }, windowMs, now)).length;
+    health[src.label] = {
+      ok: recent7d > 0,
+      recent7d,
+      note: recent7d > 0 ? '' : (items.length ? 'stale' : 'empty'),
+    };
+  });
+  return health;
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -431,6 +450,7 @@ module.exports = async function handler(req, res) {
   );
 
   const rawItems = settled.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
+  const sourceHealth = buildSourceHealth(sources, settled);
   const ranked = await rankDailyBriefItems(rawItems, holdingTerms, windowHours);
-  return res.status(200).json({ ok: true, ...ranked, windowHours, ts: Date.now() });
+  return res.status(200).json({ ok: true, ...ranked, sourceHealth, windowHours, ts: Date.now() });
 };
