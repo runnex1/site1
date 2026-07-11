@@ -19,6 +19,7 @@ const {
   shouldPersistWatcherWallets,
   shouldPersistWatcherLinks,
 } = require('../lib/sync-array-guard');
+const { mergeNewsFeedStores } = require('../lib/news-feed-sync');
 const { collectEvents } = require('../lib/event-log');
 const { fetchPolymarketWalletBalances } = require('../lib/polymarket-balance');
 const { resolvePolymarketProfile } = require('../lib/polymarket-profile');
@@ -809,7 +810,7 @@ module.exports = async function handler(req, res) {
         opinionWalletsRaw, tgChannelsRaw, pmWalletsRaw, opportunityMonitorsRaw,
         eventHistoryRaw, dismissedMarketsRaw, perpsConfigRaw, perpsSnapshotsRaw,
         perpsVariationalHedgesRaw, perpsClosedPairsRaw, logoCacheRaw,
-        geckoSymbolIdsRaw,
+        geckoSymbolIdsRaw, newsFeedRaw,
       ] = await Promise.all([
         kvGet('vault:portfolio'),
         kvGet('vault:watchlist'),
@@ -830,6 +831,7 @@ module.exports = async function handler(req, res) {
         portfolioOnly ? null : kvGet('vault:perps_closed_pairs'),
         portfolioOnly ? null : kvGet('vault:logo_cache'),
         kvGet('vault:gecko_symbol_ids'),
+        kvGet('vault:news_feed'),
       ]);
 
       const portfolio      = parse(portfolioRaw, { tokens: [], protocols: [], etfs: [], predictionMarkets: [], opinionMarkets: [], polymarketWallets: [] });
@@ -851,6 +853,7 @@ module.exports = async function handler(req, res) {
       const perpsClosedPairs    = parse(perpsClosedPairsRaw, []);
       const logoCache           = parse(logoCacheRaw, {});
       const geckoSymbolIds      = parse(geckoSymbolIdsRaw, {});
+      const newsFeed            = parse(newsFeedRaw, null);
 
       if (Array.isArray(pmWallets)) {
         const seen = new Set();
@@ -882,6 +885,7 @@ module.exports = async function handler(req, res) {
         _dismissedMarkets:    dismissedMarkets,
         _perpsConfig:         perpsConfig,
         _geckoSymbolIds:      geckoSymbolIds,
+        _newsFeed:            newsFeed,
       };
       // Small payload — include on portfolio-first sync so Variational hedges apply before perps paint.
       result._perpsVariationalHedges = perpsVariationalHedges;
@@ -1089,6 +1093,13 @@ module.exports = async function handler(req, res) {
       const merged = mergeLoopSnapshotStores(existing, body.loopSnapshots);
       await persistLoopSnapshotStore({ kvGet, kvSet, parseJson, store: merged });
       saved.loopSnapshots = true;
+    }
+
+    if (body.newsFeed && typeof body.newsFeed === 'object') {
+      const existing = parseJson(await kvGet('vault:news_feed'), null);
+      const merged = existing ? mergeNewsFeedStores(existing, body.newsFeed) : body.newsFeed;
+      await kvSet('vault:news_feed', JSON.stringify(merged));
+      saved.newsFeed = true;
     }
 
     // Timestamp of last sync

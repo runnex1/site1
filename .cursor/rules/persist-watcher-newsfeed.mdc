@@ -1,0 +1,39 @@
+# Persist Watcher and News Feed via server sync
+
+Watcher and News Feed **user data must survive refresh and code upgrades**. Do not rely on `localStorage` alone.
+
+## Required pattern
+
+1. **Persist through `/api/sync`** — extend the existing POST body + KV merge in `api/sync.js` (respect the 12 serverless function limit; no new `api/*.js` unless count allows).
+2. **Hydrate on load** — merge server state into local on boot via `applyCloudPortfolioAux()` / `newsFeedMergeFromCloud()`, even when the portfolio is empty.
+3. **Save on mutation** — every meaningful Watcher or News Feed change must call `saveData()` (directly or via `newsFeedScheduleCloudSync()` debounce).
+
+## News Feed fields (server KV: `vault:news_feed`)
+
+| Local key | Sync field |
+|-----------|------------|
+| `vault_news_feed_settings_v1` | `newsFeed.settings` |
+| `vault_news_saved_v1` | `newsFeed.saved` |
+| `vault_news_feed_seen_v1` | `newsFeed.seen` |
+| `vault_news_feed_hidden_v1` | `newsFeed.hidden` |
+| `vault_news_kobeissi_v1` | `newsFeed.kobeissi` |
+| `vault_news_quick_links_v1` | `newsFeed.quickLinks` |
+
+**Intentionally local:** `vault_news_cache_v6` (ephemeral fetch cache only).
+
+## Watcher fields (already on sync payload)
+
+| Local key | Sync field | KV key |
+|-----------|------------|--------|
+| `vault-watcher-wallets` | `watcherWallets` | `vault:watcherwallets` |
+| `watcher-links` | `watcherLinks` | `vault:watcherlinks` |
+| `wl-data` | `watchlist` | `vault:watchlist` |
+
+## Merge policy
+
+On first load after upgrade: merge local + server; **newer section timestamp wins** (`newsFeed.meta.<section>`). Saved stories/notes and quick links union by id/url with newest `updatedAt`.
+
+## When adding features
+
+- New Watcher or News Feed user preference → add to sync payload + KV + hydration + regression assertion in `tests/perps-regression.test.mjs`.
+- Do not add standalone localStorage-only keys for user data without a server sync path.

@@ -1275,6 +1275,22 @@ assert.match(indexHtml, /if \(Array\.isArray\(watcherWallets\) && watcherWallets
 assert.match(indexHtml, /JSON\.stringify\(\{ watcherWallets \}\)/, 'loop sync must POST yield wallets so cron can snapshot server-side');
 assert.match(syncJs, /shouldPersistWatcherWallets/, 'sync must guard watcher wallets against empty accidental erase');
 assert.match(syncArrayGuardJs, /watcherWalletsClear/, 'sync must allow explicit watcher wallet clear from Watcher UI');
+assert.match(syncJs, /vault:news_feed/, 'sync must persist News Feed user state in KV');
+assert.match(syncJs, /body\.newsFeed/, 'sync POST must accept newsFeed payload');
+assert.match(syncJs, /_newsFeed/, 'sync GET must embed news feed state for hydration');
+assert.match(indexHtml, /function buildNewsFeedSyncPayload\(/, 'news feed must build server sync payload');
+assert.match(indexHtml, /function newsFeedMergeFromCloud\(/, 'news feed must hydrate from server on load');
+assert.match(indexHtml, /newsFeed:\s*typeof buildNewsFeedSyncPayload/, 'saveData must include newsFeed in sync payload');
+assert.match(indexHtml, /function newsFeedScheduleCloudSync\(/, 'news feed mutations must debounce cloud sync');
+assert.match(indexHtml, /function syncPayloadHasPersistableData\(/, 'saveData must sync watcher/news without portfolio');
+assert.match(indexHtml, /newsFeed:\s*typeof buildNewsFeedSyncPayload[\s\S]{0,120}syncPayloadHasPersistableData/, 'news feed sync must not require portfolio entries');
+const { mergeNewsFeedStores } = require('../lib/news-feed-sync.js');
+const mergedNews = mergeNewsFeedStores(
+  { saved: [{ kind: 'story', url: 'https://a.com', updatedAt: 10 }], meta: { saved: 10, updatedAt: 10 } },
+  { saved: [{ kind: 'note', id: 'n1', updatedAt: 20 }], meta: { saved: 20, updatedAt: 20 } },
+);
+assert.equal(mergedNews.saved.length, 2, 'news feed merge must union saved stories and notes');
+assert.match(indexHtml, /function mergeWatcherWalletsByKey\(/, 'watcher wallets must merge local and server on hydrate');
 assert.match(indexHtml, /function watcherWatchlistWallets\(/, 'Wallet Watchlist must filter out Loops yield and PM wallets');
 assert.match(indexHtml, /function watcherIsLoopOrPmCategory\(/, 'Wallet Watchlist must classify yield/pm categories');
 assert.match(indexHtml, /unified\.innerHTML = watchlist\.map/, 'Wallet Watchlist rows must render filtered watchlist only');
