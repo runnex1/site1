@@ -973,6 +973,13 @@ assert.match(indexHtml, /function newsFeedSubmitRemoveSourceModal\(/, 'feed sett
 assert.match(indexHtml, /id="newsFeedRemoveSourceModal"/, 'remove-source confirmation modal markup must exist');
 assert.match(indexHtml, /news-feed-source-remove/, 'each feed source row must have a remove button');
 assert.match(indexHtml, /removedSources/, 'feed settings must persist removed RSS sources');
+assert.match(indexHtml, /pinnedSources/, 'feed settings must persist pinned sources');
+assert.match(indexHtml, /function newsFeedTogglePinnedSource\(/, 'feed settings must let users pin sources to top');
+assert.match(indexHtml, /news-feed-source-pin/, 'each feed source row must have a pin button');
+assert.match(indexHtml, /function newsFeedMarkSeen\(/, 'news feed must support marking boosted stories as seen');
+assert.match(indexHtml, /function newsFeedOrderForDisplay\(/, 'news feed must boost hack/exploit and pinned sources until seen');
+assert.match(indexHtml, /news-feed-seen-btn/, 'boosted news cards must show a Seen button');
+assert.match(indexHtml, /NEWS_FEED_ALERT_RE/, 'news feed must detect hack/exploit headlines');
 assert.match(indexHtml, /news-feed-tg-add/, 'Telegram add button must exist in feed settings');
 assert.match(indexHtml, /function newsFeedTelegramQueryParam\(/, 'news fetch must pass telegram channels with categories');
 assert.match(indexHtml, /vault_news_cache_v6/, 'news client cache must bust for source health metadata');

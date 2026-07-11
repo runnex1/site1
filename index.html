@@ -5308,9 +5308,36 @@ button.news-feed-lens-chip { cursor:pointer; }
 }
 .news-feed-tg-add:hover { border-color:rgba(0,212,170,0.35); background:var(--teal-10); }
 .news-feed-source-remove, .news-feed-tg-remove {
-  margin-left:auto; border:none; background:transparent; color:var(--t3); cursor:pointer; font-size:12px; padding:0 2px;
+  margin-left:0; border:none; background:transparent; color:var(--t3); cursor:pointer;
+  font-size:7px; line-height:1; padding:0; opacity:0.45;
+  width:10px; height:10px; display:inline-flex; align-items:center; justify-content:center;
 }
-.news-feed-source-remove:hover, .news-feed-tg-remove:hover { color:#f87171; }
+.news-feed-source-remove:hover, .news-feed-tg-remove:hover { color:#f87171; opacity:0.95; }
+.news-feed-source-pin {
+  border:none; background:transparent; cursor:pointer; font-size:10px; line-height:1;
+  padding:0 1px; opacity:0.28; filter:grayscale(0.35);
+}
+.news-feed-source-pin.on { opacity:1; filter:none; }
+.news-feed-source-pin:hover { opacity:0.85; }
+.news-feed-source-actions {
+  margin-left:auto; display:inline-flex; align-items:center; gap:5px; flex-shrink:0;
+}
+.news-feed-boost-badge {
+  align-self:flex-start; font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+  padding:3px 7px; border-radius:999px; margin-top:-2px;
+}
+.news-feed-boost-badge.alert { background:rgba(244,63,94,0.12); color:#fb7185; border:1px solid rgba(244,63,94,0.28); }
+.news-feed-boost-badge.pinned { background:rgba(245,158,11,0.12); color:var(--amber); border:1px solid rgba(245,158,11,0.28); }
+.news-feed-card.boosted {
+  padding-left:14px; border-left:2px solid rgba(244,63,94,0.45);
+}
+.news-feed-card.boosted.pinned-only { border-left-color:rgba(245,158,11,0.45); }
+.news-feed-seen-btn {
+  font-size:9px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+  padding:4px 8px; border-radius:999px; border:1px solid rgba(148,163,184,0.22);
+  background:rgba(255,255,255,0.03); color:var(--t3); cursor:pointer;
+}
+.news-feed-seen-btn:hover { border-color:rgba(0,212,170,0.35); color:var(--teal); background:var(--teal-10); }
 .news-feed-tg-modal {
   position:fixed; inset:0; z-index:12000; display:none; align-items:center; justify-content:center;
   background:rgba(2,8,14,0.72); backdrop-filter:blur(4px); padding:16px;
@@ -27823,6 +27850,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // =============================================================================
 const NEWS_FEED_SETTINGS_KEY = 'vault_news_feed_settings_v1';
 const NEWS_FEED_SAVED_KEY = 'vault_news_saved_v1';
+const NEWS_FEED_SEEN_KEY = 'vault_news_feed_seen_v1';
+const NEWS_FEED_ALERT_RE = /\b(hack(?:ed|ing|s)?|exploit(?:ed|s|ing)?)\b/i;
 const NEWS_FEED_SOURCE_CATALOG = {
     crypto: ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'Unchained', 'CryptoPanic'],
     defi: ['The Defiant', 'The Block', 'Protos', 'Bankless', 'CoinDesk · DeFi', 'Unchained · DeFi', 'Decrypt · DeFi', 'CoinTelegraph · DeFi'],
@@ -27872,6 +27901,80 @@ function newsFeedVisibleRssSources(type, settings) {
     return (NEWS_FEED_SOURCE_CATALOG[type] || []).filter(label => !removed.has(label));
 }
 
+function newsFeedIsSourcePinned(sourceKey, settings) {
+    const pinned = settings?.pinnedSources || [];
+    return pinned.includes(String(sourceKey || ''));
+}
+
+function newsFeedItemSourceKey(item, settings) {
+    const source = String(item?.source || '').trim();
+    const tg = newsFeedTelegramEntry(settings, source);
+    return tg ? tg.handle : source;
+}
+
+function newsFeedLoadSeen() {
+    try {
+        const raw = localStorage.getItem(NEWS_FEED_SEEN_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function newsFeedPersistSeen(seen) {
+    try { localStorage.setItem(NEWS_FEED_SEEN_KEY, JSON.stringify(seen)); } catch (e) {}
+}
+
+function newsFeedMarkSeen(url) {
+    const key = newsFeedItemKey({ url });
+    if (!key) return;
+    const seen = newsFeedLoadSeen();
+    seen[key] = Date.now();
+    newsFeedPersistSeen(seen);
+    newsFeedRenderCenterFeed();
+}
+
+function newsFeedItemIsHackExploit(item) {
+    const text = decodeHtmlEntities(`${item?.title || ''} ${item?.desc || item?.description || item?.text || ''}`);
+    return NEWS_FEED_ALERT_RE.test(text);
+}
+
+function newsFeedBoostReason(item, settings) {
+    const key = newsFeedItemKey(item);
+    if (key && newsFeedLoadSeen()[key]) return null;
+    if (newsFeedItemIsHackExploit(item)) return 'alert';
+    const sourceKey = newsFeedItemSourceKey(item, settings);
+    if (sourceKey && newsFeedIsSourcePinned(sourceKey, settings)) return 'pinned';
+    return null;
+}
+
+function newsFeedCompareItems(a, b) {
+    const am = (a._matchedKeywords || []).length;
+    const bm = (b._matchedKeywords || []).length;
+    if (bm !== am) return bm - am;
+    const at = Date.parse(a.publishedAt || a.pubDate || '') || 0;
+    const bt = Date.parse(b.publishedAt || b.pubDate || '') || 0;
+    return bt - at;
+}
+
+function newsFeedOrderForDisplay(items, settings) {
+    const boosted = [];
+    const normal = [];
+    for (const item of items || []) {
+        if (newsFeedBoostReason(item, settings)) boosted.push(item);
+        else normal.push(item);
+    }
+    boosted.sort((a, b) => {
+        const ar = newsFeedBoostReason(a, settings) === 'alert' ? 0 : 1;
+        const br = newsFeedBoostReason(b, settings) === 'alert' ? 0 : 1;
+        if (ar !== br) return ar - br;
+        return newsFeedCompareItems(a, b);
+    });
+    normal.sort(newsFeedCompareItems);
+    return boosted.concat(normal);
+}
+
 function newsFeedCategoryTitle(type) {
     return type === 'defi' ? 'DeFi' : type === 'macro' ? 'Macro' : 'Crypto';
 }
@@ -27893,6 +27996,7 @@ function newsFeedDefaultSettings() {
         timeWindowHours: 24,
         telegram: [],
         removedSources: [],
+        pinnedSources: [],
     };
 }
 
@@ -27975,6 +28079,9 @@ function newsFeedLoadSettings() {
                 : [],
             removedSources: Array.isArray(parsed.removedSources)
                 ? parsed.removedSources.map(s => String(s).trim()).filter(Boolean)
+                : [],
+            pinnedSources: Array.isArray(parsed.pinnedSources)
+                ? parsed.pinnedSources.map(s => String(s).trim()).filter(Boolean)
                 : [],
         };
         return newsFeedMigrateLegacyTelegram(merged);
@@ -28155,14 +28262,7 @@ function newsFeedApplyFilters(items, settings) {
         }
         if (!newsFeedPassesKeywordFilter(item, s)) return false;
         return true;
-    }).sort((a, b) => {
-        const am = (a._matchedKeywords || []).length;
-        const bm = (b._matchedKeywords || []).length;
-        if (bm !== am) return bm - am;
-        const at = Date.parse(a.publishedAt || a.pubDate || '') || 0;
-        const bt = Date.parse(b.publishedAt || b.pubDate || '') || 0;
-        return bt - at;
-    });
+    }).sort(newsFeedCompareItems);
 }
 
 function newsFeedRenderLens(settings) {
@@ -28185,7 +28285,7 @@ function newsFeedRenderLens(settings) {
         </span>`);
     }
     chips.push(`<span class="news-feed-lens-search">
-        <span class="news-feed-lens-chip ${s.searchBody ? 'on' : ''}">${s.searchBody ? 'Title + body' : 'Title only'}</span>
+        <span class="news-feed-lens-chip ${s.searchBody ? 'on' : ''}" title="${s.searchBody ? 'Keyword filters match headlines and article text' : 'Keyword filters match headlines only — toggle in Feed settings'}">${s.searchBody ? 'Title + body' : 'Titles only'}</span>
         <button type="button" class="news-feed-lens-add" onclick="newsFeedPromptKeyword()" title="Add keyword filter">+</button>
     </span>`);
     chips.push(`<span class="news-feed-lens-time">${NEWS_FEED_TIME_WINDOWS.map(w => {
@@ -28278,7 +28378,7 @@ function newsFeedToggleCard(cardEl) {
 }
 
 function newsFeedCardClick(event, cardEl) {
-    if (event.target.closest('.news-feed-card-actions')) return;
+    if (event.target.closest('.news-feed-card-actions, .news-feed-seen-btn')) return;
     newsFeedToggleCard(cardEl);
 }
 
@@ -28303,6 +28403,7 @@ function newsFeedRenderCenterCard(item, opts = {}) {
     const settings = newsFeedLoadSettings();
     const type = newsFeedItemCategory(item, settings);
     const featured = Boolean(opts.featured);
+    const boost = featured ? null : newsFeedBoostReason(item, settings);
     const saved = newsFeedIsSaved(item);
     const time = newsFeedTimeLabel(item);
     const url = newsFeedItemKey(item) || '#';
@@ -28317,8 +28418,23 @@ function newsFeedRenderCenterCard(item, opts = {}) {
         ? `<span>matched: ${dashNewsText(item._matchedKeywords.join(', '))}</span>` : '';
     const snippet = newsFeedExpandSnippet(item);
     const desc = snippet ? `<div class="news-feed-card-snippet">${dashNewsText(snippet)}</div>` : '';
-    return `<article class="news-feed-card${featured ? ' featured' : ''}" onclick="newsFeedCardClick(event, this)">
+    const boostBadge = boost === 'alert'
+        ? '<span class="news-feed-boost-badge alert">⚠ Security</span>'
+        : boost === 'pinned'
+            ? '<span class="news-feed-boost-badge pinned">📌 Pinned</span>'
+            : '';
+    const cardCls = [
+        'news-feed-card',
+        featured ? 'featured' : '',
+        boost ? 'boosted' : '',
+        boost === 'pinned' ? 'pinned-only' : '',
+    ].filter(Boolean).join(' ');
+    const seenBtn = boost
+        ? `<button type="button" class="news-feed-seen-btn" onclick="event.stopPropagation(); newsFeedMarkSeen('${dashEsc(url)}')" title="Mark as seen — moves to chronological order">Seen</button>`
+        : '';
+    return `<article class="${cardCls}" onclick="newsFeedCardClick(event, this)">
         <span class="news-feed-card-tag ${dashEsc(tag)}">${dashNewsText(tagLabel)}</span>
+        ${boostBadge}
         <div class="news-feed-card-title">${dashNewsText(item.title || '')}</div>
         ${desc}
         <div class="news-feed-card-footer">
@@ -28328,6 +28444,7 @@ function newsFeedRenderCenterCard(item, opts = {}) {
                 ${matched}
             </div>
             <div class="news-feed-card-actions">
+                ${seenBtn}
                 <button type="button" class="news-feed-icon-btn news-feed-save-btn${saved ? ' saved' : ''}" title="${saved ? 'Unsave' : 'Save'}" data-url="${dashEsc(url)}">${saved ? '★' : '☆'}</button>
                 <a class="news-feed-icon-btn" href="${dashEsc(url)}" target="_blank" rel="noopener" title="Open" onclick="event.stopPropagation()">↗</a>
             </div>
@@ -28352,7 +28469,7 @@ function newsFeedRenderCenterFeed() {
         grid.innerHTML = '<div class="news-feed-loading">No headlines match your filters. Try Feed settings.</div>';
         return;
     }
-    grid.innerHTML = cards.concat(filtered.map(item => newsFeedRenderCenterCard(item))).join('');
+    grid.innerHTML = cards.concat(newsFeedOrderForDisplay(filtered, settings).map(item => newsFeedRenderCenterCard(item))).join('');
     newsFeedBindSaveClicks();
 }
 
@@ -28372,8 +28489,14 @@ function newsFeedBuildSettingsForm() {
         const on = s.categories?.[key];
         return `<button type="button" class="news-feed-cat-btn${on ? ' on ' + key : ''}" data-cat="${key}" onclick="newsFeedToggleCategory('${key}')">${label}</button>`;
     };
+    const sourcePinBtn = (id) => {
+        const on = newsFeedIsSourcePinned(id, s);
+        return `<button type="button" class="news-feed-source-pin${on ? ' on' : ''}" onclick="event.preventDefault(); newsFeedTogglePinnedSource('${dashUri(id)}')" title="${on ? 'Unpin source' : 'Pin to top until seen'}">📌</button>`;
+    };
     const sourceRemoveBtn = (kind, id) =>
         `<button type="button" class="news-feed-source-remove" onclick="event.preventDefault(); newsFeedOpenRemoveSourceModal('${kind}', '${dashUri(id)}')" title="Remove source">✕</button>`;
+    const sourceActionBtns = (kind, id) =>
+        `<span class="news-feed-source-actions">${sourcePinBtn(id)}${sourceRemoveBtn(kind, id)}</span>`;
     const sourceSection = type => {
         const labels = newsFeedVisibleRssSources(type, s);
         const topic = newsFeedCategoryTitle(type);
@@ -28386,7 +28509,7 @@ function newsFeedBuildSettingsForm() {
             return `<label class="news-feed-source-item">
                 <input type="checkbox" ${t.enabled !== false ? 'checked' : ''} onchange="newsFeedToggleTelegramChannel('${dashEsc(t.handle)}', this.checked)">
                 <a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">✈ ${dashEsc(t.handle)}</a>${warn}
-                ${sourceRemoveBtn('telegram', t.handle)}
+                ${sourceActionBtns('telegram', t.handle)}
             </label>`;
         }).join('');
         const rssRows = labels.map(label => {
@@ -28395,7 +28518,7 @@ function newsFeedBuildSettingsForm() {
             const warn = health && !health.ok
                 ? `<span class="news-feed-source-warn" title="No articles from this source in the past 7 days${health.note ? ` (${health.note})` : ''}">?</span>`
                 : '';
-            return `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)"><a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${dashEsc(label)}</a>${warn}${sourceRemoveBtn('rss', label)}</label>`;
+            return `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)"><a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${dashEsc(label)}</a>${warn}${sourceActionBtns('rss', label)}</label>`;
         }).join('');
         return `<div class="news-feed-set-section">
             <div class="news-feed-set-label-row">
@@ -28420,7 +28543,7 @@ function newsFeedBuildSettingsForm() {
             <input class="news-feed-kw-input" id="newsFeedKwInput" type="text" placeholder="aave, ethena, funding" value="${dashEsc((s.keywords || []).join(', '))}">
             <div class="news-feed-kw-chips" id="newsFeedKwChips">${(s.keywords || []).map(k => `<span class="news-feed-kw-chip">${dashEsc(k)}</span>`).join('')}</div>
             <div class="news-feed-toggle-row">
-                <span>Search title + body</span>
+                <span title="When on, keyword filters also search article summaries/body text">Search title + body</span>
                 <div class="news-feed-toggle${s.searchBody ? ' on' : ''}" id="newsFeedToggleBody" onclick="newsFeedToggleSetting('searchBody')"></div>
             </div>
         </div>
@@ -28555,6 +28678,21 @@ function newsFeedToggleCategory(key) {
 function newsFeedToggleSource(label, checked) {
     if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
     _newsFeedSettingsDraft.sources[label] = checked;
+}
+
+function newsFeedTogglePinnedSource(encodedId) {
+    const id = decodeURIComponent(String(encodedId || ''));
+    if (!id) return;
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = JSON.parse(JSON.stringify(newsFeedLoadSettings()));
+    _newsFeedSettingsDraft.pinnedSources = Array.isArray(_newsFeedSettingsDraft.pinnedSources)
+        ? _newsFeedSettingsDraft.pinnedSources
+        : [];
+    const idx = _newsFeedSettingsDraft.pinnedSources.indexOf(id);
+    if (idx >= 0) _newsFeedSettingsDraft.pinnedSources.splice(idx, 1);
+    else _newsFeedSettingsDraft.pinnedSources.push(id);
+    newsFeedSaveSettings(_newsFeedSettingsDraft);
+    newsFeedBuildSettingsForm();
+    newsFeedRenderCenterFeed();
 }
 
 function newsFeedToggleTelegramChannel(handle, enabled) {
