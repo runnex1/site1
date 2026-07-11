@@ -943,9 +943,9 @@ assert.match(indexHtml, /function newsFeedBindSaveClicks\(/, 'news feed must bin
 assert.match(newsJs, /function parseWindowHours\(/, 'news API must accept window hours query param');
 assert.match(newsJs, /feedItems/, 'news API must return full feed pool for news feed tab');
 assert.match(newsJs, /i\.type === 'defi' \|\| !isPricePrediction\(i\)/, 'defi headlines must bypass price-prediction filter');
-assert.match(newsJs, /label: 'DL News',\s+type: 'defi'/, 'defi must use DL News as sole RSS source');
-assert.doesNotMatch(newsJs, /The Defiant|Blockworks|Google News DeFi/, 'removed defi sources must not remain in news API');
-assert.match(indexHtml, /defi: \['DL News'\]/, 'news feed settings must list only DL News for defi');
+assert.match(newsJs, /label: 'The Defiant',\s+type: 'defi'/, 'defi must use The Defiant as sole RSS source');
+assert.doesNotMatch(newsJs, /DL News|Blockworks|Google News DeFi/, 'removed defi sources must not remain in news API');
+assert.match(indexHtml, /defi: \['The Defiant'\]/, 'news feed settings must list only The Defiant for defi');
 assert.match(newsJs, /sourceHealth/, 'news API must return per-source 7-day health for feed settings');
 assert.match(newsJs, /function buildSourceHealth\(/, 'news API must compute source health from RSS fetch results');
 assert.match(indexHtml, /function newsFeedKeywordMatchesSource\(/, 'keyword filter must match news source names');

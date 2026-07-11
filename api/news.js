@@ -7,7 +7,7 @@ const SOURCES_WITH_TYPE = [
   { url: 'https://theblock.co/rss.xml',                             label: 'The Block',        type: 'crypto' },
   { url: 'https://unchainedcrypto.com/feed/',                       label: 'Unchained',        type: 'crypto' },
   { url: 'https://cryptopanic.com/news/rss/',                       label: 'CryptoPanic',      type: 'crypto' },
-  { url: 'https://www.dlnews.com/arc/outboundfeeds/rss/',           label: 'DL News',          type: 'defi' },
+  { url: 'https://thedefiant.io/api/feed',                          label: 'The Defiant',      type: 'defi' },
   { url: 'https://feeds.reuters.com/reuters/businessNews',          label: 'Reuters Business', type: 'macro' },
   { url: 'https://feeds.reuters.com/reuters/politicsNews',          label: 'Reuters Politics', type: 'macro' },
   { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',          label: 'BBC Business',     type: 'macro' },
