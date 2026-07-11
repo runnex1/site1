@@ -3136,6 +3136,69 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
   assert.equal(result.paired[0].crossLegB.size, -176000);
 }
 
+{
+  const { applyVariationalHedges } = require('../lib/variational-hedge.js');
+  const data = {
+    paired: [{
+      symbol: 'ADA',
+      pairType: 'hl_grvt',
+      pairLabel: 'HL + GRVT',
+      crossLegA: { venue: 'hyperliquid', size: 54000, side: 'long', unrealizedPnl: 10.78 },
+      crossLegB: { venue: 'grvt', size: 54000, side: 'short', unrealizedPnl: -979.93 },
+    }],
+    unhedged: [],
+    rateSpread: [],
+    hyperliquid: { state: { positions: [{ symbol: 'ADA', size: 54000, side: 'long', unrealizedPnl: 10.78 }] } },
+    grvt: { state: { positions: [{ symbol: 'ADA', size: 54000, side: 'short', unrealizedPnl: -979.93 }] } },
+    nado: { state: { positions: [] } },
+    extended: { state: { positions: [] } },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  };
+  const hedge = {
+    id: 'ada-var-stale',
+    symbol: 'ADA',
+    trackedVenue: 'hyperliquid',
+    trackedSize: 54000,
+    variationalEntryPx: 0.16,
+    status: 'open',
+    openedAt: Date.now() - 5 * 86400000,
+  };
+  const result = applyVariationalHedges(data, [hedge], {});
+  assert.equal(result.paired.filter((p) => String(p.pairType || '').endsWith('_variational')).length, 0, 'live hl_grvt must suppress stale variational overlay');
+  assert.ok(result.paired.some((p) => p.pairType === 'hl_grvt'), 'existing hl_grvt pair must remain');
+  assert.equal(result.hedges[0].supersededByLiveCross, true);
+}
+
+{
+  const { applyVariationalHedges } = require('../lib/variational-hedge.js');
+  const data = {
+    paired: [],
+    unhedged: [],
+    rateSpread: [],
+    hyperliquid: { state: { positions: [{ symbol: 'ADA', size: 54000, side: 'long', unrealizedPnl: 10.78, fundingSinceOpen: 20 }] } },
+    grvt: { state: { positions: [{ symbol: 'ADA', size: 54000, side: 'short', unrealizedPnl: -979.93, fundingSinceOpen: 140 }] } },
+    nado: { state: { positions: [] } },
+    extended: { state: { positions: [] } },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  };
+  const hedge = {
+    id: 'ada-var-grvt-live',
+    symbol: 'ADA',
+    trackedVenue: 'hyperliquid',
+    trackedSize: 54000,
+    variationalEntryPx: 0.16,
+    status: 'open',
+    openedAt: Date.now() - 5 * 86400000,
+  };
+  const result = applyVariationalHedges(data, [hedge], {});
+  assert.equal(result.paired.length, 1, 'must synthesize hl_grvt when GRVT hedge is live but pairing missed it');
+  assert.equal(result.paired[0].pairType, 'hl_grvt');
+  assert.equal(result.paired[0].crossLegB.venue, 'grvt');
+  assert.equal(result.hedges[0].supersededByLiveCross, true);
+}
+
 function mergeVariationalHedgeRecord(prev, hedge) {
   const prevTs = Number(prev?.updatedAt) || Number(prev?.openedAt) || 0;
   const incTs = Number(hedge?.updatedAt) || Number(hedge?.openedAt) || 0;
