@@ -15,12 +15,16 @@ function perpsStatRangeWindowDays(range) {
   return null;
 }
 
+function perpsStatRangeUsesFundingOnlyApr(range) {
+  return range === '1d';
+}
+
 function perpsAnnualizeReturnPct(netUsd, margin, days) {
   if (!margin || !days || days <= 0 || !Number.isFinite(netUsd)) return null;
   return (netUsd / margin) * (365 / days) * 100;
 }
 
-function perpsSumDailyFundingSeries(series) {
+function perpsSumDailyFundingSeries(series, useNet = true) {
   let funding = 0;
   let fees = 0;
   let net = 0;
@@ -77,14 +81,18 @@ function perpsFilterPairLatestSessionForRange(series, range) {
 function perpsPairPeriodApr(p, range) {
   const margin = p.avgNotional ?? 0;
   if (!margin) return null;
+  const fundingOnly = perpsStatRangeUsesFundingOnlyApr(range);
   const rawRows = Array.isArray(p.dailyPerformanceSeries) ? p.dailyPerformanceSeries : [];
   const rows = perpsFilterPairLatestSessionForRange(rawRows, range);
   if (rows.length) {
-    const totals = perpsSumDailyFundingSeries(rows);
+    const totals = perpsSumDailyFundingSeries(rows, !fundingOnly);
     const days = perpsPairAprDaysForRows(p, range, rows);
-    return perpsAnnualizeReturnPct(totals.funding, margin, days);
+    const basisUsd = fundingOnly ? totals.funding : totals.net;
+    return perpsAnnualizeReturnPct(basisUsd, margin, days);
   }
-  return perpsAnnualizeReturnPct(p.fundingSinceOpen ?? 0, margin, perpsPairEffectiveDays(p, range));
+  const days = perpsPairEffectiveDays(p, range);
+  const basisUsd = fundingOnly ? (p.fundingSinceOpen ?? 0) : (p.fundingSinceOpen ?? 0) - (p.feesSinceOpen ?? 0);
+  return perpsAnnualizeReturnPct(basisUsd, margin, days);
 }
 
 const now = Date.now();
@@ -112,7 +120,8 @@ assert.ok(window7d != null, '7d APR must be computable');
 assert.ok(window30d != null, '30d APR must be computable');
 assert.ok(window1d != null, '1d APR must be computable');
 assert.ok(Math.abs(sessionApr - window30d) < 0.01, '20d session inside 30d window should match full session APR');
-assert.ok(Math.abs(window7d - window1d) > 0.01 || window7d !== window30d, '7d APR must differ from full session when session is longer');
+assert.ok(window1d > window7d, '1D funding-only APR must exceed 7D net APR when fees are present');
+assert.ok(Math.abs(window7d - window30d) > 0.01 || window7d !== sessionApr, '7d APR must differ from full session when session is longer');
 
 const young = {
   ...pair,

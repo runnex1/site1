@@ -2615,8 +2615,8 @@ assert.match(perpsJs, /peakPair\.peakMetricsApplied[\s\S]*dailyPerformanceSeries
 assert.ok(indexHtml.includes('function perpsSyncTotalPnlForRange(data, range)'), 'Total PnL must follow the selected stat time window');
 assert.ok(indexHtml.includes('perpsSyncTotalPnlForRange(data, _perpsStatRange)'), 'stats bar must sync Total PnL from the active stat range');
 assert.doesNotMatch(indexHtml, /perpsSyncTotalPnlRolling24h/, 'Total PnL must not stay fixed to rolling 24h');
-assert.match(indexHtml, /perpsSumDailyFundingSeries\(rows, false\)/, 'Net APR must use gross funding rows from the active session');
-assert.match(indexHtml, /perpsAnnualizeReturnPct\(totals\.funding, margin, days\)/, 'Net APR must annualize funding only');
+assert.match(indexHtml, /function perpsStatRangeUsesFundingOnlyApr\(range\)/, 'Net APR must branch on 1D vs other stat windows');
+assert.match(indexHtml, /fundingOnly \? totals\.funding : totals\.net/, 'Net APR must use funding for 1D and net for other windows');
 assert.match(indexHtml, /function perpsFilterPairLatestSessionForRange\(series, range\)/, 'Position Net APR must filter to the latest session before applying the selected range');
 assert.match(indexHtml, /const rows = perpsFilterPairLatestSessionForRange\(rawRows, range\);/, 'Position Net APR must not include older sessions in all-time APR');
 assert.match(indexHtml, /perpsPairPeriodApr\(p, _perpsStatRange\)/, 'positions table Net APR must follow the selected stat range within the latest session');

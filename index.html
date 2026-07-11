@@ -30844,6 +30844,11 @@ function perpsStatRangeMs(range) {
     return null;
 }
 
+/** 1D Net APR uses gross funding; all other windows use funding − trading fees. */
+function perpsStatRangeUsesFundingOnlyApr(range) {
+    return range === '1d';
+}
+
 function perpsStatRangeToApiDays(range) {
     // Always fetch max history; client filters by selected stat window.
     return PERPS_MAX_FILL_HISTORY_DAYS;
@@ -31049,12 +31054,13 @@ function perpsChartWindowDays(dailySeries, range) {
     return Math.max(1, Math.ceil(span) + 1);
 }
 
-/** Portfolio Avg APR = annualized chart funding ÷ average total equity in the window. */
+/** Portfolio Avg APR = annualized chart basis (1D funding, else net) ÷ average total equity in the window. */
 function perpsComputePortfolioAprFromChart(data, range) {
     const dailySeries = perpsFilterDailySeries(data?.dailyFundingSeries || [], range);
     if (!dailySeries.length) return null;
-    const fundingTotal = perpsSumDailyFundingSeries(dailySeries, false).funding;
-    if (!Number.isFinite(fundingTotal)) return null;
+    const useNet = !perpsStatRangeUsesFundingOnlyApr(range);
+    const basisUsd = perpsSumDailyFundingSeries(dailySeries, useNet).total;
+    if (!Number.isFinite(basisUsd)) return null;
 
     const equitySeries = data._equitySeries || perpsBuildEquitySeries(data);
     let equityPts = perpsFilterEquityPoints(equitySeries.points || [], range);
@@ -31066,7 +31072,7 @@ function perpsComputePortfolioAprFromChart(data, range) {
     const avgEquity = equityPts.reduce((s, p) => s + (p.totalEquity || 0), 0) / equityPts.length;
     const days = perpsChartWindowDays(dailySeries, range);
     if (!avgEquity || !days) return null;
-    return perpsAnnualizeReturnPct(fundingTotal, avgEquity, days);
+    return perpsAnnualizeReturnPct(basisUsd, avgEquity, days);
 }
 
 /** Totals from Daily funding collected chart rows (gross funding, fees, net). */
@@ -33596,22 +33602,30 @@ function perpsPairPeriodPnl(p, range) {
     return { net: funding - (fees ?? 0), funding, fees: fees ?? 0, source: 'range' };
 }
 
-/** Net APR: annualized funding only for the selected window. */
+/** Net APR: 1D = annualized funding; all other windows = annualized funding − trading fees. */
 function perpsPairPeriodApr(p, range) {
     const margin = p.avgNotional ?? 0;
     if (!margin) return null;
+    const fundingOnly = perpsStatRangeUsesFundingOnlyApr(range);
     const rawRows = Array.isArray(p.dailyPerformanceSeries) ? p.dailyPerformanceSeries : [];
     const rows = perpsFilterPairLatestSessionForRange(rawRows, range);
     if (rows.length) {
-        const totals = perpsSumDailyFundingSeries(rows, false);
+        const totals = perpsSumDailyFundingSeries(rows, !fundingOnly);
         const days = perpsPairAprDaysForRows(p, range, rows);
-        return perpsAnnualizeReturnPct(totals.funding, margin, days);
+        const basisUsd = fundingOnly ? totals.funding : totals.net;
+        return perpsAnnualizeReturnPct(basisUsd, margin, days);
     }
     if (rawRows.length && perpsStatRangeMs(range)) return null;
 
     const { funding, days } = perpsPairFundingForRange(p, range);
     if (funding == null || !days) return null;
-    return perpsAnnualizeReturnPct(funding, margin, days);
+    if (fundingOnly) return perpsAnnualizeReturnPct(funding, margin, days);
+    let fees = perpsPairFeesForRange(p, range);
+    if (fees == null) {
+        if (!perpsStatRangeMs(range) && p.feesHistoryComplete === false) return null;
+        fees = 0;
+    }
+    return perpsAnnualizeReturnPct(funding - fees, margin, days);
 }
 
 /** Open-position Net APR for a stat window within the latest session (null range = full session). */
@@ -33849,25 +33863,30 @@ function perpsBuildFundingTooltipHtml(p) {
 function perpsBuildNetAprTooltipHtml(p, range = _perpsStatRange) {
     const apr = perpsPairPeriodApr(p, range);
     const margin = p.avgNotional ?? 0;
+    const fundingOnly = perpsStatRangeUsesFundingOnlyApr(range);
     const rows = perpsFilterPairLatestSessionForRange(p.dailyPerformanceSeries || [], range);
     const period = rows.length
-        ? { ...perpsSumDailyFundingSeries(rows, false), days: perpsPairAprDaysForRows(p, range, rows), source: 'session' }
+        ? { ...perpsSumDailyFundingSeries(rows, !fundingOnly), days: perpsPairAprDaysForRows(p, range, rows), source: 'session' }
         : perpsPairPeriodPnl(p, range);
-    const fundingUsd = period?.funding;
-    if (apr == null || fundingUsd == null) {
+    const basisUsd = fundingOnly ? period?.funding : period?.net;
+    if (apr == null || basisUsd == null) {
         return '<div class="perps-apr-tip-title">Net APR</div><div class="perps-apr-tip-meta">No funding data for this window yet.</div>';
     }
     const days = period.days ?? perpsPairEffectiveDays(p, range);
     const rangeNote = perpsStatRangeMs(range)
         ? `${perpsStatRangeLabel(range)} window · latest session`
         : 'latest session';
+    const basisLabel = fundingOnly ? 'Funding' : 'Funding − fees';
+    const basisMeta = fundingOnly
+        ? 'Annualized funding ÷ margin · excludes trading fees'
+        : 'Annualized (funding − trading fees) ÷ margin';
     return `<div class="perps-apr-tip-title">Net APR</div>` +
-        `<div class="perps-apr-tip-row"><span>Funding</span><span class="perps-apr-tip-apr ${perpsSignedCls(fundingUsd)}">${perpsFmtUsd(fundingUsd)}</span></div>` +
+        `<div class="perps-apr-tip-row"><span>${basisLabel}</span><span class="perps-apr-tip-apr ${perpsSignedCls(basisUsd)}">${perpsFmtUsd(basisUsd)}</span></div>` +
         `<div class="perps-apr-tip-row"><span>Margin</span><span class="perps-apr-tip-apr">${perpsFmtUsd(margin)}</span></div>` +
         `<div class="perps-apr-tip-row"><span>Period</span><span class="perps-apr-tip-apr">${days != null ? `${Number(days).toFixed(1)}d` : '—'}</span></div>` +
         `<div class="perps-apr-tip-divider"></div>` +
         `<div class="perps-apr-tip-row"><span>Net APR</span><span class="perps-apr-tip-apr ${perpsSignedCls(apr)}">${perpsFmtPct(apr)}</span></div>` +
-        `<div class="perps-apr-tip-meta">Annualized funding ÷ margin · excludes trading fees · ${rangeNote}</div>`;
+        `<div class="perps-apr-tip-meta">${basisMeta} · ${rangeNote}</div>`;
 }
 
 function perpsShowPositionPnlTip(ev, pairIdx, kind) {
@@ -34628,7 +34647,10 @@ function perpsRenderStatsBar(data) {
     const aprSub = document.getElementById('perpsStatAprSub');
     if (aprSub) {
         if (stats.apr != null) {
-            aprSub.textContent = `${stats.rangeLabel} · chart funding ÷ avg equity`;
+            const aprBasis = perpsStatRangeUsesFundingOnlyApr(_perpsStatRange)
+                ? 'chart funding ÷ avg equity'
+                : 'chart net PnL ÷ avg equity';
+            aprSub.textContent = `${stats.rangeLabel} · ${aprBasis}`;
         } else if (!(data.dailyFundingSeries || []).length) {
             aprSub.textContent = `${stats.rangeLabel} · no daily chart data`;
         } else {
@@ -34865,8 +34887,10 @@ function perpsClosedPairSessionApr(pair) {
     const margin = perpsClosedPairAvgNotional(pair);
     const days = perpsClosedPairSessionDays(pair);
     const funding = Number(pair?.funding);
-    if (!margin || !days || days <= 0 || !Number.isFinite(funding)) return null;
-    const computed = perpsAnnualizeReturnPct(funding, margin, days);
+    const fees = Number(pair?.fees ?? 0);
+    const netFunding = funding - fees;
+    if (!margin || !days || days <= 0 || !Number.isFinite(netFunding)) return null;
+    const computed = perpsAnnualizeReturnPct(netFunding, margin, days);
     if (computed != null && Number.isFinite(computed)) return computed;
     const stored = Number(pair?.sessionApr);
     return Number.isFinite(stored) ? stored : null;
@@ -34876,14 +34900,16 @@ function perpsClosedPairAprTip(pair, apr) {
     const days = perpsClosedPairSessionDays(pair);
     const margin = perpsClosedPairAvgNotional(pair);
     const funding = Number(pair?.funding);
+    const fees = Number(pair?.fees ?? 0);
+    const netFunding = Number.isFinite(funding) ? funding - fees : null;
     const sessionLabel = pair?.sessionStartDay && pair?.sessionEndDay
         ? `${pair.sessionStartDay} → ${pair.sessionEndDay}`
         : 'latest session';
     const parts = [
-        'APR = (Funding ÷ margin) × (365 ÷ session days) × 100',
-        'Annualized funding over the closed round’s latest performance session',
+        'APR = ((Funding − fees) ÷ margin) × (365 ÷ session days) × 100',
+        'Annualized funding minus trading fees over the closed round’s latest performance session',
         apr != null ? `APR: ${perpsFmtPct(apr)}` : 'APR unavailable (missing margin estimate or session length)',
-        Number.isFinite(funding) ? `Funding: ${perpsFmtUsd(funding)}` : null,
+        netFunding != null ? `Funding − fees: ${perpsFmtUsd(netFunding)}` : null,
         margin ? `Margin: ${perpsFmtUsd(margin)}` : 'Margin: unavailable',
         days ? `Session: ${days.toFixed(1)}d (${sessionLabel})` : 'Session: unavailable',
     ].filter(Boolean);
