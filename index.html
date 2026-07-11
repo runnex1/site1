@@ -27950,6 +27950,7 @@ let _newsFeedSettingsDraft = null;
 let _newsFeedLensLastTap = { cat: null, ts: 0 };
 let _newsFeedSaveBound = false;
 let _newsFeedSavedPanelBound = false;
+let _newsFeedSavedCache = null;
 let _newsFeedTelegramModalCategory = null;
 let _newsFeedRemoveSourcePending = null;
 let _newsFeedKobeissiActiveKey = null;
@@ -28333,7 +28334,12 @@ function newsFeedSaveSettings(settings) {
     newsFeedSyncTelegramVault(next);
 }
 
+function newsFeedCloneSavedList(list) {
+    return (list || []).map(i => ({ ...i }));
+}
+
 function newsFeedLoadSaved() {
+    if (_newsFeedSavedCache) return newsFeedCloneSavedList(_newsFeedSavedCache);
     try {
         const raw = localStorage.getItem(NEWS_FEED_SAVED_KEY);
         const list = raw ? JSON.parse(raw) : [];
@@ -28368,7 +28374,8 @@ function newsFeedLoadSaved() {
             return null;
         }).filter(Boolean);
         if (migrated) newsFeedPersistSaved(out);
-        return out;
+        else _newsFeedSavedCache = out;
+        return newsFeedCloneSavedList(out);
     } catch (e) {
         return [];
     }
@@ -28380,6 +28387,7 @@ function newsFeedPersistSaved(list) {
     const combined = stories.concat(notes)
         .sort((a, b) => newsFeedSavedUpdatedAt(b) - newsFeedSavedUpdatedAt(a))
         .slice(0, NEWS_FEED_SAVED_MAX);
+    _newsFeedSavedCache = combined;
     try { localStorage.setItem(NEWS_FEED_SAVED_KEY, JSON.stringify(combined)); } catch (e) {}
 }
 
@@ -28518,8 +28526,8 @@ function newsFeedAddNote() {
     const saved = newsFeedLoadSaved();
     saved.unshift(note);
     _newsFeedNoteFocusId = note.id;
-    newsFeedRenderSaved(saved);
     newsFeedPersistSaved(saved);
+    newsFeedRenderSaved(saved);
 }
 
 function newsFeedUpdateNote(encodedId, fields, options = {}) {

@@ -1023,7 +1023,8 @@ assert.match(indexHtml, /function newsFeedRenderSavedNoteCard\(/, 'saved panel m
 assert.match(indexHtml, /function newsFeedBindSavedPanel\(/, 'saved panel must bind + button clicks via delegation');
 assert.match(indexHtml, /news-feed-saved-add/, 'saved panel header must have + button to add notes');
 assert.match(indexHtml, /newsFeedAddNote\(\)/, '+ button must call newsFeedAddNote');
-assert.match(indexHtml, /newsFeedRenderSaved\(saved\)/, 'add note must re-render saved panel from in-memory list');
+assert.match(indexHtml, /newsFeedPersistSaved\(saved\);\s*\n\s*newsFeedRenderSaved\(saved\)/, 'add note must persist before re-render from in-memory list');
+assert.match(indexHtml, /let _newsFeedSavedCache/, 'saved notes must keep in-memory cache across note adds');
 assert.match(indexHtml, /newsFeedRemoveSavedNote\('?\$\{dashUri\(id\)\}'?\)/, 'note remove button must call remove note handler');
 assert.match(indexHtml, /news-feed-saved-note-card/, 'note cards must use distinct note card styling');
 assert.match(indexHtml, /news-feed-saved-tag note/, 'note cards must show NOTE tag');
