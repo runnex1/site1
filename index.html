@@ -8844,10 +8844,15 @@ body[data-active-tab="loops"] .page-content,
                 <div class="watcher-v2-activity">
                   <div class="watcher-v2-activity-head">
                     <div class="watcher-v2-activity-title">Recent Polymarket Activity</div>
-                    <div class="watcher-v2-activity-sub">all watched wallets</div>
+                    <div class="watcher-v2-activity-sub" id="watcherPmActivitySub">all watched wallets</div>
                   </div>
                   <div class="watcher-v2-activity-scroll" id="watcherPmActivity"></div>
                 </div>
+                <div class="watcher-v2-subhead" id="watcherPmWalletSubhead" style="display:none;">
+                  <div class="watcher-v2-subhead-title">Polymarket Wallets</div>
+                  <span class="watcher-v2-pill" id="watcherPmWalletCount" style="background:var(--fuchsia-10);color:var(--fuchsia);">0</span>
+                </div>
+                <div class="watcher-v2-scroll" id="watcherPmWalletRows" style="display:none;max-height:140px;"></div>
                 <div class="watcher-v2-subhead">
                   <div class="watcher-v2-subhead-title">Wallets</div>
                 </div>
@@ -8855,6 +8860,7 @@ body[data-active-tab="loops"] .page-content,
                 <div class="watcher-v2-foot">
                   <div class="watcher-v2-actions">
                     <button type="button" class="watcher-v2-btn indigo" onclick="openWatcherWalletModal('other')">Add Wallet</button>
+                    <button type="button" class="watcher-v2-btn" style="background:var(--fuchsia);border-color:var(--fuchsia);color:#fff;" onclick="openWatcherWalletModal('pm')">Add Polymarket Wallet</button>
                   </div>
                 </div>
               </div>
@@ -22831,6 +22837,7 @@ function openWatcherWalletModal(category) {
     const subEl   = document.getElementById('watcherWalletModalSub');
     const addBtn  = document.getElementById('wwAddBtn');
     const catEl   = document.getElementById('wwCategoryInput');
+    const addrEl  = document.getElementById('wwAddressInput');
     if (catEl) catEl.value = category;
     if (titleEl) titleEl.textContent = category === 'yield' ? '🌾 Add Yield Farming Wallet'
         : category === 'pm' ? '🎯 Add Prediction Market Wallet'
@@ -22838,12 +22845,17 @@ function openWatcherWalletModal(category) {
     if (subEl)   subEl.textContent   = category === 'yield'
         ? 'Track EVM (0x…) or Solana yield wallets — Aave, Morpho, Fluid, Kamino, Jupiter Lend, and more.'
         : category === 'pm'
-        ? 'Track wallets active on Polymarket or Opinion.trade.'
+        ? 'Paste a 0x address or Polymarket profile link (polymarket.com/@username). Resolves to the trading wallet for activity tracking.'
         : 'Track any wallet for DeBank overview — separate from Loops yield or Prediction Market wallets.';
+    if (addrEl) addrEl.placeholder = category === 'pm'
+        ? '0x… or polymarket.com/@username'
+        : '0x… or ENS name';
     if (addBtn) {
         const accent = category === 'yield' ? 'var(--teal)' : category === 'pm' ? 'var(--fuchsia)' : 'var(--wv-blue)';
         addBtn.style.background = accent;
         addBtn.style.borderColor = accent;
+        addBtn.textContent = category === 'pm' ? 'Add Polymarket Wallet' : 'Add Wallet';
+        addBtn.disabled = false;
     }
     // Render existing wallets for this category in the list
     renderWatcherWalletList(category);
@@ -22864,11 +22876,14 @@ function renderWatcherWalletList(category) {
     el.innerHTML = filtered.map(w => {
         const display = w.label || (w.address.slice(0,8) + '…' + w.address.slice(-4));
         const short   = w.address.slice(0,6) + '…' + w.address.slice(-4);
+        const pmUrl   = category === 'pm' ? (w.profileUrl || `https://polymarket.com/profile/${w.address}`) : null;
         return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.65rem;
             background:var(--surf-2);border:1px solid var(--border);border-radius:var(--r-sm);">
             <span style="flex:1;font-size:0.82rem;font-weight:600;color:var(--t1);
                 white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${display}</span>
             <span style="font-family:var(--ff-mono);font-size:0.68rem;color:var(--t3);">${w.label ? short : ''}</span>
+            ${pmUrl ? `<a href="${pmUrl}" target="_blank" rel="noopener" title="Open Polymarket profile"
+                style="color:var(--fuchsia);font-size:0.68rem;text-decoration:none;flex-shrink:0;">↗</a>` : ''}
             <button onclick="removeWatcherWallet('${w.id}')"
                 style="background:none;border:none;color:var(--t3);cursor:pointer;padding:2px;flex-shrink:0;"
                 onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--t3)'">
@@ -22879,15 +22894,149 @@ function renderWatcherWalletList(category) {
     }).join('');
 }
 
-function addWatcherWallet() {
+function parseWatcherPmInput(raw) {
+    const input = String(raw || '').trim();
+    if (!input) return null;
+    if (/^0x[a-fA-F0-9]{40}$/.test(input)) {
+        return { kind: 'address', value: input.toLowerCase(), profileUrl: null };
+    }
+    let text = input;
+    try {
+        if (/^https?:\/\//i.test(text) || /^polymarket\.com/i.test(text)) {
+            if (!/^https?:\/\//i.test(text)) text = 'https://' + text.replace(/^\/\//, '');
+            const url = new URL(text);
+            const host = url.hostname.replace(/^www\./i, '');
+            if (host === 'polymarket.com') {
+                const atMatch = url.pathname.match(/^\/@([^/]+)/i);
+                if (atMatch) {
+                    const username = decodeURIComponent(atMatch[1]);
+                    return { kind: 'username', value: username, profileUrl: `https://polymarket.com/@${username}` };
+                }
+                const profileMatch = url.pathname.match(/^\/profile\/([^/]+)/i);
+                if (profileMatch) {
+                    const segment = decodeURIComponent(profileMatch[1]);
+                    if (/^0x[a-fA-F0-9]{40}$/.test(segment)) {
+                        return { kind: 'address', value: segment.toLowerCase(), profileUrl: url.origin + url.pathname };
+                    }
+                    return { kind: 'username', value: segment, profileUrl: `https://polymarket.com/@${segment}` };
+                }
+            }
+        }
+    } catch (e) {}
+    if (input.startsWith('@')) {
+        const username = input.slice(1).trim();
+        if (username) return { kind: 'username', value: username, profileUrl: `https://polymarket.com/@${username}` };
+    }
+    if (/^[a-zA-Z0-9_-]{2,32}$/.test(input)) {
+        return { kind: 'username', value: input, profileUrl: `https://polymarket.com/@${input}` };
+    }
+    return null;
+}
+
+function watcherPmTradingWallet(profile, fallbackAddress) {
+    const proxy = String(profile?.proxyWallet || '').trim().toLowerCase();
+    if (/^0x[a-fA-F0-9]{40}$/.test(proxy)) return proxy;
+    const fallback = String(fallbackAddress || '').trim().toLowerCase();
+    if (/^0x[a-fA-F0-9]{40}$/.test(fallback)) return fallback;
+    return null;
+}
+
+async function resolveWatcherPmInputClient(input) {
+    const parsed = parseWatcherPmInput(input);
+    if (!parsed) return { ok: false, error: 'Enter a 0x address or Polymarket profile link (@username).' };
+    if (parsed.kind === 'address') {
+        const profile = await pmFetch(`https://gamma-api.polymarket.com/public-profile?address=${encodeURIComponent(parsed.value)}`);
+        const proxyWallet = watcherPmTradingWallet(profile, parsed.value);
+        if (!proxyWallet) return { ok: false, error: 'Could not resolve Polymarket wallet for that address.' };
+        const name = String(profile?.name || '').trim();
+        return {
+            ok: true,
+            proxyWallet,
+            label: name || '',
+            profileUrl: name ? `https://polymarket.com/@${name}` : (parsed.profileUrl || null),
+        };
+    }
+    const search = await pmFetch(`https://gamma-api.polymarket.com/public-search?q=${encodeURIComponent(parsed.value)}&search_profiles=true&search_tags=false&limit_per_type=10`);
+    const profiles = Array.isArray(search?.profiles) ? search.profiles : [];
+    const lower = parsed.value.toLowerCase();
+    const profile = profiles.find(p => String(p?.name || '').toLowerCase() === lower) || profiles[0];
+    if (!profile) return { ok: false, error: `No Polymarket profile found for "@${parsed.value}".` };
+    const proxyWallet = watcherPmTradingWallet(profile, null);
+    if (!proxyWallet) return { ok: false, error: `Profile "@${parsed.value}" has no trading wallet.` };
+    const name = String(profile?.name || parsed.value).trim();
+    return {
+        ok: true,
+        proxyWallet,
+        label: name,
+        profileUrl: parsed.profileUrl || `https://polymarket.com/@${name}`,
+    };
+}
+
+async function resolveWatcherPmInput(raw) {
+    const input = String(raw || '').trim();
+    if (!input) return { ok: false, error: 'Enter an address or profile link.' };
+    if (location.protocol !== 'file:') {
+        try {
+            const qs = new URLSearchParams({ polymarketProfile: '1', input });
+            const response = await fetch('/api/sync?' + qs.toString(), { signal: AbortSignal.timeout(15000) });
+            const payload = await response.json().catch(() => ({}));
+            if (response.ok && payload?.ok && payload?.proxyWallet) return payload;
+            if (payload?.error) return { ok: false, error: payload.error };
+        } catch (e) {
+            console.warn('Server PM profile resolve failed; using browser fallback:', e);
+        }
+    }
+    return resolveWatcherPmInputClient(input);
+}
+
+async function addWatcherWallet() {
     const addrEl  = document.getElementById('wwAddressInput');
     const labelEl = document.getElementById('wwLabelInput');
     const catEl   = document.getElementById('wwCategoryInput');
     const address  = (addrEl?.value || '').trim();
     const label    = (labelEl?.value || '').trim();
     const category = catEl?.value || 'other';
+    const addBtn   = document.getElementById('wwAddBtn');
 
     if (!address) { addrEl?.focus(); return; }
+
+    if (category === 'pm') {
+        if (addBtn) { addBtn.disabled = true; addBtn.textContent = 'Resolving…'; }
+        try {
+            const resolved = await resolveWatcherPmInput(address);
+            if (!resolved?.ok || !resolved.proxyWallet) {
+                alert(resolved?.error || 'Could not resolve Polymarket profile.');
+                return;
+            }
+            const proxyWallet = String(resolved.proxyWallet).toLowerCase();
+            if (watcherWallets.find(w => w.address.toLowerCase() === proxyWallet && w.category === 'pm')) {
+                alert('Wallet already in this section.');
+                return;
+            }
+            watcherWallets.push({
+                id: Date.now().toString(),
+                address: proxyWallet,
+                label: label || resolved.label || '',
+                category: 'pm',
+                profileUrl: resolved.profileUrl || null,
+                sourceInput: address,
+                addedAt: Date.now(),
+            });
+            saveWatcherWallets();
+            if (addrEl) addrEl.value = '';
+            if (labelEl) labelEl.value = '';
+            renderWatcherWalletList('pm');
+            renderWatcherWallets();
+            renderWatcherPmActivity();
+        } finally {
+            if (addBtn) {
+                addBtn.disabled = false;
+                addBtn.textContent = 'Add Polymarket Wallet';
+            }
+        }
+        return;
+    }
+
     if (watcherWallets.find(w => w.address.toLowerCase() === address.toLowerCase() && w.category === category)) {
         alert('Wallet already in this section.'); return;
     }
@@ -22912,9 +23061,49 @@ function removeWatcherWallet(id) {
     renderWatcherPmActivity();
 }
 
+function renderWatcherPmWalletRows() {
+    const subhead = document.getElementById('watcherPmWalletSubhead');
+    const rowsEl = document.getElementById('watcherPmWalletRows');
+    const countEl = document.getElementById('watcherPmWalletCount');
+    const subEl = document.getElementById('watcherPmActivitySub');
+    const pmWallets = (watcherWallets || []).filter(w => (w.category || '').toLowerCase() === 'pm');
+    const n = pmWallets.length;
+    if (countEl) countEl.textContent = String(n);
+    if (subEl) subEl.textContent = n ? `${n} watched wallet${n === 1 ? '' : 's'}` : 'all watched wallets';
+    if (!rowsEl) return;
+    if (!n) {
+        if (subhead) subhead.style.display = 'none';
+        rowsEl.style.display = 'none';
+        rowsEl.innerHTML = '';
+        return;
+    }
+    if (subhead) subhead.style.display = '';
+    rowsEl.style.display = '';
+    rowsEl.innerHTML = pmWallets.map(w => {
+        const label = w.label || (w.address.slice(0, 6) + '…' + w.address.slice(-4));
+        const short = w.address.slice(0, 6) + '…' + w.address.slice(-4);
+        const pmUrl = w.profileUrl || `https://polymarket.com/profile/${w.address}`;
+        const addedDate = new Date(w.addedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const searchHay = `${label} ${w.address} polymarket pm wallet`.toLowerCase();
+        return `<div class="watcher-v2-wallet-row" data-watcher-kind="wallet" data-watcher-search="${dashEsc(searchHay)}" data-watcher-pinned="0">
+            <div class="watcher-v2-icon tool" style="background:var(--fuchsia-10);color:var(--fuchsia);">PM</div>
+            <div>
+                <div class="watcher-v2-row-title">${dashEsc(label)}</div>
+                <div class="watcher-v2-row-meta">Polymarket${w.label ? ' · ' + dashEsc(short) : ''} · Added ${addedDate}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:0.35rem;">
+                <span class="watcher-v2-badge" style="background:var(--fuchsia-10);color:var(--fuchsia);">PM</span>
+                <a href="${pmUrl}" target="_blank" rel="noopener" class="watcher-v2-row-btn" title="Open Polymarket profile">↗</a>
+                <button type="button" class="watcher-v2-row-btn danger" onclick="removeWatcherWallet('${w.id}')" title="Remove">×</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
 function renderWatcherWallets() {
     renderWatcherWalletSection('yield', 'wv-yield-grid', 'wv-yield-count');
     renderWatcherWalletSection('pm',    'wv-pm-grid',    'wv-pm-count');
+    renderWatcherPmWalletRows();
     updateWatcherWalletCount();
 
     const unified = document.getElementById('watcherWalletRows');
@@ -22972,13 +23161,17 @@ function renderWatcherWalletSection(category, gridId, countId) {
     const accentColor = category === 'yield' ? 'var(--teal)' : 'var(--fuchsia)';
     const accentBg    = category === 'yield' ? 'rgba(0,212,170,0.1)' : 'rgba(217,70,239,0.1)';
     const accentBdr   = category === 'yield' ? 'rgba(0,212,170,0.25)' : 'rgba(217,70,239,0.25)';
-    const debankLabel = category === 'yield' ? 'DeBank' : 'DeBank';
+    const debankLabel = category === 'yield' ? 'DeBank' : category === 'pm' ? 'Polymarket' : 'DeBank';
 
     grid.innerHTML = wallets.map(w => {
         const label    = w.label || (w.address.slice(0,6) + '…' + w.address.slice(-4));
         const short    = w.address.slice(0,6) + '…' + w.address.slice(-4);
         const isAddr   = w.address.startsWith('0x') || w.address.startsWith('0X');
-        const debankUrl = isAddr ? `https://debank.com/profile/${w.address}` : null;
+        const debankUrl = category !== 'pm' && isAddr ? `https://debank.com/profile/${w.address}` : null;
+        const pmUrl = category === 'pm' ? (w.profileUrl || `https://polymarket.com/profile/${w.address}`) : null;
+        const linkUrl = pmUrl || debankUrl;
+        const linkLabel = category === 'pm' ? 'Polymarket' : debankLabel;
+
         const addedDate = new Date(w.addedAt).toLocaleDateString('en-US', { month:'short', day:'numeric' });
 
         return `<div class="wv-card" style="border-color:rgba(255,255,255,0.06);">
@@ -22987,8 +23180,8 @@ function renderWatcherWalletSection(category, gridId, countId) {
                     <div class="wv-label">${label}</div>
                     ${w.label ? `<div class="wv-addr">${short}</div>` : ''}
                     <div class="wv-meta" style="margin-top:0.4rem;display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">
-                        ${debankUrl ? `
-                        <a href="${debankUrl}" target="_blank" rel="noopener"
+                        ${linkUrl ? `
+                        <a href="${linkUrl}" target="_blank" rel="noopener"
                             style="display:inline-flex;align-items:center;gap:0.25rem;padding:2px 8px;
                                    border-radius:4px;background:${accentBg};border:1px solid ${accentBdr};
                                    color:${accentColor};font-size:0.68rem;font-weight:700;text-decoration:none;white-space:nowrap;"
@@ -22996,7 +23189,7 @@ function renderWatcherWalletSection(category, gridId, countId) {
                             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
                                 <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                            ${debankLabel} ↗
+                            ${linkLabel} ↗
                         </a>` : ''}
                         <span style="font-size:0.65rem;color:var(--t3);">Added ${addedDate}</span>
                     </div>
@@ -29511,8 +29704,14 @@ function updateWatcherSummaryText() {
 }
 
 function watcherPmWalletAddresses() {
-    const pm = (watcherWallets || []).filter(w => w.category === 'pm').map(w => w.address);
-    return [...new Set(pm.filter(Boolean))];
+    const pm = (watcherWallets || []).filter(w => (w.category || '').toLowerCase() === 'pm').map(w => w.address);
+    const seen = new Set();
+    return pm.filter(addr => {
+        const key = String(addr || '').toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
 }
 
 async function renderWatcherPmActivity() {

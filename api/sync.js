@@ -21,6 +21,7 @@ const {
 } = require('../lib/sync-array-guard');
 const { collectEvents } = require('../lib/event-log');
 const { fetchPolymarketWalletBalances } = require('../lib/polymarket-balance');
+const { resolvePolymarketProfile } = require('../lib/polymarket-profile');
 const https = require('https');
 
 const SYNC_SECRET = process.env.SYNC_SECRET || '';
@@ -436,6 +437,14 @@ async function enrichPolymarketPositions(positions) {
   });
 }
 
+async function getPolymarketProfile(query) {
+  const input = String(query.input || query.q || '').trim();
+  if (!input) return { status: 400, body: { error: 'Missing Polymarket profile input' } };
+  const result = await resolvePolymarketProfile(input);
+  if (!result.ok) return { status: 404, body: result };
+  return { status: 200, body: result };
+}
+
 async function getPolymarketBalances(query) {
   const wallets = pnlWalletList(query.wallets);
   if (!wallets.length) return { status: 400, body: { error: 'No valid Polymarket wallet addresses provided' } };
@@ -714,6 +723,10 @@ module.exports = async function handler(req, res) {
       }
       if (req.query?.polymarketBalances === '1') {
         const result = await getPolymarketBalances(req.query || {});
+        return res.status(result.status).json(result.body);
+      }
+      if (req.query?.polymarketProfile === '1') {
+        const result = await getPolymarketProfile(req.query || {});
         return res.status(result.status).json(result.body);
       }
       if (req.query?.marketMoves === '1') {
