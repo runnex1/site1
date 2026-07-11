@@ -437,7 +437,9 @@ html { height: 100%; }
 .watcher-v2-primary-slot { min-width:0; min-height:0; display:flex; }
 .watcher-v2-primary-slot > .watcher-v2-panel { flex:1; min-width:0; min-height:0; }
 .watcher-v2-stack { display:flex; flex-direction:column; gap:0.75rem; min-height:0; height:100%; }
-.watcher-v2-stack > .watcher-v2-panel { flex:1; min-height:0; }
+.watcher-v2-stack > .watcher-v2-panel { min-height:0; }
+.watcher-v2-stack > .watcher-v2-panel-wallet { flex:1 1 0; min-height:0; }
+.watcher-v2-stack > .watcher-v2-panel-yield { flex:0 0 auto; max-height:var(--watcher-yield-h); min-height:148px; }
 .watcher-v2-panel.watcher-v2-compact .watcher-v2-panel-head { min-height:40px; padding:0.5rem 0.85rem; }
 .watcher-v2-panel.watcher-v2-compact .watcher-v2-panel-note { display:none; }
 .watcher-v2-panel.watcher-v2-compact .watcher-v2-panel-title { font-size:0.88rem; }
@@ -450,6 +452,8 @@ html { height: 100%; }
 .watcher-v2-panel.watcher-v2-compact .watcher-v2-actions { padding:0.35rem 0.75rem 0.5rem; }
 .watcher-v2-panel.watcher-v2-compact .watcher-v2-btn { height:28px; font-size:0.72rem; padding:0 0.65rem; }
 .watcher-v2-panel.watcher-v2-compact .watcher-v2-add-bar { display:none; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-activity { flex:0 0 auto; min-height:0; }
+.watcher-v2-panel.watcher-v2-compact .watcher-v2-activity-scroll { flex:0 0 auto; min-height:56px; max-height:88px; }
 .watcher-v2-panel-head {
   flex-shrink:0; min-height:54px; padding:0.75rem 1rem;
   display:flex; align-items:flex-start; justify-content:space-between; gap:0.65rem;
@@ -466,16 +470,21 @@ html { height: 100%; }
 .watcher-v2-scroll { flex:1; min-height:0; overflow-y:auto; }
 .watcher-v2-scroll::-webkit-scrollbar { width:5px; }
 .watcher-v2-scroll::-webkit-scrollbar-thumb { background:rgba(134,159,179,0.25); border-radius:99px; }
-.watcher-v2-foot { flex-shrink:0; margin-top:auto; border-top:1px solid rgba(134,159,179,0.1); }
-.watcher-v2-actions { display:flex; justify-content:flex-end; gap:0.45rem; padding:0.5rem 0.85rem 0.6rem; flex-wrap:wrap; }
+.watcher-v2-foot { flex-shrink:0; margin-top:auto; border-top:1px solid rgba(134,159,179,0.1); background:inherit; }
+.watcher-v2-actions { display:flex; justify-content:flex-end; gap:0.45rem; padding:0.5rem 0.85rem 0.75rem; flex-wrap:wrap; }
 .watcher-v2-btn {
   height:32px; padding:0 0.75rem; border-radius:7px; font-size:0.78rem; font-weight:850;
   border:1px solid rgba(89,240,200,0.28); background:rgba(89,240,200,0.08); color:var(--wv-teal); cursor:pointer;
-  font-family:var(--ff-body);
+  font-family:var(--ff-body); transition:background 0.14s, border-color 0.14s;
 }
+.watcher-v2-btn:hover { background:rgba(89,240,200,0.14); border-color:rgba(89,240,200,0.42); }
 .watcher-v2-btn.secondary { border-color:var(--wv-line-hi); background:rgba(255,255,255,0.025); color:var(--wv-muted); }
-.watcher-v2-btn.indigo { border-color:rgba(99,183,255,0.28); background:rgba(99,183,255,0.08); color:var(--wv-blue); }
-.watcher-v2-btn.fuchsia { border-color:rgba(183,140,255,0.28); background:rgba(183,140,255,0.08); color:var(--wv-violet); }
+.watcher-v2-btn.secondary:hover { background:rgba(255,255,255,0.05); border-color:var(--wv-line-hi); color:var(--t1); }
+.watcher-v2-btn.pm-accent {
+  border-color:rgba(183,140,255,0.32); background:rgba(89,240,200,0.08); color:var(--wv-teal);
+  box-shadow:inset 3px 0 0 rgba(183,140,255,0.5);
+}
+.watcher-v2-btn.pm-accent:hover { background:rgba(89,240,200,0.14); border-color:rgba(183,140,255,0.42); }
 .watcher-v2-pm-row {
   display:grid; grid-template-columns:38px minmax(160px,1fr) 58px 62px 58px 68px auto;
   gap:0.65rem; min-height:62px; padding:0.6rem 1rem; align-items:center;
@@ -601,10 +610,10 @@ html { height: 100%; }
 .watcher-v2-row-btn:hover { color:var(--wv-teal); border-color:rgba(89,240,200,0.35); }
 .watcher-v2-row-btn.danger:hover { color:var(--red); border-color:rgba(255,92,122,0.35); }
 @media (max-width:1100px) {
-  .watcher-v2 { height:auto; max-height:none; }
+  .watcher-v2 { flex:none; height:auto; }
   .watcher-v2-layout { grid-template-columns:1fr; }
   .watcher-v2-primary-slot, .watcher-v2-stack { height:auto; }
-  .watcher-v2-stack > .watcher-v2-panel { min-height:220px; }
+  .watcher-v2-stack > .watcher-v2-panel { min-height:220px; max-height:none; flex:1 1 auto; }
   .watcher-v2-pm-row { grid-template-columns:38px minmax(140px,1fr) 58px 62px auto; }
   .watcher-v2-pm-row .hide-sm { display:none; }
 }
@@ -647,6 +656,7 @@ body[data-active-tab="watcher"] .page-content,
 body[data-active-tab="watcher"] #watcherTab,
 .page-content.tab-watcher #watcherTab {
   height:100%; min-height:0;
+  display:flex; flex-direction:column;
 }
 
 /* Perps DEXs tab */
@@ -8873,30 +8883,36 @@ body[data-active-tab="loops"] .page-content,
                 <div class="watcher-v2-panel-head">
                   <div>
                     <div class="watcher-v2-panel-title">Wallet Watchlist</div>
-                    <div class="watcher-v2-panel-note">Other wallets for DeBank tracking</div>
+                    <div class="watcher-v2-panel-note">DeBank and Polymarket wallets</div>
                   </div>
                   <span class="watcher-v2-pill blue" id="wtab-wallets-badge">0 wallets</span>
                 </div>
                 <div class="watcher-v2-activity">
                   <div class="watcher-v2-activity-head">
-                    <div class="watcher-v2-activity-title">Recent Polymarket Activity</div>
-                    <div class="watcher-v2-activity-sub" id="watcherPmActivitySub">all watched wallets</div>
+                    <div>
+                      <div class="watcher-v2-activity-title">Recent Polymarket Activity</div>
+                      <div class="watcher-v2-activity-sub" id="watcherPmActivitySub">all watched wallets</div>
+                    </div>
+                    <div class="watcher-v2-activity-min">
+                      <label for="watcherPmMinUsdInput">Min $</label>
+                      <input type="number" id="watcherPmMinUsdInput" min="0" step="1" placeholder="0"
+                        onchange="watcherPmSetMinUsd(this.value)" onkeydown="if(event.key==='Enter'){watcherPmSetMinUsd(this.value);this.blur();}">
+                    </div>
+                  </div>
+                  <div class="watcher-v2-activity-filter" id="watcherPmActivityFilterBar" style="display:none;">
+                    <span id="watcherPmActivityFilterLabel">Filtered wallet</span>
+                    <button type="button" onclick="watcherPmClearActivityFilter()">Show all</button>
                   </div>
                   <div class="watcher-v2-activity-scroll" id="watcherPmActivity"></div>
                 </div>
-                <div class="watcher-v2-subhead" id="watcherPmWalletSubhead" style="display:none;">
-                  <div class="watcher-v2-subhead-title">Polymarket Wallets</div>
-                  <span class="watcher-v2-pill" id="watcherPmWalletCount" style="background:var(--fuchsia-10);color:var(--fuchsia);">0</span>
-                </div>
-                <div class="watcher-v2-scroll" id="watcherPmWalletRows" style="display:none;max-height:140px;"></div>
                 <div class="watcher-v2-subhead">
                   <div class="watcher-v2-subhead-title">Wallets</div>
                 </div>
                 <div class="watcher-v2-scroll" id="watcherWalletRows"></div>
                 <div class="watcher-v2-foot">
                   <div class="watcher-v2-actions">
-                    <button type="button" class="watcher-v2-btn indigo" onclick="openWatcherWalletModal('other')">Add Wallet</button>
-                    <button type="button" class="watcher-v2-btn" style="background:var(--fuchsia);border-color:var(--fuchsia);color:#fff;" onclick="openWatcherWalletModal('pm')">Add Polymarket Wallet</button>
+                    <button type="button" class="watcher-v2-btn" onclick="openWatcherWalletModal('other')">Add Wallet</button>
+                    <button type="button" class="watcher-v2-btn pm-accent" onclick="openWatcherWalletModal('pm')">Add Polymarket Wallet</button>
                   </div>
                 </div>
               </div>
@@ -8917,7 +8933,7 @@ body[data-active-tab="loops"] .page-content,
                       onkeydown="if(event.key==='Enter') document.getElementById('wlLinkDescInput').focus()">
                     <input type="text" id="wlLinkDescInput" placeholder="Description"
                       onkeydown="if(event.key==='Enter') { addWatcherLink(); updateWyCount(); }">
-                    <button type="button" class="watcher-v2-btn indigo" onclick="addWatcherLink(); updateWyCount();" id="wlLinkAddBtn">Save</button>
+                    <button type="button" class="watcher-v2-btn" onclick="addWatcherLink(); updateWyCount();" id="wlLinkAddBtn">Save</button>
                   </div>
                   <div class="watcher-v2-actions">
                     <button type="button" class="watcher-v2-btn secondary" onclick="watcherOpenAllTools()">Open All</button>
@@ -22915,7 +22931,7 @@ function loadWatchlist() {
 
 function watcherIsLoopOrPmCategory(category) {
     const cat = String(category || '').toLowerCase();
-    return cat === 'yield' || cat === 'pm' || /^(polymarket|prediction|prediction markets)$/.test(cat);
+    return cat === 'yield' || /^(loop|loops)$/.test(cat);
 }
 
 function watcherWatchlistWallets() {
@@ -22957,7 +22973,7 @@ function openWatcherWalletModal(category) {
         ? 'Track EVM (0x…) or Solana yield wallets — Aave, Morpho, Fluid, Kamino, Jupiter Lend, and more.'
         : category === 'pm'
         ? 'Paste a 0x address or Polymarket profile link (polymarket.com/@username). Resolves to the trading wallet for activity tracking.'
-        : 'Track any wallet for DeBank overview — separate from Loops yield or Prediction Market wallets.';
+        : 'Track any wallet for DeBank or Polymarket — yield wallets stay in Loops.';
     if (addrEl) addrEl.placeholder = category === 'pm'
         ? '0x… or polymarket.com/@username'
         : '0x… or ENS name';
@@ -23167,54 +23183,17 @@ function removeWatcherWallet(id) {
     watcherWallets = watcherWallets.filter(w => w.id !== id);
     saveWatcherWallets();
     if (entry?.category === 'yield') { loopApiState.triedAuto = false; loopApiState.positions = []; renderLoops(); }
+    if (entry?.category === 'pm' && entry.address?.toLowerCase() === watcherPmActivityFilterWallet) {
+        watcherPmActivityFilterWallet = '';
+    }
     if (entry) renderWatcherWalletList(entry.category);
     renderWatcherWallets();
     renderWatcherPmActivity();
 }
 
-function renderWatcherPmWalletRows() {
-    const subhead = document.getElementById('watcherPmWalletSubhead');
-    const rowsEl = document.getElementById('watcherPmWalletRows');
-    const countEl = document.getElementById('watcherPmWalletCount');
-    const subEl = document.getElementById('watcherPmActivitySub');
-    const pmWallets = (watcherWallets || []).filter(w => (w.category || '').toLowerCase() === 'pm');
-    const n = pmWallets.length;
-    if (countEl) countEl.textContent = String(n);
-    if (subEl) subEl.textContent = n ? `${n} watched wallet${n === 1 ? '' : 's'}` : 'all watched wallets';
-    if (!rowsEl) return;
-    if (!n) {
-        if (subhead) subhead.style.display = 'none';
-        rowsEl.style.display = 'none';
-        rowsEl.innerHTML = '';
-        return;
-    }
-    if (subhead) subhead.style.display = '';
-    rowsEl.style.display = '';
-    rowsEl.innerHTML = pmWallets.map(w => {
-        const label = w.label || (w.address.slice(0, 6) + '…' + w.address.slice(-4));
-        const short = w.address.slice(0, 6) + '…' + w.address.slice(-4);
-        const pmUrl = w.profileUrl || `https://polymarket.com/profile/${w.address}`;
-        const addedDate = new Date(w.addedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const searchHay = `${label} ${w.address} polymarket pm wallet`.toLowerCase();
-        return `<div class="watcher-v2-wallet-row" data-watcher-kind="wallet" data-watcher-search="${dashEsc(searchHay)}" data-watcher-pinned="0">
-            <div class="watcher-v2-icon tool" style="background:var(--fuchsia-10);color:var(--fuchsia);">PM</div>
-            <div>
-                <div class="watcher-v2-row-title">${dashEsc(label)}</div>
-                <div class="watcher-v2-row-meta">Polymarket${w.label ? ' · ' + dashEsc(short) : ''} · Added ${addedDate}</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:0.35rem;">
-                <span class="watcher-v2-badge" style="background:var(--fuchsia-10);color:var(--fuchsia);">PM</span>
-                <a href="${pmUrl}" target="_blank" rel="noopener" class="watcher-v2-row-btn" title="Open Polymarket profile">↗</a>
-                <button type="button" class="watcher-v2-row-btn danger" onclick="removeWatcherWallet('${w.id}')" title="Remove">×</button>
-            </div>
-        </div>`;
-    }).join('');
-}
-
 function renderWatcherWallets() {
     renderWatcherWalletSection('yield', 'wv-yield-grid', 'wv-yield-count');
     renderWatcherWalletSection('pm',    'wv-pm-grid',    'wv-pm-count');
-    renderWatcherPmWalletRows();
     updateWatcherWalletCount();
 
     const unified = document.getElementById('watcherWalletRows');
@@ -23222,27 +23201,35 @@ function renderWatcherWallets() {
 
     const watchlist = watcherWatchlistWallets();
     if (!watchlist.length) {
-        unified.innerHTML = `<div class="watcher-v2-empty">No wallets saved yet.<br><span style="font-size:0.72rem;opacity:0.7">Add other wallets below — Loops yield and PM wallets stay in their own tabs.</span></div>`;
+        unified.innerHTML = `<div class="watcher-v2-empty">No wallets saved yet.<br><span style="font-size:0.72rem;opacity:0.7">Add DeBank or Polymarket wallets below — yield wallets stay in Loops.</span></div>`;
         updateWatcherSummaryText();
         watcherApplyFilters();
         return;
     }
 
     unified.innerHTML = watchlist.map(w => {
+        const isPm = (w.category || '').toLowerCase() === 'pm';
         const label = w.label || (w.address.slice(0, 6) + '…' + w.address.slice(-4));
         const short = w.address.slice(0, 6) + '…' + w.address.slice(-4);
         const isAddr = w.address.startsWith('0x') || w.address.startsWith('0X');
-        const debankUrl = isAddr ? `https://debank.com/profile/${w.address}` : null;
+        const debankUrl = !isPm && isAddr ? `https://debank.com/profile/${w.address}` : null;
+        const pmUrl = isPm ? (w.profileUrl || `https://polymarket.com/profile/${w.address}`) : null;
         const addedDate = new Date(w.addedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const searchHay = `${label} ${w.address} debank wallet watchlist`.toLowerCase();
-        return `<div class="watcher-v2-wallet-row" data-watcher-kind="wallet" data-watcher-search="${dashEsc(searchHay)}" data-watcher-pinned="0">
-            <div class="watcher-v2-icon tool">WL</div>
+        const searchHay = `${label} ${w.address} ${isPm ? 'polymarket pm' : 'debank'} wallet watchlist`.toLowerCase();
+        const filterClass = isPm && watcherPmActivityFilterWallet && w.address.toLowerCase() === watcherPmActivityFilterWallet ? ' pm-activity-filter' : '';
+        const titleHtml = isPm && pmUrl
+            ? `<a href="${pmUrl}" target="_blank" rel="noopener" class="watcher-v2-pm-link">${dashEsc(label)}</a>`
+            : dashEsc(label);
+        const dblclick = isPm ? ` ondblclick="watcherPmFilterActivityByWallet('${w.address}')"` : '';
+        return `<div class="watcher-v2-wallet-row${filterClass}" data-watcher-kind="wallet" data-watcher-search="${dashEsc(searchHay)}" data-watcher-pinned="0"${dblclick}>
+            <div class="watcher-v2-icon ${isPm ? 'pm' : 'tool'}"${isPm ? ' style="background:var(--fuchsia-10);color:var(--fuchsia);"' : ''}>${isPm ? 'PM' : 'WL'}</div>
             <div>
-                <div class="watcher-v2-row-title">${dashEsc(label)}</div>
-                <div class="watcher-v2-row-meta">DeBank${w.label ? ' · ' + dashEsc(short) : ''} · Added ${addedDate}</div>
+                <div class="watcher-v2-row-title">${titleHtml}</div>
+                <div class="watcher-v2-row-meta">${isPm ? 'Polymarket' : 'DeBank'}${w.label ? ' · ' + dashEsc(short) : ''} · Added ${addedDate}${isPm ? ' · dbl-click to filter activity' : ''}</div>
             </div>
             <div style="display:flex;align-items:center;gap:0.35rem;">
-                <span class="watcher-v2-badge blue">Wallet</span>
+                <span class="watcher-v2-badge ${isPm ? '' : 'blue'}"${isPm ? ' style="background:var(--fuchsia-10);color:var(--fuchsia);"' : ''}>${isPm ? 'PM' : 'Wallet'}</span>
+                ${pmUrl ? `<a href="${pmUrl}" target="_blank" rel="noopener" class="watcher-v2-row-btn" title="Open Polymarket profile">↗</a>` : ''}
                 ${debankUrl ? `<a href="${debankUrl}" target="_blank" rel="noopener" class="watcher-v2-row-btn" title="Open DeBank">↗</a>` : ''}
                 <button type="button" class="watcher-v2-row-btn danger" onclick="removeWatcherWallet('${w.id}')" title="Remove">×</button>
             </div>
@@ -30181,41 +30168,131 @@ function watcherPmWalletAddresses() {
     });
 }
 
+function watcherPmLoadPrefs() {
+    try {
+        const raw = localStorage.getItem(WATCHER_PM_MIN_USD_KEY);
+        if (raw != null) watcherPmMinUsd = Math.max(0, Number(raw) || 0);
+    } catch (e) {}
+    const input = document.getElementById('watcherPmMinUsdInput');
+    if (input) input.value = watcherPmMinUsd > 0 ? String(watcherPmMinUsd) : '';
+}
+
+function watcherPmSetMinUsd(value) {
+    watcherPmMinUsd = Math.max(0, Number(value) || 0);
+    try { localStorage.setItem(WATCHER_PM_MIN_USD_KEY, String(watcherPmMinUsd)); } catch (e) {}
+    watcherPmRenderFilteredActivity();
+}
+
+function watcherPmTradeNotional(t) {
+    const usdc = Number(t.usdcSize ?? t.usdc ?? t.amountUsdc);
+    if (Number.isFinite(usdc) && usdc > 0) return usdc;
+    const size = Number(t.size || t.amount || 0);
+    const price = Number(t.price || 0);
+    return size * price;
+}
+
+function watcherPmFilterActivityByWallet(address) {
+    const key = String(address || '').toLowerCase();
+    watcherPmActivityFilterWallet = watcherPmActivityFilterWallet === key ? '' : key;
+    watcherPmUpdateActivityFilterUi();
+    watcherPmRenderFilteredActivity();
+    renderWatcherWallets();
+}
+
+function watcherPmClearActivityFilter() {
+    watcherPmActivityFilterWallet = '';
+    watcherPmUpdateActivityFilterUi();
+    watcherPmRenderFilteredActivity();
+    renderWatcherWallets();
+}
+
+function watcherPmUpdateActivityFilterUi() {
+    const bar = document.getElementById('watcherPmActivityFilterBar');
+    const label = document.getElementById('watcherPmActivityFilterLabel');
+    const sub = document.getElementById('watcherPmActivitySub');
+    const pmCount = watcherPmWalletAddresses().length;
+    if (watcherPmActivityFilterWallet) {
+        const w = (watcherWallets || []).find(x => (x.category || '').toLowerCase() === 'pm'
+            && x.address.toLowerCase() === watcherPmActivityFilterWallet);
+        const name = w?.label || dashShortAddr(watcherPmActivityFilterWallet);
+        if (bar) bar.style.display = '';
+        if (label) label.textContent = `Showing activity for ${name}`;
+        if (sub) sub.textContent = 'filtered wallet';
+    } else {
+        if (bar) bar.style.display = 'none';
+        if (sub) sub.textContent = pmCount ? `${pmCount} watched wallet${pmCount === 1 ? '' : 's'}` : 'all watched wallets';
+    }
+}
+
+function watcherPmApplyActivityFilters(trades) {
+    let list = Array.isArray(trades) ? [...trades] : [];
+    if (watcherPmActivityFilterWallet) {
+        const key = watcherPmActivityFilterWallet.toLowerCase();
+        list = list.filter(t => String(t._wallet || t.user || '').toLowerCase() === key);
+    }
+    if (watcherPmMinUsd > 0) {
+        list = list.filter(t => watcherPmTradeNotional(t) >= watcherPmMinUsd);
+    }
+    return list;
+}
+
+function watcherPmRenderActivityRows(trades) {
+    const el = document.getElementById('watcherPmActivity');
+    if (!el) return;
+    const filtered = watcherPmApplyActivityFilters(trades).slice(0, 12);
+    if (!filtered.length) {
+        const hints = [];
+        if (watcherPmActivityFilterWallet) hints.push('this wallet');
+        if (watcherPmMinUsd > 0) hints.push(`≥ $${watcherPmMinUsd}`);
+        const hint = hints.length ? ` (${hints.join(', ')})` : '';
+        el.innerHTML = `<div class="watcher-v2-empty" style="padding:0.75rem;">No trades match${hint} in the last 48h.</div>`;
+        return;
+    }
+    el.innerHTML = filtered.map(t => {
+        const isBuy = /^buy$/i.test(t.side || '');
+        const ts = Number(t.timestamp || 0) * 1000;
+        const timeStr = ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+            + (Date.now() - ts > 86400000 ? ' · ' + new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '') : '';
+        const shares = Number(t.size || t.amount || 0);
+        const side = (t.outcome || t.side || '').toUpperCase();
+        const title = t.title || t.marketTitle || 'Unknown market';
+        const wallet = dashShortAddr(t._wallet || t.user || '');
+        const action = isBuy ? 'Bought' : 'Sold';
+        const notional = watcherPmTradeNotional(t);
+        const usdStr = notional > 0 ? ` · $${notional >= 1000 ? Math.round(notional).toLocaleString('en-US') : notional.toFixed(2)}` : '';
+        return `<div class="watcher-v2-act-row">
+                <div class="watcher-v2-act-icon ${isBuy ? '' : 'sell'}">${isBuy ? 'B' : 'S'}</div>
+                <div>
+                    <div class="watcher-v2-act-title">${action} ${Math.round(shares)} ${dashEsc(side)} shares${usdStr}</div>
+                    <div class="watcher-v2-act-meta">${dashEsc(wallet)} · ${dashEsc(title)}</div>
+                </div>
+                <div class="watcher-v2-act-time">${dashEsc(timeStr)}</div>
+            </div>`;
+    }).join('');
+}
+
+function watcherPmRenderFilteredActivity() {
+    watcherPmUpdateActivityFilterUi();
+    watcherPmRenderActivityRows(_watcherPmActivityTrades);
+}
+
 async function renderWatcherPmActivity() {
     const el = document.getElementById('watcherPmActivity');
     if (!el) return;
+    watcherPmLoadPrefs();
     const wallets = watcherPmWalletAddresses();
+    watcherPmUpdateActivityFilterUi();
     if (!wallets.length) {
+        _watcherPmActivityTrades = [];
         el.innerHTML = `<div class="watcher-v2-empty" style="padding:0.75rem;">Add PM wallets to see recent activity.</div>`;
         return;
     }
     el.innerHTML = `<div class="watcher-v2-empty" style="padding:0.75rem;">Loading recent activity…</div>`;
     try {
-        const trades = (await fetchFilledOrders(wallets)).slice(0, 6);
-        if (!trades.length) {
-            el.innerHTML = `<div class="watcher-v2-empty" style="padding:0.75rem;">No Polymarket trades in the last 48h.</div>`;
-            return;
-        }
-        el.innerHTML = trades.map(t => {
-            const isBuy = /^buy$/i.test(t.side || '');
-            const ts = Number(t.timestamp || 0) * 1000;
-            const timeStr = ts ? new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
-                + (Date.now() - ts > 86400000 ? ' · ' + new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '') : '';
-            const shares = Number(t.size || t.amount || 0);
-            const side = (t.outcome || t.side || '').toUpperCase();
-            const title = t.title || t.marketTitle || 'Unknown market';
-            const wallet = dashShortAddr(t._wallet || t.user || '');
-            const action = isBuy ? 'Bought' : 'Sold';
-            return `<div class="watcher-v2-act-row">
-                <div class="watcher-v2-act-icon ${isBuy ? '' : 'sell'}">${isBuy ? 'B' : 'S'}</div>
-                <div>
-                    <div class="watcher-v2-act-title">${action} ${Math.round(shares)} ${dashEsc(side)} shares</div>
-                    <div class="watcher-v2-act-meta">${dashEsc(wallet)} · ${dashEsc(title)}</div>
-                </div>
-                <div class="watcher-v2-act-time">${dashEsc(timeStr)}</div>
-            </div>`;
-        }).join('');
+        _watcherPmActivityTrades = await fetchFilledOrders(wallets);
+        watcherPmRenderFilteredActivity();
     } catch (e) {
+        _watcherPmActivityTrades = [];
         el.innerHTML = `<div class="watcher-v2-empty" style="padding:0.75rem;">Could not load activity.</div>`;
     }
 }
