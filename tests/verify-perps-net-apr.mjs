@@ -154,11 +154,11 @@ function perpsPairPeriodApr(p, range, now = Date.now()) {
   if (rows.length) {
     const totals = perpsSumDailyFundingSeries(rows);
     const days = perpsPairAprDaysForRows(p, range, rows);
-    return perpsAnnualizeReturnPct(totals.net, margin, days);
+    return perpsAnnualizeReturnPct(totals.funding, margin, days);
   }
   if (rawRows.length && perpsStatRangeMs(range)) return null;
   const days = perpsPairEffectiveDays(p, range);
-  return perpsAnnualizeReturnPct((p.fundingSinceOpen ?? 0) - (p.feesSinceOpen ?? 0), margin, days);
+  return perpsAnnualizeReturnPct(p.fundingSinceOpen ?? 0, margin, days);
 }
 
 function expectedApr(net, margin, days) {
@@ -181,18 +181,18 @@ function dailyRows(now, count, netPerDay = 9, feePerDay = 1) {
 const NOW = Date.parse('2026-06-24T18:00:00.000Z');
 const MARGIN = 100_000;
 
-// --- Formula: APR = (net / margin) * (365 / days) * 100 ---
+// --- Formula: APR = (funding / margin) * (365 / days) * 100 ---
 {
-  const apr = perpsAnnualizeReturnPct(90, MARGIN, 10);
-  assert.ok(Math.abs(apr - expectedApr(90, MARGIN, 10)) < 1e-9);
-  assert.ok(Math.abs(apr - 3.285) < 0.001, `10d $90 net → ~3.285% APR, got ${apr}`);
+  const apr = perpsAnnualizeReturnPct(100, MARGIN, 10);
+  assert.ok(Math.abs(apr - expectedApr(100, MARGIN, 10)) < 1e-9);
+  assert.ok(Math.abs(apr - 3.65) < 0.001, `10d $100 funding → ~3.65% APR, got ${apr}`);
 }
 
 // --- All: full latest session ---
 {
   const p = { avgNotional: MARGIN, daysOpen: 10, dailyPerformanceSeries: dailyRows(NOW, 10) };
   const apr = perpsPairPeriodApr(p, null, NOW);
-  assert.ok(Math.abs(apr - expectedApr(90, MARGIN, 10)) < 0.01);
+  assert.ok(Math.abs(apr - expectedApr(100, MARGIN, 10)) < 0.01);
 }
 
 // --- 30D: min(session, 30d) — 20d session uses all 20d ---
@@ -201,7 +201,7 @@ const MARGIN = 100_000;
   const all = perpsPairPeriodApr(p, null, NOW);
   const d30 = perpsPairPeriodApr(p, '30d', NOW);
   assert.ok(Math.abs(all - d30) < 0.01, '20d session: All and 30D must match');
-  assert.ok(Math.abs(d30 - expectedApr(180, MARGIN, 20)) < 0.01);
+  assert.ok(Math.abs(d30 - expectedApr(200, MARGIN, 20)) < 0.01);
 }
 
 // --- 30D: 45d session → only last 30 calendar days ---
@@ -210,9 +210,9 @@ const MARGIN = 100_000;
   const d30 = perpsPairPeriodApr(p, '30d', NOW);
   const rows30 = perpsFilterPairLatestSessionForRange(p.dailyPerformanceSeries, '30d', NOW);
   assert.equal(rows30.length, 30, '30D must keep 30 daily rows');
-  assert.ok(Math.abs(d30 - expectedApr(270, MARGIN, 30)) < 0.01);
+  assert.ok(Math.abs(d30 - expectedApr(300, MARGIN, 30)) < 0.01);
   const all = perpsPairPeriodApr(p, null, NOW);
-  assert.ok(Math.abs(all - expectedApr(405, MARGIN, 45)) < 0.01);
+  assert.ok(Math.abs(all - expectedApr(450, MARGIN, 45)) < 0.01);
   assert.ok(Math.abs(all - d30) < 0.01, 'constant daily rate: All and 30D APR should match');
 }
 
@@ -220,7 +220,7 @@ const MARGIN = 100_000;
 {
   const p = { avgNotional: MARGIN, daysOpen: 20, dailyPerformanceSeries: dailyRows(NOW, 20) };
   const d7 = perpsPairPeriodApr(p, '7d', NOW);
-  assert.ok(Math.abs(d7 - expectedApr(63, MARGIN, 7)) < 0.01);
+  assert.ok(Math.abs(d7 - expectedApr(70, MARGIN, 7)) < 0.01);
 }
 
 // --- 1D on multi-day session ---
@@ -229,7 +229,7 @@ const MARGIN = 100_000;
   const d1 = perpsPairPeriodApr(p, '1d', NOW);
   const rows1 = perpsFilterPairLatestSessionForRange(p.dailyPerformanceSeries, '1d', NOW);
   assert.equal(rows1.length, 1, '1D must keep only the latest day row');
-  assert.ok(Math.abs(d1 - expectedApr(9, MARGIN, 1)) < 0.01);
+  assert.ok(Math.abs(d1 - expectedApr(10, MARGIN, 1)) < 0.01);
   const d7 = perpsPairPeriodApr(p, '7d', NOW);
   assert.ok(Math.abs(d1 - d7) < 0.01, 'constant daily rate: 1D and 7D APR should match');
 }
@@ -268,13 +268,14 @@ const MARGIN = 100_000;
     dailyPerformanceSeries: [...old, ...gap, ...current],
   };
   const apr = perpsPairPeriodApr(p, null, NOW);
-  assert.ok(Math.abs(apr - expectedApr(45, MARGIN, 5)) < 0.01, 'must ignore old session before gap');
+  assert.ok(Math.abs(apr - expectedApr(50, MARGIN, 5)) < 0.01, 'must ignore old session before gap');
 }
 
 // --- UI wiring in index.html ---
 assert.match(indexHtml, /const periodApr = perpsPairPeriodApr\(p, _perpsStatRange\)/);
 assert.match(indexHtml, /perpsSetStatRange[\s\S]*?perpsRenderPositionsPanel/);
-assert.match(indexHtml, /function perpsBuildNetAprTooltipHtml\(p, range = _perpsStatRange\)/);
+assert.match(indexHtml, /perpsAnnualizeReturnPct\(totals\.funding, margin, days\)/, 'Net APR must annualize funding only');
+assert.match(indexHtml, /Annualized funding ÷ margin · excludes trading fees/, 'Net APR tooltip must describe funding-only basis');
 
 console.log('verify-perps-net-apr.mjs: PASS');
 console.log('  formula, 1D/7D/30D/All windows, session scope, and UI wiring verified');

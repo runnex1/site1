@@ -841,13 +841,14 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     size: 1,
     avgNotional: 100000,
     netPnl: 1000,
+    funding: 1000,
     longLeg: { venue: 'hyperliquid', side: 'long', size: 1, avgEntryPx: 100000 },
     shortLeg: { venue: 'nado', side: 'short', size: 1, avgEntryPx: 100000 },
   };
   const days = closedPairSessionDays(pair);
   assert.ok(days > 29 && days < 32, 'closed session days must use open-to-close duration');
   const apr = closedPairSessionApr(pair);
-  assert.ok(apr > 10 && apr < 14, 'closed session APR must annualize net PnL over margin and session days');
+  assert.ok(apr > 10 && apr < 14, 'closed session APR must annualize funding over margin and session days');
 }
 
 {
@@ -858,6 +859,7 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     sessionDayCount: 3,
     avgNotional: 50000,
     netPnl: 500,
+    funding: 500,
     openTime: Date.UTC(2025, 0, 1),
     closeTime: Date.UTC(2026, 0, 31),
   };
@@ -871,6 +873,7 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     symbol: 'VIRTUAL',
     size: 40000,
     netPnl: -40,
+    funding: -40,
     openTime: Date.UTC(2026, 4, 29),
     closeTime: Date.UTC(2026, 5, 4),
     longLeg: { venue: 'grvt', size: 40000, entryPx: 0.65 },
@@ -2612,7 +2615,8 @@ assert.match(perpsJs, /peakPair\.peakMetricsApplied[\s\S]*dailyPerformanceSeries
 assert.ok(indexHtml.includes('function perpsSyncTotalPnlForRange(data, range)'), 'Total PnL must follow the selected stat time window');
 assert.ok(indexHtml.includes('perpsSyncTotalPnlForRange(data, _perpsStatRange)'), 'stats bar must sync Total PnL from the active stat range');
 assert.doesNotMatch(indexHtml, /perpsSyncTotalPnlRolling24h/, 'Total PnL must not stay fixed to rolling 24h');
-assert.match(indexHtml, /perpsSumDailyFundingSeries\(rows, true\)/, 'Net APR must use the same active-session rows as position performance');
+assert.match(indexHtml, /perpsSumDailyFundingSeries\(rows, false\)/, 'Net APR must use gross funding rows from the active session');
+assert.match(indexHtml, /perpsAnnualizeReturnPct\(totals\.funding, margin, days\)/, 'Net APR must annualize funding only');
 assert.match(indexHtml, /function perpsFilterPairLatestSessionForRange\(series, range\)/, 'Position Net APR must filter to the latest session before applying the selected range');
 assert.match(indexHtml, /const rows = perpsFilterPairLatestSessionForRange\(rawRows, range\);/, 'Position Net APR must not include older sessions in all-time APR');
 assert.match(indexHtml, /perpsPairPeriodApr\(p, _perpsStatRange\)/, 'positions table Net APR must follow the selected stat range within the latest session');

@@ -82,9 +82,9 @@ function perpsPairPeriodApr(p, range) {
   if (rows.length) {
     const totals = perpsSumDailyFundingSeries(rows);
     const days = perpsPairAprDaysForRows(p, range, rows);
-    return perpsAnnualizeReturnPct(totals.net, margin, days);
+    return perpsAnnualizeReturnPct(totals.funding, margin, days);
   }
-  return perpsAnnualizeReturnPct((p.fundingSinceOpen ?? 0) - (p.feesSinceOpen ?? 0), margin, perpsPairEffectiveDays(p, range));
+  return perpsAnnualizeReturnPct(p.fundingSinceOpen ?? 0, margin, perpsPairEffectiveDays(p, range));
 }
 
 const now = Date.now();
