@@ -5261,6 +5261,8 @@ button.news-feed-lens-chip { cursor:pointer; }
 }
 .news-feed-icon-btn:hover { border-color:var(--border-mid); color:var(--t1); }
 .news-feed-icon-btn.saved { color:var(--amber); border-color:rgba(245,158,11,0.3); background:rgba(245,158,11,0.1); }
+.news-feed-hide-btn { font-size:15px; }
+.news-feed-hide-btn:hover { border-color:rgba(244,63,94,0.35); color:#fb7185; background:rgba(244,63,94,0.08); }
 .news-feed-loading { font-size:11px; color:var(--t3); padding:8px 4px; }
 .news-feed-context-body { flex:1; min-height:0; padding:0.55rem 0.65rem 0.7rem; }
 .news-feed-settings-drawer {
@@ -27851,6 +27853,7 @@ document.addEventListener('DOMContentLoaded', () => {
 const NEWS_FEED_SETTINGS_KEY = 'vault_news_feed_settings_v1';
 const NEWS_FEED_SAVED_KEY = 'vault_news_saved_v1';
 const NEWS_FEED_SEEN_KEY = 'vault_news_feed_seen_v1';
+const NEWS_FEED_HIDDEN_KEY = 'vault_news_feed_hidden_v1';
 const NEWS_FEED_ALERT_RE = /\b(hack(?:ed|ing|s)?|exploit(?:ed|s|ing)?)\b/i;
 const NEWS_FEED_SOURCE_CATALOG = {
     crypto: ['CoinDesk', 'CoinTelegraph', 'Decrypt', 'Unchained', 'CryptoPanic'],
@@ -27924,6 +27927,38 @@ function newsFeedLoadSeen() {
 
 function newsFeedPersistSeen(seen) {
     try { localStorage.setItem(NEWS_FEED_SEEN_KEY, JSON.stringify(seen)); } catch (e) {}
+}
+
+function newsFeedLoadHidden() {
+    try {
+        const raw = localStorage.getItem(NEWS_FEED_HIDDEN_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function newsFeedPersistHidden(hidden) {
+    const trimmed = {};
+    for (const key of Object.keys(hidden || {}).sort((a, b) => Number(hidden[b] || 0) - Number(hidden[a] || 0)).slice(0, 500)) {
+        trimmed[key] = hidden[key];
+    }
+    try { localStorage.setItem(NEWS_FEED_HIDDEN_KEY, JSON.stringify(trimmed)); } catch (e) {}
+}
+
+function newsFeedIsHidden(item) {
+    const key = newsFeedItemKey(item);
+    return Boolean(key && newsFeedLoadHidden()[key]);
+}
+
+function newsFeedHideItem(url) {
+    const key = newsFeedItemKey({ url });
+    if (!key) return;
+    const hidden = newsFeedLoadHidden();
+    hidden[key] = Date.now();
+    newsFeedPersistHidden(hidden);
+    newsFeedRenderCenterFeed();
 }
 
 function newsFeedMarkSeen(url) {
@@ -28251,6 +28286,7 @@ function newsFeedApplyFilters(items, settings) {
     const s = newsFeedMigrateLegacyTelegram(settings || newsFeedLoadSettings());
     const enabledCats = NEWS_FEED_CATEGORY_TYPES.filter(c => s.categories?.[c]);
     return (items || []).filter(item => {
+        if (newsFeedIsHidden(item)) return false;
         const type = newsFeedItemCategory(item, s);
         if (!enabledCats.includes(type)) return false;
         const tg = newsFeedTelegramEntry(s, item.source);
@@ -28445,6 +28481,7 @@ function newsFeedRenderCenterCard(item, opts = {}) {
             </div>
             <div class="news-feed-card-actions">
                 ${seenBtn}
+                <button type="button" class="news-feed-icon-btn news-feed-hide-btn" onclick="event.stopPropagation(); newsFeedHideItem('${dashEsc(url)}')" title="Not interested">⊘</button>
                 <button type="button" class="news-feed-icon-btn news-feed-save-btn${saved ? ' saved' : ''}" title="${saved ? 'Unsave' : 'Save'}" data-url="${dashEsc(url)}">${saved ? '★' : '☆'}</button>
                 <a class="news-feed-icon-btn" href="${dashEsc(url)}" target="_blank" rel="noopener" title="Open" onclick="event.stopPropagation()">↗</a>
             </div>
