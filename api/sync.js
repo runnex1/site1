@@ -1097,7 +1097,7 @@ module.exports = async function handler(req, res) {
 
     if (body.newsFeed && typeof body.newsFeed === 'object') {
       const existing = parseJson(await kvGet('vault:news_feed'), null);
-      const merged = existing ? mergeNewsFeedStores(existing, body.newsFeed) : body.newsFeed;
+      const merged = existing ? mergeNewsFeedStores(body.newsFeed, existing) : body.newsFeed;
       await kvSet('vault:news_feed', JSON.stringify(merged));
       saved.newsFeed = true;
     }

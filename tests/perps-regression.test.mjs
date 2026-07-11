@@ -1289,7 +1289,46 @@ const mergedNews = mergeNewsFeedStores(
   { saved: [{ kind: 'story', url: 'https://a.com', updatedAt: 10 }], meta: { saved: 10, updatedAt: 10 } },
   { saved: [{ kind: 'note', id: 'n1', updatedAt: 20 }], meta: { saved: 20, updatedAt: 20 } },
 );
-assert.equal(mergedNews.saved.length, 2, 'news feed merge must union saved stories and notes');
+assert.equal(mergedNews.saved.length, 1, 'newer server saved list must replace older local list');
+assert.equal(mergedNews.saved[0].id, 'n1', 'newer server saved list must win on conflict');
+const mergedNewsTie = mergeNewsFeedStores(
+  { saved: [{ kind: 'story', url: 'https://a.com', updatedAt: 10 }], meta: { saved: 10, updatedAt: 10 } },
+  { saved: [{ kind: 'note', id: 'n1', updatedAt: 10 }], meta: { saved: 10, updatedAt: 10 } },
+);
+assert.equal(mergedNewsTie.saved.length, 2, 'equal saved timestamps must union stories and notes');
+const mergedNewsDelete = mergeNewsFeedStores(
+  { saved: [], meta: { saved: 30, updatedAt: 30 } },
+  { saved: [{ kind: 'note', id: 'test-sync', title: 'test-sync', updatedAt: 20 }], meta: { saved: 20, updatedAt: 20 } },
+);
+assert.equal(mergedNewsDelete.saved.length, 0, 'local delete must win when local saved timestamp is newer');
+const mergedSettingsLocal = mergeNewsFeedStores(
+  { settings: { keywords: ['bitcoin'] }, meta: { settings: 30, updatedAt: 30 } },
+  { settings: { keywords: ['test-sync'] }, meta: { settings: 20, updatedAt: 20 } },
+);
+assert.deepEqual(mergedSettingsLocal.settings.keywords, ['bitcoin'], 'local keyword edits must win when local settings are newer');
+const mergedSettingsTie = mergeNewsFeedStores(
+  { settings: { keywords: ['bitcoin'] }, meta: { settings: 20, updatedAt: 20 } },
+  { settings: { keywords: ['test-sync'] }, meta: { settings: 20, updatedAt: 20 } },
+);
+assert.deepEqual(mergedSettingsTie.settings.keywords, ['bitcoin'], 'settings tie must prefer local keywords');
+assert.match(indexHtml, /newsFeedPickNewerList\(/, 'client merge must pick newer saved/quickLinks lists');
+assert.match(indexHtml, /newsFeedScheduleCloudSync\(\);\s*\n\s*newsFeedRenderCenterFeed\(\)/, 'keyword add/remove must schedule cloud sync');
+assert.match(indexHtml, /newsFeedKwInput[\s\S]{0,120}oninput="newsFeedSyncKeywordsFromInput/, 'feed settings keyword input must persist on change');
+{
+  const kwCtx = vm.createContext({ String });
+  vm.runInNewContext(`
+    ${extractBalancedFunction(indexHtml, 'newsFeedNormalizeKey')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedKeywordMatchesSource')}
+    function decodeHtmlEntities(text) { return String(text || ''); }
+    function newsFeedLoadSettings() { return { keywords: ['test-sync'], searchBody: false }; }
+    ${extractBalancedFunction(indexHtml, 'newsFeedItemSearchText')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedMatchedKeywords')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedPassesKeywordFilter')}
+  `, kwCtx);
+  const item = { title: 'Bitcoin hits new high', source: 'Decrypt', type: 'crypto' };
+  assert.equal(kwCtx.newsFeedPassesKeywordFilter(item, { keywords: ['test-sync'], searchBody: false }), false, 'test-sync keyword must zero non-matching headlines');
+  assert.equal(kwCtx.newsFeedPassesKeywordFilter({ ...item, title: 'test-sync headline update' }, { keywords: ['test-sync'], searchBody: false }), true, 'test-sync keyword must match headlines containing keyword');
+}
 assert.match(indexHtml, /function mergeWatcherWalletsByKey\(/, 'watcher wallets must merge local and server on hydrate');
 assert.match(indexHtml, /function watcherWatchlistWallets\(/, 'Wallet Watchlist must filter out Loops yield wallets');
 assert.match(indexHtml, /function watcherIsLoopOrPmCategory\(/, 'Wallet Watchlist must classify yield categories');

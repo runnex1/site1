@@ -480,11 +480,6 @@ html { height: 100%; }
 .watcher-v2-btn:hover { background:rgba(89,240,200,0.14); border-color:rgba(89,240,200,0.42); }
 .watcher-v2-btn.secondary { border-color:var(--wv-line-hi); background:rgba(255,255,255,0.025); color:var(--wv-muted); }
 .watcher-v2-btn.secondary:hover { background:rgba(255,255,255,0.05); border-color:var(--wv-line-hi); color:var(--t1); }
-.watcher-v2-btn.pm-accent {
-  border-color:rgba(183,140,255,0.32); background:rgba(89,240,200,0.08); color:var(--wv-teal);
-  box-shadow:inset 3px 0 0 rgba(183,140,255,0.5);
-}
-.watcher-v2-btn.pm-accent:hover { background:rgba(89,240,200,0.14); border-color:rgba(183,140,255,0.42); }
 .watcher-v2-pm-row {
   display:grid; grid-template-columns:38px minmax(160px,1fr) 58px 62px 58px 68px auto;
   gap:0.65rem; min-height:62px; padding:0.6rem 1rem; align-items:center;
@@ -8912,7 +8907,7 @@ body[data-active-tab="loops"] .page-content,
                 <div class="watcher-v2-foot">
                   <div class="watcher-v2-actions">
                     <button type="button" class="watcher-v2-btn" onclick="openWatcherWalletModal('other')">Add Wallet</button>
-                    <button type="button" class="watcher-v2-btn pm-accent" onclick="openWatcherWalletModal('pm')">Add Polymarket Wallet</button>
+                    <button type="button" class="watcher-v2-btn" onclick="openWatcherWalletModal('pm')">Add Polymarket Wallet</button>
                   </div>
                 </div>
               </div>
@@ -22978,7 +22973,7 @@ function openWatcherWalletModal(category) {
         ? '0x… or polymarket.com/@username'
         : '0x… or ENS name';
     if (addBtn) {
-        const accent = category === 'yield' ? 'var(--teal)' : category === 'pm' ? 'var(--fuchsia)' : 'var(--wv-blue)';
+        const accent = category === 'yield' || category === 'pm' ? 'var(--teal)' : 'var(--wv-blue)';
         addBtn.style.background = accent;
         addBtn.style.borderColor = accent;
         addBtn.textContent = category === 'pm' ? 'Add Polymarket Wallet' : 'Add Wallet';
@@ -28296,7 +28291,7 @@ function newsFeedReadJson(key, fallback = null) {
 function buildNewsFeedSyncPayload() {
     const meta = newsFeedReadSyncMeta();
     return {
-        settings: newsFeedReadJson(NEWS_FEED_SETTINGS_KEY, null),
+        settings: newsFeedLoadSettings(),
         saved: newsFeedReadJson(NEWS_FEED_SAVED_KEY, []),
         seen: newsFeedReadJson(NEWS_FEED_SEEN_KEY, {}),
         hidden: newsFeedReadJson(NEWS_FEED_HIDDEN_KEY, {}),
@@ -28351,6 +28346,17 @@ function newsFeedMergeQuickLinks(a, b) {
         .slice(0, NEWS_FEED_QUICK_LINKS_MAX);
 }
 
+function newsFeedPickNewerList(localList, serverList, lTs, sTs, mergeFn) {
+    if (lTs > sTs) return Array.isArray(localList) ? localList : [];
+    if (sTs > lTs) return Array.isArray(serverList) ? serverList : [];
+    return mergeFn(localList, serverList);
+}
+
+function newsFeedPickNewerSection(localValue, serverValue, lTs, sTs) {
+    if (lTs >= sTs) return localValue ?? serverValue;
+    return serverValue ?? localValue;
+}
+
 function newsFeedMergeBundles(local, server) {
     const l = local && typeof local === 'object' ? local : {};
     const s = server && typeof server === 'object' ? server : {};
@@ -28363,22 +28369,16 @@ function newsFeedMergeBundles(local, server) {
         const lTs = sectionTs(lMeta, section);
         const sTs = sectionTs(sMeta, section);
         if (section === 'saved') {
-            out.saved = newsFeedMergeSavedLists(l.saved, s.saved);
-            out.meta.saved = Math.max(lTs, sTs);
+            out.saved = newsFeedPickNewerList(l.saved, s.saved, lTs, sTs, newsFeedMergeSavedLists);
+            out.meta.saved = Math.max(lTs, sTs, newsFeedSavedUpdatedAt(out.saved[0]));
         } else if (section === 'quickLinks') {
-            out.quickLinks = newsFeedMergeQuickLinks(l.quickLinks, s.quickLinks);
+            out.quickLinks = newsFeedPickNewerList(l.quickLinks, s.quickLinks, lTs, sTs, newsFeedMergeQuickLinks);
             out.meta.quickLinks = Math.max(lTs, sTs);
         } else if (section === 'seen' || section === 'hidden') {
             out[section] = newsFeedMergeTimestampMaps(l[section], s[section]);
             out.meta[section] = Math.max(lTs, sTs);
-        } else if (sTs > lTs) {
-            out[section] = s[section];
-            out.meta[section] = sTs;
-        } else if (lTs > sTs) {
-            out[section] = l[section];
-            out.meta[section] = lTs;
         } else {
-            out[section] = s[section] ?? l[section];
+            out[section] = newsFeedPickNewerSection(l[section], s[section], lTs, sTs);
             out.meta[section] = Math.max(lTs, sTs);
         }
     }
@@ -29382,7 +29382,13 @@ function newsFeedPromptKeyword() {
     const s = newsFeedLoadSettings();
     const word = String(kw).trim().toLowerCase();
     if (!s.keywords.includes(word)) s.keywords = [...(s.keywords || []), word].slice(0, 30);
+    if (_newsFeedSettingsDraft) {
+        _newsFeedSettingsDraft.keywords = [...s.keywords];
+        const input = document.getElementById('newsFeedKwInput');
+        if (input) input.value = s.keywords.join(', ');
+    }
     newsFeedSaveSettings(s);
+    newsFeedScheduleCloudSync();
     newsFeedRenderCenterFeed();
 }
 
@@ -29390,7 +29396,13 @@ function newsFeedRemoveKeyword(encodedKw) {
     const kw = decodeURIComponent(String(encodedKw || '')).toLowerCase();
     const s = newsFeedLoadSettings();
     s.keywords = (s.keywords || []).filter(k => k !== kw);
+    if (_newsFeedSettingsDraft) {
+        _newsFeedSettingsDraft.keywords = [...s.keywords];
+        const input = document.getElementById('newsFeedKwInput');
+        if (input) input.value = s.keywords.join(', ');
+    }
     newsFeedSaveSettings(s);
+    newsFeedScheduleCloudSync();
     newsFeedRenderCenterFeed();
 }
 
@@ -29532,6 +29544,41 @@ function newsFeedRenderCenterCard(item, opts = {}) {
     </article>`;
 }
 
+function newsFeedEmptyFilterHint(settings, poolSize) {
+    const s = settings || newsFeedLoadSettings();
+    const hints = [];
+    const enabledCats = NEWS_FEED_CATEGORY_TYPES.filter(c => s.categories?.[c]);
+    if (!enabledCats.length) hints.push('all categories are off');
+    else if (enabledCats.length < NEWS_FEED_CATEGORY_TYPES.length) {
+        hints.push(`categories: ${enabledCats.join(', ')} only`);
+    }
+    if (s.keywords?.length) hints.push(`keywords: ${s.keywords.join(', ')}`);
+    if (s.searchBody) hints.push('title + body search');
+    const disabledSources = Object.entries(s.sources || {}).filter(([, on]) => on === false).map(([label]) => label);
+    if (disabledSources.length) hints.push(`${disabledSources.length} source(s) off`);
+    if ((s.removedSources || []).length) hints.push(`${s.removedSources.length} source(s) removed`);
+    const hiddenCount = Object.keys(newsFeedLoadHidden()).length;
+    if (hiddenCount) hints.push(`${hiddenCount} hidden headline(s)`);
+    const pool = Number(poolSize) || 0;
+    let msg = pool > 0
+        ? `No headlines match your filters (${pool} loaded).`
+        : 'No headlines match your filters.';
+    if (hints.length) msg += ` Active: ${hints.join(' · ')}.`;
+    else msg += ' Try Feed settings.';
+    const clearBtn = s.keywords?.length
+        ? ' <button type="button" class="news-feed-empty-clear" onclick="newsFeedClearKeywordFilters()">Clear keyword filters</button>'
+        : '';
+    return `${msg}${clearBtn}`;
+}
+
+function newsFeedClearKeywordFilters() {
+    const s = newsFeedLoadSettings();
+    if (!s.keywords?.length) return;
+    s.keywords = [];
+    newsFeedSaveSettings(s);
+    newsFeedRenderCenterFeed();
+}
+
 function newsFeedRenderCenterFeed() {
     const grid = document.getElementById('newsFeedGrid');
     if (!grid) return;
@@ -29548,7 +29595,7 @@ function newsFeedRenderCenterFeed() {
         }
     }
     if (!filtered.length && !cards.length) {
-        grid.innerHTML = '<div class="news-feed-loading">No headlines match your filters. Try Feed settings.</div>';
+        grid.innerHTML = `<div class="news-feed-loading">${newsFeedEmptyFilterHint(settings, (_newsFeedRawPool || []).length)}</div>`;
         return;
     }
     grid.innerHTML = cards.concat(newsFeedOrderForDisplay(filtered, settings).map(item => newsFeedRenderCenterCard(item))).join('');
@@ -29623,7 +29670,7 @@ function newsFeedBuildSettingsForm() {
         ${NEWS_FEED_CATEGORY_TYPES.map(sourceSection).join('')}
         <div class="news-feed-set-section">
             <div class="news-feed-set-label">Keywords</div>
-            <input class="news-feed-kw-input" id="newsFeedKwInput" type="text" placeholder="aave, ethena, funding" value="${dashEsc((s.keywords || []).join(', '))}">
+            <input class="news-feed-kw-input" id="newsFeedKwInput" type="text" placeholder="aave, ethena, funding" value="${dashEsc((s.keywords || []).join(', '))}" oninput="newsFeedSyncKeywordsFromInput(); newsFeedPersistSettingsDraft({ refreshFeed: true, rebuildForm: false })">
             <div class="news-feed-kw-chips" id="newsFeedKwChips">${(s.keywords || []).map(k => `<span class="news-feed-kw-chip">${dashEsc(k)}</span>`).join('')}</div>
             <div class="news-feed-toggle-row">
                 <span title="When on, keyword filters also search article summaries/body text">Search title + body</span>
