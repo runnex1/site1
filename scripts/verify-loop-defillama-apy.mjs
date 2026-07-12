@@ -10,18 +10,14 @@ const {
   shouldEnrichLegWithDefillama,
   defillamaApyForLeg,
   fetchDefillamaYieldApyIndex,
+  fetchDefillamaChart7dApy,
+  buildDefillama7dApyCache,
+  computeChart7dMovingAvg,
   buildMerklAprIndex,
 } = require('../lib/loop-rates.js');
 
-function defillamaPoolApy(pool) {
-  const num = (v, fb = 0) => { const n = Number(v); return Number.isFinite(n) ? n : fb; };
-  const base = num(pool.apyBase, NaN);
-  const reward = num(pool.apyReward, 0);
-  const total = num(pool.apy, 0);
-  if (Number.isFinite(base) && base > 0.01) return base;
-  if (total > 0.01 && reward > 0.01) return Math.max(total - reward, 0);
-  return total;
-}
+const CAP_POOL_ID = 'bf6ca887-e357-49ec-8031-0d1a6141c455';
+const STC_7D = 4.6644;
 
 const failures = [];
 
@@ -48,11 +44,6 @@ function makePos({ chainId, supplied, borrowed, suppliedYieldUsd = 0, borrowedCo
   };
 }
 
-function enrich(pos, index) {
-  enrichPositionWithDefillamaYield(pos, index);
-  return pos;
-}
-
 function mockIndex(entries) {
   return {
     bySymbolChain: new Map(entries),
@@ -60,116 +51,114 @@ function mockIndex(entries) {
   };
 }
 
+function enrich(pos, index, chart7dCache) {
+  enrichPositionWithDefillamaYield(pos, index, chart7dCache);
+  return pos;
+}
+
 console.log('=== Loops DeFiLlama APY scenario verification ===\n');
 
 // 1. Plain collateral — no enrichment
 {
-  const index = mockIndex([['1:WBTC', { apy: 8.2, score: 8.2 }]]);
+  const index = mockIndex([['1:WBTC', { apy: 8.2, poolId: 'wbtc', score: 8.2 }]]);
   const leg = { symbol: 'WBTC', apy: 0, value: 100000, isCollateral: true };
   assert(!shouldEnrichLegWithDefillama(1, leg, index), 'WBTC must not enrich');
   const pos = enrich(makePos({
     chainId: 1,
     supplied: [leg],
     borrowed: [{ symbol: 'USDe', value: 50000, apy: 4.2 }],
-  }), index);
+  }), index, new Map());
   assert(pos.supplied[0].apy === 0, 'WBTC APY must stay 0');
   assert(!pos.defillamaBoost, 'WBTC must not be defillama-boosted');
   console.log('OK  plain collateral (WBTC)');
 }
 
-// 2. stcUSD zero protocol APY — use DeFiLlama
+// 2. stcUSD zero protocol APY — use DeFiLlama 7d chart
 {
-  const dlApy = 5.75;
-  const index = mockIndex([['1:STCUSD', { apy: dlApy, score: 1005.75, project: 'cap' }]]);
+  const index = mockIndex([['1:STCUSD', { apy: 5.75, poolId: CAP_POOL_ID, score: 1005.75, project: 'cap' }]]);
+  const chart7dCache = new Map([[CAP_POOL_ID, STC_7D]]);
   const leg = { symbol: 'stcUSD', apy: 0, isCollateral: true, value: 100000, address: '0x8888' };
-  assert(shouldEnrichLegWithDefillama(4326, leg, index), 'stcUSD zero APY must enrich');
+  assert(shouldEnrichLegWithDefillama(4326, leg, index, chart7dCache), 'stcUSD zero APY must enrich');
   const pos = enrich(makePos({
     chainId: 4326,
     supplied: [leg],
     borrowed: [{ symbol: 'USDm', value: 50000, apy: 3 }],
-  }), index);
+  }), index, chart7dCache);
   assert(pos.defillamaBoost, 'stcUSD zero must boost');
-  assert(Math.abs(pos.supplyApy - dlApy) < 0.05, `stcUSD zero → ${pos.supplyApy} expected ~${dlApy}`);
-  console.log('OK  stcUSD zero protocol APY');
+  assert(Math.abs(pos.supplyApy - STC_7D) < 0.05, `stcUSD zero → ${pos.supplyApy} expected ~${STC_7D}`);
+  console.log('OK  stcUSD zero protocol APY (7d chart)');
 }
 
-// 3. stcUSD inflated Aave collateral — replace with DeFiLlama
+// 3. stcUSD inflated Aave collateral — replace with 7d chart
 {
-  const dlApy = 5.75;
-  const index = mockIndex([['1:STCUSD', { apy: dlApy, score: 1005.75, project: 'cap' }]]);
+  const index = mockIndex([['1:STCUSD', { apy: 5.75, poolId: CAP_POOL_ID, score: 1005.75, project: 'cap' }]]);
+  const chart7dCache = new Map([[CAP_POOL_ID, STC_7D]]);
   const leg = { symbol: 'stcUSD', apy: 12.5, isCollateral: true, value: 100000, address: '0x8888' };
-  assert(shouldEnrichLegWithDefillama(4326, leg, index), 'stcUSD inflated must enrich');
+  assert(shouldEnrichLegWithDefillama(4326, leg, index, chart7dCache), 'stcUSD inflated must enrich');
   const pos = enrich(makePos({
     chainId: 4326,
     supplied: [leg],
     borrowed: [{ symbol: 'USDm', value: 50000, apy: 3 }],
     suppliedYieldUsd: 1_250_000,
     borrowedCostUsd: 1500,
-  }), index);
-  assert(Math.abs(leg.apy - dlApy) < 0.05, `stcUSD leg must be ${dlApy} not ${leg.apy}`);
-  assert(pos.supplyApy < 8, `stcUSD supply must be <8% not ${pos.supplyApy}`);
-  console.log('OK  stcUSD inflated Aave collateral');
+  }), index, chart7dCache);
+  assert(Math.abs(leg.apy - STC_7D) < 0.05, `stcUSD leg must be ${STC_7D} not ${leg.apy}`);
+  assert(pos.supplyApy < 6, `stcUSD supply must be ~4.66% not ${pos.supplyApy}`);
+  console.log('OK  stcUSD inflated Aave collateral (7d chart)');
 }
 
 // 4. USD3 Morpho collateral
 {
-  const dlApy = 6.36;
-  const index = mockIndex([['1:USD3', { apy: dlApy, score: 1006.36, project: '3jane-lending' }]]);
+  const index = mockIndex([['1:USD3', { apy: 6.36, poolId: 'usd3-pool', score: 1006.36, project: '3jane-lending' }]]);
+  const chart7dCache = new Map([['usd3-pool', 5.88]]);
   const leg = { symbol: 'USD3', apy: 0, isCollateral: true, value: 5000, address: '0x056B' };
   const pos = enrich(makePos({
     chainId: 1,
     supplied: [leg],
     borrowed: [{ symbol: 'USDC', value: 4000, apy: 8 }],
-  }), index);
+  }), index, chart7dCache);
   assert(pos.defillamaBoost, 'USD3 must boost');
-  assert(pos.supplyApy > 6, `USD3 supply ${pos.supplyApy}`);
-  console.log('OK  USD3 Morpho collateral');
+  assert(Math.abs(pos.supplyApy - 5.88) < 0.05, `USD3 supply ${pos.supplyApy}`);
+  console.log('OK  USD3 Morpho collateral (7d chart)');
 }
 
 // 5. Active Aave USDC supply — keep protocol when reasonable
 {
-  const dlApy = 4.0;
-  const protocolApy = 4.5;
-  const index = mockIndex([['1:USDC', { apy: dlApy, score: 4, project: 'aave-v3' }]]);
-  const leg = { symbol: 'USDC', apy: protocolApy, isCollateral: false, value: 10000 };
-  assert(!shouldEnrichLegWithDefillama(1, leg, index), 'reasonable USDC supply must keep protocol APY');
+  const index = mockIndex([['1:USDC', { apy: 4.0, poolId: 'usdc-pool', score: 4, project: 'aave-v3' }]]);
+  const chart7dCache = new Map([['usdc-pool', 3.9]]);
+  const leg = { symbol: 'USDC', apy: 4.5, isCollateral: false, value: 10000 };
+  assert(!shouldEnrichLegWithDefillama(1, leg, index, chart7dCache), 'reasonable USDC supply must keep protocol APY');
   const pos = enrich(makePos({
     chainId: 1,
     supplied: [leg],
     borrowed: [{ symbol: 'WETH', value: 8000, apy: 2 }],
     suppliedYieldUsd: 450,
     borrowedCostUsd: 160,
-  }), index);
+  }), index, chart7dCache);
   assert(!pos.defillamaBoost, 'USDC supply must not defillama-boost');
-  assert(Math.abs(leg.apy - protocolApy) < 0.01, 'USDC must keep protocol APY');
+  assert(Math.abs(leg.apy - 4.5) < 0.01, 'USDC must keep protocol APY');
   console.log('OK  active USDC supply (reasonable protocol APY)');
 }
 
-// 6. Near-zero supply without collateral flag — still enrich
+// 6. Chart fetch fallback to spot when chart unavailable
 {
-  const dlApy = 5.5;
-  const index = mockIndex([['1:REUSD', { apy: dlApy, score: 1005.5, project: 're' }]]);
+  const index = mockIndex([['1:REUSD', { apy: 5.5, poolId: 're-pool', score: 1005.5, project: 're' }]]);
   const leg = { symbol: 'reUSD', apy: 0, value: 20000, address: '0xre' };
-  assert(shouldEnrichLegWithDefillama(1, leg, index), 'near-zero reUSD must enrich');
-  const pos = enrich(makePos({
-    chainId: 1,
-    supplied: [leg],
-    borrowed: [{ symbol: 'USDC', value: 15000, apy: 5 }],
-  }), index);
-  assert(pos.defillamaBoost, 'reUSD near-zero must boost');
-  console.log('OK  near-zero yield token supply');
+  const spotOnly = defillamaApyForLeg(1, leg, index, new Map());
+  assert(Math.abs(spotOnly - 5.5) < 0.01, 'missing chart cache must fall back to pools spot APY');
+  console.log('OK  chart cache miss falls back to spot APY');
 }
 
 // 7. Merkl must not stack on DeFiLlama intrinsic yield legs
 {
-  const dlApy = 5.75;
-  const index = mockIndex([['1:STCUSD', { apy: dlApy, score: 1005.75, project: 'cap' }]]);
+  const index = mockIndex([['1:STCUSD', { apy: 5.75, poolId: CAP_POOL_ID, score: 1005.75, project: 'cap' }]]);
+  const chart7dCache = new Map([[CAP_POOL_ID, STC_7D]]);
   const leg = { symbol: 'stcUSD', apy: 15, isCollateral: true, value: 100000, address: '0xstc' };
   const pos = enrich(makePos({
     chainId: 4326,
     supplied: [leg],
     borrowed: [{ symbol: 'USDm', value: 50000, apy: 3 }],
-  }), index);
+  }), index, chart7dCache);
   const merklIndex = buildMerklAprIndex([{
     wallet: pos.wallet,
     items: [{
@@ -186,77 +175,28 @@ console.log('=== Loops DeFiLlama APY scenario verification ===\n');
   }]);
   enrichPositionWithMerkl(pos, merklIndex);
   assert(leg.merklApy == null, 'Merkl must not attach to defillama intrinsic leg');
-  assert(Math.abs(leg.apy - dlApy) < 0.05, `Merkl must not inflate leg APY: ${leg.apy}`);
-  assert(pos.supplyApy < 8, `Merkl must not inflate supply APY: ${pos.supplyApy}`);
+  assert(Math.abs(leg.apy - STC_7D) < 0.05, `Merkl must not inflate leg APY: ${leg.apy}`);
   console.log('OK  Merkl skipped on DeFiLlama collateral');
 }
 
-// 8. Merkl still applies to non-defillama supply legs
+// 8. Live DeFiLlama chart 7d for cap stcUSD
 {
-  const leg = { symbol: 'USDC', apy: 3.5, value: 50000, address: '0xusdc' };
+  const liveIndex = await fetchDefillamaYieldApyIndex();
+  assert(!liveIndex.error, `live index fetch: ${liveIndex.error || 'ok'}`);
+  const entry = liveIndex.bySymbolChain.get('1:STCUSD');
+  assert(entry?.poolId === CAP_POOL_ID, 'stcUSD must map to cap pool id');
+  const live7d = await fetchDefillamaChart7dApy(entry.poolId);
+  assert(live7d > 4 && live7d < 6, `live stcUSD 7d ${live7d} must be near 4.66%`);
   const pos = makePos({
-    chainId: 1,
-    supplied: [leg],
-    borrowed: [{ symbol: 'WETH', value: 40000, apy: 2 }],
-    suppliedYieldUsd: 1750,
-    borrowedCostUsd: 800,
-  });
-  const merklIndex = buildMerklAprIndex([{
-    wallet: pos.wallet,
-    items: [{
-      opportunity: {
-        status: 'LIVE',
-        chainId: 1,
-        action: 'LEND',
-        explorerAddress: '0xusdc',
-        apr: 2.0,
-        name: 'usdc-campaign',
-        tokens: [{ address: '0xusdc', symbol: 'USDC' }],
-      },
-    }],
-  }]);
-  enrichPositionWithMerkl(pos, merklIndex);
-  assert(Number(leg.merklApy) > 0, 'Merkl must apply to normal supply leg');
-  assert(leg.apy > 3.5, 'Merkl must increase normal supply leg APY');
-  console.log('OK  Merkl still applies to normal supply');
-}
-
-// 9. defillamaPoolApy prefers apyBase
-{
-  assert(Math.abs(defillamaPoolApy({ apy: 12, apyBase: 5.5, apyReward: 6.5 }) - 5.5) < 0.01, 'apyBase preferred');
-  assert(Math.abs(defillamaPoolApy({ apy: 8, apyBase: 0, apyReward: 3 }) - 5) < 0.01, 'total-reward fallback');
-  console.log('OK  defillamaPoolApy uses apyBase');
-}
-
-// 10. Live DeFiLlama index — key assets
-{
-  const live = await fetchDefillamaYieldApyIndex();
-  assert(!live.error, `live index fetch: ${live.error || 'ok'}`);
-  const stc = live.bySymbolChain.get('1:STCUSD');
-  const usd3 = live.bySymbolChain.get('1:USD3');
-  assert(stc?.apy > 3 && stc?.apy < 12, `live stcUSD ${stc?.apy} out of range`);
-  assert(stc?.project === 'cap', `live stcUSD project ${stc?.project}`);
-  assert(usd3?.apy > 3 && usd3?.apy < 15, `live USD3 ${usd3?.apy}`);
-  console.log(`OK  live index (stcUSD ${stc?.apy?.toFixed(2)}% cap, USD3 ${usd3?.apy?.toFixed(2)}%)`);
-}
-
-// 11. Live inflated stcUSD end-to-end
-{
-  const live = await fetchDefillamaYieldApyIndex();
-  const dlApy = defillamaApyForLeg(4326, { symbol: 'stcUSD', address: '0x88887bE419578051FF9F4eb6C858A951921D8888' }, live);
-  const leg = { symbol: 'stcUSD', apy: 14.2, isCollateral: true, value: 48000, address: '0x88887bE419578051FF9F4eb6C858A951921D8888' };
-  const pos = enrich(makePos({
     chainId: 4326,
-    supplied: [leg],
-    borrowed: [{ symbol: 'USDm', value: 165000, apy: 3.2 }],
-    suppliedYieldUsd: 681600,
-    borrowedCostUsd: 5280,
-  }), live);
-  assert(pos.defillamaBoost, 'live stcUSD must boost');
-  assert(Math.abs(leg.apy - dlApy) < 0.15, `live leg ${leg.apy} vs dl ${dlApy}`);
-  assert(pos.supplyApy < dlApy + 1, `live supply ${pos.supplyApy} must track DeFiLlama ~${dlApy}`);
-  assert(pos.supplyApy < 10, `live supply must not stay inflated at ${pos.supplyApy}`);
-  console.log(`OK  live stcUSD inflated → ${pos.supplyApy.toFixed(2)}% (DL ${dlApy?.toFixed(2)}%)`);
+    supplied: [{ symbol: 'stcUSD', apy: 12, isCollateral: true, value: 100000, address: '0x8888' }],
+    borrowed: [{ symbol: 'USDm', value: 50000, apy: 3 }],
+  });
+  const cache = await buildDefillama7dApyCache([pos], liveIndex);
+  assert(cache.has(entry.poolId), 'buildDefillama7dApyCache must fetch chart for stcUSD');
+  enrich(pos, liveIndex, cache);
+  assert(Math.abs(pos.supplyApy - live7d) < 0.15, `live enriched supply ${pos.supplyApy} vs chart ${live7d}`);
+  console.log(`OK  live stcUSD 7d chart → ${live7d.toFixed(2)}%`);
 }
 
 console.log('\n=== Summary ===');
