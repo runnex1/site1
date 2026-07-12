@@ -908,6 +908,40 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.ok(Math.abs(apr - peakApr) > 10, 'lifetime APR must not reuse 24h peak funding over calendar session days');
 }
 
+{
+  const openTime = Date.UTC(2026, 6, 2);
+  const closeTime = Date.UTC(2026, 6, 12);
+  const pair = {
+    symbol: 'POL',
+    size: 380000,
+    closeTime,
+    longLeg: {
+      venue: 'grvt',
+      side: 'long',
+      size: 380000,
+      openTimeKnown: true,
+      openTime,
+      avgEntryPx: 0.073394427,
+      avgClosePx: 0.079323242,
+      realizedPnl: 115.831157,
+    },
+    shortLeg: {
+      venue: 'hyperliquid',
+      side: 'short',
+      size: 380000,
+      openTimeKnown: true,
+      openTime: openTime + 1000,
+      avgEntryPx: 0.07354031484179221,
+      avgClosePx: 0.07948719047623518,
+      realizedPnl: -2549.954905,
+    },
+  };
+  const { closedPairCloseSlippage } = require('../lib/closed-leg-reconstruct.js');
+  const slip = closedPairCloseSlippage(pair);
+  assert.ok(Math.abs(slip) < 20, 'hedged close slippage must use entry/exit prices, not mismatched venue PnL fields');
+  assert.ok(Math.abs(slip + 6.86) < 2, 'POL-like hedge close slippage should be near the entry/exit spread');
+}
+
 assert.match(indexHtml, /function perpsClosedPairAvgNotional\(/, 'Closed tab must recompute margin from leg prices and live marks');
 assert.match(indexHtml, /function perpsClosedLegHtml\(leg, pair\)/, 'Closed tab must hide gross leg PnL on exchange hedges');
 assert.match(indexHtml, /manualVariationalClose/, 'Closed tab must show leg PnL for manual Variational closes');
@@ -2582,6 +2616,7 @@ assert.match(indexHtml, /perps-pos-head closed[\s\S]{0,180}<div>APR<\/div>/, 'Cl
 assert.match(indexHtml, /function perpsClosedPairCarryBasis\(/, 'closed APR must prefer full-hold carry when lifetime fields exist');
 assert.match(indexHtml, /lifetimeFunding/, 'closed display must surface full-hold funding when available');
 assert.match(perpsJs, /function closedPairLifetimeMetrics\(/, 'closed pairs must preserve full-hold funding before peak window');
+assert.match(perpsJs, /closedPairCloseSlippage/, 'closed slippage must prefer hedged entry/exit prices when available');
 assert.match(indexHtml, /perpsClosedPairSessionApr\(pair\)/, 'Closed tab must show session APR under Net PnL');
 assert.match(indexHtml, /perps-pos-closed-cell/, 'Closed tab rows must align values under headers without duplicate labels');
 assert.match(indexHtml, /function perpsNormalizeClosedPairForDisplay\(pair\)/, 'Closed tab must recompute session PnL from dailyPerformanceSeries at render time');
