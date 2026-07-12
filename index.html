@@ -452,8 +452,11 @@ html { height: 100%; }
 .watcher-v2-panel.watcher-v2-compact .watcher-v2-actions { padding:0.35rem 0.75rem 0.5rem; }
 .watcher-v2-panel.watcher-v2-compact .watcher-v2-btn { height:28px; font-size:0.72rem; padding:0 0.65rem; }
 .watcher-v2-panel.watcher-v2-compact .watcher-v2-add-bar { display:none; }
-.watcher-v2-panel.watcher-v2-compact .watcher-v2-activity { flex:0 0 auto; min-height:0; }
-.watcher-v2-panel.watcher-v2-compact .watcher-v2-activity-scroll { flex:0 0 auto; min-height:56px; max-height:88px; }
+.watcher-v2-panel-wallet.watcher-v2-compact .watcher-v2-activity { flex:1 1 0; min-height:108px; }
+.watcher-v2-panel-wallet.watcher-v2-compact .watcher-v2-activity-scroll { flex:1; min-height:72px; max-height:none; overflow-y:auto; }
+.watcher-v2-panel-wallet .watcher-v2-scroll { flex:0 1 auto; max-height:min(220px, 32vh); }
+.watcher-v2-panel.watcher-v2-compact:not(.watcher-v2-panel-wallet) .watcher-v2-activity { flex:0 0 auto; min-height:0; }
+.watcher-v2-panel.watcher-v2-compact:not(.watcher-v2-panel-wallet) .watcher-v2-activity-scroll { flex:0 0 auto; min-height:56px; max-height:88px; }
 .watcher-v2-panel-head {
   flex-shrink:0; min-height:54px; padding:0.75rem 1rem;
   display:flex; align-items:flex-start; justify-content:space-between; gap:0.65rem;
@@ -646,6 +649,7 @@ html { height: 100%; }
   .watcher-v2-layout { grid-template-columns:1fr; }
   .watcher-v2-primary-slot, .watcher-v2-stack { height:auto; }
   .watcher-v2-stack > .watcher-v2-panel { min-height:220px; max-height:none; flex:1 1 auto; }
+  .watcher-v2-panel-wallet .watcher-v2-scroll { max-height:none; }
   .watcher-v2-pm-row { grid-template-columns:38px minmax(140px,1fr) 58px 62px auto; }
   .watcher-v2-pm-row .hide-sm { display:none; }
 }
@@ -30562,7 +30566,7 @@ function watcherPmApplyActivityFilters(trades) {
 function watcherPmRenderActivityRows(trades) {
     const el = document.getElementById('watcherPmActivity');
     if (!el) return;
-    const filtered = watcherPmApplyActivityFilters(trades).slice(0, 12);
+    const filtered = watcherPmApplyActivityFilters(trades).slice(0, 28);
     if (!filtered.length) {
         const hints = [];
         if (watcherPmActivityFilterWallet) hints.push('this wallet');
