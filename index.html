@@ -16888,7 +16888,7 @@ function loopImportedPositions() {
     return loops;
 }
 
-async function syncLoopApiPositions({ silent = false, persistSnapshot = !silent } = {}) {
+async function syncLoopApiPositions({ silent = false, persistSnapshot = !silent, force = !silent } = {}) {
     const wallets = loopYieldWalletAddresses();
     const btn = document.getElementById('loopsSyncBtn');
     if (!wallets.length) {
@@ -16906,6 +16906,7 @@ async function syncLoopApiPositions({ silent = false, persistSnapshot = !silent 
     try {
         const qs = new URLSearchParams({ wallets: wallets.join(',') });
         if (!persistSnapshot) qs.set('snapshots', '0');
+        if (force) qs.set('force', '1');
         const response = await fetch('/api/loop-rates?' + qs.toString(), { cache: 'no-store', signal: AbortSignal.timeout(55000) });
         const json = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(json.error || `Loop API HTTP ${response.status}`);

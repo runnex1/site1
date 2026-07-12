@@ -1100,6 +1100,8 @@ assert.match(indexHtml, /pendleHistoryPoints/, 'Pendle cards must use snapshot h
 assert.match(indexHtml, /pendleRowToDisplayPosition/, 'Pendle positions must reuse loop card renderer');
 assert.match(indexHtml, /vault-loop-api-state-v5/, 'loop API local cache must bust when DeFiLlama collateral enrichment changes');
 assert.match(aaveProxyJs, /LOOP_RATES_CACHE_VERSION = 'v5'/, 'loop-rates server cache must bust for DeFiLlama collateral enrichment');
+assert.match(cronRunnerJs, /LOOP_RATES_CACHE_VERSION = 'v5'/, 'cron loopsSync cache version must match loop-rates API');
+assert.match(indexHtml, /if \(force\) qs\.set\('force', '1'\)/, 'Sync live must bypass loop-rates KV cache');
 assert.match(indexHtml, /id="loopsLendingSection"/, 'Loops tab must render a separate lending-only section');
 assert.match(indexHtml, /function loopImportedLendingPositions\(/, 'Loops must include imported supply-only lending positions');
 assert.match(indexHtml, /function buildLoopCardHtml\(/, 'Loops must share one card renderer for loops and lending rows');
