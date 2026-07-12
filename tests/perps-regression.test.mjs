@@ -942,6 +942,19 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.ok(Math.abs(slip + 6.86) < 2, 'POL-like hedge close slippage should be near the entry/exit spread');
 }
 
+{
+  const { closedPairCloseSlippage } = require('../lib/closed-leg-reconstruct.js');
+  const pair = {
+    manualVariationalClose: true,
+    size: 58000,
+    longLeg: { venue: 'hyperliquid', side: 'long', size: 58000, avgEntryPx: 2.10, avgClosePx: 2.1147, realizedPnl: 274.21 },
+    shortLeg: { venue: 'variational', side: 'short', size: 58000, avgEntryPx: 2.09, avgClosePx: 0.215 * 1.0012, realizedPnl: -14.96 },
+  };
+  const slip = closedPairCloseSlippage(pair);
+  assert.ok(Math.abs(slip - 259.25) < 0.05, 'variational close slippage must sum tracked close PnL and 0.12% var slip, not entry/exit prices');
+  assert.ok(Math.abs(slip) < 500, 'variational close slippage must not use full entry-to-exit price math on the var leg');
+}
+
 assert.match(indexHtml, /function perpsClosedPairAvgNotional\(/, 'Closed tab must recompute margin from leg prices and live marks');
 assert.match(indexHtml, /function perpsClosedLegHtml\(leg, pair\)/, 'Closed tab must hide gross leg PnL on exchange hedges');
 assert.match(indexHtml, /manualVariationalClose/, 'Closed tab must show leg PnL for manual Variational closes');

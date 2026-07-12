@@ -34963,6 +34963,24 @@ function perpsClosedDebugNoticeHtml(debug) {
     </div>`;
 }
 
+function perpsClosedSlippageTip(pair) {
+    const legs = [pair?.longLeg, pair?.shortLeg].filter(Boolean);
+    const tracked = legs.find((leg) => leg?.venue !== 'variational');
+    const variational = legs.find((leg) => leg?.venue === 'variational');
+    if (pair?.manualVariationalClose || variational) {
+        const trackedPnl = Number.isFinite(Number(tracked?.realizedPnl)) ? Number(tracked.realizedPnl) : null;
+        const varPnl = Number.isFinite(Number(variational?.realizedPnl)) ? Number(variational.realizedPnl) : null;
+        return [
+            'Close slippage = tracked exchange close PnL + Variational 0.12% slip vs HL close',
+            'Variational leg does not carry the hedged price move — only adverse 0.12% vs the HL exit',
+            trackedPnl != null ? `Tracked leg: ${perpsFmtUsd(trackedPnl)}` : null,
+            varPnl != null ? `Variational slip: ${perpsFmtUsd(varPnl)}` : null,
+            Number.isFinite(Number(pair?.closeSlippage)) ? `Total: ${perpsFmtUsd(pair.closeSlippage)}` : null,
+        ].filter(Boolean).join(' · ');
+    }
+    return 'Close slippage = net execution PnL from matched entry/exit prices on both exchange legs';
+}
+
 function perpsRenderClosedPositions(closedPairs) {
     if (perpsIsMobileV3()) return perpsRenderClosedPositionsV3(closedPairs);
     const el = document.getElementById('perpsPositionsList');
@@ -34989,6 +35007,7 @@ function perpsRenderClosedPositions(closedPairs) {
         const closedAt = perpsFormatEventTime(pair.closeTime);
         const sessionApr = perpsClosedPairSessionApr(pair);
         const aprTip = perpsClosedPairAprTip(pair, sessionApr);
+        const slipTip = perpsClosedSlippageTip(pair);
         const feesAbs = Math.abs(Number(pair.fees || 0));
         return `<div class="perps-pos-card"><div class="perps-pos-row closed">
             <div class="perps-pos-token">
@@ -35008,7 +35027,7 @@ function perpsRenderClosedPositions(closedPairs) {
             </div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.netPnl)}">${perpsFmtUsd(pair.netPnl)}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">APR</div><div class="perps-pos-apr-val ${sessionApr != null ? perpsSignedCls(sessionApr) : ''}" title="${dashEsc(aprTip)}">${sessionApr != null ? perpsFmtPct(sessionApr) : '—'}</div></div>
-            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.closeSlippage)}">${perpsFmtUsd(pair.closeSlippage)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.closeSlippage)}" title="${dashEsc(slipTip)}">${perpsFmtUsd(pair.closeSlippage)}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.funding)}">${perpsFmtUsd(pair.funding)}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Fees</div><div class="perps-pos-metric-val neg">-${perpsFmtUsd(feesAbs)}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Closed</div><div class="perps-pos-closed-time">${dashEsc(closedAt)}</div></div>
