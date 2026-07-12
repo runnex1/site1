@@ -1735,6 +1735,54 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
 
 {
   const {
+    enrichPositionWithDefillamaYield,
+    enrichPositionWithMerkl,
+    buildMerklAprIndex,
+  } = require('../lib/loop-rates.js');
+  const index = {
+    bySymbolChain: new Map([['1:STCUSD', { apy: 5.75, score: 1005.75, project: 'cap' }]]),
+    byAddress: new Map(),
+  };
+  const leg = {
+    symbol: 'stcUSD',
+    apy: 14,
+    isCollateral: true,
+    value: 100000,
+    address: '0xstc',
+  };
+  const pos = {
+    chainId: 4326,
+    wallet: '0xabc',
+    totalSupplied: 100000,
+    totalBorrowed: 50000,
+    supplied: [leg],
+    borrowed: [{ symbol: 'USDm', value: 50000, apy: 3 }],
+    suppliedYieldUsd: 1_400_000,
+    borrowedCostUsd: 1500,
+  };
+  enrichPositionWithDefillamaYield(pos, index);
+  const merklIndex = buildMerklAprIndex([{
+    wallet: pos.wallet,
+    items: [{
+      opportunity: {
+        status: 'LIVE',
+        chainId: 4326,
+        action: 'LEND',
+        explorerAddress: '0xstc',
+        apr: 9,
+        name: 'stc-campaign',
+        tokens: [{ address: '0xstc', symbol: 'stcUSD' }],
+      },
+    }],
+  }]);
+  enrichPositionWithMerkl(pos, merklIndex);
+  assert.equal(leg.merklApy, undefined, 'Merkl must not stack on DeFiLlama intrinsic collateral yield');
+  assert.ok(Math.abs(leg.apy - 5.75) < 0.05, 'stcUSD leg must stay at DeFiLlama APY after Merkl pass');
+  assert.ok(pos.supplyApy < 8, 'stcUSD supply APY must not include Merkl on intrinsic yield');
+}
+
+{
+  const {
     mapKaminoObligation,
     mapJupiterBorrowPosition,
     mapJupiterPortfolioBorrowLend,
