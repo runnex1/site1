@@ -884,6 +884,30 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.ok(closedPairSessionApr(pair) != null, 'closed APR must compute when at least one leg has price data');
 }
 
+{
+  const openTime = Date.UTC(2026, 6, 2);
+  const closeTime = Date.UTC(2026, 6, 12);
+  const pair = {
+    symbol: 'POL',
+    closeTime,
+    closeSlippage: -2434,
+    funding: 5.3,
+    fees: 26.35,
+    avgNotional: 27917,
+    peakMetricsApplied: true,
+    lifetimeFunding: 70.26,
+    lifetimeFees: 26.35,
+    lifetimeDays: 10.26,
+    lifetimeOpenTime: openTime,
+    longLeg: { venue: 'grvt', size: 380000, openTimeKnown: true, openTime, avgEntryPx: 0.0734 },
+    shortLeg: { venue: 'hyperliquid', size: 380000, openTimeKnown: true, openTime: openTime + 1000, avgEntryPx: 0.0735 },
+  };
+  const apr = closedPairSessionApr(pair);
+  assert.ok(apr > 5 && apr < 8, 'closed APR must annualize full-hold funding minus fees');
+  const peakApr = ((5.3 - 26.35) / 27917) * (365 / 2) * 100;
+  assert.ok(Math.abs(apr - peakApr) > 10, 'lifetime APR must not reuse 24h peak funding over calendar session days');
+}
+
 assert.match(indexHtml, /function perpsClosedPairAvgNotional\(/, 'Closed tab must recompute margin from leg prices and live marks');
 assert.match(indexHtml, /function perpsClosedLegHtml\(leg, pair\)/, 'Closed tab must hide gross leg PnL on exchange hedges');
 assert.match(indexHtml, /manualVariationalClose/, 'Closed tab must show leg PnL for manual Variational closes');
@@ -2555,7 +2579,9 @@ assert.match(indexHtml, /perpsVenueWithSideHtml\(entry\.venue, entry\.leg\.size\
 assert.match(indexHtml, /perpsSetPositionsTab\('closed'/, 'Positions panel must expose a Closed tab');
 assert.match(indexHtml, /function perpsRenderClosedPositions\(closedPairs\)/, 'Closed tab must render fully closed position rounds');
 assert.match(indexHtml, /perps-pos-head closed[\s\S]{0,180}<div>APR<\/div>/, 'Closed tab must show APR column beside Net PnL');
-assert.match(indexHtml, /function perpsClosedPairSessionDays\(/, 'closed APR must use latest performance session day span');
+assert.match(indexHtml, /function perpsClosedPairCarryBasis\(/, 'closed APR must prefer full-hold carry when lifetime fields exist');
+assert.match(indexHtml, /lifetimeFunding/, 'closed display must surface full-hold funding when available');
+assert.match(perpsJs, /function closedPairLifetimeMetrics\(/, 'closed pairs must preserve full-hold funding before peak window');
 assert.match(indexHtml, /perpsClosedPairSessionApr\(pair\)/, 'Closed tab must show session APR under Net PnL');
 assert.match(indexHtml, /perps-pos-closed-cell/, 'Closed tab rows must align values under headers without duplicate labels');
 assert.match(indexHtml, /function perpsNormalizeClosedPairForDisplay\(pair\)/, 'Closed tab must recompute session PnL from dailyPerformanceSeries at render time');

@@ -34854,6 +34854,12 @@ function perpsNormalizeClosedPairForDisplay(pair) {
             }
         }
     }
+    if (Number.isFinite(Number(next.lifetimeFunding)) && Number.isFinite(Number(next.lifetimeFees))) {
+        next.funding = Number(next.lifetimeFunding);
+        next.fees = Number(next.lifetimeFees);
+        const slip = Number(next.closeSlippage);
+        if (Number.isFinite(slip)) next.netPnl = slip + next.funding - next.fees;
+    }
     const margin = perpsClosedPairAvgNotional(next);
     if (margin) next.avgNotional = margin;
     if (!next.aprUnavailable && !next.closeLegEstimated) {
@@ -34863,7 +34869,24 @@ function perpsNormalizeClosedPairForDisplay(pair) {
     return next;
 }
 
+function perpsClosedPairCarryBasis(pair) {
+    const lifetimeDays = Number(pair?.lifetimeDays);
+    const lifetimeFunding = Number(pair?.lifetimeFunding);
+    const lifetimeFees = Number(pair?.lifetimeFees);
+    if (lifetimeDays > 0 && Number.isFinite(lifetimeFunding) && Number.isFinite(lifetimeFees)) {
+        return { funding: lifetimeFunding, fees: lifetimeFees, days: lifetimeDays, source: 'lifetime' };
+    }
+    return {
+        funding: Number(pair?.funding),
+        fees: Number(pair?.fees ?? 0),
+        days: perpsClosedPairSessionDays(pair),
+        source: 'session',
+    };
+}
+
 function perpsClosedPairSessionDays(pair) {
+    const lifetimeDays = Number(pair?.lifetimeDays);
+    if (lifetimeDays > 0) return lifetimeDays;
     const start = pair?.sessionStartDay;
     const end = pair?.sessionEndDay;
     if (start && end) {
@@ -34885,10 +34908,9 @@ function perpsClosedPairSessionDays(pair) {
 function perpsClosedPairSessionApr(pair) {
     if (pair?.aprUnavailable || pair?.closeLegEstimated) return null;
     const margin = perpsClosedPairAvgNotional(pair);
-    const days = perpsClosedPairSessionDays(pair);
-    const funding = Number(pair?.funding);
-    const fees = Number(pair?.fees ?? 0);
-    const netFunding = funding - fees;
+    const carry = perpsClosedPairCarryBasis(pair);
+    const days = carry.days;
+    const netFunding = carry.funding - carry.fees;
     if (!margin || !days || days <= 0 || !Number.isFinite(netFunding)) return null;
     const computed = perpsAnnualizeReturnPct(netFunding, margin, days);
     if (computed != null && Number.isFinite(computed)) return computed;
@@ -34897,21 +34919,24 @@ function perpsClosedPairSessionApr(pair) {
 }
 
 function perpsClosedPairAprTip(pair, apr) {
-    const days = perpsClosedPairSessionDays(pair);
+    const carry = perpsClosedPairCarryBasis(pair);
+    const days = carry.days;
     const margin = perpsClosedPairAvgNotional(pair);
-    const funding = Number(pair?.funding);
-    const fees = Number(pair?.fees ?? 0);
-    const netFunding = Number.isFinite(funding) ? funding - fees : null;
-    const sessionLabel = pair?.sessionStartDay && pair?.sessionEndDay
-        ? `${pair.sessionStartDay} → ${pair.sessionEndDay}`
-        : 'latest session';
+    const netFunding = Number.isFinite(carry.funding) ? carry.funding - carry.fees : null;
+    const sessionLabel = carry.source === 'lifetime'
+        ? `${new Date(pair.lifetimeOpenTime || pair.openTime || 0).toISOString().slice(0, 10)} → ${new Date(pair.closeTime || 0).toISOString().slice(0, 10)}`
+        : (pair?.sessionStartDay && pair?.sessionEndDay
+            ? `${pair.sessionStartDay} → ${pair.sessionEndDay}`
+            : 'latest session');
     const parts = [
-        'APR = ((Funding − fees) ÷ margin) × (365 ÷ session days) × 100',
-        'Annualized funding minus trading fees over the closed round’s latest performance session',
+        'APR = ((Funding − fees) ÷ margin) × (365 ÷ hold days) × 100',
+        carry.source === 'lifetime'
+            ? 'Annualized funding minus trading fees over the full closed hedge hold'
+            : 'Annualized funding minus trading fees over the closed round’s latest performance session',
         apr != null ? `APR: ${perpsFmtPct(apr)}` : 'APR unavailable (missing margin estimate or session length)',
         netFunding != null ? `Funding − fees: ${perpsFmtUsd(netFunding)}` : null,
         margin ? `Margin: ${perpsFmtUsd(margin)}` : 'Margin: unavailable',
-        days ? `Session: ${days.toFixed(1)}d (${sessionLabel})` : 'Session: unavailable',
+        days ? `Hold: ${days.toFixed(1)}d (${sessionLabel})` : 'Hold: unavailable',
     ].filter(Boolean);
     return parts.join(' · ');
 }
