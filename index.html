@@ -31865,7 +31865,7 @@ function perpsOpenVariationalModal(opts = {}) {
     }
     if (hint) {
         if (opts.mode === 'exit') {
-            hint.textContent = 'Variational exit is derived automatically from the tracked exchange close (+0.12% slippage).';
+            hint.textContent = 'Variational exit is derived automatically from the tracked exchange close (+0.12% of 24h peak margin).';
         } else if (opts.hadSizeMismatch) {
             hint.textContent = 'Enter your Variational avg fill. Size syncs automatically to the exchange leg.';
         } else if (opts.hedgeId) {
@@ -32262,7 +32262,7 @@ function perpsEditVariationalEntry(hedgeId) {
 }
 
 function perpsEditVariationalExit(hedgeId) {
-    alert('Variational exit is set automatically at 0.12% slippage vs the tracked exchange close. Refresh the dashboard to finalize closed pairs.');
+    alert('Variational exit is set automatically at 0.12% of the 24h peak position margin. Refresh the dashboard to finalize closed pairs.');
 }
 
 function perpsMergeClosedPairRecord(prev, fresh) {
@@ -34971,10 +34971,14 @@ function perpsClosedSlippageTip(pair) {
         const trackedPnl = Number.isFinite(Number(tracked?.realizedPnl)) ? Number(tracked.realizedPnl) : null;
         const varPnl = Number.isFinite(Number(variational?.realizedPnl)) ? Number(variational.realizedPnl) : null;
         return [
-            'Close slippage = tracked exchange close PnL + Variational 0.12% slip vs HL close',
-            'Variational leg does not carry the hedged price move — only adverse 0.12% vs the HL exit',
+            'Close slippage = tracked exchange close PnL + Variational 0.12% of 24h peak margin',
+            'Variational leg does not carry the hedged price move — only adverse 0.12% of peak position notional',
             trackedPnl != null ? `Tracked leg: ${perpsFmtUsd(trackedPnl)}` : null,
-            varPnl != null ? `Variational slip: ${perpsFmtUsd(varPnl)}` : null,
+            varPnl != null
+                ? (pair?.variationalPeakMargin
+                    ? `Variational slip: ${perpsFmtUsd(varPnl)} (0.12% of ${perpsFmtUsd(pair.variationalPeakMargin)} peak margin)`
+                    : `Variational slip: ${perpsFmtUsd(varPnl)}`)
+                : null,
             Number.isFinite(Number(pair?.closeSlippage)) ? `Total: ${perpsFmtUsd(pair.closeSlippage)}` : null,
         ].filter(Boolean).join(' · ');
     }
@@ -35429,7 +35433,7 @@ function perpsRenderVariationalPending(pending) {
         <td>${dashEsc(h.symbol)}</td>
         <td>${dashEsc(perpsVenueShort(h.trackedVenue))}</td>
         <td>${h.variationalEntryPx != null ? perpsFmtPx(h.variationalEntryPx) : '—'}</td>
-        <td>Tracked leg closed — finalizing Variational close (0.12% vs ${dashEsc(perpsVenueShort(h.trackedVenue))})</td>
+        <td>Tracked leg closed — finalizing Variational close (0.12% of 24h peak margin)</td>
         <td><span class="perps-pos-pill">AUTO</span></td>
     </tr>`).join('')}</tbody></table>`;
 }

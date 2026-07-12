@@ -2636,7 +2636,7 @@ assert.match(indexHtml, /function perpsNormalizeClosedPairForDisplay\(pair\)/, '
 assert.match(positionPeakWindowJs, /applyPeakToCloseMetrics/, 'peak window helper must attribute closed stats from 24h peak');
 assert.match(positionPeakWindowJs, /resolveFundingFeesWindowStart/, 'peak metrics must expand funding window when fill history is sparse');
 assert.match(variationalHedgeJs, /applyVariationalPeakToClosePair/, 'variational closed pairs must apply peak-to-close metrics');
-assert.match(variationalHedgeJs, /variationalLegCloseSlippagePnl/, 'variational closed leg PnL must be 0.12% slip vs HL close only');
+assert.match(variationalHedgeJs, /variationalCloseSlippageFromPeakMargin/, 'variational closed leg PnL must be 0.12% of 24h peak margin');
 assert.match(variationalHedgeJs, /computeVariationalClosedPairFunding/, 'variational closed pairs must accrue funding from hedge open through close');
 assert.match(indexHtml, /peakMetricsApplied/, 'closed display must preserve peak-to-close totals');
 assert.match(perpsJs, /function closedPairSessionApr\(/, 'closed pairs must compute session APR server-side');
@@ -4082,8 +4082,9 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   assert.equal(hlLeg.size, 50000, 'exchange leg display size must stay at hedge trackedSize');
   assert.ok(pair.size > 50000, 'pair display size may reflect 24h peak');
   assert.equal(hlLeg.realizedPnl, 257.41, 'exchange leg PnL must use hedge close cluster, not peak window');
-  const varSlipOnly = -hlClosePx * 50000 * 0.0012;
-  assert.ok(Math.abs(varLeg.realizedPnl - varSlipOnly) < 0.05, 'variational PnL must be 0.12% slippage at hedge size, not full entry-to-exit');
+  const peakMargin = 540000 * 0.04;
+  const varSlipOnly = -peakMargin * 0.0012;
+  assert.ok(Math.abs(varLeg.realizedPnl - varSlipOnly) < 0.05, 'variational PnL must be 0.12% of 24h peak margin, not hedge close notional');
   assert.ok(Math.abs(pair.closeSlippage - (257.41 + varSlipOnly)) < 0.05, 'close slippage must be hedge close plus variational slip only');
   assert.ok(Math.abs(pair.netPnl - (pair.closeSlippage + pair.funding - pair.fees)) < 0.05, 'net PnL must match displayed slippage, funding, and fees');
 }
@@ -4114,7 +4115,7 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   const pair = buildVariationalClosedPair(hedge, closeLeg, { symbol: 'PYTH', markPx: 0.043 });
   assert.ok(pair.shortLeg.variationalExitDerived, 'closed variational leg must flag derived exit');
   const slipOnly = -hlClose * 50000 * 0.0012;
-  assert.ok(Math.abs(pair.shortLeg.realizedPnl - slipOnly) < 0.05, 'variational leg PnL must be 0.12% slippage vs HL close only');
+  assert.ok(Math.abs(pair.shortLeg.realizedPnl - slipOnly) < 0.05, 'variational leg PnL must be 0.12% of close margin when peak fills are unavailable');
   assert.ok(Math.abs(pair.closeSlippage - (257.41 + slipOnly)) < 0.05, 'close slippage must sum HL realized and variational slip');
   assert.ok(Math.abs(pair.netPnl - (pair.closeSlippage + pair.funding - pair.fees)) < 0.05, 'net PnL must match slippage plus funding minus fees');
 }
