@@ -1490,7 +1490,11 @@ assert.match(indexHtml, /function watcherPmSetActivityDays\(/, 'PM activity time
 assert.match(indexHtml, /WATCHER_PM_ACTIVITY_DAYS_KEY/, 'PM activity timeframe must persist in localStorage');
 assert.match(indexHtml, /function watcherPmGetActivityLookbackSec\(/, 'PM activity must derive lookback from timeframe');
 assert.match(indexHtml, /fetchFilledOrders\(wallets,\s*watcherPmGetActivityLookbackSec\(\)\)/, 'PM activity fetch must use selected timeframe');
-assert.match(indexHtml, /function watcherPmFetchWalletPositions\(/, 'PM wallet expand must fetch positions from data-api');
+assert.match(indexHtml, /function watcherPmFetchWalletPositions\(/, 'PM wallet expand must fetch positions for expanded wallet');
+assert.match(indexHtml, /fetchServerPolymarketPositions\(\[wallet\]\)/, 'PM wallet expand must prefer server positions sync before browser fallback');
+assert.match(indexHtml, /throw new Error\('Polymarket positions API unreachable'\)/, 'PM wallet expand must treat pmFetch null as API failure not empty positions');
+assert.match(indexHtml, /watcher-v2-pos-error/, 'PM wallet expand must show distinct error styling when positions API fails');
+assert.match(indexHtml, /Positions API failed\./, 'PM wallet expand must show API failed message distinct from empty-state copy');
 assert.match(indexHtml, /watcher-v2-wallet-positions/, 'PM wallet expand must render positions panel');
 assert.match(indexHtml, /WATCHER_PM_POSITION_MIN_USD\s*=\s*100/, 'PM expanded positions must filter at $100');
 assert.doesNotMatch(indexHtml, /watcherPmWalletSubhead/, 'Wallet Watchlist must not show separate Polymarket Wallets subhead');

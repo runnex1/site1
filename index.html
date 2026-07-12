@@ -600,6 +600,7 @@ html { height: 100%; }
 .watcher-v2-pos-size { font-family:var(--ff-mono); font-size:0.66rem; font-weight:700; color:var(--wv-muted); white-space:nowrap; }
 .watcher-v2-pos-value { font-family:var(--ff-mono); font-size:0.68rem; font-weight:900; color:var(--wv-green); white-space:nowrap; }
 .watcher-v2-pos-empty, .watcher-v2-pos-loading { font-family:var(--ff-mono); font-size:0.66rem; color:var(--wv-muted); font-weight:700; padding:0.2rem 0; }
+.watcher-v2-pos-error { font-family:var(--ff-mono); font-size:0.66rem; color:var(--wv-amber); font-weight:800; padding:0.2rem 0; line-height:1.35; }
 .watcher-v2-row-meta { margin-top:0.1rem; font-family:var(--ff-mono); font-size:0.68rem; color:var(--wv-muted); }
 .watcher-v2-badge { padding:0.2rem 0.5rem; border-radius:7px; border:1px solid var(--wv-line-hi); font-family:var(--ff-mono); font-size:0.65rem; font-weight:800; color:var(--t1); white-space:nowrap; }
 .watcher-v2-badge.green { color:var(--wv-green); border-color:rgba(85,214,111,0.28); background:rgba(85,214,111,0.07); }
@@ -30443,11 +30444,30 @@ async function watcherPmFetchWalletPositions(wallet) {
     if (!key) return [];
     const cached = _watcherPmPositionsCache[key];
     if (cached && Date.now() - cached.ts < 60000) return cached.positions;
+
+    if (location.protocol !== 'file:') {
+        try {
+            const payload = await fetchServerPolymarketPositions([wallet]);
+            const positions = (Array.isArray(payload?.positions) ? payload.positions : [])
+                .filter(p => {
+                    const w = String(p._wallet || p.wallet || p.user || '').toLowerCase();
+                    return !w || w === key;
+                });
+            _watcherPmPositionsCache[key] = { positions, ts: Date.now() };
+            return positions;
+        } catch (err) {
+            console.warn('Watcher PM server positions failed; falling back to browser fetch:', err);
+        }
+    }
+
     const positions = [];
     let offset = 0;
     while (true) {
         const url = `https://data-api.polymarket.com/positions?user=${encodeURIComponent(wallet)}&limit=100&offset=${offset}&sizeThreshold=0.01`;
         const page = await pmFetch(url);
+        if (offset === 0 && (page === null || !Array.isArray(page)) && positions.length === 0) {
+            throw new Error('Polymarket positions API unreachable');
+        }
         if (!Array.isArray(page) || page.length === 0) break;
         positions.push(...page);
         if (page.length < 100) break;
@@ -30499,7 +30519,8 @@ async function watcherPmLoadExpandedPositions() {
         contentSlot.innerHTML = watcherPmRenderPositionsHtml(positions);
     } catch (e) {
         if (watcherPmActivityFilterWallet !== key) return;
-        contentSlot.innerHTML = `<div class="watcher-v2-pos-empty">Could not load positions.</div>`;
+        const detail = e?.message ? ` ${dashEsc(e.message)}` : '';
+        contentSlot.innerHTML = `<div class="watcher-v2-pos-error">Positions API failed.${detail}</div>`;
     }
 }
 
