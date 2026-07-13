@@ -2752,6 +2752,10 @@ assert.match(indexHtml, /function perpsImportVariationalHedgesFromPortfolio\(/, 
 assert.match(indexHtml, /function perpsPushVariationalHedgesToServer\(/, 'Perps must push local hedges to server when server copy is missing');
 assert.match(indexHtml, /variationalHedges/, 'portfolio perpsArb must carry Variational hedges for cross-device sync');
 assert.match(indexHtml, /await perpsHydratePerpsAuxFromCloud\(\)/, 'Perps refresh must hydrate server aux before rendering');
+assert.match(indexHtml, /function perpsNormalizeVariationalHedgeRecord\(/, 'corrupt open+closedAt hedges must normalize before apply');
+assert.match(indexHtml, /function perpsSafeApplyVariationalHedgesToData\(/, 'hedge apply must not break Perps render on bad records');
+assert.match(indexHtml, /Perps data loaded but UI render failed/, 'render failures must surface in status bar');
+assert.match(indexHtml, /grvtJson\.length <= 1500/, 'GRVT cache query param must stay under URL limits');
 assert.match(indexHtml, /function perpsMergeEquitySnapshotRecord\(/, 'equity snapshots must merge variational fields per bucket');
 assert.match(indexHtml, /function perpsSnapshotVariationalAdjust\(/, 'equity series must resolve snapshot variational adjust from components');
 assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'equity snapshots must persist pending-close variational adjust');

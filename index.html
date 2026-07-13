@@ -31693,7 +31693,7 @@ function perpsVariationalHedgeKey(hedge) {
 
 function perpsMergeVariationalHedgeRecord(prev, hedge) {
     if (!hedge) return prev || null;
-    if (!prev) return hedge;
+    if (!prev) return perpsNormalizeVariationalHedgeRecord(hedge);
     const prevTs = Number(prev?.updatedAt) || Number(prev?.openedAt) || 0;
     const incTs = Number(hedge?.updatedAt) || Number(hedge?.openedAt) || 0;
     const preferPrev = prevTs >= incTs;
@@ -31708,7 +31708,7 @@ function perpsMergeVariationalHedgeRecord(prev, hedge) {
     let status = hedge?.status ?? prev?.status;
     if (active.has(prev?.status) && hedge?.status === 'closed') status = prev.status;
     else if (active.has(hedge?.status) && prev?.status === 'closed') status = hedge.status;
-    return {
+    return perpsNormalizeVariationalHedgeRecord({
         ...prev,
         ...hedge,
         status,
@@ -31717,7 +31717,7 @@ function perpsMergeVariationalHedgeRecord(prev, hedge) {
         variationalEntryPx: pickField('variationalEntryPx'),
         variationalSize: pickField('variationalSize'),
         trackedSize: pickField('trackedSize'),
-    };
+    });
 }
 
 function perpsMergeVariationalHedgesFromServer(serverRows) {
@@ -35794,44 +35794,72 @@ function perpsRenderCrossMarginLeverage(data) {
     }).join('');
 }
 
+function perpsNormalizeVariationalHedgeRecord(hedge) {
+    if (!hedge || typeof hedge !== 'object') return hedge;
+    const next = { ...hedge };
+    if (next.status === 'open' && next.closedAt) {
+        next.status = 'closed';
+        next.pendingCloseAt = null;
+    }
+    return next;
+}
+
+function perpsSafeApplyVariationalHedgesToData(data) {
+    if (!data) return data;
+    try {
+        return perpsApplyVariationalHedgesToData(data) || data;
+    } catch (e) {
+        console.error('[perps] Variational hedge apply failed', e);
+        return data;
+    }
+}
+
 function perpsRenderDashboard(data, opts = {}) {
+    if (!data || typeof data !== 'object') return;
     _perpsCache = data;
     _perpsLastData = data;
-    perpsApplyVariationalHedgesToData(data);
     try {
-        localStorage.setItem(PERPS_DAILY_FUND_CACHE_KEY, JSON.stringify({
-            series: data.dailyFundingSeries || [],
-            fetchedAt: data.fetchedAt || Date.now(),
-        }));
-    } catch(e) {}
-    if (data?.grvt?.state?.positions?.length && !data.grvt.state.error) {
-        perpsSaveGrvtStateCache(data.grvt.state);
+        perpsSafeApplyVariationalHedgesToData(data);
+        try {
+            localStorage.setItem(PERPS_DAILY_FUND_CACHE_KEY, JSON.stringify({
+                series: data.dailyFundingSeries || [],
+                fetchedAt: data.fetchedAt || Date.now(),
+            }));
+        } catch (e) {}
+        if (data?.grvt?.state?.positions?.length && !data.grvt.state.error) {
+            perpsSaveGrvtStateCache(data.grvt.state);
+        }
+        if (document.body.dataset.activeTab === 'overview') {
+            renderDashboardPnlAttribution(true);
+        }
+        data.closedPairs = perpsCacheNewClosedPairs([
+            ...(data.closedPairs || []),
+            ...(data.closedPairRefreshes || []),
+        ]);
+        const snapshotAdded = perpsSaveSnapshot(data);
+        data._equitySeries = perpsBuildEquitySeries(data);
+        if (data.rateSpread) perpsApplyLiveRates(data.rateSpread, data.fetchedAt);
+        perpsRenderStatsBar(data);
+        if (perpsShouldRenderEquityChart(snapshotAdded, opts.cloudSnapshotsAdded)) {
+            perpsRenderEquityChart(data);
+        }
+        perpsRenderFundingForTimeWindow(data);
+        perpsRenderPositionsPanel(data);
+        perpsRenderUnhedged(data.unhedged || []);
+        perpsRenderVariationalPending(data.variationalPendingClose || []);
+        perpsRenderAlerts(data.paired || [], data.unhedged || [], data.summary || {});
+        perpsRenderCrossMarginLeverage(data);
+        perpsRenderMobileFundingRates(data);
+        _perpsLastRefreshAt = data.fetchedAt || Date.now();
+        _perpsLiveAprUpdatedAt = _perpsLastRefreshAt;
+        _perpsRefreshError = null;
+        perpsUpdateRefreshBar();
+    } catch (e) {
+        console.error('[perps] dashboard render failed', e);
+        _perpsRefreshError = e?.message || 'render failed';
+        perpsUpdateRefreshBar();
+        perpsSetStatus(`Perps data loaded but UI render failed: ${e?.message || e}`);
     }
-    if (document.body.dataset.activeTab === 'overview') {
-        renderDashboardPnlAttribution(true);
-    }
-    data.closedPairs = perpsCacheNewClosedPairs([
-        ...(data.closedPairs || []),
-        ...(data.closedPairRefreshes || []),
-    ]);
-    const snapshotAdded = perpsSaveSnapshot(data);
-    data._equitySeries = perpsBuildEquitySeries(data);
-    if (data.rateSpread) perpsApplyLiveRates(data.rateSpread, data.fetchedAt);
-    perpsRenderStatsBar(data);
-    if (perpsShouldRenderEquityChart(snapshotAdded, opts.cloudSnapshotsAdded)) {
-        perpsRenderEquityChart(data);
-    }
-    perpsRenderFundingForTimeWindow(data);
-    perpsRenderPositionsPanel(data);
-    perpsRenderUnhedged(data.unhedged || []);
-    perpsRenderVariationalPending(data.variationalPendingClose || []);
-    perpsRenderAlerts(data.paired || [], data.unhedged || [], data.summary || {});
-    perpsRenderCrossMarginLeverage(data);
-    perpsRenderMobileFundingRates(data);
-    _perpsLastRefreshAt = data.fetchedAt || Date.now();
-    _perpsLiveAprUpdatedAt = _perpsLastRefreshAt;
-    _perpsRefreshError = null;
-    perpsUpdateRefreshBar();
 }
 
 function perpsFormatConnectedStatus(payload) {
@@ -35915,8 +35943,6 @@ async function perpsRefresh(silent = false) {
 
     try {
         const bucketsBefore = perpsCountEquityBuckets();
-        await perpsHydratePerpsAuxFromCloud();
-        const cloudSnapshotsAdded = perpsCountEquityBuckets() > bucketsBefore;
         const knownClosedKeys = perpsLoadCachedClosedPairs().map(perpsClosedPairKey).filter(Boolean);
         const params = new URLSearchParams({ wallet: hl, days: String(perpsStatRangeToApiDays(_perpsStatRange)) });
         if (knownClosedKeys.length) params.set('knownClosedKeys', knownClosedKeys.join(','));
@@ -35925,9 +35951,15 @@ async function perpsRefresh(silent = false) {
         if (grvtSub) params.set('grvtSubAccount', grvtSub);
         const grvtCache = perpsLoadGrvtStateCache();
         if (grvtCache?.positions?.length) {
-            params.set('grvtPositions', JSON.stringify(grvtCache.positions));
+            const grvtJson = JSON.stringify(grvtCache.positions);
+            if (grvtJson.length <= 1500) params.set('grvtPositions', grvtJson);
         }
-        const { payload, warnings } = await perpsFetchDashboardPayload(params, silent);
+        const [, fetchResult] = await Promise.all([
+            perpsHydratePerpsAuxFromCloud().catch(() => false),
+            perpsFetchDashboardPayload(params, silent),
+        ]);
+        const cloudSnapshotsAdded = perpsCountEquityBuckets() > bucketsBefore;
+        const { payload, warnings } = fetchResult;
         perpsRenderDashboard(payload, { cloudSnapshotsAdded });
         if (warnings.length) {
             _perpsRefreshError = warnings.join(' · ');
