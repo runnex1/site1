@@ -31832,6 +31832,41 @@ function perpsResolveVariationalListing(pair, data) {
 let _perpsVariationalModalMode = null;
 let _perpsVariationalModalHedgeId = null;
 let _perpsVariationalModalUnhedgedKey = null;
+let _perpsUnhedgedRenderCache = new Map();
+let _perpsVariationalDelegateBound = false;
+
+function perpsMountVariationalModal() {
+    const modal = document.getElementById('perpsVariationalModal');
+    if (!modal) return null;
+    if (modal.parentElement !== document.body) document.body.appendChild(modal);
+    modal.style.zIndex = '13000';
+    return modal;
+}
+
+function perpsBindVariationalHedgeDelegate() {
+    if (_perpsVariationalDelegateBound) return;
+    _perpsVariationalDelegateBound = true;
+    document.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('[data-perps-hedge-variational]');
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const symbol = btn.getAttribute('data-symbol') || '';
+        const venue = btn.getAttribute('data-venue') || '';
+        perpsHedgeWithVariational(symbol, venue);
+    });
+}
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            perpsMountVariationalModal();
+            perpsBindVariationalHedgeDelegate();
+        });
+    } else {
+        perpsMountVariationalModal();
+        perpsBindVariationalHedgeDelegate();
+    }
+}
 
 function perpsVariationalUnhedgedMatchKey(symbol, venue) {
     const VH = window.VariationalHedge;
@@ -31846,20 +31881,36 @@ function perpsDataForVariationalAction() {
 
 function perpsResolveUnhedgedLegForVariationalModal() {
     if (!_perpsVariationalModalUnhedgedKey) return null;
+    const cached = _perpsUnhedgedRenderCache.get(_perpsVariationalModalUnhedgedKey);
+    if (cached) return cached;
     const unhedged = perpsDataForVariationalAction()?.unhedged || [];
     return unhedged.find((u) => perpsVariationalUnhedgedMatchKey(u.symbol, u.venue) === _perpsVariationalModalUnhedgedKey) || null;
 }
 
+function perpsResolveUnhedgedLegForHedge(symbol, venue) {
+    const key = perpsVariationalUnhedgedMatchKey(symbol, venue);
+    const data = perpsDataForVariationalAction();
+    const fromData = (data?.unhedged || []).find(
+        (u) => perpsVariationalUnhedgedMatchKey(u.symbol, u.venue) === key,
+    );
+    if (fromData) return fromData;
+    return _perpsUnhedgedRenderCache.get(key) || null;
+}
+
 function perpsCloseVariationalModal() {
     const modal = document.getElementById('perpsVariationalModal');
-    if (modal) modal.style.display = 'none';
+    if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('active');
+    }
+    if (document.body.style.overflow === 'hidden') document.body.style.overflow = '';
     _perpsVariationalModalMode = null;
     _perpsVariationalModalHedgeId = null;
     _perpsVariationalModalUnhedgedKey = null;
 }
 
 function perpsOpenVariationalModal(opts = {}) {
-    const modal = document.getElementById('perpsVariationalModal');
+    const modal = perpsMountVariationalModal() || document.getElementById('perpsVariationalModal');
     const title = document.getElementById('perpsVariationalModalTitle');
     const meta = document.getElementById('perpsVariationalModalMeta');
     const label = document.getElementById('perpsVariationalPxLabel');
@@ -31871,7 +31922,10 @@ function perpsOpenVariationalModal(opts = {}) {
     const trackedWrap = document.getElementById('perpsVariationalTrackedEntryWrap');
     const trackedLabel = document.getElementById('perpsVariationalTrackedEntryLabel');
     const trackedVal = document.getElementById('perpsVariationalTrackedEntryVal');
-    if (!modal || !input) return;
+    if (!modal || !input) {
+        alert('Variational hedge dialog failed to open — hard-refresh the page and try again.');
+        return;
+    }
     _perpsVariationalModalMode = opts.mode || 'entry';
     _perpsVariationalModalHedgeId = opts.hedgeId || null;
     _perpsVariationalModalUnhedgedKey = opts.unhedgedSymbol && opts.unhedgedVenue
@@ -31916,6 +31970,8 @@ function perpsOpenVariationalModal(opts = {}) {
         }
     }
     modal.style.display = 'flex';
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
     input.focus();
 }
 
@@ -32266,27 +32322,25 @@ function perpsEnrichVariationalPairFunding(pair, data) {
 }
 
 function perpsHedgeWithVariational(symbol, venue) {
-    const data = perpsDataForVariationalAction();
-    if (!data) {
-        alert('Perps data is still loading — wait for refresh, then try again.');
-        return;
+    try {
+        const leg = perpsResolveUnhedgedLegForHedge(symbol, venue);
+        if (!leg) {
+            alert('Could not find that unhedged leg — refresh Perps and try again.');
+            return;
+        }
+        perpsOpenVariationalModal({
+            mode: 'entry',
+            unhedgedSymbol: leg.symbol,
+            unhedgedVenue: leg.venue,
+            value: null,
+            trackedEntryPx: leg.entryPx ?? leg.entry,
+            trackedVenue: leg.venue,
+            meta: `${leg.symbol} · ${perpsVenueShort(leg.venue)} ${leg.side || ''} ${perpsFmtSize(leg.size)}`,
+        });
+    } catch (e) {
+        console.error('perpsHedgeWithVariational failed', e);
+        alert(`Hedge with Variational failed: ${e?.message || e}`);
     }
-    const leg = (data.unhedged || []).find(
-        (u) => perpsVariationalUnhedgedMatchKey(u.symbol, u.venue) === perpsVariationalUnhedgedMatchKey(symbol, venue),
-    );
-    if (!leg) {
-        alert('Could not find that unhedged leg — refresh and try again.');
-        return;
-    }
-    perpsOpenVariationalModal({
-        mode: 'entry',
-        unhedgedSymbol: leg.symbol,
-        unhedgedVenue: leg.venue,
-        value: null,
-        trackedEntryPx: leg.entryPx ?? leg.entry,
-        trackedVenue: leg.venue,
-        meta: `${leg.symbol} · ${perpsVenueShort(leg.venue)} ${leg.side} ${perpsFmtSize(leg.size)}`,
-    });
 }
 
 function perpsEditVariationalEntry(hedgeId) {
@@ -35456,11 +35510,15 @@ function perpsRenderUnhedged(unhedged) {
     const section = document.getElementById('perpsUnhedgedSection');
     const el = document.getElementById('perpsUnhedgedTable');
     if (!section || !el) return;
+    _perpsUnhedgedRenderCache = new Map();
+    for (const u of unhedged || []) {
+        _perpsUnhedgedRenderCache.set(perpsVariationalUnhedgedMatchKey(u.symbol, u.venue), u);
+    }
     section.style.display = unhedged.length ? '' : 'none';
     if (!unhedged.length) return;
     el.innerHTML = `<table class="perps-table"><thead><tr>
         <th>Asset</th><th>Venue</th><th>Side</th><th>Size</th><th>Notional</th><th>uPnL</th><th>PnL w/ fund</th><th>Funding</th><th></th>
-    </tr></thead><tbody>${unhedged.map((u, idx) => {
+    </tr></thead><tbody>${unhedged.map((u) => {
         const pnlWithFund = (u.unrealizedPnl ?? 0) + (u.funding ?? 0);
         return `<tr>
         <td>${makeLogo(u.symbol, false, 22)} ${dashEsc(u.symbol)}</td>
@@ -35471,7 +35529,7 @@ function perpsRenderUnhedged(unhedged) {
         <td class="${perpsSignedCls(u.unrealizedPnl)}">${perpsFmtUsd(u.unrealizedPnl)}</td>
         <td class="${perpsSignedCls(pnlWithFund)}">${perpsFmtUsd(pnlWithFund)}</td>
         <td class="${perpsSignedCls(u.funding)}">${perpsFmtUsd(u.funding)}</td>
-        <td><button type="button" class="perps-btn secondary" style="padding:0.2rem 0.55rem;font-size:0.72rem;" onclick="perpsHedgeWithVariational(${JSON.stringify(u.symbol)}, ${JSON.stringify(u.venue)})">Hedge with Variational</button></td>
+        <td><button type="button" class="perps-btn secondary" style="padding:0.2rem 0.55rem;font-size:0.72rem;" data-perps-hedge-variational data-symbol="${dashEsc(u.symbol)}" data-venue="${dashEsc(u.venue)}">Hedge with Variational</button></td>
     </tr>`;
     }).join('')}</tbody></table>`;
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();

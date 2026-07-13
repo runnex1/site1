@@ -4037,7 +4037,10 @@ assert.match(indexHtml, /function perpsResolveUnhedgedLegForVariationalModal\(/,
 assert.match(indexHtml, /function perpsDataForVariationalAction\(/, 'variational hedge must fall back to cached perps payload');
 assert.match(variationalHedgeJs, /function snapshotFromUnhedgedLeg\(/, 'variational hedge create must seed snapshot from unhedged leg');
 assert.match(variationalHedgeJs, /normalizeTrackedVenue/, 'variational hedge keys must normalize venue casing');
-assert.match(indexHtml, /perpsHedgeWithVariational\(\$\{JSON\.stringify\(u\.symbol\)\}, \$\{JSON\.stringify\(u\.venue\)\}\)/, 'unhedged hedge button must not rely on stale array index');
+assert.match(indexHtml, /function perpsMountVariationalModal\(/, 'variational modal must mount on document.body');
+assert.match(indexHtml, /data-perps-hedge-variational/, 'unhedged hedge button must use delegated click handler');
+assert.match(indexHtml, /_perpsUnhedgedRenderCache/, 'unhedged render must cache legs for hedge lookup');
+assert.match(indexHtml, /function perpsResolveUnhedgedLegForHedge\(/, 'variational hedge must resolve leg from data or render cache');
 assert.ok(indexHtml.includes('lib/variational-hedge.js'), 'index must load variational hedge module');
 assert.ok(perpsJs.includes('fetchVariationalRates'), 'perps.js must fetch variational rates');
 
