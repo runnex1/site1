@@ -4055,7 +4055,8 @@ assert.match(indexHtml, /function perpsMountVariationalModal\(/, 'variational mo
 assert.match(indexHtml, /data-perps-hedge-variational/, 'unhedged hedge button must use delegated click handler');
 assert.match(indexHtml, /dataset\.perpsSaveBound/, 'variational modal save must bind click/touch on mount');
 assert.match(indexHtml, /_perpsVariationalModalMode === 'entry' && !_perpsVariationalModalHedgeId/, 'variational save must use stashed leg without requiring unhedged key');
-assert.match(indexHtml, /function perpsVariationalModalSetStatus\(/, 'variational save must show inline status on failure');
+assert.match(indexHtml, /_perpsVariationalHedgesMem/, 'variational hedges must keep in-memory fallback when localStorage is full');
+assert.match(indexHtml, /skipPortfolioSync: true/, 'variational hedge save must not require full portfolio localStorage write');
 assert.match(indexHtml, /_perpsVariationalModalLeg/, 'variational modal must stash unhedged leg at open for save');
 assert.match(indexHtml, /unhedgedLeg:\s*leg/, 'hedge action must pass resolved leg into variational modal');
 assert.match(indexHtml, /_perpsUnhedgedRenderCache/, 'unhedged render must cache legs for hedge lookup');
