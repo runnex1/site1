@@ -3415,6 +3415,8 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
   }, 0.0675);
   assert.equal(hedge.variationalSize, 314000);
   assert.equal(hedge.trackedVenue, 'grvt');
+  assert.ok(hedge.trackedLastSnapshot, 'new hedge must seed tracked snapshot from unhedged leg');
+  assert.ok(hedge.trackedLastLiveAt > 0, 'new hedge must mark snapshot live time');
   const data = {
     paired: [],
     unhedged: [{
@@ -3457,6 +3459,34 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
   assert.equal(result.paired[0].crossLegA.side, 'short');
   assert.equal(result.paired[0].crossLegB.side, 'long');
   assert.ok(!result.paired[0].alerts.includes('size_mismatch'));
+}
+
+{
+  const hedge = createHedgeFromUnhedged({
+    symbol: 'HBAR',
+    venue: 'GRVT',
+    size: -314000,
+    side: 'short',
+    entryPx: 0.06785,
+    unrealizedPnl: 121.66,
+    funding: -4.17,
+  }, 0.0675);
+  const data = {
+    paired: [],
+    unhedged: [],
+    rateSpread: [{ symbol: 'HBAR', grvt8h: 0.0001, variational8h: -0.00008, variationalMarkPx: 0.0675 }],
+    hyperliquid: { state: { positions: [] } },
+    nado: { state: { positions: [] } },
+    grvt: { state: { positions: [] } },
+    extended: { state: { positions: [] } },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  };
+  const listing = { symbol: 'HBAR', markPx: 0.0675, fundingRateInterval: -0.00008, fundingIntervalS: 28800, fundingRate8h: -0.00008 };
+  const result = applyVariationalHedges(data, [hedge], { HBAR: listing });
+  assert.equal(result.paired.length, 1, 'HBAR hedge must pair from seeded snapshot when GRVT state is empty');
+  assert.equal(result.pendingClose.length, 0, 'fresh hedge must not jump to pending close');
+  assert.equal(result.paired[0].pairLabel, 'GRVT + Var');
 }
 
 {
@@ -4004,6 +4034,9 @@ assert.ok(indexHtml.includes('trackedEntryPx'), 'variational modal must pass tra
 assert.ok(indexHtml.includes('Hedge with Variational'), 'index must expose hedge action');
 assert.match(indexHtml, /function perpsHedgeWithVariational\(symbol, venue\)/, 'variational hedge action must resolve unhedged leg by symbol+venue');
 assert.match(indexHtml, /function perpsResolveUnhedgedLegForVariationalModal\(/, 'variational modal save must resolve unhedged leg by stable key');
+assert.match(indexHtml, /function perpsDataForVariationalAction\(/, 'variational hedge must fall back to cached perps payload');
+assert.match(variationalHedgeJs, /function snapshotFromUnhedgedLeg\(/, 'variational hedge create must seed snapshot from unhedged leg');
+assert.match(variationalHedgeJs, /normalizeTrackedVenue/, 'variational hedge keys must normalize venue casing');
 assert.match(indexHtml, /perpsHedgeWithVariational\(\$\{JSON\.stringify\(u\.symbol\)\}, \$\{JSON\.stringify\(u\.venue\)\}\)/, 'unhedged hedge button must not rely on stale array index');
 assert.ok(indexHtml.includes('lib/variational-hedge.js'), 'index must load variational hedge module');
 assert.ok(perpsJs.includes('fetchVariationalRates'), 'perps.js must fetch variational rates');

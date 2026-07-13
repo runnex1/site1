@@ -31835,14 +31835,18 @@ let _perpsVariationalModalUnhedgedKey = null;
 
 function perpsVariationalUnhedgedMatchKey(symbol, venue) {
     const VH = window.VariationalHedge;
-    return VH?.variationalHedgeMatchKey
-        ? VH.variationalHedgeMatchKey(symbol, venue)
-        : `${symbol}|${venue}`;
+    if (VH?.variationalHedgeMatchKey) return VH.variationalHedgeMatchKey(symbol, venue);
+    const base = String(symbol || '').trim().toUpperCase().replace(/-PERP$/i, '').replace(/USDT$/i, '').replace(/USD$/i, '');
+    return `${base}|${String(venue || '').trim().toLowerCase()}`;
+}
+
+function perpsDataForVariationalAction() {
+    return _perpsLastData || _perpsCache || null;
 }
 
 function perpsResolveUnhedgedLegForVariationalModal() {
     if (!_perpsVariationalModalUnhedgedKey) return null;
-    const unhedged = _perpsLastData?.unhedged || [];
+    const unhedged = perpsDataForVariationalAction()?.unhedged || [];
     return unhedged.find((u) => perpsVariationalUnhedgedMatchKey(u.symbol, u.venue) === _perpsVariationalModalUnhedgedKey) || null;
 }
 
@@ -32262,7 +32266,12 @@ function perpsEnrichVariationalPairFunding(pair, data) {
 }
 
 function perpsHedgeWithVariational(symbol, venue) {
-    const leg = (_perpsLastData?.unhedged || []).find(
+    const data = perpsDataForVariationalAction();
+    if (!data) {
+        alert('Perps data is still loading — wait for refresh, then try again.');
+        return;
+    }
+    const leg = (data.unhedged || []).find(
         (u) => perpsVariationalUnhedgedMatchKey(u.symbol, u.venue) === perpsVariationalUnhedgedMatchKey(symbol, venue),
     );
     if (!leg) {
