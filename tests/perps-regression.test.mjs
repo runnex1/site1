@@ -1142,6 +1142,16 @@ assert.match(loopRatesJs, /if \(leg\.isCollateral\) return true/, 'collateral yi
 assert.match(loopRatesJs, /if \(leg\.defillamaApy != null\) continue/, 'Merkl supply incentives must not stack on DeFiLlama intrinsic yield legs');
 assert.match(loopRatesJs, /const dlApy = percent\(dlApyRaw\)/, 'DeFiLlama APY must normalize to protocol percent units');
 assert.match(loopRatesJs, /require\('\.\/pendle'\)/, 'loop rates must integrate Pendle APY enrichment');
+assert.match(loopRatesJs, /api\.spark\.fi/, 'Spark savings must use the official Savings Data API');
+assert.match(loopRatesJs, /spark-api\.pages\.dev/, 'SparkLend must use the official Spark API');
+assert.match(loopRatesJs, /function fetchSparkSavingsWallet\(/, 'Spark savings wallet fetch must exist');
+assert.match(loopRatesJs, /function fetchSparkLendWallet\(/, 'SparkLend wallet fetch must exist');
+assert.match(loopRatesJs, /function mapSparkSavingsPosition\(/, 'Spark savings must map lending-only positions');
+assert.match(loopRatesJs, /function mapSparkLendPosition\(/, 'SparkLend must map borrow positions');
+assert.match(loopRatesJs, /protocol: 'SparkLend'/, 'SparkLend positions must use SparkLend protocol label');
+assert.match(loopRatesJs, /lendingOnly: true/, 'Spark savings positions must be lending-only');
+assert.match(loopRatesJs, /sparkSavingsSource: 'api\.spark\.fi \+ eth_call'/, 'loop coverage must report Spark savings source');
+assert.match(loopRatesJs, /sparkLendSource: 'spark-api\.pages\.dev'/, 'loop coverage must report SparkLend source');
 assert.match(loopRatesJs, /enrichPositionWithPendle/, 'PT loops must use Pendle implied APY for supply leg');
 assert.match(loopRatesJs, /pendleSource: 'api-v2\.pendle\.finance\/core'/, 'loop coverage must report Pendle source');
 assert.match(indexHtml, /id="loopsPendleSection"/, 'Loops tab must render a Pendle positions section');
@@ -3257,6 +3267,69 @@ try {
   assert.ok(enriched.netApy > -5, 'PT loop net APY must improve after Pendle fixed yield');
 }
 
+try {
+  const {
+    mapSparkSavingsPosition,
+    mapSparkLendPosition,
+    SPARK_SAVINGS_VAULTS,
+    fetchSparkSavingsRates,
+    fetchSparkLendMarkets,
+  } = require('../lib/loop-rates.js');
+  const spUsdcVault = SPARK_SAVINGS_VAULTS.find((v) => v.vaultSymbol === 'spUSDC');
+  assert.ok(spUsdcVault, 'Spark savings vault list must include spUSDC');
+  const savingsPos = mapSparkSavingsPosition(
+    '0x1601843c5E9bC251A3272907010AFa41Fa18347E',
+    spUsdcVault,
+    String(1_000_000),
+    '0.036',
+  );
+  assert.equal(savingsPos.protocol, 'Spark', 'Spark savings must label protocol Spark');
+  assert.equal(savingsPos.lendingOnly, true, 'Spark savings must be lending-only');
+  assert.equal(savingsPos.totalBorrowed, 0, 'Spark savings must have no borrow leg');
+  assert.ok(Math.abs(savingsPos.totalSupplied - 1) < 0.01, 'Spark savings USD must match underlying assets for stables');
+  assert.ok(Math.abs(savingsPos.supplyApy - 3.6) < 0.05, 'Spark savings APY must come from Savings Data API fraction');
+
+  const lendPos = mapSparkLendPosition(
+    '0xabc',
+    [
+      {
+        underlyingAsset: '0xdc035d45d973e3ec169d2276ddab16f1e407384f',
+        symbol: 'USDS',
+        underlyingBalance: '1000',
+        underlyingBalanceUSD: '1000',
+        usageAsCollateralEnabledOnUser: true,
+      },
+    ],
+    {
+      healthFactor: '1.85',
+      debts: [{
+        underlyingAsset: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        symbol: 'USDC',
+        variableBorrows: '400',
+        variableBorrowsUSD: '400',
+      }],
+    },
+    new Map([
+      ['0xdc035d45d973e3ec169d2276ddab16f1e407384f', { supplyAPY: '0.02', variableBorrowAPY: '0.04' }],
+      ['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', { supplyAPY: '0.02', variableBorrowAPY: '0.04' }],
+    ]),
+  );
+  assert.equal(lendPos.protocol, 'SparkLend', 'SparkLend borrow positions must use SparkLend label');
+  assert.equal(lendPos.lendingOnly, false, 'SparkLend borrow positions must not be lending-only');
+  assert.ok(lendPos.totalBorrowed > 0.01, 'SparkLend position must include debt');
+  assert.equal(lendPos.health, 1.85, 'SparkLend position must expose health factor');
+
+  const savingsRates = await fetchSparkSavingsRates();
+  assert.ok(savingsRates.rates instanceof Map, 'fetchSparkSavingsRates must return a rates map');
+  assert.ok(savingsRates.rates.has(spUsdcVault.vaultAddress.toLowerCase()), 'Spark savings rates must index spUSDC vault');
+
+  const sparkMarkets = await fetchSparkLendMarkets();
+  assert.ok(Array.isArray(sparkMarkets.markets), 'fetchSparkLendMarkets must return markets array');
+  assert.ok(sparkMarkets.markets.length > 0, 'SparkLend markets must be non-empty on mainnet');
+} catch (e) {
+  throw new Error(`Spark loop integration check failed: ${e.message || e}`);
+}
+
 const {
   parseVariationalListing,
   parseVariationalListings,
@@ -3327,6 +3400,63 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
   assert.equal(result.paired[0].pairLabel, 'Ext + Var');
   assert.ok(!result.paired[0].alerts.includes('size_mismatch'));
   assert.equal(result.paired[0].crossLegB.venue, 'variational');
+}
+
+{
+  const hedge = createHedgeFromUnhedged({
+    symbol: 'HBAR',
+    venue: 'grvt',
+    size: -314000,
+    side: 'short',
+    notional: 21184,
+    unrealizedPnl: 121.66,
+    funding: -4.17,
+    fees: 7.64,
+  }, 0.0675);
+  assert.equal(hedge.variationalSize, 314000);
+  assert.equal(hedge.trackedVenue, 'grvt');
+  const data = {
+    paired: [],
+    unhedged: [{
+      symbol: 'HBAR',
+      venue: 'grvt',
+      size: -314000,
+      side: 'short',
+      notional: 21184,
+      unrealizedPnl: 121.66,
+      funding: -4.17,
+      fees: 7.64,
+    }],
+    rateSpread: [{
+      symbol: 'HBAR',
+      grvt8h: 0.0001,
+      variational8h: -0.00008,
+      variationalMarkPx: 0.0675,
+      variationalIntervalRate: -0.00008,
+      variationalIntervalHours: 8,
+    }],
+    hyperliquid: { state: { positions: [] } },
+    nado: { state: { positions: [] } },
+    grvt: { state: { positions: [{ symbol: 'HBAR', size: -314000, side: 'short', entryPx: 0.06785, markPx: 0.06746, notional: 21184, unrealizedPnl: 121.66, cumulativeFundingSinceOpen: -4.17 }] } },
+    extended: { state: { positions: [] } },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  };
+  const listing = {
+    symbol: 'HBAR',
+    markPx: 0.0675,
+    fundingRateInterval: -0.00008,
+    fundingIntervalS: 28800,
+    fundingRate8h: -0.00008,
+    fundingRateAnnual: -0.08,
+  };
+  const result = applyVariationalHedges(data, [hedge], { HBAR: listing });
+  assert.equal(result.paired.length, 1, 'HBAR GRVT short must pair with Variational');
+  assert.equal(result.unhedged.length, 0, 'HBAR must leave unhedged after Variational hedge');
+  assert.equal(result.paired[0].pairLabel, 'GRVT + Var');
+  assert.equal(result.paired[0].crossLegA.side, 'short');
+  assert.equal(result.paired[0].crossLegB.side, 'long');
+  assert.ok(!result.paired[0].alerts.includes('size_mismatch'));
 }
 
 {
@@ -3872,6 +4002,9 @@ assert.ok(indexHtml.includes('PERPS_VARIATIONAL_HEDGES_KEY'), 'index must persis
 assert.ok(indexHtml.includes('perpsVariationalTrackedEntryWrap'), 'variational modal must show tracked exchange entry read-only');
 assert.ok(indexHtml.includes('trackedEntryPx'), 'variational modal must pass tracked exchange entry into edit flow');
 assert.ok(indexHtml.includes('Hedge with Variational'), 'index must expose hedge action');
+assert.match(indexHtml, /function perpsHedgeWithVariational\(symbol, venue\)/, 'variational hedge action must resolve unhedged leg by symbol+venue');
+assert.match(indexHtml, /function perpsResolveUnhedgedLegForVariationalModal\(/, 'variational modal save must resolve unhedged leg by stable key');
+assert.match(indexHtml, /perpsHedgeWithVariational\(\$\{JSON\.stringify\(u\.symbol\)\}, \$\{JSON\.stringify\(u\.venue\)\}\)/, 'unhedged hedge button must not rely on stale array index');
 assert.ok(indexHtml.includes('lib/variational-hedge.js'), 'index must load variational hedge module');
 assert.ok(perpsJs.includes('fetchVariationalRates'), 'perps.js must fetch variational rates');
 

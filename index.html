@@ -31831,14 +31831,27 @@ function perpsResolveVariationalListing(pair, data) {
 
 let _perpsVariationalModalMode = null;
 let _perpsVariationalModalHedgeId = null;
-let _perpsVariationalModalUnhedgedIdx = null;
+let _perpsVariationalModalUnhedgedKey = null;
+
+function perpsVariationalUnhedgedMatchKey(symbol, venue) {
+    const VH = window.VariationalHedge;
+    return VH?.variationalHedgeMatchKey
+        ? VH.variationalHedgeMatchKey(symbol, venue)
+        : `${symbol}|${venue}`;
+}
+
+function perpsResolveUnhedgedLegForVariationalModal() {
+    if (!_perpsVariationalModalUnhedgedKey) return null;
+    const unhedged = _perpsLastData?.unhedged || [];
+    return unhedged.find((u) => perpsVariationalUnhedgedMatchKey(u.symbol, u.venue) === _perpsVariationalModalUnhedgedKey) || null;
+}
 
 function perpsCloseVariationalModal() {
     const modal = document.getElementById('perpsVariationalModal');
     if (modal) modal.style.display = 'none';
     _perpsVariationalModalMode = null;
     _perpsVariationalModalHedgeId = null;
-    _perpsVariationalModalUnhedgedIdx = null;
+    _perpsVariationalModalUnhedgedKey = null;
 }
 
 function perpsOpenVariationalModal(opts = {}) {
@@ -31857,7 +31870,9 @@ function perpsOpenVariationalModal(opts = {}) {
     if (!modal || !input) return;
     _perpsVariationalModalMode = opts.mode || 'entry';
     _perpsVariationalModalHedgeId = opts.hedgeId || null;
-    _perpsVariationalModalUnhedgedIdx = opts.unhedgedIdx ?? null;
+    _perpsVariationalModalUnhedgedKey = opts.unhedgedSymbol && opts.unhedgedVenue
+        ? perpsVariationalUnhedgedMatchKey(opts.unhedgedSymbol, opts.unhedgedVenue)
+        : null;
     if (title) title.textContent = opts.mode === 'exit' ? 'Variational exit price' : 'Hedge with Variational';
     if (meta) meta.textContent = opts.meta || '';
     if (label) label.textContent = opts.mode === 'exit' ? 'Avg exit price' : 'Variational avg fill price';
@@ -31908,11 +31923,16 @@ function perpsSaveVariationalModal() {
         return;
     }
     const VH = window.VariationalHedge;
-    if (!VH) return;
-    if (_perpsVariationalModalMode === 'entry' && _perpsVariationalModalUnhedgedIdx != null) {
-        const unhedged = _perpsLastData?.unhedged || [];
-        const leg = unhedged[_perpsVariationalModalUnhedgedIdx];
-        if (!leg) return;
+    if (!VH) {
+        alert('Variational hedge module failed to load. Refresh the page and try again.');
+        return;
+    }
+    if (_perpsVariationalModalMode === 'entry' && _perpsVariationalModalUnhedgedKey) {
+        const leg = perpsResolveUnhedgedLegForVariationalModal();
+        if (!leg) {
+            alert('Could not find that unhedged leg — the dashboard may have refreshed. Try again.');
+            return;
+        }
         const hedge = VH.createHedgeFromUnhedged(leg, px);
         const hedges = perpsLoadVariationalHedges().filter(h =>
             !(h.status !== 'closed' && (
@@ -32241,13 +32261,18 @@ function perpsEnrichVariationalPairFunding(pair, data) {
     return pair;
 }
 
-function perpsHedgeWithVariational(unhedgedIdx) {
-    const unhedged = _perpsLastData?.unhedged || [];
-    const leg = unhedged[unhedgedIdx];
-    if (!leg) return;
+function perpsHedgeWithVariational(symbol, venue) {
+    const leg = (_perpsLastData?.unhedged || []).find(
+        (u) => perpsVariationalUnhedgedMatchKey(u.symbol, u.venue) === perpsVariationalUnhedgedMatchKey(symbol, venue),
+    );
+    if (!leg) {
+        alert('Could not find that unhedged leg — refresh and try again.');
+        return;
+    }
     perpsOpenVariationalModal({
         mode: 'entry',
-        unhedgedIdx,
+        unhedgedSymbol: leg.symbol,
+        unhedgedVenue: leg.venue,
         value: null,
         trackedEntryPx: leg.entryPx ?? leg.entry,
         trackedVenue: leg.venue,
@@ -35437,7 +35462,7 @@ function perpsRenderUnhedged(unhedged) {
         <td class="${perpsSignedCls(u.unrealizedPnl)}">${perpsFmtUsd(u.unrealizedPnl)}</td>
         <td class="${perpsSignedCls(pnlWithFund)}">${perpsFmtUsd(pnlWithFund)}</td>
         <td class="${perpsSignedCls(u.funding)}">${perpsFmtUsd(u.funding)}</td>
-        <td><button type="button" class="perps-btn secondary" style="padding:0.2rem 0.55rem;font-size:0.72rem;" onclick="perpsHedgeWithVariational(${idx})">Hedge with Variational</button></td>
+        <td><button type="button" class="perps-btn secondary" style="padding:0.2rem 0.55rem;font-size:0.72rem;" onclick="perpsHedgeWithVariational(${JSON.stringify(u.symbol)}, ${JSON.stringify(u.venue)})">Hedge with Variational</button></td>
     </tr>`;
     }).join('')}</tbody></table>`;
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
