@@ -9488,7 +9488,7 @@ body[data-active-tab="loops"] .page-content,
                   <input type="text" id="perpsVariationalSizeInput" inputmode="decimal" placeholder="0" style="width:100%;">
                 </div>
                 <div class="perps-status" id="perpsVariationalModalHint" style="margin:0;"></div>
-                <button type="button" class="perps-btn" id="perpsVariationalModalSave" onclick="perpsSaveVariationalModal()">Save</button>
+                <button type="button" class="perps-btn" id="perpsVariationalModalSave" data-perps-save-variational>Save</button>
               </div>
             </div>
           </div>
@@ -31832,6 +31832,7 @@ function perpsResolveVariationalListing(pair, data) {
 let _perpsVariationalModalMode = null;
 let _perpsVariationalModalHedgeId = null;
 let _perpsVariationalModalUnhedgedKey = null;
+let _perpsVariationalModalLeg = null;
 let _perpsUnhedgedRenderCache = new Map();
 let _perpsVariationalDelegateBound = false;
 
@@ -31854,6 +31855,13 @@ function perpsBindVariationalHedgeDelegate() {
         const symbol = btn.getAttribute('data-symbol') || '';
         const venue = btn.getAttribute('data-venue') || '';
         perpsHedgeWithVariational(symbol, venue);
+    });
+    document.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('[data-perps-save-variational]');
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        perpsSaveVariationalModal();
     });
 }
 if (typeof document !== 'undefined') {
@@ -31907,6 +31915,7 @@ function perpsCloseVariationalModal() {
     _perpsVariationalModalMode = null;
     _perpsVariationalModalHedgeId = null;
     _perpsVariationalModalUnhedgedKey = null;
+    _perpsVariationalModalLeg = null;
 }
 
 function perpsOpenVariationalModal(opts = {}) {
@@ -31931,6 +31940,7 @@ function perpsOpenVariationalModal(opts = {}) {
     _perpsVariationalModalUnhedgedKey = opts.unhedgedSymbol && opts.unhedgedVenue
         ? perpsVariationalUnhedgedMatchKey(opts.unhedgedSymbol, opts.unhedgedVenue)
         : null;
+    _perpsVariationalModalLeg = opts.unhedgedLeg || null;
     if (title) title.textContent = opts.mode === 'exit' ? 'Variational exit price' : 'Hedge with Variational';
     if (meta) meta.textContent = opts.meta || '';
     if (label) label.textContent = opts.mode === 'exit' ? 'Avg exit price' : 'Variational avg fill price';
@@ -31972,6 +31982,12 @@ function perpsOpenVariationalModal(opts = {}) {
     modal.style.display = 'flex';
     modal.classList.add('active');
     document.body.style.overflow = 'hidden';
+    input.onkeydown = (ev) => {
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            perpsSaveVariationalModal();
+        }
+    };
     input.focus();
 }
 
@@ -31987,8 +32003,9 @@ function perpsSaveVariationalModal() {
         alert('Variational hedge module failed to load. Refresh the page and try again.');
         return;
     }
+    let saved = false;
     if (_perpsVariationalModalMode === 'entry' && _perpsVariationalModalUnhedgedKey) {
-        const leg = perpsResolveUnhedgedLegForVariationalModal();
+        const leg = _perpsVariationalModalLeg || perpsResolveUnhedgedLegForVariationalModal();
         if (!leg) {
             alert('Could not find that unhedged leg — the dashboard may have refreshed. Try again.');
             return;
@@ -32002,6 +32019,7 @@ function perpsSaveVariationalModal() {
             )));
         hedges.push(hedge);
         perpsPersistVariationalHedges(hedges);
+        saved = true;
     } else if (_perpsVariationalModalHedgeId) {
         const hedges = perpsLoadVariationalHedges();
         const hedge = hedges.find(h => h.id === _perpsVariationalModalHedgeId);
@@ -32032,10 +32050,16 @@ function perpsSaveVariationalModal() {
             }
         }
         perpsPersistVariationalHedges(hedges);
+        saved = true;
     }
+    if (!saved) {
+        alert('Could not save Variational hedge — reopen the dialog and try again.');
+        return;
+    }
+    const data = _perpsLastData || _perpsCache || null;
     perpsCloseVariationalModal();
-    if (_perpsLastData) perpsApplyVariationalHedgesToData(_perpsLastData);
-    perpsRenderDashboard(_perpsLastData || _perpsCache || {});
+    if (data) perpsApplyVariationalHedgesToData(data);
+    perpsRenderDashboard(data || {});
 }
 
 function perpsApplyVariationalHedgesToData(data) {
@@ -32332,6 +32356,7 @@ function perpsHedgeWithVariational(symbol, venue) {
             mode: 'entry',
             unhedgedSymbol: leg.symbol,
             unhedgedVenue: leg.venue,
+            unhedgedLeg: leg,
             value: null,
             trackedEntryPx: leg.entryPx ?? leg.entry,
             trackedVenue: leg.venue,
