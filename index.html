@@ -9488,7 +9488,7 @@ body[data-active-tab="loops"] .page-content,
                   <input type="text" id="perpsVariationalSizeInput" inputmode="decimal" placeholder="0" style="width:100%;">
                 </div>
                 <div class="perps-status" id="perpsVariationalModalHint" style="margin:0;"></div>
-                <button type="button" class="perps-btn" id="perpsVariationalModalSave" data-perps-save-variational>Save</button>
+                <button type="button" class="perps-btn" id="perpsVariationalModalSave" data-perps-save-variational onclick="perpsSaveVariationalModal()">Save</button>
               </div>
             </div>
           </div>
@@ -31860,9 +31860,8 @@ function perpsBindVariationalHedgeDelegate() {
         const btn = ev.target.closest('[data-perps-save-variational]');
         if (!btn) return;
         ev.preventDefault();
-        ev.stopPropagation();
         perpsSaveVariationalModal();
-    });
+    }, true);
 }
 if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') {
