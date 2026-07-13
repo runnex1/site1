@@ -4053,7 +4053,9 @@ assert.match(variationalHedgeJs, /function snapshotFromUnhedgedLeg\(/, 'variatio
 assert.match(variationalHedgeJs, /normalizeTrackedVenue/, 'variational hedge keys must normalize venue casing');
 assert.match(indexHtml, /function perpsMountVariationalModal\(/, 'variational modal must mount on document.body');
 assert.match(indexHtml, /data-perps-hedge-variational/, 'unhedged hedge button must use delegated click handler');
-assert.match(indexHtml, /id="perpsVariationalModalSave"[^>]*onclick="perpsSaveVariationalModal\(\)"/, 'variational modal save must not rely on bubble delegation blocked by modal stopPropagation');
+assert.match(indexHtml, /dataset\.perpsSaveBound/, 'variational modal save must bind click/touch on mount');
+assert.match(indexHtml, /_perpsVariationalModalMode === 'entry' && !_perpsVariationalModalHedgeId/, 'variational save must use stashed leg without requiring unhedged key');
+assert.match(indexHtml, /function perpsVariationalModalSetStatus\(/, 'variational save must show inline status on failure');
 assert.match(indexHtml, /_perpsVariationalModalLeg/, 'variational modal must stash unhedged leg at open for save');
 assert.match(indexHtml, /unhedgedLeg:\s*leg/, 'hedge action must pass resolved leg into variational modal');
 assert.match(indexHtml, /_perpsUnhedgedRenderCache/, 'unhedged render must cache legs for hedge lookup');
