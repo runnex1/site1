@@ -3346,6 +3346,12 @@ const {
   estimateVariationalFundingUsd,
   buildVariationalFundingEventsAligned,
   buildVariationalFundingEventsScheduled,
+  buildVariationalFundingEventsFrozen,
+  normalizeVariationalSizeHistory,
+  recordVariationalSizeChange,
+  resolveVariationalFundingSizeAt,
+  captureVariationalSettlementsDue,
+  variationalFundingPaymentPerInterval,
   variationalNextFundingAtMs,
   variationalHedgeOpenedAtMs,
   variationalLegPnl,
@@ -3557,7 +3563,13 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
 }
 
 assert.match(indexHtml, /function perpsEnrichVariationalPairFunding\(pair, data\)/, 'variational pairs must reattach exchange funding events after client-side merge');
-assert.match(indexHtml, /buildVariationalFundingEventsScheduled/, 'variational enrichment must estimate funding on Variational native interval schedule');
+assert.match(indexHtml, /buildVariationalFundingEventsFrozen/, 'variational enrichment must use frozen settlement funding events');
+assert.match(indexHtml, /PERPS_VARIATIONAL_SETTLEMENTS_KEY/, 'variational settlements must persist in local storage');
+assert.match(indexHtml, /function perpsLoadVariationalSettlementsRaw\(/, 'variational settlements must load from local storage');
+assert.match(indexHtml, /function perpsPersistVariationalSettlements\(/, 'variational settlements must persist locally and sync');
+assert.match(indexHtml, /function perpsMergeVariationalSettlementsFromServer\(/, 'variational settlements must merge from server');
+assert.match(indexHtml, /function perpsPushVariationalSettlementsToServer\(/, 'variational settlements must push to server');
+assert.match(syncJs, /vault:perps_variational_settlements/, 'sync must persist frozen Variational settlements server-side');
 assert.match(indexHtml, /function perpsResolveVariationalHedge\(pair\)/, 'variational enrichment must resolve hedge by id or symbol+venue');
 assert.match(indexHtml, /variationalHedgeFromPair/, 'variational enrichment must merge pair legs into hedge funding seed');
 assert.match(variationalHedgeJs, /function normalizeVariationalListing\(/, 'variational listing must derive native interval rate from spread row');
@@ -4494,6 +4506,85 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   assert.ok(pair.funding > 15, 'closed variational pair must include full-session HL funding');
   assert.ok(Math.abs(pair.netPnl - (pair.closeSlippage + pair.funding - pair.fees)) < 0.05, 'ZRO net must not inflate beyond displayed components');
   assert.equal(hedge.closedFundingUsd, pair.funding, 'hedge must freeze total funding at close');
+}
+
+{
+  const openedAt = Date.parse('2026-06-24T09:00:00.000Z');
+  const resizeAt = Date.parse('2026-06-24T18:00:00.000Z');
+  const hedge = {
+    id: 'size-hist-1',
+    symbol: 'XLM',
+    trackedVenue: 'grvt',
+    trackedSize: 100000,
+    variationalSize: -100000,
+    variationalEntryPx: 0.218,
+    openedAt,
+    status: 'open',
+  };
+  normalizeVariationalSizeHistory(hedge);
+  recordVariationalSizeChange(hedge, -176000, resizeAt);
+  const beforeResize = Date.parse('2026-06-24T16:00:00.000Z');
+  assert.equal(resolveVariationalFundingSizeAt(hedge, beforeResize), -100000, 'size before resize timestamp must stay at old magnitude');
+  assert.equal(resolveVariationalFundingSizeAt(hedge, resizeAt), -176000, 'size at/after resize timestamp must use new magnitude');
+}
+
+{
+  const openedAt = Date.parse('2026-06-24T09:00:00.000Z');
+  const settlementTime = Date.parse('2026-06-24T16:00:00.000Z');
+  const now = Date.parse('2026-06-24T17:00:00.000Z');
+  const listing = {
+    symbol: 'XLM',
+    markPx: 0.217,
+    fundingRateInterval: 0.1095 / 1095,
+    fundingIntervalS: 28800,
+    fundingIntervalHours: 8,
+    fundingNextAtMs: Date.parse('2026-06-25T00:00:00.000Z'),
+    fundingClockSource: 'bybit',
+  };
+  const hedge100k = {
+    id: 'frozen-1',
+    symbol: 'XLM',
+    trackedVenue: 'grvt',
+    trackedSize: 100000,
+    variationalSize: -100000,
+    variationalEntryPx: 0.218,
+    openedAt,
+    status: 'open',
+    sizeHistory: [{ atMs: openedAt, size: -100000 }],
+  };
+  const captured = captureVariationalSettlementsDue(hedge100k, listing, [], { now });
+  assert.equal(captured.length, 1, 'capture must freeze one completed settlement');
+  assert.equal(captured[0].time, settlementTime);
+  assert.equal(captured[0].size, -100000);
+  const frozenPayment = captured[0].usdc;
+
+  const hedge176k = {
+    ...hedge100k,
+    trackedSize: 176000,
+    variationalSize: -176000,
+    sizeHistory: [
+      { atMs: openedAt, size: -100000 },
+      { atMs: Date.parse('2026-06-24T18:00:00.000Z'), size: -176000 },
+    ],
+  };
+  const events = buildVariationalFundingEventsFrozen(hedge176k, listing, captured, {
+    now,
+    captureMissing: false,
+  });
+  const past = events.find((ev) => ev.time === settlementTime);
+  assert.ok(past, 'frozen builder must return past settlement event');
+  assert.equal(past.usdc, frozenPayment, 'past settlement must keep frozen payment from 100k size');
+  assert.ok(past.frozen, 'past settlement must be marked frozen');
+
+  const future = buildVariationalFundingEventsFrozen(hedge176k, listing, captured, {
+    now: Date.parse('2026-06-24T23:00:00.000Z'),
+    captureMissing: false,
+    sinceMs: Date.parse('2026-06-25T00:00:00.000Z'),
+  }).find((ev) => ev.isUnsettled);
+  if (future) {
+    const expectedFuture = variationalFundingPaymentPerInterval(-176000, listing.markPx, listing.fundingRateInterval);
+    assert.ok(Math.abs(future.usdc - expectedFuture) < 1e-9, 'future estimate must use current 176k size');
+  }
 }
 
 console.log('PASS: perps accounting and dashboard regression checks');

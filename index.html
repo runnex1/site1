@@ -10475,6 +10475,7 @@ const PERPS_SESSION_KEY = 'vault-perps-wallets-session';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
 const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pairs';
 const PERPS_VARIATIONAL_HEDGES_KEY = 'vault-perps-variational-hedges';
+const PERPS_VARIATIONAL_SETTLEMENTS_KEY = 'vault-perps-variational-settlements';
 const PERPS_DAILY_FUND_CACHE_KEY = 'vault-perps-daily-fund-cache';
 const PERPS_GRVT_STATE_CACHE_KEY = 'vault-grvt-state-cache';
 const TICKER_VISIBLE_TABS = new Set(['overview', 'etf', 'terminal', 'history']);
@@ -10959,6 +10960,11 @@ function applyCloudPortfolioAux(parsed) {
         perpsMergeVariationalHedgesFromServer(parsed._perpsVariationalHedges);
         delete parsed._perpsVariationalHedges;
     });
+    apply('perpsVariationalSettlements', () => {
+        if (!parsed._perpsVariationalSettlements || typeof parsed._perpsVariationalSettlements !== 'object') return;
+        perpsMergeVariationalSettlementsFromServer(parsed._perpsVariationalSettlements);
+        delete parsed._perpsVariationalSettlements;
+    });
     apply('newsFeed', () => {
         if (!parsed._newsFeed || typeof parsed._newsFeed !== 'object') return;
         newsFeedMergeFromCloud(parsed._newsFeed);
@@ -11230,6 +11236,14 @@ async function saveData(syncOpts = {}) {
                         ? perpsLoadVariationalHedgesRaw()
                         : JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_HEDGES_KEY) || '[]');
                     return Array.isArray(rows) && rows.length ? rows : undefined;
+                } catch (e) { return undefined; }
+            })(),
+            perpsVariationalSettlements: (() => {
+                try {
+                    const map = typeof perpsLoadVariationalSettlementsRaw === 'function'
+                        ? perpsLoadVariationalSettlementsRaw()
+                        : JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_SETTLEMENTS_KEY) || '{}');
+                    return map && typeof map === 'object' && Object.keys(map).length ? map : undefined;
                 } catch (e) { return undefined; }
             })(),
             // Dismissed opportunities (market IDs)
@@ -31315,6 +31329,119 @@ async function perpsPushVariationalHedgesToServer(rows) {
     }
 }
 
+let _perpsVariationalSettlementsMem = null;
+
+function perpsLoadVariationalSettlementsRaw() {
+    if (_perpsVariationalSettlementsMem && typeof _perpsVariationalSettlementsMem === 'object') {
+        return JSON.parse(JSON.stringify(_perpsVariationalSettlementsMem));
+    }
+    try {
+        const map = JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_SETTLEMENTS_KEY) || '{}');
+        return map && typeof map === 'object' ? map : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function perpsPersistVariationalSettlements(map, opts = {}) {
+    const next = map && typeof map === 'object' ? map : {};
+    _perpsVariationalSettlementsMem = JSON.parse(JSON.stringify(next));
+    try {
+        localStorage.setItem(PERPS_VARIATIONAL_SETTLEMENTS_KEY, JSON.stringify(next));
+    } catch (e) {}
+    if (!opts.skipCloudSync) perpsPushVariationalSettlementsToServer(next);
+    return next;
+}
+
+function perpsMergeVariationalSettlementArrays(existing, incoming) {
+    const byTime = new Map((existing || []).map((s) => [Number(s.time), s]));
+    for (const row of incoming || []) {
+        const t = Number(row?.time);
+        if (!Number.isFinite(t)) continue;
+        const prev = byTime.get(t);
+        if (prev?.frozen) continue;
+        if (row?.frozen || !prev) byTime.set(t, { ...prev, ...row, frozen: Boolean(prev?.frozen || row?.frozen) });
+    }
+    return [...byTime.values()].sort((a, b) => Number(b.time) - Number(a.time)).slice(0, 1000);
+}
+
+function perpsMergeVariationalSettlementsFromServer(serverMap) {
+    const incoming = serverMap && typeof serverMap === 'object' ? serverMap : {};
+    const local = perpsLoadVariationalSettlementsRaw();
+    const merged = { ...local };
+    for (const [hedgeId, rows] of Object.entries(incoming)) {
+        if (!hedgeId || !Array.isArray(rows)) continue;
+        merged[hedgeId] = perpsMergeVariationalSettlementArrays(merged[hedgeId], rows);
+    }
+    return perpsPersistVariationalSettlements(merged, { skipCloudSync: true });
+}
+
+async function perpsPushVariationalSettlementsToServer(map) {
+    const payload = map && typeof map === 'object' ? map : perpsLoadVariationalSettlementsRaw();
+    if (!Object.keys(payload).length || location.protocol === 'file:') return false;
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ perpsVariationalSettlements: payload }),
+            keepalive: true,
+        });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+function perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data) {
+    const VH = window.VariationalHedge;
+    if (!VH?.captureVariationalSettlementsDue || !hedge?.id) return false;
+    const signedSize = VH.resolveVariationalFundingSize?.(hedge, trackedLeg);
+    if (VH.recordVariationalSizeChange && Number.isFinite(signedSize) && signedSize !== 0) {
+        VH.recordVariationalSizeChange(hedge, signedSize, Date.now());
+    }
+    const all = perpsLoadVariationalSettlementsRaw();
+    const prev = Array.isArray(all[hedge.id]) ? all[hedge.id] : [];
+    const captured = VH.captureVariationalSettlementsDue(hedge, listing, prev, {
+        trackedLeg,
+        now: data?.fetchedAt || Date.now(),
+    });
+    if (captured === prev) return false;
+    all[hedge.id] = captured;
+    perpsPersistVariationalSettlements(all);
+    return true;
+}
+
+function perpsCaptureAllVariationalSettlements(data) {
+    const VH = window.VariationalHedge;
+    if (!VH || !data) return false;
+    const hedges = perpsLoadVariationalHedges().filter((h) => h?.status === 'open' || h?.status === 'pending_close');
+    if (!hedges.length) return false;
+    let settlementsChanged = false;
+    const variationalBySymbol = {
+        ...perpsVariationalBySymbolFromSpread(data.rateSpread || []),
+        ...(data.variationalListings || {}),
+        ...(data._variationalListingBySymbol || {}),
+    };
+    for (const hedge of hedges) {
+        const listing = variationalBySymbol[hedge.symbol] || null;
+        const trackedLeg = VH.findTrackedLeg?.(data, hedge) || trackedLegFromSnapshotFallback(hedge);
+        if (perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data)) settlementsChanged = true;
+    }
+    perpsPersistVariationalHedges(hedges, { skipCloudSync: !settlementsChanged });
+    return settlementsChanged;
+
+    function trackedLegFromSnapshotFallback(h) {
+        const snap = h?.trackedLastSnapshot;
+        if (!snap?.size) return null;
+        return {
+            size: snap.size,
+            side: snap.side,
+            entryPx: snap.entryPx,
+            markPx: snap.markPx,
+        };
+    }
+}
+
 function perpsGetSavedConfig() {
     try {
         let cfg = perpsNormalizeStoredConfig(JSON.parse(localStorage.getItem(PERPS_CONFIG_KEY) || '{}'));
@@ -31408,6 +31535,14 @@ async function perpsHydratePerpsAuxFromCloud() {
         } else {
             const local = perpsLoadVariationalHedgesRaw();
             if (local.length) await perpsPushVariationalHedgesToServer(local);
+        }
+        if (body?.perpsVariationalSettlements && typeof body.perpsVariationalSettlements === 'object'
+            && Object.keys(body.perpsVariationalSettlements).length) {
+            perpsMergeVariationalSettlementsFromServer(body.perpsVariationalSettlements);
+            changed = true;
+        } else {
+            const localSettlements = perpsLoadVariationalSettlementsRaw();
+            if (Object.keys(localSettlements).length) await perpsPushVariationalSettlementsToServer(localSettlements);
         }
         if (Array.isArray(body?.perpsClosedPairs) && body.perpsClosedPairs.length) {
             perpsMergeClosedPairsFromServer(body.perpsClosedPairs);
@@ -32097,6 +32232,12 @@ function perpsSaveVariationalModal() {
                     if (VH.resolveVariationalSizesOnEntryEdit) {
                         VH.resolveVariationalSizesOnEntryEdit(hedge, trackedLeg);
                     }
+                    if (VH.recordVariationalSizeChange) {
+                        const signedSize = VH.resolveVariationalFundingSize?.(hedge, trackedLeg);
+                        if (Number.isFinite(signedSize) && signedSize !== 0) {
+                            VH.recordVariationalSizeChange(hedge, signedSize, Date.now());
+                        }
+                    }
                 }
                 const persistResult = perpsPersistVariationalHedges(hedges, { skipPortfolioSync: true });
                 if (!persistResult.localStorageOk) {
@@ -32128,6 +32269,7 @@ function perpsApplyVariationalHedgesToData(data) {
     if (!VH || !data) return data;
     const hedges = perpsLoadVariationalHedges();
     if (!hedges.length) return data;
+    perpsCaptureAllVariationalSettlements(data);
     const variationalBySymbol = {
         ...perpsVariationalBySymbolFromSpread(data.rateSpread || []),
         ...(data.variationalListings || {}),
@@ -32377,10 +32519,21 @@ function perpsEnrichVariationalPairFunding(pair, data) {
 
     const listing = perpsResolveVariationalListing(pair, data);
     const trackedLeg = pair.crossLegA?.venue === trackedVenue ? pair.crossLegA : pair.crossLegB;
-    const variationalEvents = VH?.buildVariationalFundingEventsScheduled
-        ? VH.buildVariationalFundingEventsScheduled(hedge, listing, { sinceMs: sessionSince, trackedLeg })
+    perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data);
+    const storedSettlements = (() => {
+        const all = perpsLoadVariationalSettlementsRaw();
+        return Array.isArray(all[hedge?.id]) ? all[hedge.id] : [];
+    })();
+    const variationalEvents = VH?.buildVariationalFundingEventsFrozen
+        ? VH.buildVariationalFundingEventsFrozen(hedge, listing, storedSettlements, {
+            sinceMs: sessionSince,
+            trackedLeg,
+            captureMissing: false,
+        })
         : [];
-    const varPaymentSum = variationalEvents.reduce((sum, ev) => sum + (ev.usdc || 0), 0);
+    const varPaymentSum = variationalEvents
+        .filter((ev) => !ev.isUnsettled)
+        .reduce((sum, ev) => sum + (ev.usdc || 0), 0);
     const override = hedge?.variationalFundingUsdOverride != null && Number.isFinite(Number(hedge.variationalFundingUsdOverride))
         ? Number(hedge.variationalFundingUsdOverride)
         : null;

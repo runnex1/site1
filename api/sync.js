@@ -119,6 +119,29 @@ function mergeVariationalHedgeRows(existing, incoming) {
   return [...byKey.values()].sort((a, b) => (Number(b?.openedAt) || 0) - (Number(a?.openedAt) || 0));
 }
 
+function mergeVariationalSettlementArrays(existing, incoming) {
+  const byTime = new Map((existing || []).map((s) => [Number(s.time), s]));
+  for (const row of incoming || []) {
+    const t = Number(row?.time);
+    if (!Number.isFinite(t)) continue;
+    const prev = byTime.get(t);
+    if (prev?.frozen) continue;
+    if (row?.frozen || !prev) {
+      byTime.set(t, { ...prev, ...row, frozen: Boolean(prev?.frozen || row?.frozen) });
+    }
+  }
+  return [...byTime.values()].sort((a, b) => Number(b.time) - Number(a.time)).slice(0, 1000);
+}
+
+function mergeVariationalSettlementMaps(existing, incoming) {
+  const out = { ...(existing && typeof existing === 'object' ? existing : {}) };
+  for (const [hedgeId, rows] of Object.entries(incoming || {})) {
+    if (!hedgeId || !Array.isArray(rows)) continue;
+    out[hedgeId] = mergeVariationalSettlementArrays(out[hedgeId], rows);
+  }
+  return out;
+}
+
 const GECKO_SERVER_SAVE_MIN_USD = 10000;
 
 async function mergeGeckoSymbolIds(incoming) {
@@ -751,16 +774,18 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ ok: true, perpsSnapshots });
       }
       if (req.query?.perpsAux === '1') {
-        const [perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw] = await Promise.all([
+        const [perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw] = await Promise.all([
           kvGet('vault:perps_snapshots'),
           kvGet('vault:perps_variational_hedges'),
           kvGet('vault:perps_closed_pairs'),
+          kvGet('vault:perps_variational_settlements'),
         ]);
         return res.status(200).json({
           ok: true,
           perpsSnapshots: parseJson(perpsSnapshotsRaw, {}),
           perpsVariationalHedges: parseJson(perpsVariationalHedgesRaw, []),
           perpsClosedPairs: parseJson(perpsClosedPairsRaw, []),
+          perpsVariationalSettlements: parseJson(perpsVariationalSettlementsRaw, {}),
         });
       }
       if (req.query?.loopSnapshots === '1') {
@@ -785,11 +810,12 @@ module.exports = async function handler(req, res) {
       // Heavy aux only (~500KB): snapshots, logos, perps history, event log cache.
       // Fetched in background after portfolio-first paint.
       if (req.query?.auxHeavy === '1') {
-        const [snapshotsRaw, perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, logoCacheRaw, eventHistoryRaw] = await Promise.all([
+        const [snapshotsRaw, perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw, logoCacheRaw, eventHistoryRaw] = await Promise.all([
           kvGet('vault:snapshots'),
           kvGet('vault:perps_snapshots'),
           kvGet('vault:perps_variational_hedges'),
           kvGet('vault:perps_closed_pairs'),
+          kvGet('vault:perps_variational_settlements'),
           kvGet('vault:logo_cache'),
           kvGet('vault:event_history'),
         ]);
@@ -798,6 +824,7 @@ module.exports = async function handler(req, res) {
           _perpsSnapshots: parse(perpsSnapshotsRaw, {}),
           _perpsVariationalHedges: parse(perpsVariationalHedgesRaw, []),
           _perpsClosedPairs: parse(perpsClosedPairsRaw, []),
+          _perpsVariationalSettlements: parse(perpsVariationalSettlementsRaw, {}),
           _logoCache:      parse(logoCacheRaw, {}),
           _eventHistory:   parse(eventHistoryRaw, []),
         };
@@ -810,7 +837,7 @@ module.exports = async function handler(req, res) {
         snapshotsRaw, aaveMarketsRaw, customTokensRaw,
         opinionWalletsRaw, tgChannelsRaw, pmWalletsRaw, opportunityMonitorsRaw,
         eventHistoryRaw, dismissedMarketsRaw, perpsConfigRaw, perpsSnapshotsRaw,
-        perpsVariationalHedgesRaw, perpsClosedPairsRaw, logoCacheRaw,
+        perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw, logoCacheRaw,
         geckoSymbolIdsRaw, newsFeedRaw,
       ] = await Promise.all([
         kvGet('vault:portfolio'),
@@ -830,6 +857,7 @@ module.exports = async function handler(req, res) {
         portfolioOnly ? null : kvGet('vault:perps_snapshots'),
         kvGet('vault:perps_variational_hedges'),
         portfolioOnly ? null : kvGet('vault:perps_closed_pairs'),
+        portfolioOnly ? null : kvGet('vault:perps_variational_settlements'),
         portfolioOnly ? null : kvGet('vault:logo_cache'),
         kvGet('vault:gecko_symbol_ids'),
         kvGet('vault:news_feed'),
@@ -852,6 +880,7 @@ module.exports = async function handler(req, res) {
       const perpsSnapshots      = parse(perpsSnapshotsRaw, {});
       const perpsVariationalHedges = parse(perpsVariationalHedgesRaw, []);
       const perpsClosedPairs    = parse(perpsClosedPairsRaw, []);
+      const perpsVariationalSettlements = parse(perpsVariationalSettlementsRaw, {});
       const logoCache           = parse(logoCacheRaw, {});
       const geckoSymbolIds      = parse(geckoSymbolIdsRaw, {});
       const newsFeed            = parse(newsFeedRaw, null);
@@ -895,6 +924,7 @@ module.exports = async function handler(req, res) {
         result._eventHistory = eventHistory;
         result._perpsSnapshots = perpsSnapshots;
         result._perpsClosedPairs = perpsClosedPairs;
+        result._perpsVariationalSettlements = perpsVariationalSettlements;
         result._logoCache = logoCache;
       }
 
@@ -937,6 +967,14 @@ module.exports = async function handler(req, res) {
         const merged = mergeVariationalHedgeRows(existing, portfolioHedges);
         await kvSet('vault:perps_variational_hedges', JSON.stringify(merged));
         saved.perpsVariationalHedges = true;
+      }
+      const portfolioSettlements = body.portfolio?.perpsArb?.variationalSettlements
+        || body.portfolio?.perpsVariationalSettlements;
+      if (portfolioSettlements && typeof portfolioSettlements === 'object' && Object.keys(portfolioSettlements).length) {
+        const existing = parseJson(await kvGet('vault:perps_variational_settlements'), {});
+        const merged = mergeVariationalSettlementMaps(existing, portfolioSettlements);
+        await kvSet('vault:perps_variational_settlements', JSON.stringify(merged));
+        saved.perpsVariationalSettlements = true;
       }
     }
 
@@ -1057,6 +1095,13 @@ module.exports = async function handler(req, res) {
       const merged = mergeVariationalHedgeRows(existing, body.perpsVariationalHedges);
       await kvSet('vault:perps_variational_hedges', JSON.stringify(merged));
       saved.perpsVariationalHedges = true;
+    }
+    if (body.perpsVariationalSettlements && typeof body.perpsVariationalSettlements === 'object'
+      && Object.keys(body.perpsVariationalSettlements).length) {
+      const existing = parseJson(await kvGet('vault:perps_variational_settlements'), {});
+      const merged = mergeVariationalSettlementMaps(existing, body.perpsVariationalSettlements);
+      await kvSet('vault:perps_variational_settlements', JSON.stringify(merged));
+      saved.perpsVariationalSettlements = true;
     }
     if (Array.isArray(body.perpsClosedPairs) && body.perpsClosedPairs.length) {
       const existing = parseJson(await kvGet('vault:perps_closed_pairs'), []);
