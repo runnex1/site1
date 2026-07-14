@@ -4241,6 +4241,46 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
 }
 
 {
+  const { applyVariationalHedges, shouldReopenClosedVariationalHedge } = require('../lib/variational-hedge.js');
+  const openedAtOld = Date.parse('2026-06-01T00:00:00.000Z');
+  const closedAtOld = Date.parse('2026-06-10T00:00:00.000Z');
+  const now = Date.parse('2026-06-12T00:00:00.000Z');
+  const oldHedge = {
+    id: 'atom-old',
+    symbol: 'ATOM',
+    trackedVenue: 'hyperliquid',
+    status: 'closed',
+    openedAt: openedAtOld,
+    closedAt: closedAtOld,
+    variationalEntryPx: 8.5,
+    variationalExitPx: 8.7,
+    trackedSize: 5000,
+    trackedLastSnapshot: { side: 'long', size: 5000, entryPx: 8.2, markPx: 8.6, unrealizedPnl: 0, funding: 12, fees: 0 },
+  };
+  const newLiveLeg = { symbol: 'ATOM', venue: 'hyperliquid', size: 8000, side: 'long', entryPx: 9.1, entry: 9.1, unrealizedPnl: 40, fundingSinceOpen: 2 };
+  assert.equal(
+    shouldReopenClosedVariationalHedge(oldHedge, newLiveLeg, now),
+    false,
+    'closed hedge must not reopen for a new round with different entry/size',
+  );
+  const data = {
+    paired: [],
+    unhedged: [{ symbol: 'ATOM', venue: 'hyperliquid', size: 8000, side: 'long', entryPx: 9.1, notional: 72800, unrealizedPnl: 40, funding: 2 }],
+    rateSpread: [],
+    hyperliquid: { state: { positions: [{ symbol: 'ATOM', size: 8000, side: 'long', entryPx: 9.1, unrealizedPnl: 40, fundingSinceOpen: 2 }] } },
+    nado: { state: { positions: [] } },
+    grvt: { state: { positions: [] } },
+    extended: { state: { positions: [] } },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  };
+  const result = applyVariationalHedges(data, [oldHedge], {});
+  assert.equal(result.hedges[0].status, 'closed', 'stale closed hedge must stay closed when a new position opens');
+  assert.equal(result.paired.filter((p) => String(p.pairType || '').endsWith('_variational')).length, 0, 'new position must not auto-pair with old hedge');
+  assert.equal(result.unhedged.length, 1, 'new ATOM leg must remain unhedged until user clicks hedge');
+}
+
+{
   const d = JSON.parse(readFileSync(join(ROOT, '_live-perps.json'), 'utf8'));
   const { applyVariationalHedges } = require('../lib/variational-hedge.js');
   const empty = JSON.parse(JSON.stringify(d));
