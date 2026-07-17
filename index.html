@@ -7888,6 +7888,81 @@ body[data-active-tab="loops"] .page-content,
   }
   .perps-mv3-cell-val.pos { color: #55d66f; }
   .perps-mv3-cell-val.neg { color: #ff5c7a; }
+  .perps-mv3-head-main {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+  }
+  .perps-mv3-head-text { min-width: 0; flex: 1; }
+  .perps-mv3-chart-btn {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 10px;
+    border: 1px solid rgba(134, 159, 179, 0.22);
+    background: rgba(255, 255, 255, 0.04);
+    color: #9dacbb;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .perps-mv3-chart-btn svg { width: 16px; height: 16px; }
+  .perps-mv3-chart-btn:active,
+  .perps-mv3-chart-btn:hover {
+    border-color: rgba(167, 139, 250, 0.45);
+    color: #c4b5fd;
+    background: rgba(167, 139, 250, 0.1);
+  }
+  .perps-mv3-risk {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .perps-mv3-risk-cell {
+    padding: 9px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(134, 159, 179, 0.10);
+    background: rgba(255, 255, 255, 0.02);
+    min-width: 0;
+  }
+  .perps-mv3-risk-label {
+    font-family: var(--ff-mono);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #718391;
+    margin-bottom: 6px;
+  }
+  .perps-mv3-risk-cell .perps-pos-liq-stack {
+    gap: 0.28rem;
+  }
+  .perps-mv3-risk-cell .perps-pos-liq-val,
+  .perps-mv3-risk-cell .perps-pos-tpsl-row {
+    font-size: 0.72rem;
+  }
+  .perps-mv3-risk-cell .perps-tpsl-tooltip {
+    left: auto;
+    right: 0;
+    min-width: 11rem;
+  }
+  .modal-content.perps-pos-chart-modal {
+    width: min(96vw, 780px);
+    max-height: calc(100dvh - var(--mobile-nav-h, 64px) - 24px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .perps-pos-chart-canvas-wrap {
+    height: 220px;
+    max-height: 32vh;
+    min-height: 180px;
+  }
   .perps-leverage-panel .perps-panel-head { border-bottom: none; }
   .perps-leverage-grid {
     display: grid;
@@ -34997,17 +35072,30 @@ function perpsRenderPortfolioPositionsV3(paired) {
         return `<article class="perps-mv3-card${sizeMismatch ? ' warn' : ''}">
             <div class="perps-mv3-head">
                 <div class="perps-mv3-icon">${makeLogo(p.symbol, false, 36)}</div>
-                <div>
-                    <div class="perps-mv3-name">${dashEsc(p.symbol)}</div>
-                    <div class="perps-mv3-meta">${meta}</div>
-                    <div class="perps-mv3-status">
-                        <span class="perps-mv3-open${sizeMismatch ? ' warn' : ''}">Open</span>
-                        <span class="perps-mv3-px">${perpsFmtPx(midPx)}</span>
+                <div class="perps-mv3-head-main">
+                    <div class="perps-mv3-head-text">
+                        <div class="perps-mv3-name">${dashEsc(p.symbol)}</div>
+                        <div class="perps-mv3-meta">${meta}</div>
+                        <div class="perps-mv3-status">
+                            <span class="perps-mv3-open${sizeMismatch ? ' warn' : ''}">Open</span>
+                            <span class="perps-mv3-px">${perpsFmtPx(midPx)}</span>
+                        </div>
                     </div>
+                    <button type="button" class="perps-mv3-chart-btn" aria-label="Position performance chart" onclick="perpsOpenPositionChart(${pairIdx}); event.stopPropagation();">${perpsPositionChartIconSvg()}</button>
                 </div>
             </div>
             ${warnHtml}
             <div class="perps-mv3-legs">${displayLegs.map(entry => perpsMv3LegHtml(entry, p)).join('')}</div>
+            <div class="perps-mv3-risk">
+                <div class="perps-mv3-risk-cell">
+                    <div class="perps-mv3-risk-label">Liq price</div>
+                    ${perpsPositionLiqStackHtml(p, displayLegs)}
+                </div>
+                <div class="perps-mv3-risk-cell">
+                    <div class="perps-mv3-risk-label">TP / SL</div>
+                    ${perpsPositionTpSlStackHtml(p, displayLegs)}
+                </div>
+            </div>
             <div class="perps-mv3-grid2">
                 ${perpsMv3Cell('Total PnL', totalPnl != null ? perpsFmtUsd(totalPnl) : '—', totalPnl != null ? perpsSignedCls(totalPnl) : '')}
                 ${perpsMv3Cell('Funding', sessionFunding != null ? perpsFmtUsd(sessionFunding) : '—', sessionFunding != null ? perpsSignedCls(sessionFunding) : '')}

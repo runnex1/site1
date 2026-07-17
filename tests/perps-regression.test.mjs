@@ -2862,6 +2862,9 @@ assert.match(indexHtml, /<div>Liq Price<\/div>/, 'open positions must show a liq
 assert.match(indexHtml, /<div>TP\/SL<\/div>/, 'open positions must show a TP/SL column after Liq Price');
 assert.doesNotMatch(indexHtml, /<div>Basis uPnL<\/div>/, 'open positions must not show Basis uPnL column');
 assert.match(indexHtml, /function perpsPositionLiqStackHtml\(p, displayLegs\)/, 'open positions must render only liquidation prices in the Liq Price column');
+assert.match(indexHtml, /perps-mv3-chart-btn[\s\S]*?perpsOpenPositionChart\(\$\{pairIdx\}\)/, 'mobile open positions must expose a chart button that opens the performance chart');
+assert.match(indexHtml, /perps-mv3-risk[\s\S]*?perpsPositionLiqStackHtml\(p, displayLegs\)/, 'mobile open positions must show liquidation prices');
+assert.match(indexHtml, /perps-mv3-risk[\s\S]*?perpsPositionTpSlStackHtml\(p, displayLegs\)/, 'mobile open positions must show TP\/SL prices');
 assert.match(indexHtml, /function perpsFmtTpSlStackHtml\(tpPx, slPx, currentPx, legCtx = \{\}\)/, 'open positions must render TP above SL vertically');
 assert.match(indexHtml, /perpsPriceRiskStyle\(currentPx, tp\)/, 'TP rows must use the same distance-based risk color as liq price');
 assert.match(indexHtml, /perpsPriceRiskStyle\(currentPx, sl\)/, 'SL rows must use the same distance-based risk color as liq price');
