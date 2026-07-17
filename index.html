@@ -31401,9 +31401,11 @@ function perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, 
     }
     const all = perpsLoadVariationalSettlementsRaw();
     const prev = Array.isArray(all[hedge.id]) ? all[hedge.id] : [];
+    // Freeze immediately when T−10s sample window has opened (estimation → UI → freeze).
     const captured = VH.captureVariationalSettlementsDue(hedge, listing, prev, {
         trackedLeg,
-        now: data?.fetchedAt || Date.now(),
+        now: Date.now(),
+        listingFetchedAt: data?.fetchedAt || Date.now(),
     });
     if (captured === prev) return false;
     all[hedge.id] = captured;
@@ -31439,6 +31441,90 @@ function perpsCaptureAllVariationalSettlements(data) {
             entryPx: snap.entryPx,
             markPx: snap.markPx,
         };
+    }
+}
+
+let _perpsVariationalSampleTimer = null;
+let _perpsVariationalSampleInFlight = false;
+
+function perpsEarliestVariationalSampleAtMs(data) {
+    const VH = window.VariationalHedge;
+    if (!VH?.variationalNextFundingAtMs || !VH?.variationalSettlementSampleAtMs) return null;
+    const hedges = perpsLoadVariationalHedges().filter((h) => h?.status === 'open' || h?.status === 'pending_close');
+    if (!hedges.length) return null;
+    const variationalBySymbol = {
+        ...perpsVariationalBySymbolFromSpread(data?.rateSpread || []),
+        ...(data?.variationalListings || {}),
+        ...(data?._variationalListingBySymbol || {}),
+    };
+    const stored = perpsLoadVariationalSettlementsRaw();
+    let soonest = null;
+    const now = Date.now();
+    for (const hedge of hedges) {
+        const listing = variationalBySymbol[hedge.symbol] || null;
+        const nextAt = VH.variationalNextFundingAtMs(hedge, listing, now);
+        if (!nextAt) continue;
+        const sampleAt = VH.variationalSettlementSampleAtMs(nextAt);
+        if (sampleAt == null) continue;
+        const rows = Array.isArray(stored[hedge.id]) ? stored[hedge.id] : [];
+        if (rows.some((s) => Number(s.time) === Number(nextAt) && s.frozen)) continue;
+        if (soonest == null || sampleAt < soonest) soonest = sampleAt;
+    }
+    return soonest;
+}
+
+function perpsArmVariationalSettlementSampleTimer(data, delayMs) {
+    if (_perpsVariationalSampleTimer) {
+        clearTimeout(_perpsVariationalSampleTimer);
+        _perpsVariationalSampleTimer = null;
+    }
+    const delay = Math.max(50, Math.min(Number(delayMs) || 0, 8 * 3600000));
+    _perpsVariationalSampleTimer = setTimeout(() => {
+        if (_perpsVariationalSampleInFlight) return;
+        _perpsVariationalSampleInFlight = true;
+        void (async () => {
+            try {
+                // Pull fresh mark/rate at T−10s, then freeze on apply/enrich.
+                await perpsRefresh(true);
+            } catch (e) {
+                try {
+                    if (_perpsLastData) {
+                        perpsCaptureAllVariationalSettlements(_perpsLastData);
+                    }
+                } catch (e2) {}
+            } finally {
+                _perpsVariationalSampleInFlight = false;
+                perpsScheduleVariationalSettlementSample(_perpsLastData);
+            }
+        })();
+    }, delay);
+}
+
+function perpsScheduleVariationalSettlementSample(data) {
+    const payload = data || _perpsLastData;
+    const sampleAt = perpsEarliestVariationalSampleAtMs(payload);
+    if (sampleAt == null) {
+        if (_perpsVariationalSampleTimer) {
+            clearTimeout(_perpsVariationalSampleTimer);
+            _perpsVariationalSampleTimer = null;
+        }
+        return;
+    }
+    const delay = sampleAt - Date.now();
+    if (delay > 0) {
+        perpsArmVariationalSettlementSampleTimer(payload, delay + 50);
+        return;
+    }
+    // Already in the T−10s window: freeze now from current UI data, then arm next boundary.
+    if (!_perpsVariationalSampleInFlight) {
+        perpsCaptureAllVariationalSettlements(payload);
+    }
+    const nextSample = perpsEarliestVariationalSampleAtMs(payload);
+    if (nextSample != null && nextSample > Date.now()) {
+        perpsArmVariationalSettlementSampleTimer(payload, nextSample - Date.now() + 50);
+    } else if (nextSample != null && nextSample <= Date.now()) {
+        // Still due (e.g. missing mark) — retry shortly without tight loop.
+        perpsArmVariationalSettlementSampleTimer(payload, 15000);
     }
 }
 
@@ -32293,6 +32379,7 @@ function perpsApplyVariationalHedgesToData(data) {
         if (VH.isVariationalPair?.(pair)) perpsEnrichVariationalPairFunding(pair, data);
     }
     perpsMergeVariationalIntoDailyFundingSeries(data);
+    perpsScheduleVariationalSettlementSample(data);
     return data;
 }
 
@@ -32519,18 +32606,40 @@ function perpsEnrichVariationalPairFunding(pair, data) {
 
     const listing = perpsResolveVariationalListing(pair, data);
     const trackedLeg = pair.crossLegA?.venue === trackedVenue ? pair.crossLegA : pair.crossLegB;
+    // Estimate → show → freeze immediately once T−10s sample window is open.
     perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data);
-    const storedSettlements = (() => {
+    let storedSettlements = (() => {
         const all = perpsLoadVariationalSettlementsRaw();
         return Array.isArray(all[hedge?.id]) ? all[hedge.id] : [];
     })();
-    const variationalEvents = VH?.buildVariationalFundingEventsFrozen
+    let variationalEvents = VH?.buildVariationalFundingEventsFrozen
         ? VH.buildVariationalFundingEventsFrozen(hedge, listing, storedSettlements, {
             sinceMs: sessionSince,
             trackedLeg,
-            captureMissing: false,
+            now: Date.now(),
+            captureMissing: true,
         })
         : [];
+    // Persist any settlements frozen during the estimate pass, then rebuild from storage.
+    if (VH?.captureVariationalSettlementsDue && hedge?.id) {
+        const all = perpsLoadVariationalSettlementsRaw();
+        const prev = Array.isArray(all[hedge.id]) ? all[hedge.id] : [];
+        const captured = VH.captureVariationalSettlementsDue(hedge, listing, prev, {
+            trackedLeg,
+            now: Date.now(),
+        });
+        if (captured !== prev) {
+            all[hedge.id] = captured;
+            perpsPersistVariationalSettlements(all);
+            storedSettlements = captured;
+            variationalEvents = VH.buildVariationalFundingEventsFrozen(hedge, listing, storedSettlements, {
+                sinceMs: sessionSince,
+                trackedLeg,
+                now: Date.now(),
+                captureMissing: false,
+            });
+        }
+    }
     const varPaymentSum = variationalEvents
         .filter((ev) => !ev.isUnsettled)
         .reduce((sum, ev) => sum + (ev.usdc || 0), 0);

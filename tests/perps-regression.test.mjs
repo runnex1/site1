@@ -3354,6 +3354,9 @@ const {
   variationalFundingPaymentPerInterval,
   variationalNextFundingAtMs,
   variationalHedgeOpenedAtMs,
+  variationalSettlementSampleAtMs,
+  variationalSettlementsReadyForSample,
+  VARIATIONAL_SETTLEMENT_SAMPLE_LEAD_MS,
   variationalLegPnl,
 } = require('../lib/variational-hedge.js');
 const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js');
@@ -3569,6 +3572,10 @@ assert.match(indexHtml, /function perpsLoadVariationalSettlementsRaw\(/, 'variat
 assert.match(indexHtml, /function perpsPersistVariationalSettlements\(/, 'variational settlements must persist locally and sync');
 assert.match(indexHtml, /function perpsMergeVariationalSettlementsFromServer\(/, 'variational settlements must merge from server');
 assert.match(indexHtml, /function perpsPushVariationalSettlementsToServer\(/, 'variational settlements must push to server');
+assert.match(indexHtml, /function perpsScheduleVariationalSettlementSample\(/, 'UI must schedule freeze at T-10s before each settlement');
+assert.match(indexHtml, /VARIATIONAL_SETTLEMENT_SAMPLE_LEAD_MS|variationalSettlementSampleAtMs/, 'UI must use T-10s sample helper for Variational freeze');
+assert.match(variationalHedgeJs, /VARIATIONAL_SETTLEMENT_SAMPLE_LEAD_MS\s*=\s*10\s*\*\s*1000/, 'Variational sample lead must be exactly 10 seconds');
+assert.match(variationalHedgeJs, /function variationalSettlementSampleAtMs\(/, 'settlement sample time helper must exist');
 assert.match(syncJs, /vault:perps_variational_settlements/, 'sync must persist frozen Variational settlements server-side');
 assert.match(indexHtml, /function perpsResolveVariationalHedge\(pair\)/, 'variational enrichment must resolve hedge by id or symbol+venue');
 assert.match(indexHtml, /variationalHedgeFromPair/, 'variational enrichment must merge pair legs into hedge funding seed');
@@ -4571,7 +4578,10 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
 {
   const openedAt = Date.parse('2026-06-24T09:00:00.000Z');
   const settlementTime = Date.parse('2026-06-24T16:00:00.000Z');
-  const now = Date.parse('2026-06-24T17:00:00.000Z');
+  const sampleAt = settlementTime - VARIATIONAL_SETTLEMENT_SAMPLE_LEAD_MS;
+  assert.equal(variationalSettlementSampleAtMs(settlementTime), sampleAt, 'sample must be exactly 10s before settlement');
+  assert.equal(VARIATIONAL_SETTLEMENT_SAMPLE_LEAD_MS, 10000);
+
   const listing = {
     symbol: 'XLM',
     markPx: 0.217,
@@ -4592,38 +4602,59 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
     status: 'open',
     sizeHistory: [{ atMs: openedAt, size: -100000 }],
   };
-  const captured = captureVariationalSettlementsDue(hedge100k, listing, [], { now });
-  assert.equal(captured.length, 1, 'capture must freeze one completed settlement');
-  assert.equal(captured[0].time, settlementTime);
-  assert.equal(captured[0].size, -100000);
-  const frozenPayment = captured[0].usdc;
 
+  const tooEarly = captureVariationalSettlementsDue(hedge100k, listing, [], {
+    now: sampleAt - 1,
+  });
+  assert.equal(tooEarly.length, 0, 'must not freeze before T-10s sample window');
+
+  const atSample = captureVariationalSettlementsDue(hedge100k, listing, [], {
+    now: sampleAt,
+  });
+  assert.equal(atSample.length, 1, 'must freeze at T-10s even before the settlement boundary');
+  assert.equal(atSample[0].time, settlementTime);
+  assert.equal(atSample[0].sampleAtMs, sampleAt);
+  assert.equal(atSample[0].frozenAt, sampleAt);
+  assert.equal(atSample[0].size, -100000);
+  assert.ok(atSample[0].frozen);
+  const frozenPayment = atSample[0].usdc;
+
+  // Resize after sample time must not rewrite the frozen past settlement.
   const hedge176k = {
     ...hedge100k,
     trackedSize: 176000,
     variationalSize: -176000,
     sizeHistory: [
       { atMs: openedAt, size: -100000 },
-      { atMs: Date.parse('2026-06-24T18:00:00.000Z'), size: -176000 },
+      { atMs: settlementTime - 5000, size: -176000 },
     ],
   };
-  const events = buildVariationalFundingEventsFrozen(hedge176k, listing, captured, {
-    now,
+  const events = buildVariationalFundingEventsFrozen(hedge176k, listing, atSample, {
+    now: settlementTime + 3600000,
     captureMissing: false,
   });
   const past = events.find((ev) => ev.time === settlementTime);
   assert.ok(past, 'frozen builder must return past settlement event');
-  assert.equal(past.usdc, frozenPayment, 'past settlement must keep frozen payment from 100k size');
+  assert.equal(past.usdc, frozenPayment, 'past settlement must keep frozen payment from T-10s size');
   assert.ok(past.frozen, 'past settlement must be marked frozen');
+  assert.equal(past.sampleAtMs, sampleAt);
 
-  const future = buildVariationalFundingEventsFrozen(hedge176k, listing, captured, {
+  const ready = variationalSettlementsReadyForSample(
+    openedAt,
+    null,
+    listing,
+    sampleAt,
+  );
+  assert.ok(ready.includes(settlementTime), 'ready list must include settlement once sample window opens');
+
+  const future = buildVariationalFundingEventsFrozen(hedge176k, listing, atSample, {
     now: Date.parse('2026-06-24T23:00:00.000Z'),
     captureMissing: false,
-    sinceMs: Date.parse('2026-06-25T00:00:00.000Z'),
-  }).find((ev) => ev.isUnsettled);
+  }).find((ev) => ev.isUnsettled && ev.time === Date.parse('2026-06-25T00:00:00.000Z'));
   if (future) {
     const expectedFuture = variationalFundingPaymentPerInterval(-176000, listing.markPx, listing.fundingRateInterval);
     assert.ok(Math.abs(future.usdc - expectedFuture) < 1e-9, 'future estimate must use current 176k size');
+    assert.equal(future.sampleAtMs, Date.parse('2026-06-25T00:00:00.000Z') - 10000);
   }
 }
 
