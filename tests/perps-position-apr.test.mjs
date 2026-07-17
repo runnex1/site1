@@ -63,6 +63,11 @@ function perpsPairEffectiveDays(p, range) {
 }
 
 function perpsPairAprDaysForRows(p, range, rows) {
+  const windowDays = perpsStatRangeWindowDays(range);
+  if (windowDays != null) {
+    if (perpsPairUsesSinceOpen(p, range)) return perpsPairEffectiveDays(p, range);
+    return windowDays;
+  }
   const span = perpsDailySeriesSpanDays(rows);
   if (span != null && rows?.length) return span;
   return perpsPairEffectiveDays(p, range);
@@ -122,6 +127,22 @@ assert.ok(window1d != null, '1d APR must be computable');
 assert.ok(Math.abs(sessionApr - window30d) < 0.01, '20d session inside 30d window should match full session APR');
 assert.ok(window1d > window7d, '1D funding-only APR must exceed 7D net APR when fees are present');
 assert.ok(Math.abs(window7d - window30d) > 0.01 || window7d !== sessionApr, '7d APR must differ from full session when session is longer');
+
+// 1D often keeps yesterday+today after UTC midnight; Period must still be 1.0d (past 24h), not 2.0d.
+{
+  const twoBucket1d = {
+    avgNotional: 100000,
+    daysOpen: 20,
+    dailyPerformanceSeries: [
+      { day: day(1), dailyFunding: 5, dailyFees: 0, dailyNet: 5 },
+      { day: day(0), dailyFunding: 5, dailyFees: 0, dailyNet: 5 },
+    ],
+  };
+  const days = perpsPairAprDaysForRows(twoBucket1d, '1d', twoBucket1d.dailyPerformanceSeries);
+  assert.equal(days, 1, '1D APR period must be 1 day even when two calendar buckets are present');
+  const apr = perpsPairPeriodApr(twoBucket1d, '1d');
+  assert.ok(Math.abs(apr - perpsAnnualizeReturnPct(10, 100000, 1)) < 0.01, '1D APR must annualize past-24h funding over 1.0d');
+}
 
 const young = {
   ...pair,

@@ -34419,7 +34419,21 @@ function perpsDailySeriesSpanDays(rows) {
     return Math.max(1, Math.round((last - first) / 86400000) + 1);
 }
 
+/**
+ * Days used to annualize pair Net APR.
+ * Fixed windows (1D/7D/30D): use the selected window length — not calendar-day row span.
+ * A 1D filter often includes yesterday + today (2 calendar buckets) after a UTC midnight
+ * cross; that must still annualize as 1.0d of past-24h funding, not 2.0d.
+ * Younger positions (open ≤ window) use actual daysOpen.
+ */
 function perpsPairAprDaysForRows(p, range, rows) {
+    const windowDays = perpsStatRangeWindowDays(range);
+    if (windowDays != null) {
+        if (perpsPairUsesSinceOpen(p, range)) {
+            return perpsPairEffectiveDays(p, range);
+        }
+        return windowDays;
+    }
     const span = perpsDailySeriesSpanDays(rows);
     if (span != null && rows?.length) return span;
     return perpsPairEffectiveDays(p, range);

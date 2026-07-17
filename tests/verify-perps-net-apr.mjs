@@ -145,6 +145,11 @@ function perpsPairEffectiveDays(p, range) {
 }
 
 function perpsPairAprDaysForRows(p, range, rows) {
+  const windowDays = perpsStatRangeWindowDays(range);
+  if (windowDays != null) {
+    if (perpsPairUsesSinceOpen(p, range)) return perpsPairEffectiveDays(p, range);
+    return windowDays;
+  }
   const span = perpsDailySeriesSpanDays(rows);
   if (span != null && rows?.length) return span;
   return perpsPairEffectiveDays(p, range);

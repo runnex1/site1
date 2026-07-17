@@ -2846,6 +2846,8 @@ assert.match(indexHtml, /fundingOnly \? totals\.funding : totals\.net/, 'Net APR
 assert.match(indexHtml, /function perpsFilterPairLatestSessionForRange\(series, range\)/, 'Position Net APR must filter to the latest session before applying the selected range');
 assert.match(indexHtml, /const rows = perpsFilterPairLatestSessionForRange\(rawRows, range\);/, 'Position Net APR must not include older sessions in all-time APR');
 assert.match(indexHtml, /perpsPairPeriodApr\(p, _perpsStatRange\)/, 'positions table Net APR must follow the selected stat range within the latest session');
+assert.match(indexHtml, /const windowDays = perpsStatRangeWindowDays\(range\);/, 'pair APR days must prefer selected window over calendar span');
+assert.match(indexHtml, /return windowDays;/, '1D\/7D\/30D APR must annualize over the selected timeframe length');
 assert.match(indexHtml, /perpsBuildNetAprTooltipHtml\(p, range = _perpsStatRange\)/, 'Net APR tooltip must explain the selected stat window');
 assert.doesNotMatch(indexHtml, /perpsPairSessionApr\(p\)/, 'positions table Net APR must not ignore the stat range selector');
 assert.match(indexHtml, /const PERPS_REFRESH_RETRIES = 1;/, 'Perps dashboard load must retry transient API failures once');
