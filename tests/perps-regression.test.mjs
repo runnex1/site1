@@ -724,10 +724,11 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   }, 30);
   assert.equal(enriched[0].peakMetricsApplied, true, 'closed UNI must use 24h peak-to-close stats');
   assert.equal(enriched[0].size, 100, 'closed UNI size must be 24h peak position');
-  assert.equal(enriched[0].funding, 3, 'closed UNI funding must sum both legs from peak to close');
+  assert.equal(enriched[0].funding, 3, 'closed UNI funding must use last-session total from performance series');
+  assert.equal(enriched[0].sessionFundingApplied, true, 'closed UNI must flag session funding on peak pairs');
   assert.equal(enriched[0].fees, 4.5, 'closed UNI fees must sum fills from peak to close');
   assert.equal(enriched[0].closeSlippage, 2, 'closed UNI slippage must sum realized PnL from peak to close');
-  assert.equal(enriched[0].netPnl, 2 + 3 - 4.5, 'closed net PnL must use peak-window funding and fees');
+  assert.equal(enriched[0].netPnl, 2 + 3 - 4.5, 'closed net PnL must use session funding with peak fees/slippage');
 }
 
 {
@@ -2790,7 +2791,7 @@ assert.match(positionPeakWindowJs, /resolveFundingFeesWindowStart/, 'peak metric
 assert.match(variationalHedgeJs, /applyVariationalPeakToClosePair/, 'variational closed pairs must apply peak-to-close metrics');
 assert.match(variationalHedgeJs, /computeVariationalClosedLegPnl/, 'variational closed leg PnL must offset tracked exchange realized');
 assert.match(variationalHedgeJs, /computeVariationalClosedPairFunding/, 'variational closed pairs must accrue funding from hedge open through close');
-assert.match(indexHtml, /peakMetricsApplied/, 'closed display must preserve peak-to-close totals');
+assert.match(indexHtml, /sessionFundingApplied|keepFrozenFunding|perpsPairLatestSessionPnl/, 'closed display must prefer last-session funding over lifetime');
 assert.match(perpsJs, /function closedPairSessionApr\(/, 'closed pairs must compute session APR server-side');
 assert.match(indexHtml, /pair\.closeSlippage/, 'Closed tab must show closing slippage separately');
 assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response must include closed pairs');
@@ -4059,10 +4060,94 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
   assert.equal(result.hedges[0].supersededByLiveCross, true);
 }
 
+{
+  const { applyVariationalHedges } = require('../lib/variational-hedge.js');
+  const closedAt = Date.parse('2026-07-10T12:00:00.000Z');
+  const openedAt = closedAt - 5 * 86400000;
+  const listing = { symbol: 'ADA', markPx: 0.165, fundingRateInterval: 0.0001, fundingIntervalS: 28800 };
+  const hedge = {
+    id: 'var-ada-zombie',
+    symbol: 'ADA',
+    trackedVenue: 'hyperliquid',
+    trackedSize: 54000,
+    variationalSize: -54000,
+    variationalEntryPx: 0.16,
+    variationalExitPx: 0.1654,
+    status: 'open',
+    openedAt,
+    closedAt,
+    closedFundingUsd: 179.05,
+    closedTrackedFundingUsd: 111.5,
+    closedVariationalFundingUsd: 67.55,
+    supersededByLiveCross: true,
+    trackedLastSnapshot: {
+      size: 54000,
+      side: 'long',
+      entryPx: 0.16,
+      unrealizedPnl: -100,
+      funding: 111.5,
+      fees: 12,
+      markPx: 0.165,
+    },
+  };
+  const data = {
+    paired: [{
+      pairType: 'hl_grvt',
+      symbol: 'ADA',
+      crossLegA: { venue: 'hyperliquid', symbol: 'ADA', size: 54000, side: 'long' },
+      crossLegB: { venue: 'grvt', symbol: 'ADA', size: 54000, side: 'short' },
+    }],
+    unhedged: [],
+    rateSpread: [],
+    hyperliquid: {
+      state: { positions: [{ symbol: 'ADA', size: 54000, side: 'long', entryPx: 0.17, markPx: 0.165, unrealizedPnl: -50, fundingSinceOpen: 1, fees: 0 }] },
+      fills: { fills: [
+        { symbol: 'ADA', time: openedAt, side: 'B', px: 0.16, sz: 54000, fee: 5, closedPnl: 0 },
+        { symbol: 'ADA', time: closedAt, side: 'A', px: 0.165, sz: 54000, fee: 5, closedPnl: -270 },
+      ] },
+      funding: { payments: [] },
+    },
+    grvt: { state: { positions: [{ symbol: 'ADA', size: 54000, side: 'short', unrealizedPnl: 40, fundingSinceOpen: 2 }] } },
+    nado: { state: { positions: [] } },
+    extended: { state: { positions: [] } },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  };
+  const result = applyVariationalHedges(data, [hedge], { ADA: listing });
+  assert.equal(result.newClosedPairs.length, 1, 'zombie ADA Variational hedge must emit closed pair');
+  assert.equal(result.hedges[0].status, 'closed', 'zombie hedge must finalize to closed');
+  assert.equal(result.hedges[0].supersededByLiveCross, false);
+  assert.ok(result.newClosedPairs[0].manualVariationalClose, 'closed pair must be Variational');
+  assert.ok(Math.abs(result.newClosedPairs[0].funding - 179.05) < 0.01, 'closed funding must keep frozen last-session total');
+  assert.ok(result.paired.some((p) => p.pairType === 'hl_grvt'), 'live HL+GRVT cross must remain');
+}
+
+{
+  const closed = { id: 'h1', symbol: 'ADA', status: 'closed', closedAt: 100, closedFundingUsd: 50, updatedAt: 100, openedAt: 1 };
+  const openZombie = { id: 'h1', symbol: 'ADA', status: 'open', closedAt: 100, closedFundingUsd: 50, supersededByLiveCross: true, updatedAt: 200, openedAt: 1 };
+  const merged = mergeVariationalHedgeRecord(closed, openZombie);
+  assert.equal(merged.status, 'closed', 'merge must not resurrect closed Variational hedges');
+  assert.equal(merged.closedFundingUsd, 50);
+  const reopen = mergeVariationalHedgeRecord(closed, {
+    id: 'h1', symbol: 'ADA', status: 'open', closedAt: null, closedFundingUsd: null, variationalExitPx: null, updatedAt: 300, openedAt: 1,
+  });
+  assert.equal(reopen.status, 'open', 'clean reopen must win over older closed');
+  assert.equal(reopen.closedFundingUsd, null);
+}
+
+function mergeVariationalHedgeIsCleanReopen(h) {
+  return h?.status === 'open'
+    && (h.closedAt == null || h.closedAt === '')
+    && (h.closedFundingUsd == null || h.closedFundingUsd === '')
+    && (h.variationalExitPx == null || h.variationalExitPx === '');
+}
+
 function mergeVariationalHedgeRecord(prev, hedge) {
   const prevTs = Number(prev?.updatedAt) || Number(prev?.openedAt) || 0;
   const incTs = Number(hedge?.updatedAt) || Number(hedge?.openedAt) || 0;
   const preferPrev = prevTs >= incTs;
+  const newer = preferPrev ? prev : hedge;
+  const older = preferPrev ? hedge : prev;
   const pickField = (field) => {
     const prevVal = prev?.[field];
     const incVal = hedge?.[field];
@@ -4070,14 +4155,35 @@ function mergeVariationalHedgeRecord(prev, hedge) {
     if (incVal != null && incVal !== '' && Number(incVal) !== 0) return incVal;
     return preferPrev ? (prevVal ?? incVal) : (incVal ?? prevVal);
   };
+  const pickFinite = (field) => {
+    if (Number.isFinite(Number(newer?.[field]))) return Number(newer[field]);
+    if (Number.isFinite(Number(older?.[field]))) return Number(older[field]);
+    return newer?.[field] ?? older?.[field] ?? null;
+  };
+  let status = newer?.status ?? older?.status;
+  if (mergeVariationalHedgeIsCleanReopen(newer)) {
+    status = 'open';
+  } else if (prev?.status === 'closed' || hedge?.status === 'closed') {
+    status = 'closed';
+  } else if (prev?.status === 'pending_close' || hedge?.status === 'pending_close') {
+    status = 'pending_close';
+  }
+  const cleanOpen = status === 'open' && mergeVariationalHedgeIsCleanReopen(newer);
   return {
-    ...prev,
-    ...hedge,
+    ...older,
+    ...newer,
+    status,
     openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
     updatedAt: Math.max(prevTs, incTs) || null,
     variationalEntryPx: pickField('variationalEntryPx'),
     variationalSize: pickField('variationalSize'),
     trackedSize: pickField('trackedSize'),
+    closedAt: cleanOpen ? null : (Number(newer?.closedAt) || Number(older?.closedAt) || null),
+    variationalExitPx: cleanOpen ? null : (newer?.variationalExitPx ?? older?.variationalExitPx ?? null),
+    closedFundingUsd: cleanOpen ? null : pickFinite('closedFundingUsd'),
+    closedTrackedFundingUsd: cleanOpen ? null : pickFinite('closedTrackedFundingUsd'),
+    closedVariationalFundingUsd: cleanOpen ? null : pickFinite('closedVariationalFundingUsd'),
+    supersededByLiveCross: status === 'closed' ? false : Boolean(newer?.supersededByLiveCross ?? older?.supersededByLiveCross),
   };
 }
 

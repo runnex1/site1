@@ -77,12 +77,21 @@ function parseJson(raw, fallback) {
   try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch(e) { return fallback; }
 }
 
+function mergeVariationalHedgeIsCleanReopen(h) {
+  return h?.status === 'open'
+    && (h.closedAt == null || h.closedAt === '')
+    && (h.closedFundingUsd == null || h.closedFundingUsd === '')
+    && (h.variationalExitPx == null || h.variationalExitPx === '');
+}
+
 function mergeVariationalHedgeRecord(prev, hedge) {
   if (!hedge) return prev || null;
   if (!prev) return hedge;
   const prevTs = Number(prev?.updatedAt) || Number(prev?.openedAt) || 0;
   const incTs = Number(hedge?.updatedAt) || Number(hedge?.openedAt) || 0;
   const preferPrev = prevTs >= incTs;
+  const newer = preferPrev ? prev : hedge;
+  const older = preferPrev ? hedge : prev;
   const pickField = (field) => {
     const prevVal = prev?.[field];
     const incVal = hedge?.[field];
@@ -90,19 +99,35 @@ function mergeVariationalHedgeRecord(prev, hedge) {
     if (incVal != null && incVal !== '' && Number(incVal) !== 0) return incVal;
     return preferPrev ? (prevVal ?? incVal) : (incVal ?? prevVal);
   };
-  const active = new Set(['open', 'pending_close']);
-  let status = hedge?.status ?? prev?.status;
-  if (active.has(prev?.status) && hedge?.status === 'closed') status = prev.status;
-  else if (active.has(hedge?.status) && prev?.status === 'closed') status = hedge.status;
+  const pickFinite = (field) => {
+    if (Number.isFinite(Number(newer?.[field]))) return Number(newer[field]);
+    if (Number.isFinite(Number(older?.[field]))) return Number(older[field]);
+    return newer?.[field] ?? older?.[field] ?? null;
+  };
+  let status = newer?.status ?? older?.status;
+  if (mergeVariationalHedgeIsCleanReopen(newer)) {
+    status = 'open';
+  } else if (prev?.status === 'closed' || hedge?.status === 'closed') {
+    status = 'closed';
+  } else if (prev?.status === 'pending_close' || hedge?.status === 'pending_close') {
+    status = 'pending_close';
+  }
+  const cleanOpen = status === 'open' && mergeVariationalHedgeIsCleanReopen(newer);
   return {
-    ...prev,
-    ...hedge,
+    ...older,
+    ...newer,
     status,
     openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
     updatedAt: Math.max(prevTs, incTs) || null,
     variationalEntryPx: pickField('variationalEntryPx'),
     variationalSize: pickField('variationalSize'),
     trackedSize: pickField('trackedSize'),
+    closedAt: cleanOpen ? null : (Number(newer?.closedAt) || Number(older?.closedAt) || null),
+    variationalExitPx: cleanOpen ? null : (newer?.variationalExitPx ?? older?.variationalExitPx ?? null),
+    closedFundingUsd: cleanOpen ? null : pickFinite('closedFundingUsd'),
+    closedTrackedFundingUsd: cleanOpen ? null : pickFinite('closedTrackedFundingUsd'),
+    closedVariationalFundingUsd: cleanOpen ? null : pickFinite('closedVariationalFundingUsd'),
+    supersededByLiveCross: status === 'closed' ? false : Boolean(newer?.supersededByLiveCross ?? older?.supersededByLiveCross),
   };
 }
 

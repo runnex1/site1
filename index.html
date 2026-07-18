@@ -32137,12 +32137,21 @@ function perpsVariationalHedgeKey(hedge) {
     return String(hedge?.id || '');
 }
 
+function perpsMergeVariationalHedgeIsCleanReopen(h) {
+    return h?.status === 'open'
+        && (h.closedAt == null || h.closedAt === '')
+        && (h.closedFundingUsd == null || h.closedFundingUsd === '')
+        && (h.variationalExitPx == null || h.variationalExitPx === '');
+}
+
 function perpsMergeVariationalHedgeRecord(prev, hedge) {
     if (!hedge) return prev || null;
     if (!prev) return perpsNormalizeVariationalHedgeRecord(hedge);
     const prevTs = Number(prev?.updatedAt) || Number(prev?.openedAt) || 0;
     const incTs = Number(hedge?.updatedAt) || Number(hedge?.openedAt) || 0;
     const preferPrev = prevTs >= incTs;
+    const newer = preferPrev ? prev : hedge;
+    const older = preferPrev ? hedge : prev;
     const pickField = (field) => {
         const prevVal = prev?.[field];
         const incVal = hedge?.[field];
@@ -32150,19 +32159,35 @@ function perpsMergeVariationalHedgeRecord(prev, hedge) {
         if (incVal != null && incVal !== '' && Number(incVal) !== 0) return incVal;
         return preferPrev ? (prevVal ?? incVal) : (incVal ?? prevVal);
     };
-    const active = new Set(['open', 'pending_close']);
-    let status = hedge?.status ?? prev?.status;
-    if (active.has(prev?.status) && hedge?.status === 'closed') status = prev.status;
-    else if (active.has(hedge?.status) && prev?.status === 'closed') status = hedge.status;
+    const pickFinite = (field) => {
+        if (Number.isFinite(Number(newer?.[field]))) return Number(newer[field]);
+        if (Number.isFinite(Number(older?.[field]))) return Number(older[field]);
+        return newer?.[field] ?? older?.[field] ?? null;
+    };
+    let status = newer?.status ?? older?.status;
+    if (perpsMergeVariationalHedgeIsCleanReopen(newer)) {
+        status = 'open';
+    } else if (prev?.status === 'closed' || hedge?.status === 'closed') {
+        status = 'closed';
+    } else if (prev?.status === 'pending_close' || hedge?.status === 'pending_close') {
+        status = 'pending_close';
+    }
+    const cleanOpen = status === 'open' && perpsMergeVariationalHedgeIsCleanReopen(newer);
     return perpsNormalizeVariationalHedgeRecord({
-        ...prev,
-        ...hedge,
+        ...older,
+        ...newer,
         status,
         openedAt: Number(hedge?.openedAt) || Number(prev?.openedAt) || null,
         updatedAt: Math.max(prevTs, incTs) || null,
         variationalEntryPx: pickField('variationalEntryPx'),
         variationalSize: pickField('variationalSize'),
         trackedSize: pickField('trackedSize'),
+        closedAt: cleanOpen ? null : (Number(newer?.closedAt) || Number(older?.closedAt) || null),
+        variationalExitPx: cleanOpen ? null : (newer?.variationalExitPx ?? older?.variationalExitPx ?? null),
+        closedFundingUsd: cleanOpen ? null : pickFinite('closedFundingUsd'),
+        closedTrackedFundingUsd: cleanOpen ? null : pickFinite('closedTrackedFundingUsd'),
+        closedVariationalFundingUsd: cleanOpen ? null : pickFinite('closedVariationalFundingUsd'),
+        supersededByLiveCross: status === 'closed' ? false : Boolean(newer?.supersededByLiveCross ?? older?.supersededByLiveCross),
     });
 }
 
@@ -33040,7 +33065,23 @@ function perpsCacheNewClosedPairs(freshPairs) {
         byKey.set(key, perpsMergeClosedPairRecord(byKey.get(key), pair));
         changed = true;
     }
-    const merged = [...byKey.values()].sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
+    let merged = [...byKey.values()];
+    // Prefer Variational closed cards over overlapping exchange-only reconstructions.
+    const varCloses = merged.filter((p) => p?.manualVariationalClose);
+    if (varCloses.length) {
+        const before = merged.length;
+        merged = merged.filter((p) => {
+            if (p?.manualVariationalClose) return true;
+            const sym = String(p?.symbol || '').toUpperCase().replace(/-PERP$/i, '');
+            const ct = Number(p?.closeTime || 0);
+            return !varCloses.some((v) => {
+                const vSym = String(v?.symbol || '').toUpperCase().replace(/-PERP$/i, '');
+                return vSym === sym && Math.abs(Number(v?.closeTime || 0) - ct) <= 2 * 86400000;
+            });
+        });
+        if (merged.length !== before) changed = true;
+    }
+    merged.sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
     if (changed) perpsPersistCachedClosedPairs(merged);
     return merged;
 }
@@ -35586,13 +35627,19 @@ function perpsSanitizeVariationalClosedPairs(data) {
 
 function perpsNormalizeClosedPairForDisplay(pair) {
     const next = perpsGuardClosedPairRecord({ ...pair });
-    if (!next.peakMetricsApplied && Array.isArray(next.dailyPerformanceSeries) && next.dailyPerformanceSeries.length) {
+    const keepFrozenFunding = Boolean(next.manualVariationalClose)
+        && Number.isFinite(Number(next.funding));
+    // Funding column = last open-session total (same as position performance before close).
+    // Keep lifetime* for APR via perpsClosedPairCarryBasis; do not overwrite Funding with lifetime.
+    if (!keepFrozenFunding && Array.isArray(next.dailyPerformanceSeries) && next.dailyPerformanceSeries.length) {
         const session = perpsPairLatestSessionPnl(next);
         if (session?.source === 'session') {
             next.funding = session.funding;
-            next.fees = session.fees;
             const slip = Number(next.closeSlippage);
-            if (Number.isFinite(slip)) next.netPnl = slip + session.funding - session.fees;
+            const fees = Number(next.fees);
+            if (Number.isFinite(slip) && Number.isFinite(fees)) {
+                next.netPnl = slip + session.funding - fees;
+            }
             const rows = perpsFilterPairLatestSessionForRange(next.dailyPerformanceSeries, null);
             if (rows.length) {
                 next.sessionStartDay = rows[0].day;
@@ -35600,12 +35647,6 @@ function perpsNormalizeClosedPairForDisplay(pair) {
                 next.sessionDayCount = rows.length;
             }
         }
-    }
-    if (Number.isFinite(Number(next.lifetimeFunding)) && Number.isFinite(Number(next.lifetimeFees))) {
-        next.funding = Number(next.lifetimeFunding);
-        next.fees = Number(next.lifetimeFees);
-        const slip = Number(next.closeSlippage);
-        if (Number.isFinite(slip)) next.netPnl = slip + next.funding - next.fees;
     }
     const margin = perpsClosedPairAvgNotional(next);
     if (margin) next.avgNotional = margin;
