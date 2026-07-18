@@ -31433,10 +31433,15 @@ function perpsVariationalSettlementFreezeQuality(row) {
     const VH = window.VariationalHedge;
     if (VH?.variationalFreezeQuality) return VH.variationalFreezeQuality(row);
     if (!row?.frozen) return 0;
+    const corruptZero = Number(row.rate) === 0
+        && Number(row.usdc) === 0
+        && Number(row.size) !== 0
+        && Number(row.markPx) > 0
+        && row.explicitZeroRate !== true;
+    if (row.freezeSource === 'catchup' || row.catchUp === true || corruptZero) return 1;
     if (row.freezeSource === 'sample') return 4;
     if (row.freezeSource === 'live') return 3;
     if (row.freezeSource === 'reference-history') return 2;
-    if (row.freezeSource === 'catchup' || row.catchUp === true) return 1;
     return 2;
 }
 

@@ -3361,6 +3361,7 @@ const {
   variationalHedgeOpenedAtMs,
   variationalSettlementSampleAtMs,
   variationalSettlementsReadyForSample,
+  isVariationalCatchUpFreeze,
   VARIATIONAL_SETTLEMENT_SAMPLE_LEAD_MS,
   variationalLegPnl,
 } = require('../lib/variational-hedge.js');
@@ -4692,6 +4693,37 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   });
   assert.equal(repaired[0].freezeSource, 'sample', 'catch-up freeze must be rewritten from period-correct sample');
   assert.equal(repaired[0].rate, sampleRate);
+
+  const missingRateListing = {
+    ...listing,
+    fundingRateInterval: null,
+    fundingRate8h: null,
+    fundingRateAnnual: null,
+  };
+  const zeroFreezeAttempt = captureVariationalSettlementsDue(hedge100k, missingRateListing, [], {
+    now: sampleAt,
+    listingFetchedAt: sampleAt,
+  });
+  assert.equal(zeroFreezeAttempt.length, 0, 'must not freeze when Variational rate is missing (null coerced to 0 caused $0 ZRO payments)');
+
+  const corruptZero = [{
+    time: settlementTime,
+    sampleAtMs: sampleAt,
+    frozenAt: sampleAt,
+    frozen: true,
+    freezeSource: 'live',
+    markPx: 0.217,
+    rate: 0,
+    size: -100000,
+    usdc: 0,
+  }];
+  assert.equal(isVariationalCatchUpFreeze(corruptZero[0]), true, 'corrupt $0 freezes from missing rate must be rewritable');
+  const repairedZero = captureVariationalSettlementsDue(hedge100k, listing, corruptZero, {
+    now: sampleAt + 1000,
+    listingFetchedAt: sampleAt + 1000,
+  });
+  assert.ok(repairedZero[0].usdc !== 0, 'corrupt $0 freeze must be rewritten from live Variational rate');
+  assert.equal(repairedZero[0].freezeSource, 'live');
 
   // Resize after sample time must not rewrite the frozen past settlement.
   const hedge176k = {

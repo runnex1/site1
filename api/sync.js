@@ -121,10 +121,15 @@ function mergeVariationalHedgeRows(existing, incoming) {
 
 function variationalSettlementFreezeQuality(row) {
   if (!row?.frozen) return 0;
+  const corruptZero = Number(row.rate) === 0
+    && Number(row.usdc) === 0
+    && Number(row.size) !== 0
+    && Number(row.markPx) > 0
+    && row.explicitZeroRate !== true;
+  if (row.freezeSource === 'catchup' || row.catchUp === true || corruptZero) return 1;
   if (row.freezeSource === 'sample') return 4;
   if (row.freezeSource === 'live') return 3;
   if (row.freezeSource === 'reference-history') return 2;
-  if (row.freezeSource === 'catchup' || row.catchUp === true) return 1;
   const sampleAt = Number(row.sampleAtMs);
   const frozenAt = Number(row.frozenAt ?? row.capturedAt);
   if (Number.isFinite(sampleAt) && Number.isFinite(frozenAt) && frozenAt > sampleAt + 2 * 60 * 1000) return 1;
