@@ -4246,6 +4246,28 @@ const {
 }
 
 {
+  // Pair-card offset form: var realized = −tracked + slip. Equity must NOT re-subtract HL realized.
+  const closedAdj = variationalClosedEquityAdjust([{
+    pairType: 'hyperliquid_variational',
+    manualVariationalClose: true,
+    longLeg: { venue: 'hyperliquid', realizedPnl: 900, funding: 100 },
+    shortLeg: { venue: 'variational', realizedPnl: -910, funding: 67 },
+  }]);
+  assert.equal(closedAdj, -10 + 67, 'closed equity adj must use slip + Var funding, not −HL realized');
+}
+
+{
+  const closedAdj = variationalClosedEquityAdjust([{
+    pairType: 'hyperliquid_variational',
+    manualVariationalClose: true,
+    variationalEquityPnl: 55,
+    longLeg: { venue: 'hyperliquid', realizedPnl: 900 },
+    shortLeg: { venue: 'variational', realizedPnl: -910, funding: 67 },
+  }]);
+  assert.equal(closedAdj, 55, 'explicit variationalEquityPnl must win for equity adjust');
+}
+
+{
   const point = { totalEquity: 10000, variationalEquityAdjust: 286, variationalNeutralEquity: 10286 };
   assert.equal(equityPointChartValue(point, 'neutral'), 10286);
   assert.equal(equityPointChartValue(point, 'raw'), 10000);
