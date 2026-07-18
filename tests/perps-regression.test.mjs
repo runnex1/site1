@@ -3582,11 +3582,13 @@ assert.match(indexHtml, /VARIATIONAL_SETTLEMENT_SAMPLE_LEAD_MS|variationalSettle
 assert.match(indexHtml, /PERPS_VARIATIONAL_RATE_SAMPLES_KEY/, 'UI must persist Variational rate samples for period-correct freezes');
 assert.match(indexHtml, /rateSamplesBySymbol/, 'UI must pass stored Variational rate samples into freeze capture');
 assert.match(indexHtml, /allowCatchUp:\s*false/, 'UI must not catch-up freeze past settlements with live rate');
-assert.match(indexHtml, /perpsFetchReferenceFundingHistory/, 'UI must repair missing Variational freezes from reference-exchange history');
+assert.match(indexHtml, /perpsFetchFreshVariationalListings/, 'UI must refresh Variational stats at freeze time');
+assert.doesNotMatch(indexHtml, /perpsFetchReferenceFundingHistory/, 'UI must not treat Bybit history as Variational funding rates');
 assert.match(indexHtml, /perpsRecordVariationalRateSamplesFromData/, 'UI must record Variational rate samples from dashboard payloads');
 assert.match(aaveProxyJs, /persistVariationalRateSamplesFromDashboard/, 'server must sample Variational rates on dashboard\/live fetches');
 assert.match(variationalHedgeJs, /allowCatchUp === true/, 'catch-up freeze must be opt-in only');
 assert.match(variationalHedgeJs, /freezeSource === 'sample'/, 'freeze quality must prefer stored Variational samples');
+assert.match(variationalHedgeJs, /Do NOT use Bybit\/Binance funding history/, 'freeze path must document that CEX history is not Variational rate');
 assert.match(variationalHedgeJs, /VARIATIONAL_SETTLEMENT_SAMPLE_LEAD_MS\s*=\s*10\s*\*\s*1000/, 'Variational sample lead must be exactly 10 seconds');
 assert.match(variationalHedgeJs, /function variationalSettlementSampleAtMs\(/, 'settlement sample time helper must exist');
 assert.match(syncJs, /vault:perps_variational_settlements/, 'sync must persist frozen Variational settlements server-side');
@@ -4660,17 +4662,14 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   assert.equal(fromSample[0].markPx, sampleMark);
   assert.ok(Math.abs(fromSample[0].usdc - variationalFundingPaymentPerInterval(-100000, sampleMark, sampleRate)) < 1e-9);
 
-  const refRate = 0.00009;
-  const fromRef = captureVariationalSettlementsDue(hedge100k, listing, [], {
+  const ignoredRef = captureVariationalSettlementsDue(hedge100k, listing, [], {
     now: settlementTime + 3 * 3600000,
     listingFetchedAt: settlementTime + 3 * 3600000,
     referenceRateByTime: {
-      [settlementTime]: { rate: refRate, markPx: 0.215, source: 'bybit' },
+      [settlementTime]: { rate: 0.00009, markPx: 0.215, source: 'bybit' },
     },
   });
-  assert.equal(fromRef.length, 1, 'must freeze past settlement from reference-exchange funding history when samples missing');
-  assert.equal(fromRef[0].freezeSource, 'reference-history');
-  assert.equal(fromRef[0].rate, refRate);
+  assert.equal(ignoredRef.length, 0, 'must not use Bybit/Binance funding history as Variational payment rate');
 
   const catchUpPrev = [{
     time: settlementTime,

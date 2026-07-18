@@ -31521,32 +31521,20 @@ function perpsRecordVariationalRateSamplesFromData(data) {
     return perpsPersistVariationalRateSamples(next);
 }
 
-async function perpsFetchReferenceFundingHistory(symbol, listing, settlementTimes) {
-    const clock = window.VariationalFundingClock;
-    if (!clock?.fetchReferenceFundingHistoryByTime || !symbol) return {};
-    const times = (settlementTimes || []).map(Number).filter(Number.isFinite);
-    if (!times.length) return {};
-    const startMs = Math.min(...times) - 3600000;
-    const endMs = Math.max(...times) + 3600000;
-    const source = String(listing?.fundingClockSource || 'bybit').toLowerCase();
-    const fetchFn = async (url, _init, timeoutMs) => {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), timeoutMs || 12000);
-        try {
-            return await fetch(url, { signal: ctrl.signal });
-        } finally {
-            clearTimeout(timer);
-        }
-    };
+/** Fresh Variational mark/rate from public stats API (CORS-enabled). Bybit is clock-only. */
+async function perpsFetchFreshVariationalListings() {
+    const VH = window.VariationalHedge;
+    const url = VH?.VARIATIONAL_STATS_API
+        || 'https://omni-client-api.prod.ap-northeast-1.variational.io/metadata/stats';
+    if (!VH?.parseVariationalListings) return { bySymbol: {}, fetchedAt: Date.now() };
     try {
-        return await clock.fetchReferenceFundingHistoryByTime(symbol, {
-            source: source === 'binance' ? 'binance' : 'bybit',
-            startMs,
-            endMs,
-            fetchFn,
-        });
+        const res = await fetch(url, { signal: AbortSignal.timeout(12000) });
+        if (!res.ok) return { bySymbol: {}, fetchedAt: Date.now() };
+        const data = await res.json();
+        const bySymbol = VH.parseVariationalListings(data) || {};
+        return { bySymbol, fetchedAt: Date.now() };
     } catch (e) {
-        return {};
+        return { bySymbol: {}, fetchedAt: Date.now() };
     }
 }
 
@@ -31587,13 +31575,15 @@ function perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, 
     const all = perpsLoadVariationalSettlementsRaw();
     const prev = Array.isArray(all[hedge.id]) ? all[hedge.id] : [];
     const rateSamplesBySymbol = opts.rateSamplesBySymbol || perpsLoadVariationalRateSamplesRaw();
-    // Freeze only with period-correct mark/rate (live near T−10s, stored samples, or reference history).
+    const listingFetchedAt = Number(opts.listingFetchedAt)
+        || Number(data?.fetchedAt)
+        || Date.now();
+    // Freeze only with period-correct Variational mark/rate (fresh live near T−10s or stored samples).
     const captured = VH.captureVariationalSettlementsDue(hedge, listing, prev, {
         trackedLeg,
         now: Date.now(),
-        listingFetchedAt: data?.fetchedAt || Date.now(),
+        listingFetchedAt,
         rateSamplesBySymbol,
-        referenceRateByTime: opts.referenceRateByTime || null,
         allowCatchUp: false,
     });
     if (captured === prev) return false;
@@ -31602,22 +31592,45 @@ function perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, 
     return true;
 }
 
-function perpsCaptureAllVariationalSettlements(data) {
+async function perpsCaptureAllVariationalSettlements(data) {
     const VH = window.VariationalHedge;
     if (!VH || !data) return false;
     const hedges = perpsLoadVariationalHedges().filter((h) => h?.status === 'open' || h?.status === 'pending_close');
     if (!hedges.length) return false;
     let settlementsChanged = false;
-    const rateSamplesBySymbol = perpsRecordVariationalRateSamplesFromData(data);
+    // Always pull a fresh Variational stats snapshot at freeze time — dashboard cache can be minutes stale.
+    const fresh = await perpsFetchFreshVariationalListings();
+    const freshPayload = {
+        ...data,
+        fetchedAt: fresh.fetchedAt,
+        variationalListings: { ...(data.variationalListings || {}), ...fresh.bySymbol },
+        _variationalListingBySymbol: { ...(data._variationalListingBySymbol || {}), ...fresh.bySymbol },
+    };
+    const rateSamplesBySymbol = perpsRecordVariationalRateSamplesFromData(freshPayload);
     const variationalBySymbol = {
         ...perpsVariationalBySymbolFromSpread(data.rateSpread || []),
         ...(data.variationalListings || {}),
         ...(data._variationalListingBySymbol || {}),
+        ...fresh.bySymbol,
     };
     for (const hedge of hedges) {
         const listing = variationalBySymbol[hedge.symbol] || null;
+        // Preserve settlement clock from dashboard listing; overlay fresh mark/rate.
+        const clockListing = data._variationalListingBySymbol?.[hedge.symbol]
+            || data.variationalListings?.[hedge.symbol]
+            || perpsVariationalBySymbolFromSpread(data.rateSpread || [])[hedge.symbol]
+            || null;
+        const mergedListing = {
+            ...(clockListing || {}),
+            ...(listing || {}),
+            fundingNextAtMs: clockListing?.fundingNextAtMs ?? listing?.fundingNextAtMs ?? null,
+            fundingClockSource: clockListing?.fundingClockSource ?? listing?.fundingClockSource ?? null,
+        };
         const trackedLeg = VH.findTrackedLeg?.(data, hedge) || trackedLegFromSnapshotFallback(hedge);
-        if (perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data, { rateSamplesBySymbol })) {
+        if (perpsCaptureVariationalSettlementsForHedge(hedge, mergedListing, trackedLeg, freshPayload, {
+            rateSamplesBySymbol,
+            listingFetchedAt: fresh.fetchedAt,
+        })) {
             settlementsChanged = true;
         }
     }
@@ -31681,7 +31694,7 @@ function perpsArmVariationalSettlementSampleTimer(data, delayMs) {
             } catch (e) {
                 try {
                     if (_perpsLastData) {
-                        perpsCaptureAllVariationalSettlements(_perpsLastData);
+                        await perpsCaptureAllVariationalSettlements(_perpsLastData);
                     }
                 } catch (e2) {}
             } finally {
@@ -31707,9 +31720,16 @@ function perpsScheduleVariationalSettlementSample(data) {
         perpsArmVariationalSettlementSampleTimer(payload, delay + 50);
         return;
     }
-    // Already in the T−10s window: freeze now from current UI data, then arm next boundary.
+    // Already in the T−10s window: freeze now from a fresh Variational stats pull.
     if (!_perpsVariationalSampleInFlight) {
-        perpsCaptureAllVariationalSettlements(payload);
+        _perpsVariationalSampleInFlight = true;
+        void perpsCaptureAllVariationalSettlements(payload)
+            .catch(() => {})
+            .finally(() => {
+                _perpsVariationalSampleInFlight = false;
+                perpsScheduleVariationalSettlementSample(_perpsLastData || payload);
+            });
+        return;
     }
     const nextSample = perpsEarliestVariationalSampleAtMs(payload);
     if (nextSample != null && nextSample > Date.now()) {
@@ -32555,7 +32575,7 @@ function perpsApplyVariationalHedgesToData(data) {
     if (!VH || !data) return data;
     const hedges = perpsLoadVariationalHedges();
     if (!hedges.length) return data;
-    perpsCaptureAllVariationalSettlements(data);
+    void perpsCaptureAllVariationalSettlements(data).catch(() => {});
     const variationalBySymbol = {
         ...perpsVariationalBySymbolFromSpread(data.rateSpread || []),
         ...(data.variationalListings || {}),
@@ -32806,9 +32826,9 @@ function perpsEnrichVariationalPairFunding(pair, data) {
 
     const listing = perpsResolveVariationalListing(pair, data);
     const trackedLeg = pair.crossLegA?.venue === trackedVenue ? pair.crossLegA : pair.crossLegB;
-    // Continuously sample live Variational mark/rate so past freezes use period-correct values.
+    // Continuously sample dashboard Variational mark/rate (may be cache-stale; T−10s path refreshes).
     const rateSamplesBySymbol = perpsRecordVariationalRateSamplesFromData(data);
-    // Estimate → show → freeze when T−10s is open and we have period-correct rate/mark.
+    // Estimate → show → freeze when T−10s is open and we have period-correct Variational rate/mark.
     perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data, { rateSamplesBySymbol });
     let storedSettlements = (() => {
         const all = perpsLoadVariationalSettlementsRaw();
@@ -32843,24 +32863,30 @@ function perpsEnrichVariationalPairFunding(pair, data) {
             });
         }
     }
-    // Repair catch-up / missing freezes from Bybit/Binance settlement-clock history (async, non-blocking).
-    if (hedge?.id && VH?.isVariationalCatchUpFreeze) {
-        const needsRepair = (storedSettlements || []).some((s) => VH.isVariationalCatchUpFreeze(s))
-            || (variationalEvents || []).some((ev) => ev.missingRateSample || ev.catchUp || ev.pendingFreeze);
-        if (needsRepair && !pair._variationalRateRepairInFlight) {
+    // If a settlement is due/pending, refresh Variational stats (CORS-ok) and freeze with fresh mark/rate.
+    // Bybit/Binance history is NOT used — those rates are not Variational's funding_rate.
+    if (hedge?.id && !pair._variationalRateRepairInFlight) {
+        const needsFresh = (variationalEvents || []).some((ev) => ev.pendingFreeze || ev.missingRateSample)
+            || (storedSettlements || []).some((s) => VH.isVariationalCatchUpFreeze?.(s));
+        if (needsFresh) {
             pair._variationalRateRepairInFlight = true;
-            const dueTimes = (VH.variationalSettlementsReadyForSample?.(
-                sessionSince,
-                null,
-                listing,
-                Date.now(),
-            ) || []).slice(0, 60);
-            perpsFetchReferenceFundingHistory(pair.symbol, listing, dueTimes).then((refMap) => {
-                if (!refMap || !Object.keys(refMap).length) return;
-                const changed = perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data, {
-                    rateSamplesBySymbol: perpsLoadVariationalRateSamplesRaw(),
-                    referenceRateByTime: refMap,
-                });
+            perpsFetchFreshVariationalListings().then((fresh) => {
+                const freshListing = {
+                    ...(listing || {}),
+                    ...(fresh.bySymbol?.[pair.symbol] || {}),
+                    fundingNextAtMs: listing?.fundingNextAtMs ?? null,
+                    fundingClockSource: listing?.fundingClockSource ?? null,
+                };
+                if (!fresh.bySymbol?.[pair.symbol]) return;
+                const freshData = { ...data, fetchedAt: fresh.fetchedAt, variationalListings: fresh.bySymbol };
+                const samples = perpsRecordVariationalRateSamplesFromData(freshData);
+                const changed = perpsCaptureVariationalSettlementsForHedge(
+                    hedge,
+                    freshListing,
+                    trackedLeg,
+                    freshData,
+                    { rateSamplesBySymbol: samples, listingFetchedAt: fresh.fetchedAt },
+                );
                 if (changed && _perpsLastData) {
                     try { perpsEnrichVariationalPairFunding(pair, _perpsLastData); } catch (e) {}
                 }
@@ -34850,7 +34876,7 @@ function perpsRenderRecentFundingPayments(p) {
     }).join('');
     return `<div class="perps-pos-funding-recent-head">` +
         `<div class="perps-pos-funding-recent-title">Recent funding payments</div>` +
-        `<div class="perps-pos-funding-recent-note">One card per hour · per-exchange amount and net · Variational uses frozen settlement rates (sampled at T−10s); missing samples fall back to Bybit/Binance history</div>` +
+        `<div class="perps-pos-funding-recent-note">One card per hour · per-exchange amount and net · Variational freezes its own mark/rate at T−10s (Bybit/Binance are settlement clock only)</div>` +
         `</div><div class="perps-pos-funding-strip">${cards}</div>`;
 }
 
