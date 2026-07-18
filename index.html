@@ -10551,6 +10551,7 @@ const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
 const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pairs';
 const PERPS_VARIATIONAL_HEDGES_KEY = 'vault-perps-variational-hedges';
 const PERPS_VARIATIONAL_SETTLEMENTS_KEY = 'vault-perps-variational-settlements';
+const PERPS_VARIATIONAL_RATE_SAMPLES_KEY = 'vault-perps-variational-rate-samples';
 const PERPS_DAILY_FUND_CACHE_KEY = 'vault-perps-daily-fund-cache';
 const PERPS_GRVT_STATE_CACHE_KEY = 'vault-grvt-state-cache';
 const TICKER_VISIBLE_TABS = new Set(['overview', 'etf', 'terminal', 'history']);
@@ -31428,16 +31429,125 @@ function perpsPersistVariationalSettlements(map, opts = {}) {
     return next;
 }
 
+function perpsVariationalSettlementFreezeQuality(row) {
+    const VH = window.VariationalHedge;
+    if (VH?.variationalFreezeQuality) return VH.variationalFreezeQuality(row);
+    if (!row?.frozen) return 0;
+    if (row.freezeSource === 'sample') return 4;
+    if (row.freezeSource === 'live') return 3;
+    if (row.freezeSource === 'reference-history') return 2;
+    if (row.freezeSource === 'catchup' || row.catchUp === true) return 1;
+    return 2;
+}
+
 function perpsMergeVariationalSettlementArrays(existing, incoming) {
     const byTime = new Map((existing || []).map((s) => [Number(s.time), s]));
     for (const row of incoming || []) {
         const t = Number(row?.time);
         if (!Number.isFinite(t)) continue;
         const prev = byTime.get(t);
-        if (prev?.frozen) continue;
+        const prevQ = perpsVariationalSettlementFreezeQuality(prev);
+        const nextQ = perpsVariationalSettlementFreezeQuality(row);
+        if (prevQ > 0 && nextQ <= prevQ) continue;
         if (row?.frozen || !prev) byTime.set(t, { ...prev, ...row, frozen: Boolean(prev?.frozen || row?.frozen) });
     }
     return [...byTime.values()].sort((a, b) => Number(b.time) - Number(a.time)).slice(0, 1000);
+}
+
+let _perpsVariationalRateSamplesMem = null;
+
+function perpsLoadVariationalRateSamplesRaw() {
+    if (_perpsVariationalRateSamplesMem && typeof _perpsVariationalRateSamplesMem === 'object') {
+        return JSON.parse(JSON.stringify(_perpsVariationalRateSamplesMem));
+    }
+    try {
+        const map = JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_RATE_SAMPLES_KEY) || '{}');
+        return map && typeof map === 'object' ? map : {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function perpsPersistVariationalRateSamples(map, opts = {}) {
+    const VH = window.VariationalHedge;
+    const next = VH?.normalizeVariationalRateSamples
+        ? VH.normalizeVariationalRateSamples(map)
+        : (map && typeof map === 'object' ? map : {});
+    _perpsVariationalRateSamplesMem = JSON.parse(JSON.stringify(next));
+    try {
+        localStorage.setItem(PERPS_VARIATIONAL_RATE_SAMPLES_KEY, JSON.stringify(next));
+    } catch (e) {}
+    if (!opts.skipCloudSync) perpsPushVariationalRateSamplesToServer(next);
+    return next;
+}
+
+function perpsMergeVariationalRateSamplesFromServer(serverMap) {
+    const VH = window.VariationalHedge;
+    const incoming = serverMap && typeof serverMap === 'object' ? serverMap : {};
+    const local = perpsLoadVariationalRateSamplesRaw();
+    const merged = VH?.mergeVariationalRateSamples
+        ? VH.mergeVariationalRateSamples(local, incoming)
+        : { ...local, ...incoming };
+    return perpsPersistVariationalRateSamples(merged, { skipCloudSync: true });
+}
+
+async function perpsPushVariationalRateSamplesToServer(map) {
+    const payload = map && typeof map === 'object' ? map : perpsLoadVariationalRateSamplesRaw();
+    if (!Object.keys(payload).length || location.protocol === 'file:') return false;
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ perpsVariationalRateSamples: payload }),
+            keepalive: true,
+        });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+function perpsRecordVariationalRateSamplesFromData(data) {
+    const VH = window.VariationalHedge;
+    if (!VH?.recordVariationalListingSamples) return perpsLoadVariationalRateSamplesRaw();
+    const listings = {
+        ...perpsVariationalBySymbolFromSpread(data?.rateSpread || []),
+        ...(data?.variationalListings || {}),
+        ...(data?._variationalListingBySymbol || {}),
+    };
+    const atMs = Number(data?.fetchedAt) || Date.now();
+    const prev = perpsLoadVariationalRateSamplesRaw();
+    const next = VH.recordVariationalListingSamples(prev, listings, atMs, { source: 'client' });
+    return perpsPersistVariationalRateSamples(next);
+}
+
+async function perpsFetchReferenceFundingHistory(symbol, listing, settlementTimes) {
+    const clock = window.VariationalFundingClock;
+    if (!clock?.fetchReferenceFundingHistoryByTime || !symbol) return {};
+    const times = (settlementTimes || []).map(Number).filter(Number.isFinite);
+    if (!times.length) return {};
+    const startMs = Math.min(...times) - 3600000;
+    const endMs = Math.max(...times) + 3600000;
+    const source = String(listing?.fundingClockSource || 'bybit').toLowerCase();
+    const fetchFn = async (url, _init, timeoutMs) => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs || 12000);
+        try {
+            return await fetch(url, { signal: ctrl.signal });
+        } finally {
+            clearTimeout(timer);
+        }
+    };
+    try {
+        return await clock.fetchReferenceFundingHistoryByTime(symbol, {
+            source: source === 'binance' ? 'binance' : 'bybit',
+            startMs,
+            endMs,
+            fetchFn,
+        });
+    } catch (e) {
+        return {};
+    }
 }
 
 function perpsMergeVariationalSettlementsFromServer(serverMap) {
@@ -31467,7 +31577,7 @@ async function perpsPushVariationalSettlementsToServer(map) {
     }
 }
 
-function perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data) {
+function perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data, opts = {}) {
     const VH = window.VariationalHedge;
     if (!VH?.captureVariationalSettlementsDue || !hedge?.id) return false;
     const signedSize = VH.resolveVariationalFundingSize?.(hedge, trackedLeg);
@@ -31476,11 +31586,15 @@ function perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, 
     }
     const all = perpsLoadVariationalSettlementsRaw();
     const prev = Array.isArray(all[hedge.id]) ? all[hedge.id] : [];
-    // Freeze immediately when T−10s sample window has opened (estimation → UI → freeze).
+    const rateSamplesBySymbol = opts.rateSamplesBySymbol || perpsLoadVariationalRateSamplesRaw();
+    // Freeze only with period-correct mark/rate (live near T−10s, stored samples, or reference history).
     const captured = VH.captureVariationalSettlementsDue(hedge, listing, prev, {
         trackedLeg,
         now: Date.now(),
         listingFetchedAt: data?.fetchedAt || Date.now(),
+        rateSamplesBySymbol,
+        referenceRateByTime: opts.referenceRateByTime || null,
+        allowCatchUp: false,
     });
     if (captured === prev) return false;
     all[hedge.id] = captured;
@@ -31494,6 +31608,7 @@ function perpsCaptureAllVariationalSettlements(data) {
     const hedges = perpsLoadVariationalHedges().filter((h) => h?.status === 'open' || h?.status === 'pending_close');
     if (!hedges.length) return false;
     let settlementsChanged = false;
+    const rateSamplesBySymbol = perpsRecordVariationalRateSamplesFromData(data);
     const variationalBySymbol = {
         ...perpsVariationalBySymbolFromSpread(data.rateSpread || []),
         ...(data.variationalListings || {}),
@@ -31502,7 +31617,9 @@ function perpsCaptureAllVariationalSettlements(data) {
     for (const hedge of hedges) {
         const listing = variationalBySymbol[hedge.symbol] || null;
         const trackedLeg = VH.findTrackedLeg?.(data, hedge) || trackedLegFromSnapshotFallback(hedge);
-        if (perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data)) settlementsChanged = true;
+        if (perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data, { rateSamplesBySymbol })) {
+            settlementsChanged = true;
+        }
     }
     perpsPersistVariationalHedges(hedges, { skipCloudSync: !settlementsChanged });
     return settlementsChanged;
@@ -31704,6 +31821,14 @@ async function perpsHydratePerpsAuxFromCloud() {
         } else {
             const localSettlements = perpsLoadVariationalSettlementsRaw();
             if (Object.keys(localSettlements).length) await perpsPushVariationalSettlementsToServer(localSettlements);
+        }
+        if (body?.perpsVariationalRateSamples && typeof body.perpsVariationalRateSamples === 'object'
+            && Object.keys(body.perpsVariationalRateSamples).length) {
+            perpsMergeVariationalRateSamplesFromServer(body.perpsVariationalRateSamples);
+            changed = true;
+        } else {
+            const localSamples = perpsLoadVariationalRateSamplesRaw();
+            if (Object.keys(localSamples).length) await perpsPushVariationalRateSamplesToServer(localSamples);
         }
         if (Array.isArray(body?.perpsClosedPairs) && body.perpsClosedPairs.length) {
             perpsMergeClosedPairsFromServer(body.perpsClosedPairs);
@@ -32681,17 +32806,25 @@ function perpsEnrichVariationalPairFunding(pair, data) {
 
     const listing = perpsResolveVariationalListing(pair, data);
     const trackedLeg = pair.crossLegA?.venue === trackedVenue ? pair.crossLegA : pair.crossLegB;
-    // Estimate → show → freeze immediately once T−10s sample window is open.
-    perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data);
+    // Continuously sample live Variational mark/rate so past freezes use period-correct values.
+    const rateSamplesBySymbol = perpsRecordVariationalRateSamplesFromData(data);
+    // Estimate → show → freeze when T−10s is open and we have period-correct rate/mark.
+    perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data, { rateSamplesBySymbol });
     let storedSettlements = (() => {
         const all = perpsLoadVariationalSettlementsRaw();
         return Array.isArray(all[hedge?.id]) ? all[hedge.id] : [];
     })();
+    const freezeOpts = {
+        sinceMs: sessionSince,
+        trackedLeg,
+        now: Date.now(),
+        listingFetchedAt: data?.fetchedAt || Date.now(),
+        rateSamplesBySymbol,
+        allowCatchUp: false,
+    };
     let variationalEvents = VH?.buildVariationalFundingEventsFrozen
         ? VH.buildVariationalFundingEventsFrozen(hedge, listing, storedSettlements, {
-            sinceMs: sessionSince,
-            trackedLeg,
-            now: Date.now(),
+            ...freezeOpts,
             captureMissing: true,
         })
         : [];
@@ -32699,20 +32832,39 @@ function perpsEnrichVariationalPairFunding(pair, data) {
     if (VH?.captureVariationalSettlementsDue && hedge?.id) {
         const all = perpsLoadVariationalSettlementsRaw();
         const prev = Array.isArray(all[hedge.id]) ? all[hedge.id] : [];
-        const captured = VH.captureVariationalSettlementsDue(hedge, listing, prev, {
-            trackedLeg,
-            now: Date.now(),
-        });
+        const captured = VH.captureVariationalSettlementsDue(hedge, listing, prev, freezeOpts);
         if (captured !== prev) {
             all[hedge.id] = captured;
             perpsPersistVariationalSettlements(all);
             storedSettlements = captured;
             variationalEvents = VH.buildVariationalFundingEventsFrozen(hedge, listing, storedSettlements, {
-                sinceMs: sessionSince,
-                trackedLeg,
-                now: Date.now(),
+                ...freezeOpts,
                 captureMissing: false,
             });
+        }
+    }
+    // Repair catch-up / missing freezes from Bybit/Binance settlement-clock history (async, non-blocking).
+    if (hedge?.id && VH?.isVariationalCatchUpFreeze) {
+        const needsRepair = (storedSettlements || []).some((s) => VH.isVariationalCatchUpFreeze(s))
+            || (variationalEvents || []).some((ev) => ev.missingRateSample || ev.catchUp || ev.pendingFreeze);
+        if (needsRepair && !pair._variationalRateRepairInFlight) {
+            pair._variationalRateRepairInFlight = true;
+            const dueTimes = (VH.variationalSettlementsReadyForSample?.(
+                sessionSince,
+                null,
+                listing,
+                Date.now(),
+            ) || []).slice(0, 60);
+            perpsFetchReferenceFundingHistory(pair.symbol, listing, dueTimes).then((refMap) => {
+                if (!refMap || !Object.keys(refMap).length) return;
+                const changed = perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data, {
+                    rateSamplesBySymbol: perpsLoadVariationalRateSamplesRaw(),
+                    referenceRateByTime: refMap,
+                });
+                if (changed && _perpsLastData) {
+                    try { perpsEnrichVariationalPairFunding(pair, _perpsLastData); } catch (e) {}
+                }
+            }).finally(() => { pair._variationalRateRepairInFlight = false; });
         }
     }
     const varPaymentSum = variationalEvents
@@ -34698,7 +34850,7 @@ function perpsRenderRecentFundingPayments(p) {
     }).join('');
     return `<div class="perps-pos-funding-recent-head">` +
         `<div class="perps-pos-funding-recent-title">Recent funding payments</div>` +
-        `<div class="perps-pos-funding-recent-note">One card per hour · per-exchange amount and net · Variational shows ~estimated from live rates</div>` +
+        `<div class="perps-pos-funding-recent-note">One card per hour · per-exchange amount and net · Variational uses frozen settlement rates (sampled at T−10s); missing samples fall back to Bybit/Binance history</div>` +
         `</div><div class="perps-pos-funding-strip">${cards}</div>`;
 }
 

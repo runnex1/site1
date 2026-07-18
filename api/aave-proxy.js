@@ -10,6 +10,10 @@ const {
   appendEquitySnapshotStore,
   buildEquitySnapshotFromDashboard,
 } = require('../lib/perps');
+const {
+  mergeVariationalRateSamples,
+  recordVariationalListingSamples,
+} = require('../lib/variational-hedge');
 const { kvGet, kvSet } = require('../lib/kv');
 const { CACHE_KEYS, parseJson: parseCronJson } = require('../lib/cron-runner');
 const { fetchLoopRates, mergeRecentLoopPositions } = require('../lib/loop-rates');
@@ -40,6 +44,35 @@ function parseJson(raw, fallback) {
 
 function expectedSyncSecret() {
   return process.env.SYNC_SECRET || process.env.CRON_SECRET || '';
+}
+
+async function persistVariationalRateSamplesFromDashboard(data) {
+  const listings = {
+    ...(data?.variationalListings || {}),
+    ...(data?._variationalListingBySymbol || {}),
+  };
+  const fromSpread = {};
+  for (const row of data?.rateSpread || []) {
+    if (!row?.symbol || row.variationalIntervalRate == null && row.variationalMarkPx == null) continue;
+    fromSpread[row.symbol] = {
+      symbol: row.symbol,
+      markPx: row.variationalMarkPx,
+      fundingRateInterval: row.variationalIntervalRate,
+      fundingRate8h: row.variational8h,
+      fundingIntervalHours: row.variationalIntervalHours,
+      fundingIntervalS: (row.variationalIntervalHours || 8) * 3600,
+      fundingNextAtMs: row.variationalNextFundingAtMs,
+      fundingClockSource: row.variationalFundingClockSource,
+    };
+  }
+  const combined = { ...fromSpread, ...listings };
+  if (!Object.keys(combined).length) return false;
+  const atMs = Number(data?.fetchedAt) || Date.now();
+  const existing = parseJson(await kvGet('vault:perps_variational_rate_samples'), {});
+  const sampled = recordVariationalListingSamples(existing, combined, atMs, { source: 'server' });
+  const merged = mergeVariationalRateSamples(existing, sampled);
+  await kvSet('vault:perps_variational_rate_samples', JSON.stringify(merged));
+  return true;
 }
 
 function providedCronSecret(req) {
@@ -205,6 +238,11 @@ async function handlePerpsCronSnapshot(req, res) {
     }, { hedges, closedPairs });
     const store = appendEquitySnapshotStore(savedSnapshots, data);
     await kvSet('vault:perps_snapshots', JSON.stringify(store));
+    try {
+      await persistVariationalRateSamplesFromDashboard(data);
+    } catch (sampleErr) {
+      console.warn('[perps-rate-samples]', sampleErr?.message || sampleErr);
+    }
     const { key, record } = buildEquitySnapshotFromDashboard(data);
     return res.status(200).json({
       ok: true,
@@ -261,6 +299,11 @@ async function handlePerps(req, res) {
         () => fetchPerpsLiveRates({ grvtSubAccount, symbols }),
       );
       await kvCacheSet(CACHE_KEYS.perpsLive, cacheKey, data);
+      try {
+        await persistVariationalRateSamplesFromDashboard(data);
+      } catch (sampleErr) {
+        console.warn('[perps-rate-samples]', sampleErr?.message || sampleErr);
+      }
       return res.status(200).json(data);
     } catch (e) {
       console.error('[perps-live]', e);
@@ -299,6 +342,11 @@ async function handlePerps(req, res) {
       );
     const activeSymbols = perpsSymbolsFromDashboard(data);
     if (activeSymbols.length) await kvSet('vault:perps_symbols', JSON.stringify(activeSymbols));
+    try {
+      await persistVariationalRateSamplesFromDashboard(data);
+    } catch (e) {
+      console.warn('[perps-rate-samples]', e?.message || e);
+    }
     return res.status(200).json(data);
   } catch (e) {
     console.error('[perps]', e);

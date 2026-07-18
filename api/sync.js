@@ -119,18 +119,56 @@ function mergeVariationalHedgeRows(existing, incoming) {
   return [...byKey.values()].sort((a, b) => (Number(b?.openedAt) || 0) - (Number(a?.openedAt) || 0));
 }
 
+function variationalSettlementFreezeQuality(row) {
+  if (!row?.frozen) return 0;
+  if (row.freezeSource === 'sample') return 4;
+  if (row.freezeSource === 'live') return 3;
+  if (row.freezeSource === 'reference-history') return 2;
+  if (row.freezeSource === 'catchup' || row.catchUp === true) return 1;
+  const sampleAt = Number(row.sampleAtMs);
+  const frozenAt = Number(row.frozenAt ?? row.capturedAt);
+  if (Number.isFinite(sampleAt) && Number.isFinite(frozenAt) && frozenAt > sampleAt + 2 * 60 * 1000) return 1;
+  return 2;
+}
+
 function mergeVariationalSettlementArrays(existing, incoming) {
   const byTime = new Map((existing || []).map((s) => [Number(s.time), s]));
   for (const row of incoming || []) {
     const t = Number(row?.time);
     if (!Number.isFinite(t)) continue;
     const prev = byTime.get(t);
-    if (prev?.frozen) continue;
+    const prevQ = variationalSettlementFreezeQuality(prev);
+    const nextQ = variationalSettlementFreezeQuality(row);
+    // Keep higher-quality freezes; allow rewriting catch-up with period-correct samples.
+    if (prevQ > 0 && nextQ <= prevQ) continue;
     if (row?.frozen || !prev) {
       byTime.set(t, { ...prev, ...row, frozen: Boolean(prev?.frozen || row?.frozen) });
     }
   }
   return [...byTime.values()].sort((a, b) => Number(b.time) - Number(a.time)).slice(0, 1000);
+}
+
+function mergeVariationalRateSampleMaps(existing, incoming) {
+  try {
+    const VH = require('../lib/variational-hedge');
+    if (typeof VH.mergeVariationalRateSamples === 'function') {
+      return VH.mergeVariationalRateSamples(existing, incoming);
+    }
+  } catch {
+    // fall through
+  }
+  const out = { ...(existing && typeof existing === 'object' ? existing : {}) };
+  for (const [symbol, rows] of Object.entries(incoming || {})) {
+    if (!symbol || !Array.isArray(rows)) continue;
+    const byAt = new Map((out[symbol] || []).map((r) => [Number(r?.atMs), r]));
+    for (const row of rows) {
+      const atMs = Number(row?.atMs);
+      if (!Number.isFinite(atMs)) continue;
+      byAt.set(atMs, row);
+    }
+    out[symbol] = [...byAt.values()].sort((a, b) => Number(b.atMs) - Number(a.atMs)).slice(0, 2000);
+  }
+  return out;
 }
 
 function mergeVariationalSettlementMaps(existing, incoming) {
@@ -774,11 +812,12 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ ok: true, perpsSnapshots });
       }
       if (req.query?.perpsAux === '1') {
-        const [perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw] = await Promise.all([
+        const [perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw, perpsVariationalRateSamplesRaw] = await Promise.all([
           kvGet('vault:perps_snapshots'),
           kvGet('vault:perps_variational_hedges'),
           kvGet('vault:perps_closed_pairs'),
           kvGet('vault:perps_variational_settlements'),
+          kvGet('vault:perps_variational_rate_samples'),
         ]);
         return res.status(200).json({
           ok: true,
@@ -786,6 +825,7 @@ module.exports = async function handler(req, res) {
           perpsVariationalHedges: parseJson(perpsVariationalHedgesRaw, []),
           perpsClosedPairs: parseJson(perpsClosedPairsRaw, []),
           perpsVariationalSettlements: parseJson(perpsVariationalSettlementsRaw, {}),
+          perpsVariationalRateSamples: parseJson(perpsVariationalRateSamplesRaw, {}),
         });
       }
       if (req.query?.loopSnapshots === '1') {
@@ -1102,6 +1142,13 @@ module.exports = async function handler(req, res) {
       const merged = mergeVariationalSettlementMaps(existing, body.perpsVariationalSettlements);
       await kvSet('vault:perps_variational_settlements', JSON.stringify(merged));
       saved.perpsVariationalSettlements = true;
+    }
+    if (body.perpsVariationalRateSamples && typeof body.perpsVariationalRateSamples === 'object'
+      && Object.keys(body.perpsVariationalRateSamples).length) {
+      const existing = parseJson(await kvGet('vault:perps_variational_rate_samples'), {});
+      const merged = mergeVariationalRateSampleMaps(existing, body.perpsVariationalRateSamples);
+      await kvSet('vault:perps_variational_rate_samples', JSON.stringify(merged));
+      saved.perpsVariationalRateSamples = true;
     }
     if (Array.isArray(body.perpsClosedPairs) && body.perpsClosedPairs.length) {
       const existing = parseJson(await kvGet('vault:perps_closed_pairs'), []);

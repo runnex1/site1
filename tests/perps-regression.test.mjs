@@ -3579,6 +3579,14 @@ assert.match(indexHtml, /function perpsMergeVariationalSettlementsFromServer\(/,
 assert.match(indexHtml, /function perpsPushVariationalSettlementsToServer\(/, 'variational settlements must push to server');
 assert.match(indexHtml, /function perpsScheduleVariationalSettlementSample\(/, 'UI must schedule freeze at T-10s before each settlement');
 assert.match(indexHtml, /VARIATIONAL_SETTLEMENT_SAMPLE_LEAD_MS|variationalSettlementSampleAtMs/, 'UI must use T-10s sample helper for Variational freeze');
+assert.match(indexHtml, /PERPS_VARIATIONAL_RATE_SAMPLES_KEY/, 'UI must persist Variational rate samples for period-correct freezes');
+assert.match(indexHtml, /rateSamplesBySymbol/, 'UI must pass stored Variational rate samples into freeze capture');
+assert.match(indexHtml, /allowCatchUp:\s*false/, 'UI must not catch-up freeze past settlements with live rate');
+assert.match(indexHtml, /perpsFetchReferenceFundingHistory/, 'UI must repair missing Variational freezes from reference-exchange history');
+assert.match(indexHtml, /perpsRecordVariationalRateSamplesFromData/, 'UI must record Variational rate samples from dashboard payloads');
+assert.match(aaveProxyJs, /persistVariationalRateSamplesFromDashboard/, 'server must sample Variational rates on dashboard\/live fetches');
+assert.match(variationalHedgeJs, /allowCatchUp === true/, 'catch-up freeze must be opt-in only');
+assert.match(variationalHedgeJs, /freezeSource === 'sample'/, 'freeze quality must prefer stored Variational samples');
 assert.match(variationalHedgeJs, /VARIATIONAL_SETTLEMENT_SAMPLE_LEAD_MS\s*=\s*10\s*\*\s*1000/, 'Variational sample lead must be exactly 10 seconds');
 assert.match(variationalHedgeJs, /function variationalSettlementSampleAtMs\(/, 'settlement sample time helper must exist');
 assert.match(syncJs, /vault:perps_variational_settlements/, 'sync must persist frozen Variational settlements server-side');
@@ -4615,6 +4623,7 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
 
   const atSample = captureVariationalSettlementsDue(hedge100k, listing, [], {
     now: sampleAt,
+    listingFetchedAt: sampleAt,
   });
   assert.equal(atSample.length, 1, 'must freeze at T-10s even before the settlement boundary');
   assert.equal(atSample[0].time, settlementTime);
@@ -4622,7 +4631,68 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   assert.equal(atSample[0].frozenAt, sampleAt);
   assert.equal(atSample[0].size, -100000);
   assert.ok(atSample[0].frozen);
+  assert.equal(atSample[0].freezeSource, 'live', 'timely freeze must mark freezeSource=live');
   const frozenPayment = atSample[0].usdc;
+
+  const lateCatchUp = captureVariationalSettlementsDue(hedge100k, {
+    ...listing,
+    markPx: 0.5,
+    fundingRateInterval: 0.01,
+  }, [], {
+    now: settlementTime + 3 * 3600000,
+    listingFetchedAt: settlementTime + 3 * 3600000,
+    allowCatchUp: false,
+  });
+  assert.equal(lateCatchUp.length, 0, 'must not freeze past settlements with stale live rate');
+
+  const sampleRate = 0.00012;
+  const sampleMark = 0.211;
+  const fromSample = captureVariationalSettlementsDue(hedge100k, listing, [], {
+    now: settlementTime + 3 * 3600000,
+    listingFetchedAt: settlementTime + 3 * 3600000,
+    rateSamplesBySymbol: {
+      XLM: [{ atMs: sampleAt, markPx: sampleMark, rate: sampleRate, intervalS: 28800 }],
+    },
+  });
+  assert.equal(fromSample.length, 1, 'must freeze past settlement from stored Variational rate sample');
+  assert.equal(fromSample[0].freezeSource, 'sample');
+  assert.equal(fromSample[0].rate, sampleRate);
+  assert.equal(fromSample[0].markPx, sampleMark);
+  assert.ok(Math.abs(fromSample[0].usdc - variationalFundingPaymentPerInterval(-100000, sampleMark, sampleRate)) < 1e-9);
+
+  const refRate = 0.00009;
+  const fromRef = captureVariationalSettlementsDue(hedge100k, listing, [], {
+    now: settlementTime + 3 * 3600000,
+    listingFetchedAt: settlementTime + 3 * 3600000,
+    referenceRateByTime: {
+      [settlementTime]: { rate: refRate, markPx: 0.215, source: 'bybit' },
+    },
+  });
+  assert.equal(fromRef.length, 1, 'must freeze past settlement from reference-exchange funding history when samples missing');
+  assert.equal(fromRef[0].freezeSource, 'reference-history');
+  assert.equal(fromRef[0].rate, refRate);
+
+  const catchUpPrev = [{
+    time: settlementTime,
+    sampleAtMs: sampleAt,
+    frozenAt: settlementTime + 3 * 3600000,
+    frozen: true,
+    catchUp: true,
+    freezeSource: 'catchup',
+    markPx: 0.5,
+    rate: 0.01,
+    size: -100000,
+    usdc: 1,
+  }];
+  const repaired = captureVariationalSettlementsDue(hedge100k, listing, catchUpPrev, {
+    now: settlementTime + 4 * 3600000,
+    listingFetchedAt: settlementTime + 4 * 3600000,
+    rateSamplesBySymbol: {
+      XLM: [{ atMs: sampleAt, markPx: sampleMark, rate: sampleRate, intervalS: 28800 }],
+    },
+  });
+  assert.equal(repaired[0].freezeSource, 'sample', 'catch-up freeze must be rewritten from period-correct sample');
+  assert.equal(repaired[0].rate, sampleRate);
 
   // Resize after sample time must not rewrite the frozen past settlement.
   const hedge176k = {
