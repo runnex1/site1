@@ -4454,6 +4454,9 @@ assert.match(indexHtml, /data-perps-equity-value-mode="pnl"/, 'equity chart must
 assert.match(indexHtml, /rebaseHedgeNeutralSeriesToPnl/, 'PnL mode must reuse hedge-neutral rebase helper');
 assert.match(indexHtml, /perpsPnlNetDepositsAtTime/, 'PnL mode must use transfer-inclusive capital net');
 assert.match(indexHtml, /pnlCumulativeNetDeposits/, 'equity series points must carry PnL capital net');
+assert.match(indexHtml, /ignoresCapitalSessionReset/, 'PnL mode must not reset on deposit/withdraw sessions');
+assert.match(indexHtml, /perpsEnsurePnlChartStartMs/, 'PnL mode must track from a fixed start, not last capital event');
+assert.match(indexHtml, /ignores deposit\/withdraw resets/, 'PnL chart note must state continuous tracking');
 
 {
   const pendingAdj = variationalPendingCloseEquityAdjust([{

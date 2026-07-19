@@ -33455,6 +33455,20 @@ function perpsLastCapitalEventMs(data) {
     return payments.length ? payments[payments.length - 1].time : 0;
 }
 
+/** One-time PnL tracking origin — continuous from this instant, never reset by deposits. */
+const PERPS_PNL_CHART_START_KEY = 'vault-perps-pnl-chart-start-ms';
+function perpsEnsurePnlChartStartMs() {
+    try {
+        const existing = Number(localStorage.getItem(PERPS_PNL_CHART_START_KEY));
+        if (Number.isFinite(existing) && existing > 0) return existing;
+        const start = Date.now();
+        localStorage.setItem(PERPS_PNL_CHART_START_KEY, String(start));
+        return start;
+    } catch (e) {
+        return Date.now();
+    }
+}
+
 function perpsIsPnlCapitalPayment(p) {
     if (!p || !Number.isFinite(p.time) || !Number.isFinite(p.usdc) || p.usdc === 0) return false;
     const kind = String(p.kind || '').toLowerCase();
@@ -33535,6 +33549,29 @@ function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityV
         return ta - tb;
     });
     const chartMode = mode === 'all' ? 'all' : 'session';
+
+    // PnL is capital-neutral: never clip to the last deposit/withdraw (HN "Last session").
+    // Track continuously from the PnL start origin (set once) or full history in All-time.
+    if (valueMode === 'pnl') {
+        const pnlStartMs = perpsEnsurePnlChartStartMs();
+        let pnlPoints = chartMode === 'all'
+            ? allPoints.slice()
+            : allPoints.filter((p) => (perpsParseBucketTime(p.bucket) || p.time || 0) >= pnlStartMs);
+        if (!pnlPoints.length && allPoints.length) {
+            pnlPoints = [allPoints[allPoints.length - 1]];
+        }
+        const points = perpsMapEquityChartPoints(pnlPoints, 'pnl');
+        return {
+            ...series,
+            points,
+            chartMode,
+            valueMode: 'pnl',
+            sessionMs: chartMode === 'session' ? pnlStartMs : 0,
+            pnlStartMs,
+            pointCount: points.length,
+            ignoresCapitalSessionReset: true,
+        };
+    }
 
     if (chartMode === 'all') {
         const points = perpsMapEquityChartPoints(allPoints, valueMode);
@@ -33780,7 +33817,7 @@ function perpsBindEquityChartHover() {
             body += `<div style="color:#9dacbb;font-size:0.68rem;margin-top:0.15rem;">Exchange: ${perpsFmtUsd(rawEquity)} · adj ${perpsFmtUsd(adjust ?? (hit.val - rawEquity))}</div>`;
         }
         if (_perpsEquityValueMode === 'pnl' && Number.isFinite(rawEquity)) {
-            body += `<div style="color:#9dacbb;font-size:0.68rem;margin-top:0.15rem;">Hedge-neutral base · deposits/withdrawals neutralized</div>`;
+            body += `<div style="color:#9dacbb;font-size:0.68rem;margin-top:0.15rem;">Continuous · not reset by deposits/withdrawals</div>`;
         }
         tip.innerHTML = body;
         perpsPositionFundChartTooltip(ev, tip);
@@ -33810,7 +33847,7 @@ function perpsRenderEquityChart(data) {
         noteEl.textContent = _perpsEquityValueMode === 'raw'
             ? 'Exchange equity · raw HL + Nado + GRVT + Extended account values'
             : (_perpsEquityValueMode === 'pnl'
-                ? 'PnL · hedge-neutral change from $0 · deposits/withdrawals neutralized'
+                ? 'PnL · continuous hedge-neutral Δ from $0 · ignores deposit/withdraw resets'
                 : 'Hedge-neutral · adds open Variational MTM + closed Variational PnL');
     }
     if (lineEl) lineEl.setAttribute('d', chart.line);
