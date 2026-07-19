@@ -2870,6 +2870,9 @@ assert.match(indexHtml, /function perpsSnapshotVariationalAdjust\(/, 'equity ser
 assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'equity snapshots must persist pending-close variational adjust');
 assert.match(perpsJs, /fetchPerpsEquitySnapshotWithVariational/, 'cron snapshots must compute variational equity adjust server-side');
 assert.match(perpsJs, /variationalEquityAdjust: record\.variationalEquityAdjust/, 'equity snapshot records must store variational adjust');
+assert.match(perpsJs, /transfer_history/, 'GRVT capital flows must read transfer_history for trading-subaccount deposits/withdrawals');
+assert.match(perpsJs, /source: 'transfer_history'/, 'GRVT subaccount capital payments must be tagged from transfer_history');
+assert.match(perpsJs, /PERPS_GRVT_HISTORY_TIMEOUT_MS, 'GRVT capital flows'/, 'GRVT capital flows must use the longer GRVT history timeout');
 assert.match(indexHtml, /<g id="perpsEquityPoints"><\/g>/, 'equity chart must render visible sampled-point markers');
 assert.match(indexHtml, /data-perps-equity-mode="session"/, 'equity chart must default to last-session mode');
 assert.match(indexHtml, /function perpsLastCapitalEventMs\(/, 'equity chart session mode must detect last capital flow');
