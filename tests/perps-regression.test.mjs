@@ -2873,6 +2873,11 @@ assert.match(perpsJs, /variationalEquityAdjust: record\.variationalEquityAdjust/
 assert.match(perpsJs, /transfer_history/, 'GRVT capital flows must read transfer_history for trading-subaccount deposits/withdrawals');
 assert.match(perpsJs, /source: 'transfer_history'/, 'GRVT subaccount capital payments must be tagged from transfer_history');
 assert.match(perpsJs, /PERPS_GRVT_HISTORY_TIMEOUT_MS, 'GRVT capital flows'/, 'GRVT capital flows must use the longer GRVT history timeout');
+assert.match(perpsJs, /function slimPerpsDashboardForClient\(/, 'perps API must slim heavy history before sending to the browser');
+assert.match(perpsJs, /clientFillWindowDays: 90/, 'client fill history must be windowed to limit UI freezes');
+assert.match(indexHtml, /perpsScheduleCloudSave/, 'perps must debounce cloud saveData to avoid refresh freezes');
+assert.match(indexHtml, /perpsBuildCapitalNetPrefix/, 'equity chart must cache capital net prefixes instead of O\(snapshots×flows\)');
+assert.match(indexHtml, /_equitySeriesRaw/, 'equity series must not be rebuilt twice per dashboard render');
 assert.match(indexHtml, /<g id="perpsEquityPoints"><\/g>/, 'equity chart must render visible sampled-point markers');
 assert.match(indexHtml, /data-perps-equity-mode="session"/, 'equity chart must default to last-session mode');
 assert.match(indexHtml, /function perpsLastCapitalEventMs\(/, 'equity chart session mode must detect last capital flow');
@@ -3059,7 +3064,10 @@ assert.doesNotMatch(indexHtml, /id="pmPositionSearch"/, 'Prediction Markets sear
 assert.match(indexHtml, /https:\/\/app\.opinion\.trade\/market\/\$\{pos\.marketId \|\| pos\.market_id\}/, 'Opinion positions must keep a market URL for click-through');
 {
   const renderDashboard = indexHtml.slice(indexHtml.indexOf('function perpsRenderDashboard(data, opts = {})'), indexHtml.indexOf('function perpsFormatConnectedStatus'));
-  assert.ok(renderDashboard.indexOf('perpsSaveSnapshot(data);') < renderDashboard.indexOf('data._equitySeries = perpsBuildEquitySeries(data);'), 'dashboard must save the current 4h snapshot before building the plotted series');
+  assert.ok(
+    renderDashboard.indexOf('perpsSaveSnapshot(data);') < renderDashboard.indexOf('perpsBuildEquitySeries(data)'),
+    'dashboard must save the current 4h snapshot before building the plotted series',
+  );
 }
 
 {

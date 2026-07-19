@@ -10558,6 +10558,16 @@ const PERPS_GRVT_STATE_CACHE_KEY = 'vault-grvt-state-cache';
 const TICKER_VISIBLE_TABS = new Set(['overview', 'etf', 'terminal', 'history']);
 const PM_WALLETS_BACKUP_KEY = 'vault-polymarket-wallets-backup';
 const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
+let _perpsSaveDataTimer = null;
+/** Coalesce cloud sync so snapshot/hedge writes during refresh do not freeze the tab. */
+function perpsScheduleCloudSave(delayMs = 1500) {
+    if (typeof saveData !== 'function') return;
+    if (_perpsSaveDataTimer) clearTimeout(_perpsSaveDataTimer);
+    _perpsSaveDataTimer = setTimeout(() => {
+        _perpsSaveDataTimer = null;
+        try { saveData(); } catch (e) {}
+    }, delayMs);
+}
 const PERPS_FETCH_TIMEOUT_MS = 55000;
 const PERPS_REFRESH_RETRIES = 1;
 const PERPS_SCHEDULED_REFRESH_MINUTES = [10, 50, 55];
@@ -31388,7 +31398,7 @@ function perpsPersistVariationalHedges(rows, opts = {}) {
         try { perpsWritePortfolioLocal(); } catch (e) {}
     }
     if (!opts.skipCloudSync) {
-        if (typeof saveData === 'function') saveData();
+        perpsScheduleCloudSave();
         perpsPushVariationalHedgesToServer(list);
     }
     return { localStorageOk };
@@ -32120,7 +32130,7 @@ function perpsPersistCachedClosedPairs(rows, opts = {}) {
     try {
         const list = (Array.isArray(rows) ? rows : []).map((p) => perpsGuardClosedPairRecord(p));
         localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, JSON.stringify(list));
-        if (!opts.skipCloudSync && typeof saveData === 'function') saveData();
+        if (!opts.skipCloudSync) perpsScheduleCloudSave();
     } catch (e) {}
 }
 
@@ -32641,7 +32651,13 @@ function perpsApplyVariationalHedgesToData(data) {
 function perpsEnsureDailyFundingBase(data) {
     const fetchedAt = Number(data?.fetchedAt || 0);
     if (data._dailyFundingSeriesBaseFetchedAt !== fetchedAt) {
-        data._dailyFundingSeriesBase = JSON.parse(JSON.stringify(data.dailyFundingSeries || []));
+        // Shallow row clone — avoid JSON.parse/stringify of multi‑MB event arrays.
+        data._dailyFundingSeriesBase = (data.dailyFundingSeries || []).map((r) => ({
+            ...r,
+            byVenue: { ...(r?.byVenue || {}) },
+            fundingEvents: Array.isArray(r?.fundingEvents) ? r.fundingEvents.slice() : [],
+            feeEvents: Array.isArray(r?.feeEvents) ? r.feeEvents.slice() : [],
+        }));
         data._dailyFundingSeriesBaseFetchedAt = fetchedAt;
     }
     return data._dailyFundingSeriesBase || [];
@@ -33391,7 +33407,7 @@ function perpsSaveSnapshot(data) {
             const pruned = {};
             keys.slice(-180).forEach(k => { pruned[k] = store[k]; });
             localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(pruned));
-            if (typeof saveData === 'function') saveData();
+            perpsScheduleCloudSave();
             return true;
         }
         store[bucket] = {
@@ -33411,7 +33427,7 @@ function perpsSaveSnapshot(data) {
         const pruned = {};
         keys.slice(-180).forEach(k => { pruned[k] = store[k]; });
         localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(pruned));
-        if (typeof saveData === 'function') saveData();
+        perpsScheduleCloudSave();
         return true;
     } catch (e) {
         return false;
@@ -33500,15 +33516,17 @@ function perpsPnlNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayment
 }
 
 function perpsResolvePointPnlNetDeposits(snap, time, data) {
-    const cf = data?.capitalFlows;
-    if (cf) {
+    if (data?.capitalFlows) {
         try {
+            const prefix = perpsBuildCapitalNetPrefix(data, 'pnl');
+            const fromPrefix = perpsCapitalNetAtTimeFromPrefix(prefix, time);
+            if (fromPrefix != null) return fromPrefix;
             return perpsPnlNetDepositsAtTime(
-                cf.hl?.payments,
-                cf.nado?.payments,
+                data.capitalFlows.hl?.payments,
+                data.capitalFlows.nado?.payments,
                 time,
-                cf.grvt?.payments || null,
-                cf.extended?.payments || null,
+                data.capitalFlows.grvt?.payments || null,
+                data.capitalFlows.extended?.payments || null,
             );
         } catch (e) { /* fall through */ }
     }
@@ -33603,18 +33621,82 @@ function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityV
     };
 }
 
+/** Prefix-sum capital ledgers once per dashboard payload (equity chart was O(snapshots×flows)). */
+function perpsBuildCapitalNetPrefix(data, mode = 'strategy') {
+    const cf = data?.capitalFlows;
+    if (!cf) return null;
+    const cacheKey = mode === 'pnl' ? '_pnlCapitalPrefix' : '_strategyCapitalPrefix';
+    if (data[cacheKey]?.fetchedAt === data.fetchedAt) return data[cacheKey];
+
+    if (mode === 'pnl') {
+        const payments = [
+            ...(cf.hl?.payments || []),
+            ...(cf.nado?.payments || []),
+            ...(cf.grvt?.payments || []),
+            ...(cf.extended?.payments || []),
+        ].filter(perpsIsPnlCapitalPayment).sort((a, b) => a.time - b.time);
+        let run = 0;
+        const times = [];
+        const prefix = [];
+        for (const p of payments) {
+            run += p.usdc;
+            times.push(p.time);
+            prefix.push(run);
+        }
+        data[cacheKey] = { fetchedAt: data.fetchedAt, times, prefix, mode };
+        return data[cacheKey];
+    }
+
+    // Strategy net keeps cross-venue offset; evaluate once per unique event time.
+    const hl = cf.hl?.payments || [];
+    const nado = cf.nado?.payments || [];
+    const grvt = cf.grvt?.payments || [];
+    const ext = cf.extended?.payments || [];
+    const timesSet = new Set();
+    for (const p of perpsHlStrategyPayments(hl)) if (Number.isFinite(p.time)) timesSet.add(p.time);
+    for (const p of nado) if (Number.isFinite(p.time)) timesSet.add(p.time);
+    for (const p of grvt) if (Number.isFinite(p.time)) timesSet.add(p.time);
+    for (const p of ext) if (Number.isFinite(p.time)) timesSet.add(p.time);
+    const times = [...timesSet].sort((a, b) => a - b);
+    const prefix = times.map((t) => perpsNetDepositsAtTime(hl, nado, t, grvt, ext));
+    data[cacheKey] = { fetchedAt: data.fetchedAt, times, prefix, mode };
+    return data[cacheKey];
+}
+
+function perpsCapitalNetAtTimeFromPrefix(prefix, timeMs) {
+    if (!prefix) return null;
+    if (!prefix.times?.length) return 0;
+    const times = prefix.times;
+    let lo = 0;
+    let hi = times.length - 1;
+    let best = -1;
+    while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (times[mid] <= timeMs) {
+            best = mid;
+            lo = mid + 1;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    if (best < 0) return 0;
+    return prefix.prefix[best];
+}
+
 function perpsResolvePointNetDeposits(snap, time, data) {
     // Prefer live ledger at snapshot time so PnL neutralization stays accurate even when
     // cron-carried cumulativeNetDeposits on old snapshots is stale.
-    const cf = data?.capitalFlows;
-    if (cf) {
+    if (data?.capitalFlows) {
         try {
+            const prefix = perpsBuildCapitalNetPrefix(data, 'strategy');
+            const fromPrefix = perpsCapitalNetAtTimeFromPrefix(prefix, time);
+            if (fromPrefix != null) return fromPrefix;
             return perpsNetDepositsAtTime(
-                cf.hl?.payments,
-                cf.nado?.payments,
+                data.capitalFlows.hl?.payments,
+                data.capitalFlows.nado?.payments,
                 time,
-                cf.grvt?.payments || null,
-                cf.extended?.payments || null,
+                data.capitalFlows.grvt?.payments || null,
+                data.capitalFlows.extended?.payments || null,
             );
         } catch (e) { /* fall through */ }
     }
@@ -33834,7 +33916,11 @@ function perpsBindEquityChartHover() {
 }
 
 function perpsRenderEquityChart(data) {
-    const rawSeries = perpsBuildEquitySeries(data);
+    // Reuse series from dashboard render when possible — building it twice was a main-thread stall.
+    const rawSeries = (data?._equitySeriesRaw?.fetchedAt === data?.fetchedAt && data._equitySeriesRaw)
+        ? data._equitySeriesRaw
+        : perpsBuildEquitySeries(data);
+    data._equitySeriesRaw = { ...rawSeries, fetchedAt: data?.fetchedAt };
     const equitySeries = perpsApplyEquityChartMode(rawSeries, data, _perpsEquityChartMode, _perpsEquityValueMode);
     data._equitySeries = equitySeries;
     const chart = perpsBuildEquityChart(equitySeries);
@@ -36573,8 +36659,13 @@ function perpsRenderDashboard(data, opts = {}) {
     try {
         perpsSafeApplyVariationalHedgesToData(data);
         try {
+            // Cache aggregates only — event arrays can be multi‑MB and freeze setItem.
             localStorage.setItem(PERPS_DAILY_FUND_CACHE_KEY, JSON.stringify({
-                series: data.dailyFundingSeries || [],
+                series: (data.dailyFundingSeries || []).map((r) => {
+                    if (!r || typeof r !== 'object') return r;
+                    const { fundingEvents, feeEvents, ...rest } = r;
+                    return rest;
+                }),
                 fetchedAt: data.fetchedAt || Date.now(),
             }));
         } catch (e) {}
@@ -36589,7 +36680,8 @@ function perpsRenderDashboard(data, opts = {}) {
             ...(data.closedPairRefreshes || []),
         ]);
         const snapshotAdded = perpsSaveSnapshot(data);
-        data._equitySeries = perpsBuildEquitySeries(data);
+        data._equitySeriesRaw = { ...perpsBuildEquitySeries(data), fetchedAt: data.fetchedAt };
+        data._equitySeries = data._equitySeriesRaw;
         if (data.rateSpread) perpsApplyLiveRates(data.rateSpread, data.fetchedAt);
         perpsRenderStatsBar(data);
         if (perpsShouldRenderEquityChart(snapshotAdded, opts.cloudSnapshotsAdded)) {
