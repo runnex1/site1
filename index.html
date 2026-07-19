@@ -35629,9 +35629,14 @@ function perpsNormalizeClosedPairForDisplay(pair) {
     const next = perpsGuardClosedPairRecord({ ...pair });
     const keepFrozenFunding = Boolean(next.manualVariationalClose)
         && Number.isFinite(Number(next.funding));
-    // Funding column = last open-session total (same as position performance before close).
-    // Keep lifetime* for APR via perpsClosedPairCarryBasis; do not overwrite Funding with lifetime.
-    if (!keepFrozenFunding && Array.isArray(next.dailyPerformanceSeries) && next.dailyPerformanceSeries.length) {
+    // Peak-within-session enrich already set funding/fees/slippage from peak→close.
+    // Only fall back to full latest-session funding when peak metrics were not applied.
+    if (
+        !keepFrozenFunding
+        && !next.peakMetricsApplied
+        && Array.isArray(next.dailyPerformanceSeries)
+        && next.dailyPerformanceSeries.length
+    ) {
         const session = perpsPairLatestSessionPnl(next);
         if (session?.source === 'session') {
             next.funding = session.funding;

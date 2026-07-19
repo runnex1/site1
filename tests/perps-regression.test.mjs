@@ -722,13 +722,72 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     ],
     grvtFills: [{ symbol: 'UNI', time: close + 60000, side: 'buy', sz: 100, fee: 1.5, closedPnl: -48 }],
   }, 30);
-  assert.equal(enriched[0].peakMetricsApplied, true, 'closed UNI must use 24h peak-to-close stats');
-  assert.equal(enriched[0].size, 100, 'closed UNI size must be 24h peak position');
-  assert.equal(enriched[0].funding, 3, 'closed UNI funding must use last-session total from performance series');
-  assert.equal(enriched[0].sessionFundingApplied, true, 'closed UNI must flag session funding on peak pairs');
-  assert.equal(enriched[0].fees, 4.5, 'closed UNI fees must sum fills from peak to close');
-  assert.equal(enriched[0].closeSlippage, 2, 'closed UNI slippage must sum realized PnL from peak to close');
-  assert.equal(enriched[0].netPnl, 2 + 3 - 4.5, 'closed net PnL must use session funding with peak fees/slippage');
+  assert.equal(enriched[0].peakMetricsApplied, true, 'closed UNI must use session-peak-to-close stats');
+  assert.equal(enriched[0].sessionPeakApplied, true, 'closed UNI peak must be bounded by latest activity session');
+  assert.equal(enriched[0].size, 100, 'closed UNI size must be peak position within latest session');
+  assert.equal(enriched[0].funding, 3, 'closed UNI funding must sum both legs from session peak to close');
+  assert.equal(enriched[0].fees, 4.5, 'closed UNI fees must sum fills from session peak to close');
+  assert.equal(enriched[0].closeSlippage, 2, 'closed UNI slippage must sum realized PnL from session peak to close');
+  assert.equal(enriched[0].netPnl, 2 + 3 - 4.5, 'closed net PnL must use session-peak funding and fees');
+}
+
+{
+  // Larger peak in a prior activity island must not set closed size / funding.
+  const closeTime = Date.parse('2026-07-10T18:00:00.000Z');
+  const sessionOpen = Date.parse('2026-07-08T12:00:00.000Z');
+  const oldPeak = Date.parse('2026-07-05T12:00:00.000Z');
+  const hlFills = [
+    { symbol: 'SOL', time: oldPeak, side: 'B', px: 100, sz: 500, fee: 1, closedPnl: 0 },
+    { symbol: 'SOL', time: oldPeak + 3600000, side: 'A', px: 100, sz: 500, fee: 1, closedPnl: 10 },
+    { symbol: 'SOL', time: sessionOpen, side: 'B', px: 100, sz: 100, fee: 1, closedPnl: 0 },
+    { symbol: 'SOL', time: closeTime, side: 'A', px: 100, sz: 100, fee: 1, closedPnl: 5 },
+  ];
+  const grvtFills = [
+    { symbol: 'SOL', time: sessionOpen + 60000, side: 'sell', px: 100.1, sz: 100, fee: 1, closedPnl: 0 },
+    { symbol: 'SOL', time: closeTime + 60000, side: 'buy', px: 100.1, sz: 100, fee: 1, closedPnl: -4 },
+  ];
+  const hlPayments = [
+    { symbol: 'SOL', time: oldPeak + 1800000, usdc: 50 },
+    { symbol: 'SOL', time: sessionOpen + 3600000, usdc: 2 },
+    { symbol: 'SOL', time: closeTime - 3600000, usdc: 1 },
+  ];
+  const grvtPayments = [
+    { symbol: 'SOL', time: sessionOpen + 7200000, usdc: -0.5 },
+  ];
+  const closed = [{
+    symbol: 'SOL',
+    closeTime,
+    openTime: sessionOpen,
+    size: 100,
+    closeSlippage: 1,
+    funding: 0,
+    fees: 2,
+    longLeg: {
+      venue: 'hyperliquid',
+      side: 'long',
+      size: 100,
+      openTime: sessionOpen,
+      openTimeKnown: true,
+      realizedPnl: 5,
+    },
+    shortLeg: {
+      venue: 'grvt',
+      side: 'short',
+      size: 100,
+      openTime: sessionOpen + 60000,
+      openTimeKnown: true,
+      realizedPnl: -4,
+    },
+  }];
+  const enriched = enrichClosedPairsSessionPnl(closed, {
+    hlPayments,
+    grvtPayments,
+    hlFills,
+    grvtFills,
+  }, 30)[0];
+  assert.equal(enriched.size, 100, 'session peak must ignore larger size from prior activity island');
+  assert.equal(enriched.sessionPeakApplied, true, 'SOL must flag session-bounded peak');
+  assert.ok(enriched.funding < 20, 'funding must not include prior-session payment ($50)');
 }
 
 {
@@ -769,11 +828,11 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     extendedFills: [],
   };
   const enriched = enrichClosedPairsSessionPnl(closed, dailySeriesInputs, 2)[0];
-  assert.ok(enriched.peakMetricsApplied, 'closed JUP must use 24h peak-to-close stats');
-  assert.equal(enriched.size, 35000, 'closed JUP size must be 24h peak position');
+  assert.ok(enriched.peakMetricsApplied, 'closed JUP must use session-peak-to-close stats');
+  assert.equal(enriched.size, 35000, 'closed JUP size must be peak position within latest session');
   assert.ok(Array.isArray(enriched.dailyPerformanceSeries) && enriched.dailyPerformanceSeries.length, 'closed JUP must carry dailyPerformanceSeries');
-  assert.ok(enriched.funding > 0, 'closed JUP funding must include payments from peak to close');
-  assert.equal(enriched.fees, 1, 'closed JUP fees must sum nado fills in the 24h peak window');
+  assert.ok(enriched.funding > 0, 'closed JUP funding must include payments from session peak to close');
+  assert.equal(enriched.fees, 1, 'closed JUP fees must sum nado fills from session peak to close');
 }
 
 {
@@ -1050,7 +1109,8 @@ assert.match(perpsJs, /applyPairFundingSinceOpen\(pair, base, venueA, venueB, pa
   assert.equal(pair.netArbPnl, 90, 'net arb PnL must refresh after funding since open correction');
 }
 assert.match(perpsJs, /stats\.funding_rate/, 'Extended rates must tolerate snake_case funding-rate fields');
-assert.match(perpsJs, /applyPeakToCloseMetrics/, 'closed pairs must attribute stats from 24h peak to close');
+assert.match(perpsJs, /applyPeakToCloseMetrics/, 'closed pairs must attribute stats from session peak to close');
+assert.match(perpsJs, /latestActivitySessionBounds/, 'closed enrich must bound peak search to latest activity session');
 assert.match(perpsJs, /peakMetricsApplied/, 'closed pairs must flag peak-to-close metrics');
 assert.match(perpsJs, /function filterFreshClosedPairs\(pairs, knownClosedKeys\)/, 'known closed pairs must skip full payload on incremental fetches');
 assert.match(perpsJs, /closedPairRefreshes/, 'known closed pairs must still receive refreshed session metrics from the server');
@@ -2786,12 +2846,13 @@ assert.match(perpsJs, /closedPairCloseSlippage/, 'closed slippage must prefer he
 assert.match(indexHtml, /perpsClosedPairSessionApr\(pair\)/, 'Closed tab must show session APR under Net PnL');
 assert.match(indexHtml, /perps-pos-closed-cell/, 'Closed tab rows must align values under headers without duplicate labels');
 assert.match(indexHtml, /function perpsNormalizeClosedPairForDisplay\(pair\)/, 'Closed tab must recompute session PnL from dailyPerformanceSeries at render time');
-assert.match(positionPeakWindowJs, /applyPeakToCloseMetrics/, 'peak window helper must attribute closed stats from 24h peak');
+assert.match(positionPeakWindowJs, /applyPeakToCloseMetrics/, 'peak window helper must attribute closed stats from peak to close');
+assert.match(positionPeakWindowJs, /lookbackStartMs/, 'peak window must accept activity-session lookback start');
 assert.match(positionPeakWindowJs, /resolveFundingFeesWindowStart/, 'peak metrics must expand funding window when fill history is sparse');
 assert.match(variationalHedgeJs, /applyVariationalPeakToClosePair/, 'variational closed pairs must apply peak-to-close metrics');
 assert.match(variationalHedgeJs, /computeVariationalClosedLegPnl/, 'variational closed leg PnL must offset tracked exchange realized');
 assert.match(variationalHedgeJs, /computeVariationalClosedPairFunding/, 'variational closed pairs must accrue funding from hedge open through close');
-assert.match(indexHtml, /sessionFundingApplied|keepFrozenFunding|perpsPairLatestSessionPnl/, 'closed display must prefer last-session funding over lifetime');
+assert.match(indexHtml, /peakMetricsApplied|keepFrozenFunding|perpsPairLatestSessionPnl/, 'closed display must keep peak-to-close funding when peak metrics applied');
 assert.match(perpsJs, /function closedPairSessionApr\(/, 'closed pairs must compute session APR server-side');
 assert.match(indexHtml, /pair\.closeSlippage/, 'Closed tab must show closing slippage separately');
 assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response must include closed pairs');
