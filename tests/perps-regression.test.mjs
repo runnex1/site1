@@ -4338,12 +4338,33 @@ const {
     crossLegA: { venue: 'grvt', unrealizedPnl: -286 },
     crossLegB: { venue: 'variational', unrealizedPnl: 294 },
   }], (p) => p.pairType === 'grvt_variational');
-  assert.equal(openAdj, 286, 'open hedge adjust must neutralize tracked-leg uPnL');
+  assert.equal(openAdj, 294, 'open hedge adjust must add Variational MTM only');
   assert.equal(
     variationalNeutralEquity(10000, openAdj),
-    10286,
-    'hedge-neutral equity must add -trackedUpnl when tracked leg is underwater',
+    10294,
+    'hedge-neutral must be exchange + Variational MTM',
   );
+}
+
+{
+  const openAdj = variationalOpenEquityAdjust([{
+    pairType: 'hyperliquid_variational',
+    venueA: 'hyperliquid',
+    crossLegA: { venue: 'hyperliquid', unrealizedPnl: 100 },
+    crossLegB: { venue: 'variational', unrealizedPnl: -100 },
+  }], (p) => String(p.pairType || '').endsWith('_variational'));
+  assert.equal(openAdj, -100, 'matched hedge adj is Variational MTM only');
+  assert.equal(variationalNeutralEquity(10000, openAdj), 9900);
+}
+
+{
+  const openAdj = variationalOpenEquityAdjust([{
+    pairType: 'hyperliquid_variational',
+    venueA: 'hyperliquid',
+    crossLegA: { venue: 'hyperliquid', unrealizedPnl: 30 },
+    crossLegB: { venue: 'variational', unrealizedPnl: -90 },
+  }], (p) => String(p.pairType || '').endsWith('_variational'));
+  assert.equal(openAdj, -90, 'partial HL trim must keep full Variational MTM in hedge-neutral');
 }
 
 {
@@ -4379,8 +4400,8 @@ const {
 }
 
 {
-  const point = { totalEquity: 10000, variationalEquityAdjust: 286, variationalNeutralEquity: 10286 };
-  assert.equal(equityPointChartValue(point, 'neutral'), 10286);
+  const point = { totalEquity: 10000, variationalEquityAdjust: 294, variationalNeutralEquity: 10294 };
+  assert.equal(equityPointChartValue(point, 'neutral'), 10294);
   assert.equal(equityPointChartValue(point, 'raw'), 10000);
 }
 
@@ -4388,15 +4409,20 @@ const {
   const pendingAdj = variationalPendingCloseEquityAdjust([{
     symbol: 'XLM',
     trackedVenue: 'grvt',
+    variationalSize: -100,
+    variationalEntryPx: 0.5,
+    variationalMarkPx: 0.48,
     lockedEquityAdjust: 286,
     trackedLastSnapshot: { unrealizedPnl: -999 },
   }]);
-  assert.equal(pendingAdj, 286, 'pending close must prefer locked equity adjust over stale snapshot');
-  assert.equal(
-    variationalTotalEquityAdjust([], [], () => false, [{
-      lockedEquityAdjust: 286,
-    }]),
-    286,
+  // Short 100 @ 0.50 mark 0.48 → +2 Var MTM (ignore legacy locked −HL).
+  assert.ok(Math.abs(pendingAdj - 2) < 1e-9, 'pending close must keep Variational MTM, not locked −tracked');
+  assert.ok(
+    Math.abs(variationalTotalEquityAdjust([], [], () => false, [{
+      variationalSize: -100,
+      variationalEntryPx: 0.5,
+      variationalMarkPx: 0.48,
+    }]) - 2) < 1e-9,
   );
 }
 
@@ -4407,14 +4433,18 @@ const {
       symbol: 'XLM',
       trackedVenue: 'grvt',
       status: 'open',
+      variationalSize: -50,
+      variationalEntryPx: 0.40,
+      variationalMarkPx: 0.42,
     }],
     closedPairs: [],
     states: {
-      grvt: { state: { positions: [{ symbol: 'XLM', unrealizedPnl: -120 }] } },
+      grvt: { state: { positions: [{ symbol: 'XLM', unrealizedPnl: -120, markPx: 0.42 }] } },
     },
   });
-  assert.equal(adjust.openAdj, 120, 'server hedge adjust must strip tracked-leg uPnL from open hedges');
-  assert.equal(adjust.totalAdj, 120, 'total hedge adjust must include open leg');
+  // Short 50 @ 0.40 mark 0.42 → −1 Var MTM. Do not strip tracked −120.
+  assert.ok(Math.abs(adjust.openAdj - (-1)) < 1e-9, 'server hedge adjust must add Variational MTM only');
+  assert.ok(Math.abs(adjust.totalAdj - (-1)) < 1e-9, 'total hedge adjust must include open Variational MTM');
 }
 
 {
@@ -4435,8 +4465,9 @@ const {
   assert.equal(record.variationalOpenEquityAdjust, 120, 'equity snapshot record must persist open adjust');
 }
 
-assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
-assert.match(variationalHedgeJs, /lockedEquityAdjust/, 'pending close must lock last tracked-leg equity adjust');
+assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'pending close equity adjust must be wired in UI');
+assert.match(variationalHedgeJs, /variationalLastUpnl/, 'open hedge build must stash last Variational uPnL for pending');
+assert.match(indexHtml, /adds open Variational MTM/, 'equity chart note must describe Variational MTM add');
 assert.match(indexHtml, /function perpsReapplyVariationalHedgesIfMounted\(/, 'perps must re-render after late variational hedge hydration');
 assert.match(indexHtml, /if \(_perpsBootPromise\) await _perpsBootPromise/, 'perps refresh must wait for hedge bootstrap');
 assert.match(indexHtml, /function perpsGuardClosedPairRecord\(/, 'closed pairs must be guarded before cache persist and display');

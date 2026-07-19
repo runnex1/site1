@@ -9454,7 +9454,7 @@ body[data-active-tab="loops"] .page-content,
               </div>
               <span class="perps-pill" style="border-color:rgba(167,139,250,0.35);color:#c4b5fd;background:rgba(167,139,250,0.1);" id="perpsEquityChartBadge">—</span>
             </div>
-            <div class="perps-pnl-note" id="perpsEquityChartNote" style="padding:0 1rem 0.35rem;font-size:0.68rem;">Hedge-neutral · strips Variational tracked-leg uPnL + closed Variational PnL</div>
+            <div class="perps-pnl-note" id="perpsEquityChartNote" style="padding:0 1rem 0.35rem;font-size:0.68rem;">Hedge-neutral · adds open Variational MTM + closed Variational PnL</div>
             <div class="perps-panel-body perps-panel-body--chart">
               <div class="perps-pnl-chart hoverable" id="perpsEquityChartWrap">
                 <svg id="perpsEquityChart" viewBox="0 0 760 160" preserveAspectRatio="none" role="img" aria-label="Portfolio PnL chart">
@@ -33690,7 +33690,7 @@ function perpsRenderEquityChart(data) {
     if (noteEl) {
         noteEl.textContent = _perpsEquityValueMode === 'raw'
             ? 'Exchange equity · raw HL + Nado + GRVT + Extended account values'
-            : 'Hedge-neutral · strips Variational tracked-leg uPnL + adds closed Variational PnL';
+            : 'Hedge-neutral · adds open Variational MTM + closed Variational PnL';
     }
     if (lineEl) lineEl.setAttribute('d', chart.line);
     if (areaEl) areaEl.setAttribute('d', chart.area || '');
