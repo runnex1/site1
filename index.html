@@ -35629,11 +35629,10 @@ function perpsNormalizeClosedPairForDisplay(pair) {
     const next = perpsGuardClosedPairRecord({ ...pair });
     const keepFrozenFunding = Boolean(next.manualVariationalClose)
         && Number.isFinite(Number(next.funding));
-    // Peak-within-session enrich already set funding/fees/slippage from peak→close.
-    // Only fall back to full latest-session funding when peak metrics were not applied.
+    // Prefer full latest-session funding (Position Performance total before close).
+    // Peak metrics keep size/fees/slippage; funding comes from session series when present.
     if (
         !keepFrozenFunding
-        && !next.peakMetricsApplied
         && Array.isArray(next.dailyPerformanceSeries)
         && next.dailyPerformanceSeries.length
     ) {

@@ -725,10 +725,11 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.equal(enriched[0].peakMetricsApplied, true, 'closed UNI must use session-peak-to-close stats');
   assert.equal(enriched[0].sessionPeakApplied, true, 'closed UNI peak must be bounded by latest activity session');
   assert.equal(enriched[0].size, 100, 'closed UNI size must be peak position within latest session');
-  assert.equal(enriched[0].funding, 3, 'closed UNI funding must sum both legs from session peak to close');
+  assert.equal(enriched[0].funding, 3, 'closed UNI funding must equal full latest-session Position Performance total');
+  assert.equal(enriched[0].sessionFundingApplied, true, 'closed UNI must flag session funding');
   assert.equal(enriched[0].fees, 4.5, 'closed UNI fees must sum fills from session peak to close');
   assert.equal(enriched[0].closeSlippage, 2, 'closed UNI slippage must sum realized PnL from session peak to close');
-  assert.equal(enriched[0].netPnl, 2 + 3 - 4.5, 'closed net PnL must use session-peak funding and fees');
+  assert.equal(enriched[0].netPnl, 2 + 3 - 4.5, 'closed net PnL must use session funding with peak fees/slippage');
 }
 
 {
@@ -788,6 +789,53 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.equal(enriched.size, 100, 'session peak must ignore larger size from prior activity island');
   assert.equal(enriched.sessionPeakApplied, true, 'SOL must flag session-bounded peak');
   assert.ok(enriched.funding < 20, 'funding must not include prior-session payment ($50)');
+}
+
+{
+  // Later same-day / later-round funding must not attach to an older closed pair.
+  const closeTime = Date.parse('2026-07-10T12:00:00.000Z');
+  const sessionOpen = closeTime - 2 * 86400000;
+  const midSession = closeTime - 1 * 86400000;
+  const laterSameDay = closeTime + 6 * 3600000;
+  const nextRound = closeTime + 3 * 86400000;
+  const closed = [{
+    symbol: 'ONDO',
+    closeTime,
+    openTime: sessionOpen,
+    size: 1000,
+    closeSlippage: 1,
+    funding: 0,
+    fees: 1,
+    longLeg: { venue: 'hyperliquid', side: 'long', size: 1000, openTime: sessionOpen, openTimeKnown: true, realizedPnl: 2 },
+    shortLeg: { venue: 'grvt', side: 'short', size: 1000, openTime: sessionOpen, openTimeKnown: true, realizedPnl: -1 },
+  }];
+  const hlPayments = [
+    { symbol: 'ONDO', time: sessionOpen + 3600000, usdc: 5 },
+    { symbol: 'ONDO', time: midSession + 3600000, usdc: 2 },
+    { symbol: 'ONDO', time: closeTime - 3600000, usdc: 3 },
+    { symbol: 'ONDO', time: laterSameDay, usdc: 100 },
+    { symbol: 'ONDO', time: nextRound, usdc: 200 },
+  ];
+  const grvtPayments = [
+    { symbol: 'ONDO', time: sessionOpen + 7200000, usdc: -1 },
+  ];
+  const hlFills = [
+    { symbol: 'ONDO', time: sessionOpen, side: 'B', sz: 1000, fee: 0.5, closedPnl: 0 },
+    { symbol: 'ONDO', time: closeTime, side: 'A', sz: 1000, fee: 0.5, closedPnl: 2 },
+  ];
+  const grvtFills = [
+    { symbol: 'ONDO', time: sessionOpen + 60000, side: 'sell', sz: 1000, fee: 0.5, closedPnl: 0 },
+    { symbol: 'ONDO', time: closeTime + 60000, side: 'buy', sz: 1000, fee: 0.5, closedPnl: -1 },
+  ];
+  const enriched = enrichClosedPairsSessionPnl(closed, {
+    hlPayments,
+    grvtPayments,
+    hlFills,
+    grvtFills,
+  }, 30)[0];
+  assert.equal(enriched.funding, 9, 'closed ONDO funding must be full session (5+2+3-1), matching Position Performance');
+  assert.ok(enriched.funding < 50, 'must exclude same-day reopen and later ONDO funding');
+  assert.equal(enriched.sessionFundingApplied, true);
 }
 
 {
@@ -2852,7 +2900,9 @@ assert.match(positionPeakWindowJs, /resolveFundingFeesWindowStart/, 'peak metric
 assert.match(variationalHedgeJs, /applyVariationalPeakToClosePair/, 'variational closed pairs must apply peak-to-close metrics');
 assert.match(variationalHedgeJs, /computeVariationalClosedLegPnl/, 'variational closed leg PnL must offset tracked exchange realized');
 assert.match(variationalHedgeJs, /computeVariationalClosedPairFunding/, 'variational closed pairs must accrue funding from hedge open through close');
-assert.match(indexHtml, /peakMetricsApplied|keepFrozenFunding|perpsPairLatestSessionPnl/, 'closed display must keep peak-to-close funding when peak metrics applied');
+assert.match(indexHtml, /sessionFundingApplied|keepFrozenFunding|perpsPairLatestSessionPnl/, 'closed display must prefer session funding matching Position Performance');
+assert.match(perpsJs, /sessionFundingApplied/, 'closed enrich must flag full-session funding');
+assert.match(perpsJs, /t > seriesEndMs/, 'daily series must clip payments after closeTime so later rounds cannot leak');
 assert.match(perpsJs, /function closedPairSessionApr\(/, 'closed pairs must compute session APR server-side');
 assert.match(indexHtml, /pair\.closeSlippage/, 'Closed tab must show closing slippage separately');
 assert.match(perpsJs, /closedPairs: arb\.closedPairs/, 'Perps dashboard response must include closed pairs');
@@ -2899,7 +2949,7 @@ assert.match(indexHtml, /perpsTogglePositionChartFees/, 'position performance mu
 assert.match(perpsJs, /Math\.min\(\.\.\.candidates\)/, 'position open time must use earliest fill or funding on either leg');
 assert.match(perpsJs, /const perfDays = Math\.min\(PERPS_MAX_FILL_HISTORY_DAYS, Math\.max\(fillHistoryDays, openDays\)\)/, 'per-pair performance series must span from pair open through fill history');
 assert.match(perpsJs, /buildPairDailyPerformanceSeries\(dailySeriesInputs, p\.symbol, perfDays\)/, 'per-pair performance series must use computed performance window');
-assert.match(perpsJs, /peakPair\.peakMetricsApplied[\s\S]*dailyPerformanceSeries: filteredSeries/s, 'closed pairs must attach peak-window dailyPerformanceSeries');
+assert.match(perpsJs, /peakPair\.peakMetricsApplied[\s\S]*dailyPerformanceSeries: sessionSeries/s, 'closed pairs must attach full latest-session dailyPerformanceSeries for funding');
 assert.ok(indexHtml.includes('function perpsSyncTotalPnlForRange(data, range)'), 'Total PnL must follow the selected stat time window');
 assert.ok(indexHtml.includes('perpsSyncTotalPnlForRange(data, _perpsStatRange)'), 'stats bar must sync Total PnL from the active stat range');
 assert.doesNotMatch(indexHtml, /perpsSyncTotalPnlRolling24h/, 'Total PnL must not stay fixed to rolling 24h');
