@@ -4415,19 +4415,19 @@ const {
     totalEquity: 188508,
     variationalNeutralEquity: 188508,
     variationalEquityAdjust: 0,
-    cumulativeNetDeposits: 50000,
+    pnlCumulativeNetDeposits: 50000,
   };
   const afterWithdraw = {
     totalEquity: 187508,
     variationalNeutralEquity: 187508,
     variationalEquityAdjust: 0,
-    cumulativeNetDeposits: 49000,
+    pnlCumulativeNetDeposits: 49000,
   };
   const afterTrade = {
     totalEquity: 187608,
     variationalNeutralEquity: 187608,
     variationalEquityAdjust: 0,
-    cumulativeNetDeposits: 49000,
+    pnlCumulativeNetDeposits: 49000,
   };
   assert.equal(capitalNeutralHedgeNeutralFromPoint(before), 138508);
   assert.equal(capitalNeutralHedgeNeutralFromPoint(afterWithdraw), 138508, 'withdraw must not change capital-neutral HN');
@@ -4438,8 +4438,19 @@ const {
   assert.equal(pnl[2].chartValue, 100, 'trading gain on HN must appear as +PnL');
 }
 
+{
+  const { rebaseHedgeNeutralSeriesToPnl } = require('../lib/variational-equity.js');
+  // HL peer/spot transfer must neutralize via pnlCumulativeNetDeposits (not strategy deposits).
+  const before = { variationalNeutralEquity: 100000, pnlCumulativeNetDeposits: 1000, cumulativeNetDeposits: 1000 };
+  const after = { variationalNeutralEquity: 100183.17, pnlCumulativeNetDeposits: 1183.17, cumulativeNetDeposits: 1000 };
+  const pnl = rebaseHedgeNeutralSeriesToPnl([before, after]);
+  assert.ok(Math.abs(pnl[1].chartValue) < 1e-9, 'HL transfer must not move PnL when pnl net deposits include it');
+}
+
 assert.match(indexHtml, /data-perps-equity-value-mode="pnl"/, 'equity chart must expose PnL value mode');
 assert.match(indexHtml, /rebaseHedgeNeutralSeriesToPnl/, 'PnL mode must reuse hedge-neutral rebase helper');
+assert.match(indexHtml, /perpsPnlNetDepositsAtTime/, 'PnL mode must use transfer-inclusive capital net');
+assert.match(indexHtml, /pnlCumulativeNetDeposits/, 'equity series points must carry PnL capital net');
 
 {
   const pendingAdj = variationalPendingCloseEquityAdjust([{

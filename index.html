@@ -33455,6 +33455,53 @@ function perpsLastCapitalEventMs(data) {
     return payments.length ? payments[payments.length - 1].time : 0;
 }
 
+function perpsIsPnlCapitalPayment(p) {
+    if (!p || !Number.isFinite(p.time) || !Number.isFinite(p.usdc) || p.usdc === 0) return false;
+    const kind = String(p.kind || '').toLowerCase();
+    // Include peer/spot transfers: they move exchange equity but are excluded from
+    // strategy combinedNetDeposits (deposit|withdraw only).
+    return kind.includes('deposit') || kind.includes('withdraw') || kind.includes('transfer');
+}
+
+/** Sum of equity-moving capital flows. No same-sign cross-venue offset (that can
+ *  cancel independent withdraws across venues and break PnL neutralization). */
+function perpsComputePnlNetDeposits(hlPayments, nadoPayments, grvtPayments = null, extendedPayments = null) {
+    const rows = [
+        ...(hlPayments || []),
+        ...(nadoPayments || []),
+        ...(grvtPayments || []),
+        ...(extendedPayments || []),
+    ].filter(perpsIsPnlCapitalPayment);
+    return rows.reduce((sum, p) => sum + p.usdc, 0);
+}
+
+function perpsPnlNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = null, extendedPayments = null) {
+    const cut = (rows) => (rows || []).filter((p) => p.time <= timeMs);
+    return perpsComputePnlNetDeposits(
+        cut(hlPayments),
+        cut(nadoPayments),
+        grvtPayments ? cut(grvtPayments) : null,
+        extendedPayments ? cut(extendedPayments) : null,
+    );
+}
+
+function perpsResolvePointPnlNetDeposits(snap, time, data) {
+    const cf = data?.capitalFlows;
+    if (cf) {
+        try {
+            return perpsPnlNetDepositsAtTime(
+                cf.hl?.payments,
+                cf.nado?.payments,
+                time,
+                cf.grvt?.payments || null,
+                cf.extended?.payments || null,
+            );
+        } catch (e) { /* fall through */ }
+    }
+    if (Number.isFinite(Number(snap?.pnlCumulativeNetDeposits))) return Number(snap.pnlCumulativeNetDeposits);
+    return perpsResolvePointNetDeposits(snap, time, data);
+}
+
 function perpsMapEquityChartPoints(points, valueMode = _perpsEquityValueMode) {
     const rows = Array.isArray(points) ? points : [];
     if (valueMode === 'pnl') {
@@ -33464,8 +33511,10 @@ function perpsMapEquityChartPoints(points, valueMode = _perpsEquityValueMode) {
         const levels = rows.map((p) => {
             const hn = Number(p?.variationalNeutralEquity);
             const baseHn = Number.isFinite(hn) ? hn : (Number(p?.totalEquity) || 0) + (Number(p?.variationalEquityAdjust) || 0);
-            const dep = Number(p?.cumulativeNetDeposits);
+            const dep = Number(p?.pnlCumulativeNetDeposits);
             if (Number.isFinite(dep)) return baseHn - dep;
+            const stratDep = Number(p?.cumulativeNetDeposits);
+            if (Number.isFinite(stratDep)) return baseHn - stratDep;
             const adj = Number(p?.adjustedEquity);
             if (Number.isFinite(adj)) return adj + (Number(p?.variationalEquityAdjust) || 0);
             return baseHn;
@@ -33546,6 +33595,7 @@ function perpsBuildEquitySeries(data) {
         if (!time || snap.totalEquity == null) continue;
         const bucket = snap.bucket || (String(key).includes('T') ? key : perpsEquityBucketKey(time));
         const cumulativeNetDeposits = perpsResolvePointNetDeposits(snap, time, data);
+        const pnlCumulativeNetDeposits = perpsResolvePointPnlNetDeposits(snap, time, data);
         const adjustedEquity = Number.isFinite(Number(snap.adjustedEquity))
             ? Number(snap.adjustedEquity)
             : (cumulativeNetDeposits != null
@@ -33559,6 +33609,7 @@ function perpsBuildEquitySeries(data) {
             bucket,
             totalEquity: snap.totalEquity,
             cumulativeNetDeposits,
+            pnlCumulativeNetDeposits,
             adjustedEquity,
             variationalEquityAdjust,
             variationalNeutralEquity,
@@ -33575,6 +33626,11 @@ function perpsBuildEquitySeries(data) {
     const totalNow = hlNow + nadoNow + grvtNow + extendedNow;
     const fetchedAt = data.fetchedAt || Date.now();
     const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
+    const pnlNetDepositsNow = perpsResolvePointPnlNetDeposits(
+        { cumulativeNetDeposits: combinedNetDeposits },
+        fetchedAt,
+        data,
+    ) ?? combinedNetDeposits;
     const adjustedNow = s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalNow - combinedNetDeposits;
     const liveBucket = perpsEquityBucketKey(fetchedAt);
     const liveVariationalAdjust = liveTotalAdj;
@@ -33586,6 +33642,7 @@ function perpsBuildEquitySeries(data) {
             bucket: liveBucket,
             totalEquity: totalNow,
             cumulativeNetDeposits: combinedNetDeposits,
+            pnlCumulativeNetDeposits: pnlNetDepositsNow,
             adjustedEquity: adjustedNow,
             variationalEquityAdjust: liveVariationalAdjust,
             variationalNeutralEquity: liveNeutral,
@@ -33596,6 +33653,7 @@ function perpsBuildEquitySeries(data) {
             ...byBucket[liveBucket],
             totalEquity: totalNow,
             cumulativeNetDeposits: combinedNetDeposits,
+            pnlCumulativeNetDeposits: pnlNetDepositsNow,
             adjustedEquity: adjustedNow,
             variationalEquityAdjust: liveVariationalAdjust,
             variationalNeutralEquity: liveNeutral,
@@ -33615,6 +33673,7 @@ function perpsBuildEquitySeries(data) {
             bucket: liveBucket,
             totalEquity: totalNow,
             cumulativeNetDeposits: combinedNetDeposits,
+            pnlCumulativeNetDeposits: pnlNetDepositsNow,
             adjustedEquity: adjustedNow,
             variationalEquityAdjust: liveVariationalAdjust,
             variationalNeutralEquity: liveNeutral,
