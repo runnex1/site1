@@ -4406,6 +4406,42 @@ const {
 }
 
 {
+  const {
+    capitalNeutralHedgeNeutralFromPoint,
+    rebaseHedgeNeutralSeriesToPnl,
+  } = require('../lib/variational-equity.js');
+  // HN 188508 → 188608 (+100 trading) with a −1000 withdraw in between.
+  const before = {
+    totalEquity: 188508,
+    variationalNeutralEquity: 188508,
+    variationalEquityAdjust: 0,
+    cumulativeNetDeposits: 50000,
+  };
+  const afterWithdraw = {
+    totalEquity: 187508,
+    variationalNeutralEquity: 187508,
+    variationalEquityAdjust: 0,
+    cumulativeNetDeposits: 49000,
+  };
+  const afterTrade = {
+    totalEquity: 187608,
+    variationalNeutralEquity: 187608,
+    variationalEquityAdjust: 0,
+    cumulativeNetDeposits: 49000,
+  };
+  assert.equal(capitalNeutralHedgeNeutralFromPoint(before), 138508);
+  assert.equal(capitalNeutralHedgeNeutralFromPoint(afterWithdraw), 138508, 'withdraw must not change capital-neutral HN');
+  assert.equal(capitalNeutralHedgeNeutralFromPoint(afterTrade), 138608);
+  const pnl = rebaseHedgeNeutralSeriesToPnl([before, afterWithdraw, afterTrade]);
+  assert.equal(pnl[0].chartValue, 0, 'PnL series must start at $0');
+  assert.equal(pnl[1].chartValue, 0, 'withdraw must not move PnL');
+  assert.equal(pnl[2].chartValue, 100, 'trading gain on HN must appear as +PnL');
+}
+
+assert.match(indexHtml, /data-perps-equity-value-mode="pnl"/, 'equity chart must expose PnL value mode');
+assert.match(indexHtml, /rebaseHedgeNeutralSeriesToPnl/, 'PnL mode must reuse hedge-neutral rebase helper');
+
+{
   const pendingAdj = variationalPendingCloseEquityAdjust([{
     symbol: 'XLM',
     trackedVenue: 'grvt',

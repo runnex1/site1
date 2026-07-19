@@ -9446,6 +9446,7 @@ body[data-active-tab="loops"] .page-content,
               <div class="perps-panel-title-row">
                 <div class="perps-panel-title"><span class="perps-mv3-only" id="perpsMv3EquityTitle">Equity · 7D</span><span class="perps-desktop-only">Portfolio Equity</span></div>
                 <div class="perps-equity-mode-group">
+                  <button type="button" class="perps-range-btn perps-equity-mode-btn" data-perps-equity-value-mode="pnl" onclick="perpsSetEquityValueMode('pnl',this)">PnL</button>
                   <button type="button" class="perps-range-btn perps-equity-mode-btn active" data-perps-equity-value-mode="neutral" onclick="perpsSetEquityValueMode('neutral',this)">Hedge-neutral</button>
                   <button type="button" class="perps-range-btn perps-equity-mode-btn" data-perps-equity-value-mode="raw" onclick="perpsSetEquityValueMode('raw',this)">Exchange</button>
                   <button type="button" class="perps-range-btn perps-equity-mode-btn active" data-perps-equity-mode="session" onclick="perpsSetEquityChartMode('session',this)">Last session</button>
@@ -30996,9 +30997,9 @@ function perpsSetEquityChartMode(mode, btn) {
 }
 
 function perpsSetEquityValueMode(mode, btn) {
-    _perpsEquityValueMode = mode === 'raw' ? 'raw' : 'neutral';
+    _perpsEquityValueMode = mode === 'raw' ? 'raw' : (mode === 'pnl' ? 'pnl' : 'neutral');
     document.querySelectorAll('[data-perps-equity-value-mode]').forEach(b => {
-        b.classList.toggle('active', b === btn);
+        b.classList.toggle('active', b.dataset.perpsEquityValueMode === _perpsEquityValueMode);
     });
     perpsSaveConfig({ statRangeOnly: true });
     if (_perpsLastData) perpsRenderEquityChart(_perpsLastData);
@@ -31007,7 +31008,9 @@ function perpsSetEquityValueMode(mode, btn) {
 function perpsEquityPointChartValue(point, valueMode = _perpsEquityValueMode) {
     const VE = window.VariationalEquity;
     if (VE?.equityPointChartValue) return VE.equityPointChartValue(point, valueMode);
-    return valueMode === 'raw' ? (point?.totalEquity ?? 0) : (point?.variationalNeutralEquity ?? point?.totalEquity ?? 0);
+    if (valueMode === 'raw') return point?.totalEquity ?? 0;
+    if (valueMode === 'pnl') return point?.chartValue ?? 0;
+    return point?.variationalNeutralEquity ?? point?.totalEquity ?? 0;
 }
 
 function perpsComputeVariationalEquityAdjustments(data) {
@@ -31278,7 +31281,9 @@ function perpsConfigPayload(cfg) {
         grvtSubAccount: norm.grvtSubAccount || '4860249204328359',
         statRange: norm.statRange || _perpsStatRange,
         equityChartMode: norm.equityChartMode === 'all' ? 'all' : 'session',
-        equityValueMode: norm.equityValueMode === 'raw' ? 'raw' : 'neutral',
+        equityValueMode: norm.equityValueMode === 'raw'
+            ? 'raw'
+            : (norm.equityValueMode === 'pnl' ? 'pnl' : 'neutral'),
         configured: true,
     };
 }
@@ -33233,7 +33238,7 @@ function perpsLoadConfig() {
         if (saved.equityChartMode === 'all' || saved.equityChartMode === 'session') {
             _perpsEquityChartMode = saved.equityChartMode;
         }
-        if (saved.equityValueMode === 'raw' || saved.equityValueMode === 'neutral') {
+        if (saved.equityValueMode === 'raw' || saved.equityValueMode === 'neutral' || saved.equityValueMode === 'pnl') {
             _perpsEquityValueMode = saved.equityValueMode;
         }
         document.querySelectorAll('[data-perps-equity-value-mode]').forEach(btn => {
@@ -33450,6 +33455,30 @@ function perpsLastCapitalEventMs(data) {
     return payments.length ? payments[payments.length - 1].time : 0;
 }
 
+function perpsMapEquityChartPoints(points, valueMode = _perpsEquityValueMode) {
+    const rows = Array.isArray(points) ? points : [];
+    if (valueMode === 'pnl') {
+        const VE = window.VariationalEquity;
+        if (VE?.rebaseHedgeNeutralSeriesToPnl) return VE.rebaseHedgeNeutralSeriesToPnl(rows);
+        if (!rows.length) return [];
+        const levels = rows.map((p) => {
+            const hn = Number(p?.variationalNeutralEquity);
+            const baseHn = Number.isFinite(hn) ? hn : (Number(p?.totalEquity) || 0) + (Number(p?.variationalEquityAdjust) || 0);
+            const dep = Number(p?.cumulativeNetDeposits);
+            if (Number.isFinite(dep)) return baseHn - dep;
+            const adj = Number(p?.adjustedEquity);
+            if (Number.isFinite(adj)) return adj + (Number(p?.variationalEquityAdjust) || 0);
+            return baseHn;
+        });
+        const baseline = levels[0] || 0;
+        return rows.map((p, i) => ({ ...p, chartValue: levels[i] - baseline, pnlBaseline: baseline }));
+    }
+    return rows.map((p) => ({
+        ...p,
+        chartValue: perpsEquityPointChartValue(p, valueMode),
+    }));
+}
+
 function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityValueMode) {
     const allPoints = (series?.points || []).slice().sort((a, b) => {
         const ta = perpsParseBucketTime(a.bucket) || a.time || 0;
@@ -33457,18 +33486,15 @@ function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityV
         return ta - tb;
     });
     const chartMode = mode === 'all' ? 'all' : 'session';
-    const mapPoint = (p) => ({
-        ...p,
-        chartValue: perpsEquityPointChartValue(p, valueMode),
-    });
 
     if (chartMode === 'all') {
+        const points = perpsMapEquityChartPoints(allPoints, valueMode);
         return {
             ...series,
-            points: allPoints.map(mapPoint),
+            points,
             chartMode,
             valueMode,
-            pointCount: allPoints.length,
+            pointCount: points.length,
         };
     }
 
@@ -33479,15 +33505,35 @@ function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityV
     if (!sessionPoints.length && allPoints.length) {
         sessionPoints = [allPoints[allPoints.length - 1]];
     }
+    const points = perpsMapEquityChartPoints(sessionPoints, valueMode);
 
     return {
         ...series,
-        points: sessionPoints.map(mapPoint),
+        points,
         chartMode: 'session',
         valueMode,
         sessionMs,
-        pointCount: sessionPoints.length,
+        pointCount: points.length,
     };
+}
+
+function perpsResolvePointNetDeposits(snap, time, data) {
+    // Prefer live ledger at snapshot time so PnL neutralization stays accurate even when
+    // cron-carried cumulativeNetDeposits on old snapshots is stale.
+    const cf = data?.capitalFlows;
+    if (cf) {
+        try {
+            return perpsNetDepositsAtTime(
+                cf.hl?.payments,
+                cf.nado?.payments,
+                time,
+                cf.grvt?.payments || null,
+                cf.extended?.payments || null,
+            );
+        } catch (e) { /* fall through */ }
+    }
+    if (Number.isFinite(Number(snap?.cumulativeNetDeposits))) return Number(snap.cumulativeNetDeposits);
+    return null;
 }
 
 function perpsBuildEquitySeries(data) {
@@ -33499,7 +33545,12 @@ function perpsBuildEquitySeries(data) {
         const time = Number(snap.fetchedAt) || perpsParseBucketTime(key);
         if (!time || snap.totalEquity == null) continue;
         const bucket = snap.bucket || (String(key).includes('T') ? key : perpsEquityBucketKey(time));
-        const adjustedEquity = snap.adjustedEquity ?? (snap.totalEquity - (snap.cumulativeNetDeposits ?? 0));
+        const cumulativeNetDeposits = perpsResolvePointNetDeposits(snap, time, data);
+        const adjustedEquity = Number.isFinite(Number(snap.adjustedEquity))
+            ? Number(snap.adjustedEquity)
+            : (cumulativeNetDeposits != null
+                ? snap.totalEquity - cumulativeNetDeposits
+                : snap.totalEquity);
         const variationalEquityAdjust = perpsSnapshotVariationalAdjust(snap, closedAdj);
         const variationalNeutralEquity = VE?.variationalNeutralEquity?.(snap.totalEquity, variationalEquityAdjust)
             ?? (snap.totalEquity + variationalEquityAdjust);
@@ -33507,6 +33558,7 @@ function perpsBuildEquitySeries(data) {
             time,
             bucket,
             totalEquity: snap.totalEquity,
+            cumulativeNetDeposits,
             adjustedEquity,
             variationalEquityAdjust,
             variationalNeutralEquity,
@@ -33533,6 +33585,7 @@ function perpsBuildEquitySeries(data) {
             time: fetchedAt,
             bucket: liveBucket,
             totalEquity: totalNow,
+            cumulativeNetDeposits: combinedNetDeposits,
             adjustedEquity: adjustedNow,
             variationalEquityAdjust: liveVariationalAdjust,
             variationalNeutralEquity: liveNeutral,
@@ -33542,6 +33595,7 @@ function perpsBuildEquitySeries(data) {
         byBucket[liveBucket] = {
             ...byBucket[liveBucket],
             totalEquity: totalNow,
+            cumulativeNetDeposits: combinedNetDeposits,
             adjustedEquity: adjustedNow,
             variationalEquityAdjust: liveVariationalAdjust,
             variationalNeutralEquity: liveNeutral,
@@ -33560,6 +33614,7 @@ function perpsBuildEquitySeries(data) {
             time: fetchedAt,
             bucket: liveBucket,
             totalEquity: totalNow,
+            cumulativeNetDeposits: combinedNetDeposits,
             adjustedEquity: adjustedNow,
             variationalEquityAdjust: liveVariationalAdjust,
             variationalNeutralEquity: liveNeutral,
@@ -33656,12 +33711,17 @@ function perpsBindEquityChartHover() {
         const bucketLabel = hit.bucket === 'live' ? 'Live' : String(hit.bucket || '').replace('T', ' · ') + ':00 UTC';
         const rawEquity = hit.rawEquity ?? hit.val;
         const adjust = hit.variationalAdjust;
-        const modeLabel = _perpsEquityValueMode === 'raw' ? 'Exchange equity' : 'Hedge-neutral equity';
+        const modeLabel = _perpsEquityValueMode === 'raw'
+            ? 'Exchange equity'
+            : (_perpsEquityValueMode === 'pnl' ? 'PnL (hedge-neutral Δ)' : 'Hedge-neutral equity');
         let body = `<div style="color:#9dacbb;margin-bottom:0.15rem;">${dashEsc(bucketLabel)}</div>` +
             `<div style="font-weight:800;color:#c4b5fd;">${perpsFmtUsd(hit.val)}</div>` +
             `<div style="color:#9dacbb;font-size:0.68rem;margin-top:0.2rem;">${dashEsc(modeLabel)}</div>`;
         if (_perpsEquityValueMode === 'neutral' && Number.isFinite(rawEquity) && Math.abs(rawEquity - hit.val) > 0.005) {
             body += `<div style="color:#9dacbb;font-size:0.68rem;margin-top:0.15rem;">Exchange: ${perpsFmtUsd(rawEquity)} · adj ${perpsFmtUsd(adjust ?? (hit.val - rawEquity))}</div>`;
+        }
+        if (_perpsEquityValueMode === 'pnl' && Number.isFinite(rawEquity)) {
+            body += `<div style="color:#9dacbb;font-size:0.68rem;margin-top:0.15rem;">Hedge-neutral base · deposits/withdrawals neutralized</div>`;
         }
         tip.innerHTML = body;
         perpsPositionFundChartTooltip(ev, tip);
@@ -33690,7 +33750,9 @@ function perpsRenderEquityChart(data) {
     if (noteEl) {
         noteEl.textContent = _perpsEquityValueMode === 'raw'
             ? 'Exchange equity · raw HL + Nado + GRVT + Extended account values'
-            : 'Hedge-neutral · adds open Variational MTM + closed Variational PnL';
+            : (_perpsEquityValueMode === 'pnl'
+                ? 'PnL · hedge-neutral change from $0 · deposits/withdrawals neutralized'
+                : 'Hedge-neutral · adds open Variational MTM + closed Variational PnL');
     }
     if (lineEl) lineEl.setAttribute('d', chart.line);
     if (areaEl) areaEl.setAttribute('d', chart.area || '');
@@ -33701,7 +33763,9 @@ function perpsRenderEquityChart(data) {
     }
     if (badge) {
         const latest = perpsFmtUsd(chart.plot.at(-1)?.val ?? chart.total);
-        const modeTag = _perpsEquityValueMode === 'raw' ? 'exchange' : 'hedge-neutral';
+        const modeTag = _perpsEquityValueMode === 'raw'
+            ? 'exchange'
+            : (_perpsEquityValueMode === 'pnl' ? 'pnl' : 'hedge-neutral');
         if (chart.insufficient) {
             badge.textContent = `${modeTag} · live · ${latest}`;
         } else if (equitySeries.chartMode === 'session' && equitySeries.sessionMs) {
