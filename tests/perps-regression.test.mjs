@@ -4343,17 +4343,17 @@ const {
 } = require('../lib/variational-equity.js');
 
 {
+  // Same-mark: Var MTM at tracked venue mark (not Variational listing mark).
   const openAdj = variationalOpenEquityAdjust([{
     pairType: 'grvt_variational',
     venueA: 'grvt',
-    crossLegA: { venue: 'grvt', unrealizedPnl: -286 },
-    crossLegB: { venue: 'variational', unrealizedPnl: 294 },
+    crossLegA: { venue: 'grvt', size: -100, entryPx: 1.0, markPx: 1.0, unrealizedPnl: 0 },
+    crossLegB: { venue: 'variational', size: 100, entryPx: 0.99, markPx: 1.05, unrealizedPnl: 6 },
   }], (p) => p.pairType === 'grvt_variational');
-  assert.equal(openAdj, 294, 'open hedge adjust must add Variational MTM only');
-  assert.equal(
-    variationalNeutralEquity(10000, openAdj),
-    10294,
-    'hedge-neutral must be exchange + Variational MTM',
+  assert.ok(Math.abs(openAdj - 1) < 1e-9, 'open adjust must mark Var leg at tracked venue mark');
+  assert.ok(
+    Math.abs(variationalNeutralEquity(10000, openAdj) - 10001) < 1e-9,
+    'hedge-neutral must be exchange + same-mark Variational MTM',
   );
 }
 
@@ -4361,21 +4361,64 @@ const {
   const openAdj = variationalOpenEquityAdjust([{
     pairType: 'hyperliquid_variational',
     venueA: 'hyperliquid',
-    crossLegA: { venue: 'hyperliquid', unrealizedPnl: 100 },
-    crossLegB: { venue: 'variational', unrealizedPnl: -100 },
+    crossLegA: { venue: 'hyperliquid', size: -50, entryPx: 2, markPx: 2, unrealizedPnl: 0 },
+    crossLegB: { venue: 'variational', size: 50, entryPx: 2, markPx: 2.5, unrealizedPnl: 25 },
   }], (p) => String(p.pairType || '').endsWith('_variational'));
-  assert.equal(openAdj, -100, 'matched hedge adj is Variational MTM only');
-  assert.equal(variationalNeutralEquity(10000, openAdj), 9900);
+  assert.equal(openAdj, 0, 'matched hedge at same entry/mark → Var adj $0');
+  assert.equal(variationalNeutralEquity(10000, openAdj), 10000);
 }
 
 {
+  // Partial trim: still mark remaining Var size at tracked mark.
   const openAdj = variationalOpenEquityAdjust([{
     pairType: 'hyperliquid_variational',
     venueA: 'hyperliquid',
-    crossLegA: { venue: 'hyperliquid', unrealizedPnl: 30 },
-    crossLegB: { venue: 'variational', unrealizedPnl: -90 },
+    crossLegA: { venue: 'hyperliquid', size: -30, entryPx: 1, markPx: 1.1, unrealizedPnl: 3 },
+    crossLegB: { venue: 'variational', size: 90, entryPx: 1, markPx: 1.2, unrealizedPnl: 18 },
   }], (p) => String(p.pairType || '').endsWith('_variational'));
-  assert.equal(openAdj, -90, 'partial HL trim must keep full Variational MTM in hedge-neutral');
+  assert.ok(Math.abs(openAdj - 9) < 1e-9, 'partial trim keeps full Var size MTM at tracked mark');
+}
+
+{
+  const {
+    variationalLegPnl,
+    crossVenueSameMarkAdjust,
+    crossVenueSameMarkAdjustFromStates,
+  } = require('../lib/variational-equity.js');
+
+  // Price shock on size-matched Var hedge must not move HN when using same-mark adj.
+  const hnAt = (mark) => {
+    const trackedUpnl = variationalLegPnl(-100, 10, mark);
+    const pair = {
+      pairType: 'hyperliquid_variational',
+      venueA: 'hyperliquid',
+      crossLegA: {
+        venue: 'hyperliquid', size: -100, entryPx: 10, markPx: mark, unrealizedPnl: trackedUpnl,
+      },
+      crossLegB: {
+        venue: 'variational', size: 100, entryPx: 10, markPx: mark + 0.5,
+        unrealizedPnl: variationalLegPnl(100, 10, mark + 0.5),
+      },
+    };
+    const equity = 10000 + trackedUpnl; // cash 10k when flat at entry
+    const adj = variationalOpenEquityAdjust([pair], () => true);
+    return variationalNeutralEquity(equity, adj);
+  };
+  assert.ok(Math.abs(hnAt(10) - hnAt(12)) < 1e-6, 'same-mark HN must be flat to underlying price');
+  assert.ok(Math.abs(hnAt(10) - 10000) < 1e-6, 'flat hedge at entry marks → HN = cash');
+
+  const crossAdj = crossVenueSameMarkAdjust([{
+    pairType: 'hl_nado',
+    hl: { size: -1000, markPx: 2.0, entryPx: 2.0, unrealizedPnl: 0 },
+    nado: { size: 1000, markPx: 2.1, entryPx: 2.0, unrealizedPnl: 100 },
+  }]);
+  assert.ok(Math.abs(crossAdj - (-100)) < 1e-9, 'cross-venue same-mark adjust = sizeB×(markA−markB)');
+
+  const fromStates = crossVenueSameMarkAdjustFromStates({
+    hyperliquid: { state: { positions: [{ symbol: 'MEGA', size: -1000, markPx: 2.0 }] } },
+    nado: { state: { positions: [{ symbol: 'MEGA', size: 1000, markPx: 2.1 }] } },
+  });
+  assert.ok(Math.abs(fromStates - (-100)) < 1e-9, 'states matcher must apply same cross-venue adjust');
 }
 
 {
@@ -4511,9 +4554,30 @@ assert.match(indexHtml, /vault-perps-pnl-track-v2/, 'PnL track v2 must re-lock b
       grvt: { state: { positions: [{ symbol: 'XLM', unrealizedPnl: -120, markPx: 0.42 }] } },
     },
   });
-  // Short 50 @ 0.40 mark 0.42 → −1 Var MTM. Do not strip tracked −120.
-  assert.ok(Math.abs(adjust.openAdj - (-1)) < 1e-9, 'server hedge adjust must add Variational MTM only');
+  // Short 50 @ 0.40 tracked-mark 0.42 → −1 same-mark Var MTM (not venue listing alone).
+  assert.ok(Math.abs(adjust.openAdj - (-1)) < 1e-9, 'server hedge adjust must use same-mark Variational MTM');
   assert.ok(Math.abs(adjust.totalAdj - (-1)) < 1e-9, 'total hedge adjust must include open Variational MTM');
+}
+
+{
+  // Tracked mark differs from Var listing mark — equity must use tracked mark.
+  const adjust = computeVariationalEquityAdjustFromHedges({
+    hedges: [{
+      id: 'zro-hl',
+      symbol: 'ZRO',
+      trackedVenue: 'hyperliquid',
+      status: 'open',
+      variationalSize: 100,
+      variationalEntryPx: 1.0,
+      variationalMarkPx: 1.10, // divergent Var listing
+    }],
+    closedPairs: [],
+    states: {
+      hyperliquid: { state: { positions: [{ symbol: 'ZRO', size: -100, unrealizedPnl: -5, markPx: 1.05 }] } },
+    },
+  });
+  // Long 100 @ 1.0 marked at tracked 1.05 → +5 (not +10 from Var mark 1.10)
+  assert.ok(Math.abs(adjust.openAdj - 5) < 1e-9, 'same-mark must prefer tracked venue mark over Var listing');
 }
 
 {
@@ -4536,7 +4600,9 @@ assert.match(indexHtml, /vault-perps-pnl-track-v2/, 'PnL track v2 must re-lock b
 
 assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'pending close equity adjust must be wired in UI');
 assert.match(variationalHedgeJs, /variationalLastUpnl/, 'open hedge build must stash last Variational uPnL for pending');
-assert.match(indexHtml, /adds open Variational MTM/, 'equity chart note must describe Variational MTM add');
+assert.match(indexHtml, /same-mark hedges/, 'equity chart note must describe same-mark hedge accounting');
+assert.match(indexHtml, /crossVenueSameMarkAdjust/, 'client must apply cross-venue same-mark adjust');
+assert.match(indexHtml, /crossVenueAdj/, 'client equity adjust must include crossVenueAdj');
 assert.match(indexHtml, /function perpsReapplyVariationalHedgesIfMounted\(/, 'perps must re-render after late variational hedge hydration');
 assert.match(indexHtml, /if \(_perpsBootPromise\) await _perpsBootPromise/, 'perps refresh must wait for hedge bootstrap');
 assert.match(indexHtml, /function perpsGuardClosedPairRecord\(/, 'closed pairs must be guarded before cache persist and display');

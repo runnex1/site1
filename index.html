@@ -9455,7 +9455,7 @@ body[data-active-tab="loops"] .page-content,
               </div>
               <span class="perps-pill" style="border-color:rgba(167,139,250,0.35);color:#c4b5fd;background:rgba(167,139,250,0.1);" id="perpsEquityChartBadge">—</span>
             </div>
-            <div class="perps-pnl-note" id="perpsEquityChartNote" style="padding:0 1rem 0.35rem;font-size:0.68rem;">Hedge-neutral · adds open Variational MTM + closed Variational PnL</div>
+            <div class="perps-pnl-note" id="perpsEquityChartNote" style="padding:0 1rem 0.35rem;font-size:0.68rem;">Hedge-neutral · same-mark hedges (price cancels; basis/funding remain)</div>
             <div class="perps-panel-body perps-panel-body--chart">
               <div class="perps-pnl-chart hoverable" id="perpsEquityChartWrap">
                 <svg id="perpsEquityChart" viewBox="0 0 760 160" preserveAspectRatio="none" role="img" aria-label="Portfolio PnL chart">
@@ -31030,11 +31030,13 @@ function perpsComputeVariationalEquityAdjustments(data) {
     const closedAdj = VE?.variationalClosedEquityAdjust?.(data?.closedPairs) ?? 0;
     const openAdj = VE?.variationalOpenEquityAdjust?.(data?.paired, isVar) ?? 0;
     const pendingAdj = VE?.variationalPendingCloseEquityAdjust?.(data?.variationalPendingClose) ?? 0;
+    const crossVenueAdj = VE?.crossVenueSameMarkAdjust?.(data?.paired) ?? 0;
     return {
         closedAdj,
         openAdj,
         pendingAdj,
-        totalAdj: closedAdj + openAdj + pendingAdj,
+        crossVenueAdj,
+        totalAdj: closedAdj + openAdj + pendingAdj + crossVenueAdj,
     };
 }
 
@@ -33122,6 +33124,7 @@ function perpsMergeEquitySnapshotRecord(localSnap = {}, serverSnap = {}) {
         merged.variationalOpenEquityAdjust = pickVar('variationalOpenEquityAdjust');
         merged.variationalPendingCloseEquityAdjust = pickVar('variationalPendingCloseEquityAdjust');
         merged.variationalClosedEquityAdjust = pickVar('variationalClosedEquityAdjust');
+        merged.crossVenueSameMarkAdjust = pickVar('crossVenueSameMarkAdjust');
     }
     return merged;
 }
@@ -33398,6 +33401,7 @@ function perpsSaveSnapshot(data) {
             variationalOpenEquityAdjust: variationalAdj.openAdj,
             variationalClosedEquityAdjust: variationalAdj.closedAdj,
             variationalPendingCloseEquityAdjust: variationalAdj.pendingAdj,
+            crossVenueSameMarkAdjust: variationalAdj.crossVenueAdj,
         };
         if (store[bucket]) {
             const existing = store[bucket];
@@ -33964,7 +33968,7 @@ function perpsRenderEquityChart(data) {
             ? 'Exchange equity · raw HL + Nado + GRVT + Extended account values'
             : (_perpsEquityValueMode === 'pnl'
                 ? 'PnL · locked baseline from here · ignores deposit/withdraw resets'
-                : 'Hedge-neutral · adds open Variational MTM + closed Variational PnL');
+                : 'Hedge-neutral · same-mark hedges (price cancels; basis/funding remain)');
     }
     if (lineEl) lineEl.setAttribute('d', chart.line);
     if (areaEl) areaEl.setAttribute('d', chart.area || '');
