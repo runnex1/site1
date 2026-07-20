@@ -4444,9 +4444,15 @@ const {
   assert.equal(capitalNeutralHedgeNeutralFromPoint(afterWithdraw), 138508, 'withdraw must not change capital-neutral HN');
   assert.equal(capitalNeutralHedgeNeutralFromPoint(afterTrade), 138608);
   const pnl = rebaseHedgeNeutralSeriesToPnl([before, afterWithdraw, afterTrade]);
-  assert.equal(pnl[0].chartValue, 0, 'PnL series must start at $0');
+  assert.equal(pnl[0].chartValue, 0, 'PnL series must start at $0 when no fixed baseline');
   assert.equal(pnl[1].chartValue, 0, 'withdraw must not move PnL');
   assert.equal(pnl[2].chartValue, 100, 'trading gain on HN must appear as +PnL');
+  const locked = rebaseHedgeNeutralSeriesToPnl([before, afterWithdraw, afterTrade], 138508);
+  assert.equal(locked[0].chartValue, 0, 'fixed baseline at first level → $0');
+  assert.equal(locked[2].chartValue, 100, 'fixed baseline keeps trading Δ');
+  const midLock = rebaseHedgeNeutralSeriesToPnl([before, afterTrade], 138608);
+  assert.equal(midLock[0].chartValue, -100, 'fixed mid baseline must not re-zero to first point');
+  assert.equal(midLock[1].chartValue, 0, 'locked baseline holds current level at $0');
 }
 
 {
@@ -4463,8 +4469,10 @@ assert.match(indexHtml, /rebaseHedgeNeutralSeriesToPnl/, 'PnL mode must reuse he
 assert.match(indexHtml, /perpsPnlNetDepositsAtTime/, 'PnL mode must use transfer-inclusive capital net');
 assert.match(indexHtml, /pnlCumulativeNetDeposits/, 'equity series points must carry PnL capital net');
 assert.match(indexHtml, /ignoresCapitalSessionReset/, 'PnL mode must not reset on deposit/withdraw sessions');
-assert.match(indexHtml, /perpsEnsurePnlChartStartMs/, 'PnL mode must track from a fixed start, not last capital event');
+assert.match(indexHtml, /perpsEnsurePnlTracking/, 'PnL mode must lock start + baseline once');
+assert.match(indexHtml, /PERPS_PNL_BASELINE_KEY/, 'PnL mode must persist a fixed baseline level');
 assert.match(indexHtml, /ignores deposit\/withdraw resets/, 'PnL chart note must state continuous tracking');
+assert.match(indexHtml, /vault-perps-pnl-track-v2/, 'PnL track v2 must re-lock baseline once then never reset');
 
 {
   const pendingAdj = variationalPendingCloseEquityAdjust([{

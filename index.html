@@ -33471,17 +33471,39 @@ function perpsLastCapitalEventMs(data) {
     return payments.length ? payments[payments.length - 1].time : 0;
 }
 
-/** One-time PnL tracking origin — continuous from this instant, never reset by deposits. */
+// PnL tracking: lock start + capital-neutral baseline once, then never re-zero.
+// v2 invalidates the old "first visible point = $0" rebase that reset whenever
+// snapshots loaded or the window's first bucket changed.
 const PERPS_PNL_CHART_START_KEY = 'vault-perps-pnl-chart-start-ms';
+const PERPS_PNL_BASELINE_KEY = 'vault-perps-pnl-baseline-level';
+const PERPS_PNL_TRACK_VER_KEY = 'vault-perps-pnl-track-v2';
 function perpsEnsurePnlChartStartMs() {
+    return perpsEnsurePnlTracking().startMs;
+}
+/** @returns {{ startMs: number, baseline: number }} */
+function perpsEnsurePnlTracking(liveCapitalNeutralLevel) {
     try {
-        const existing = Number(localStorage.getItem(PERPS_PNL_CHART_START_KEY));
-        if (Number.isFinite(existing) && existing > 0) return existing;
-        const start = Date.now();
-        localStorage.setItem(PERPS_PNL_CHART_START_KEY, String(start));
-        return start;
+        if (localStorage.getItem(PERPS_PNL_TRACK_VER_KEY) === '1') {
+            const startMs = Number(localStorage.getItem(PERPS_PNL_CHART_START_KEY));
+            const baseline = Number(localStorage.getItem(PERPS_PNL_BASELINE_KEY));
+            if (Number.isFinite(startMs) && startMs > 0 && Number.isFinite(baseline)) {
+                return { startMs, baseline };
+            }
+        }
+        // Lock from the current capital-neutral level ("from here"), once.
+        const startMs = Date.now();
+        const live = Number(liveCapitalNeutralLevel);
+        const baseline = Number.isFinite(live) ? live : 0;
+        localStorage.setItem(PERPS_PNL_CHART_START_KEY, String(startMs));
+        localStorage.setItem(PERPS_PNL_BASELINE_KEY, String(baseline));
+        localStorage.setItem(PERPS_PNL_TRACK_VER_KEY, '1');
+        return { startMs, baseline };
     } catch (e) {
-        return Date.now();
+        const live = Number(liveCapitalNeutralLevel);
+        return {
+            startMs: Date.now(),
+            baseline: Number.isFinite(live) ? live : 0,
+        };
     }
 }
 
@@ -33534,11 +33556,13 @@ function perpsResolvePointPnlNetDeposits(snap, time, data) {
     return perpsResolvePointNetDeposits(snap, time, data);
 }
 
-function perpsMapEquityChartPoints(points, valueMode = _perpsEquityValueMode) {
+function perpsMapEquityChartPoints(points, valueMode = _perpsEquityValueMode, fixedPnlBaseline) {
     const rows = Array.isArray(points) ? points : [];
     if (valueMode === 'pnl') {
         const VE = window.VariationalEquity;
-        if (VE?.rebaseHedgeNeutralSeriesToPnl) return VE.rebaseHedgeNeutralSeriesToPnl(rows);
+        if (VE?.rebaseHedgeNeutralSeriesToPnl) {
+            return VE.rebaseHedgeNeutralSeriesToPnl(rows, fixedPnlBaseline);
+        }
         if (!rows.length) return [];
         const levels = rows.map((p) => {
             const hn = Number(p?.variationalNeutralEquity);
@@ -33551,7 +33575,8 @@ function perpsMapEquityChartPoints(points, valueMode = _perpsEquityValueMode) {
             if (Number.isFinite(adj)) return adj + (Number(p?.variationalEquityAdjust) || 0);
             return baseHn;
         });
-        const baseline = levels[0] || 0;
+        const locked = Number(fixedPnlBaseline);
+        const baseline = Number.isFinite(locked) ? locked : (levels[0] || 0);
         return rows.map((p, i) => ({ ...p, chartValue: levels[i] - baseline, pnlBaseline: baseline }));
     }
     return rows.map((p) => ({
@@ -33568,26 +33593,31 @@ function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityV
     });
     const chartMode = mode === 'all' ? 'all' : 'session';
 
-    // PnL is capital-neutral: never clip to the last deposit/withdraw (HN "Last session").
-    // Track continuously from the PnL start origin (set once) or full history in All-time.
+    // PnL: locked capital-neutral baseline — never re-zeros on deposits, snapshot
+    // reloads, or All-time ↔ Last session. Continues fluctuating from the locked level.
     if (valueMode === 'pnl') {
-        const pnlStartMs = perpsEnsurePnlChartStartMs();
-        let pnlPoints = chartMode === 'all'
-            ? allPoints.slice()
-            : allPoints.filter((p) => (perpsParseBucketTime(p.bucket) || p.time || 0) >= pnlStartMs);
-        if (!pnlPoints.length && allPoints.length) {
-            pnlPoints = [allPoints[allPoints.length - 1]];
+        const VE = window.VariationalEquity;
+        const lastPt = allPoints.length ? allPoints[allPoints.length - 1] : null;
+        const liveLevel = lastPt && VE?.capitalNeutralHedgeNeutralFromPoint
+            ? VE.capitalNeutralHedgeNeutralFromPoint(lastPt)
+            : (Number(lastPt?.variationalNeutralEquity) || Number(lastPt?.totalEquity) || 0);
+        const { startMs: pnlStartMs, baseline: pnlBaseline } = perpsEnsurePnlTracking(liveLevel);
+        let pnlPoints = allPoints.filter((p) => (perpsParseBucketTime(p.bucket) || p.time || 0) >= pnlStartMs);
+        if (!pnlPoints.length && lastPt) {
+            pnlPoints = [lastPt];
         }
-        const points = perpsMapEquityChartPoints(pnlPoints, 'pnl');
+        const points = perpsMapEquityChartPoints(pnlPoints, 'pnl', pnlBaseline);
         return {
             ...series,
             points,
-            chartMode,
+            chartMode: 'pnl',
             valueMode: 'pnl',
-            sessionMs: chartMode === 'session' ? pnlStartMs : 0,
+            sessionMs: pnlStartMs,
             pnlStartMs,
+            pnlBaselineLevel: pnlBaseline,
             pointCount: points.length,
             ignoresCapitalSessionReset: true,
+            note: 'PnL — continuous from locked baseline (ignores deposit/withdraw resets)',
         };
     }
 
@@ -33933,7 +33963,7 @@ function perpsRenderEquityChart(data) {
         noteEl.textContent = _perpsEquityValueMode === 'raw'
             ? 'Exchange equity · raw HL + Nado + GRVT + Extended account values'
             : (_perpsEquityValueMode === 'pnl'
-                ? 'PnL · continuous hedge-neutral Δ from $0 · ignores deposit/withdraw resets'
+                ? 'PnL · locked baseline from here · ignores deposit/withdraw resets'
                 : 'Hedge-neutral · adds open Variational MTM + closed Variational PnL');
     }
     if (lineEl) lineEl.setAttribute('d', chart.line);
