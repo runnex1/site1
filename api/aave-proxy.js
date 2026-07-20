@@ -13,6 +13,7 @@ const {
 const {
   mergeVariationalRateSamples,
   recordVariationalListingSamples,
+  pruneVariationalRateSamples,
 } = require('../lib/variational-hedge');
 const { kvGet, kvSet } = require('../lib/kv');
 const { CACHE_KEYS, parseJson: parseCronJson } = require('../lib/cron-runner');
@@ -69,9 +70,24 @@ async function persistVariationalRateSamplesFromDashboard(data) {
   if (!Object.keys(combined).length) return false;
   const atMs = Number(data?.fetchedAt) || Date.now();
   const existing = parseJson(await kvGet('vault:perps_variational_rate_samples'), {});
-  const sampled = recordVariationalListingSamples(existing, combined, atMs, { source: 'server' });
+  // Keep only symbols that are actually open / unhedged — never grow unbounded across all markets.
+  const keep = new Set([
+    ...(data?.paired || []).map((p) => String(p?.symbol || '').toUpperCase()),
+    ...(data?.unhedged || []).map((p) => String(p?.symbol || p?.coin || '').toUpperCase().replace(/-PERP$/i, '')),
+  ].filter(Boolean));
+  // Also retain symbols already present in open variational hedges (if attached on payload).
+  for (const h of data?.variationalHedges || data?.perpsVariationalHedges || []) {
+    if (h?.symbol && (h.status === 'open' || h.status === 'pending_close')) {
+      keep.add(String(h.symbol).toUpperCase());
+    }
+  }
+  const sampled = recordVariationalListingSamples(existing, combined, atMs, {
+    source: 'server',
+    symbols: keep.size ? keep : undefined,
+  });
   const merged = mergeVariationalRateSamples(existing, sampled);
-  await kvSet('vault:perps_variational_rate_samples', JSON.stringify(merged));
+  const pruned = keep.size ? pruneVariationalRateSamples(merged, keep) : merged;
+  await kvSet('vault:perps_variational_rate_samples', JSON.stringify(pruned));
   return true;
 }
 
@@ -150,16 +166,6 @@ async function cachedJson(key, ttlMs, label, fn) {
     }
     throw e;
   }
-}
-
-function perpsSymbolsFromDashboard(data) {
-  return [...new Set([
-    ...(data?.paired || []).map(p => p.symbol),
-    ...(data?.unhedged || []).map(p => p.symbol),
-    ...(data?.rateSpread || []).map(p => p.symbol),
-  ]
-    .map(s => String(s || '').trim().toUpperCase().replace(/-PERP$/i, ''))
-    .filter(Boolean))].sort();
 }
 
 function cacheKeyParts(key) {
@@ -340,8 +346,7 @@ async function handlePerps(req, res) {
         'Perps dashboard',
         () => fetchPerpsDashboard(dashboardOpts),
       );
-    const activeSymbols = perpsSymbolsFromDashboard(data);
-    if (activeSymbols.length) await kvSet('vault:perps_symbols', JSON.stringify(activeSymbols));
+    // Active symbols are derived from the dashboard payload; no separate KV list needed.
     try {
       await persistVariationalRateSamplesFromDashboard(data);
     } catch (e) {

@@ -182,7 +182,13 @@ function mergeVariationalRateSampleMaps(existing, incoming) {
   try {
     const VH = require('../lib/variational-hedge');
     if (typeof VH.mergeVariationalRateSamples === 'function') {
-      return VH.mergeVariationalRateSamples(existing, incoming);
+      const merged = VH.mergeVariationalRateSamples(existing, incoming);
+      // Client posts pruned active-symbol maps. Prefer that keep-set so KV cannot grow forever.
+      const keep = new Set(Object.keys(incoming || {}).map((s) => String(s || '').toUpperCase()).filter(Boolean));
+      if (keep.size && typeof VH.pruneVariationalRateSamples === 'function') {
+        return VH.pruneVariationalRateSamples(merged, keep);
+      }
+      return merged;
     }
   } catch {
     // fall through
@@ -196,7 +202,14 @@ function mergeVariationalRateSampleMaps(existing, incoming) {
       if (!Number.isFinite(atMs)) continue;
       byAt.set(atMs, row);
     }
-    out[symbol] = [...byAt.values()].sort((a, b) => Number(b.atMs) - Number(a.atMs)).slice(0, 2000);
+    out[symbol] = [...byAt.values()].sort((a, b) => Number(b.atMs) - Number(a.atMs)).slice(0, 96);
+  }
+  // Drop symbols absent from this client upload.
+  const keep = new Set(Object.keys(incoming || {}));
+  if (keep.size) {
+    for (const key of Object.keys(out)) {
+      if (!keep.has(key)) delete out[key];
+    }
   }
   return out;
 }

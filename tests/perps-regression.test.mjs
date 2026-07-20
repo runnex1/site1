@@ -1219,6 +1219,11 @@ for (const rel of [
 const cronRunnerJs = readFileSync(join(ROOT, 'lib', 'cron-runner.js'), 'utf8');
 assert.doesNotMatch(cronRunnerJs, /perpsLive: \{ everyMs/, 'cron tick must not schedule unused perpsLive job');
 assert.doesNotMatch(cronRunnerJs, /fundingRates: \{ everyMs/, 'cron tick must not schedule unused fundingRates job');
+assert.doesNotMatch(cronRunnerJs, /fundingRates:\s*'vault:perps_funding_rates'/, 'CACHE_KEYS must not retain unused vault:perps_funding_rates');
+assert.doesNotMatch(aaveProxyJs, /kvSet\('vault:perps_symbols'/, 'must not write unused vault:perps_symbols list');
+assert.match(aaveProxyJs, /pruneVariationalRateSamples\(merged, keep\)/, 'server rate-sample persist must prune inactive symbols');
+assert.match(syncJs, /pruneVariationalRateSamples\(merged, keep\)/, 'cloud sync must prune variational rate samples to client keep-set');
+assert.match(indexHtml, /function perpsSlimClosedPairForStorage/, 'closed pairs must strip unused daily event arrays before storage');
 assert.doesNotMatch(cronRunnerJs, /predictionActivity: \{ everyMs/, 'event log must not duplicate via predictionActivity cron');
 assert.doesNotMatch(cronRunnerJs, /checkAlerts: \{ everyMs/, 'alerts must use dedicated /api/check-alerts only');
 assert.match(cronRunnerJs, /loopsSync: \{ everyMs: 15 \* 60 \* 1000/, 'loopsSync must run every 15 minutes');

@@ -32188,15 +32188,42 @@ function perpsClosedPairKey(pair) {
 function perpsLoadCachedClosedPairs() {
     try {
         const rows = JSON.parse(localStorage.getItem(PERPS_CLOSED_PAIRS_KEY) || '[]');
-        return Array.isArray(rows) ? rows.map((p) => perpsGuardClosedPairRecord(p)) : [];
+        const list = Array.isArray(rows)
+            ? rows.map((p) => perpsSlimClosedPairForStorage(perpsGuardClosedPairRecord(p)))
+            : [];
+        // One-time local shrink for older bloated closed-pair payloads.
+        try {
+            const raw = localStorage.getItem(PERPS_CLOSED_PAIRS_KEY) || '[]';
+            const slimJson = JSON.stringify(list);
+            if (slimJson.length + 2048 < raw.length) {
+                localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, slimJson);
+            }
+        } catch (_) {}
+        return list;
     } catch (e) {
         return [];
     }
 }
 
+function perpsSlimClosedPairForStorage(pair) {
+    if (!pair || typeof pair !== 'object') return pair;
+    const series = Array.isArray(pair.dailyPerformanceSeries) ? pair.dailyPerformanceSeries : null;
+    if (!series) return pair;
+    // Aggregates are enough for Closed-tab funding/APR; event arrays were unused bulk.
+    const slimSeries = series.map((row) => {
+        if (!row || typeof row !== 'object') return row;
+        if (!row.fundingEvents && !row.feeEvents) return row;
+        const { fundingEvents, feeEvents, ...rest } = row;
+        return rest;
+    });
+    return { ...pair, dailyPerformanceSeries: slimSeries };
+}
+
 function perpsPersistCachedClosedPairs(rows, opts = {}) {
     try {
-        const list = (Array.isArray(rows) ? rows : []).map((p) => perpsGuardClosedPairRecord(p));
+        const list = (Array.isArray(rows) ? rows : [])
+            .map((p) => perpsGuardClosedPairRecord(p))
+            .map((p) => perpsSlimClosedPairForStorage(p));
         localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, JSON.stringify(list));
         if (!opts.skipCloudSync) perpsScheduleCloudSave();
     } catch (e) {}
