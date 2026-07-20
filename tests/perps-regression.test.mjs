@@ -2874,7 +2874,12 @@ assert.match(perpsJs, /transfer_history/, 'GRVT capital flows must read transfer
 assert.match(perpsJs, /source: 'transfer_history'/, 'GRVT subaccount capital payments must be tagged from transfer_history');
 assert.match(perpsJs, /PERPS_GRVT_HISTORY_TIMEOUT_MS, 'GRVT capital flows'/, 'GRVT capital flows must use the longer GRVT history timeout');
 assert.match(perpsJs, /function slimPerpsDashboardForClient\(/, 'perps API must slim heavy history before sending to the browser');
-assert.match(perpsJs, /clientFillWindowDays: 90/, 'client fill history must be windowed to limit UI freezes');
+assert.match(perpsJs, /clientFillWindowDays: 45/, 'client fill history must be windowed to limit UI freezes');
+assert.match(perpsJs, /clientPaymentWindowDays: 90/, 'client funding payments must be windowed');
+assert.match(perpsJs, /fundingSinceOpen: undefined/, 'Extended fundingSinceOpen duplicate must be stripped from client payload');
+assert.match(perpsJs, /clientPayloadSlim: true/, 'slimmed payload must be marked for verification');
+assert.match(perpsJs, /slimPairDaily/, 'pair dailyPerformanceSeries events must be stripped');
+assert.match(indexHtml, /_perpsLastSettlementCaptureMs/, 'variational settlement capture must be rate-limited');
 assert.match(indexHtml, /perpsScheduleCloudSave/, 'perps must debounce cloud saveData to avoid refresh freezes');
 assert.match(indexHtml, /perpsBuildCapitalNetPrefix/, 'equity chart must cache capital net prefixes instead of O\(snapshots×flows\)');
 assert.match(indexHtml, /_equitySeriesRaw/, 'equity series must not be rebuilt twice per dashboard render');

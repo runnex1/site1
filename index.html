@@ -32617,12 +32617,18 @@ function perpsSaveVariationalModal() {
     })();
 }
 
+let _perpsLastSettlementCaptureMs = 0;
 function perpsApplyVariationalHedgesToData(data) {
     const VH = window.VariationalHedge;
     if (!VH || !data) return data;
     const hedges = perpsLoadVariationalHedges();
     if (!hedges.length) return data;
-    void perpsCaptureAllVariationalSettlements(data).catch(() => {});
+    // Settlement capture is expensive (scans all venue funding). At most once/min on apply.
+    const now = Date.now();
+    if (now - _perpsLastSettlementCaptureMs > 60000) {
+        _perpsLastSettlementCaptureMs = now;
+        void perpsCaptureAllVariationalSettlements(data).catch(() => {});
+    }
     const variationalBySymbol = {
         ...perpsVariationalBySymbolFromSpread(data.rateSpread || []),
         ...(data.variationalListings || {}),
@@ -35898,7 +35904,15 @@ function perpsSanitizeVariationalClosedPairs(data) {
             const closeLeg = VH.findTrackedCloseLeg(data, hedge);
             if (closeLeg) cleaned = VH.buildVariationalClosedPair(hedge, closeLeg, listingBy[hedge.symbol] || null);
         }
-        if (JSON.stringify(cleaned) !== JSON.stringify(pair)) changed = true;
+        // Cheap identity check — avoid JSON.stringify of fat dailyPerformanceSeries.
+        if (cleaned !== pair
+            && (cleaned.funding !== pair.funding
+                || cleaned.variationalEquityPnl !== pair.variationalEquityPnl
+                || cleaned.longLeg?.realizedPnl !== pair.longLeg?.realizedPnl
+                || cleaned.shortLeg?.realizedPnl !== pair.shortLeg?.realizedPnl
+                || cleaned.aprUnavailable !== pair.aprUnavailable)) {
+            changed = true;
+        }
         return cleaned;
     });
     if (changed) perpsPersistCachedClosedPairs(next, { skipCloudSync: true });
