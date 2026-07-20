@@ -2879,7 +2879,11 @@ assert.match(perpsJs, /clientPaymentWindowDays: 90/, 'client funding payments mu
 assert.match(perpsJs, /fundingSinceOpen: undefined/, 'Extended fundingSinceOpen duplicate must be stripped from client payload');
 assert.match(perpsJs, /clientPayloadSlim: true/, 'slimmed payload must be marked for verification');
 assert.match(perpsJs, /slimPairDaily/, 'pair dailyPerformanceSeries events must be stripped');
-assert.match(indexHtml, /_perpsLastSettlementCaptureMs/, 'variational settlement capture must be rate-limited');
+assert.match(variationalHedgeJs, /VARIATIONAL_RATE_SAMPLE_LIMIT = 96/, 'rate sample retention must stay small to avoid UI freezes');
+assert.match(variationalHedgeJs, /function pruneVariationalRateSamples\(/, 'rate samples must be prunable to active symbols');
+assert.match(indexHtml, /perpsPruneVariationalRateSamplesStore/, 'client must prune bloated rate-sample localStorage');
+assert.match(indexHtml, /perpsActiveVariationalSampleSymbols/, 'rate samples must be limited to active symbols');
+assert.match(indexHtml, /skipCloudSync: true/, 'hot-path variational persist must skip immediate cloud sync');
 assert.match(indexHtml, /perpsScheduleCloudSave/, 'perps must debounce cloud saveData to avoid refresh freezes');
 assert.match(indexHtml, /perpsBuildCapitalNetPrefix/, 'equity chart must cache capital net prefixes instead of O\(snapshots×flows\)');
 assert.match(indexHtml, /_equitySeriesRaw/, 'equity series must not be rebuilt twice per dashboard render');
@@ -3699,7 +3703,7 @@ const { buildRateSpreadRows, fetchVariationalRates } = require('../lib/perps.js'
   assert.equal(result.paired[0].legAFundingSinceOpen, 12.34, 'GRVT cumulative funding must flow into variational tracked leg');
 }
 
-assert.match(indexHtml, /function perpsEnrichVariationalPairFunding\(pair, data\)/, 'variational pairs must reattach exchange funding events after client-side merge');
+assert.match(indexHtml, /function perpsEnrichVariationalPairFunding\(pair, data/, 'variational pairs must reattach exchange funding events after client-side merge');
 assert.match(indexHtml, /buildVariationalFundingEventsFrozen/, 'variational enrichment must use frozen settlement funding events');
 assert.match(indexHtml, /PERPS_VARIATIONAL_SETTLEMENTS_KEY/, 'variational settlements must persist in local storage');
 assert.match(indexHtml, /function perpsLoadVariationalSettlementsRaw\(/, 'variational settlements must load from local storage');

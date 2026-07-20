@@ -31423,26 +31423,35 @@ async function perpsPushVariationalHedgesToServer(rows) {
 }
 
 let _perpsVariationalSettlementsMem = null;
+let _perpsVariationalRateSamplesPushTimer = null;
+let _perpsVariationalSettlementsPushTimer = null;
 
 function perpsLoadVariationalSettlementsRaw() {
     if (_perpsVariationalSettlementsMem && typeof _perpsVariationalSettlementsMem === 'object') {
-        return JSON.parse(JSON.stringify(_perpsVariationalSettlementsMem));
+        return _perpsVariationalSettlementsMem;
     }
     try {
         const map = JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_SETTLEMENTS_KEY) || '{}');
-        return map && typeof map === 'object' ? map : {};
+        _perpsVariationalSettlementsMem = map && typeof map === 'object' ? map : {};
+        return _perpsVariationalSettlementsMem;
     } catch (e) {
-        return {};
+        _perpsVariationalSettlementsMem = {};
+        return _perpsVariationalSettlementsMem;
     }
 }
 
 function perpsPersistVariationalSettlements(map, opts = {}) {
     const next = map && typeof map === 'object' ? map : {};
-    _perpsVariationalSettlementsMem = JSON.parse(JSON.stringify(next));
+    _perpsVariationalSettlementsMem = next;
     try {
         localStorage.setItem(PERPS_VARIATIONAL_SETTLEMENTS_KEY, JSON.stringify(next));
     } catch (e) {}
-    if (!opts.skipCloudSync) perpsPushVariationalSettlementsToServer(next);
+    if (!opts.skipCloudSync) {
+        clearTimeout(_perpsVariationalSettlementsPushTimer);
+        _perpsVariationalSettlementsPushTimer = setTimeout(() => {
+            perpsPushVariationalSettlementsToServer(next);
+        }, 5000);
+    }
     return next;
 }
 
@@ -31480,13 +31489,15 @@ let _perpsVariationalRateSamplesMem = null;
 
 function perpsLoadVariationalRateSamplesRaw() {
     if (_perpsVariationalRateSamplesMem && typeof _perpsVariationalRateSamplesMem === 'object') {
-        return JSON.parse(JSON.stringify(_perpsVariationalRateSamplesMem));
+        return _perpsVariationalRateSamplesMem;
     }
     try {
         const map = JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_RATE_SAMPLES_KEY) || '{}');
-        return map && typeof map === 'object' ? map : {};
+        _perpsVariationalRateSamplesMem = map && typeof map === 'object' ? map : {};
+        return _perpsVariationalRateSamplesMem;
     } catch (e) {
-        return {};
+        _perpsVariationalRateSamplesMem = {};
+        return _perpsVariationalRateSamplesMem;
     }
 }
 
@@ -31495,11 +31506,18 @@ function perpsPersistVariationalRateSamples(map, opts = {}) {
     const next = VH?.normalizeVariationalRateSamples
         ? VH.normalizeVariationalRateSamples(map)
         : (map && typeof map === 'object' ? map : {});
-    _perpsVariationalRateSamplesMem = JSON.parse(JSON.stringify(next));
+    _perpsVariationalRateSamplesMem = next;
     try {
         localStorage.setItem(PERPS_VARIATIONAL_RATE_SAMPLES_KEY, JSON.stringify(next));
-    } catch (e) {}
-    if (!opts.skipCloudSync) perpsPushVariationalRateSamplesToServer(next);
+    } catch (e) {
+        // Quota exceeded — keep memory copy so UI still works this session.
+    }
+    if (!opts.skipCloudSync) {
+        clearTimeout(_perpsVariationalRateSamplesPushTimer);
+        _perpsVariationalRateSamplesPushTimer = setTimeout(() => {
+            perpsPushVariationalRateSamplesToServer(next);
+        }, 5000);
+    }
     return next;
 }
 
@@ -31529,9 +31547,27 @@ async function perpsPushVariationalRateSamplesToServer(map) {
     }
 }
 
-function perpsRecordVariationalRateSamplesFromData(data) {
+function perpsActiveVariationalSampleSymbols(data) {
+    const syms = new Set();
+    for (const h of perpsLoadVariationalHedgesRaw()) {
+        if (h?.symbol && (h.status === 'open' || h.status === 'pending_close')) {
+            syms.add(String(h.symbol).toUpperCase());
+        }
+    }
+    for (const p of data?.paired || []) {
+        if (p?.symbol) syms.add(String(p.symbol).toUpperCase());
+    }
+    for (const u of data?.unhedged || []) {
+        const s = u?.symbol || u?.coin;
+        if (s) syms.add(String(s).toUpperCase().replace(/-PERP$/i, ''));
+    }
+    return syms;
+}
+
+function perpsRecordVariationalRateSamplesFromData(data, opts = {}) {
     const VH = window.VariationalHedge;
     if (!VH?.recordVariationalListingSamples) return perpsLoadVariationalRateSamplesRaw();
+    const keep = opts.symbols instanceof Set ? opts.symbols : perpsActiveVariationalSampleSymbols(data);
     const listings = {
         ...perpsVariationalBySymbolFromSpread(data?.rateSpread || []),
         ...(data?.variationalListings || {}),
@@ -31539,8 +31575,27 @@ function perpsRecordVariationalRateSamplesFromData(data) {
     };
     const atMs = Number(data?.fetchedAt) || Date.now();
     const prev = perpsLoadVariationalRateSamplesRaw();
-    const next = VH.recordVariationalListingSamples(prev, listings, atMs, { source: 'client' });
-    return perpsPersistVariationalRateSamples(next);
+    let next = VH.recordVariationalListingSamples(prev, listings, atMs, {
+        source: 'client',
+        symbols: keep,
+    });
+    if (VH.pruneVariationalRateSamples) {
+        next = VH.pruneVariationalRateSamples(next, keep);
+    }
+    return perpsPersistVariationalRateSamples(next, { skipCloudSync: opts.skipCloudSync !== false });
+}
+
+/** One-shot prune of bloated rate-sample localStorage (was multi‑MB / 500+ symbols). */
+function perpsPruneVariationalRateSamplesStore(data = null) {
+    const VH = window.VariationalHedge;
+    const keep = perpsActiveVariationalSampleSymbols(data || _perpsLastData || {});
+    const prev = perpsLoadVariationalRateSamplesRaw();
+    const prevKeys = Object.keys(prev || {}).length;
+    if (prevKeys <= Math.max(keep.size, 8) && prevKeys < 40) return prev;
+    const next = VH?.pruneVariationalRateSamples
+        ? VH.pruneVariationalRateSamples(prev, keep)
+        : prev;
+    return perpsPersistVariationalRateSamples(next, { skipCloudSync: false });
 }
 
 /** Fresh Variational mark/rate from public stats API (CORS-enabled). Bybit is clock-only. */
@@ -31610,7 +31665,7 @@ function perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, 
     });
     if (captured === prev) return false;
     all[hedge.id] = captured;
-    perpsPersistVariationalSettlements(all);
+    perpsPersistVariationalSettlements(all, { skipCloudSync: opts.skipCloudSync === true });
     return true;
 }
 
@@ -31628,7 +31683,10 @@ async function perpsCaptureAllVariationalSettlements(data) {
         variationalListings: { ...(data.variationalListings || {}), ...fresh.bySymbol },
         _variationalListingBySymbol: { ...(data._variationalListingBySymbol || {}), ...fresh.bySymbol },
     };
-    const rateSamplesBySymbol = perpsRecordVariationalRateSamplesFromData(freshPayload);
+    const rateSamplesBySymbol = perpsRecordVariationalRateSamplesFromData(freshPayload, {
+        symbols: perpsActiveVariationalSampleSymbols(freshPayload),
+        skipCloudSync: true,
+    });
     const variationalBySymbol = {
         ...perpsVariationalBySymbolFromSpread(data.rateSpread || []),
         ...(data.variationalListings || {}),
@@ -31652,11 +31710,17 @@ async function perpsCaptureAllVariationalSettlements(data) {
         if (perpsCaptureVariationalSettlementsForHedge(hedge, mergedListing, trackedLeg, freshPayload, {
             rateSamplesBySymbol,
             listingFetchedAt: fresh.fetchedAt,
+            skipCloudSync: true,
         })) {
             settlementsChanged = true;
         }
     }
     perpsPersistVariationalHedges(hedges, { skipCloudSync: !settlementsChanged });
+    if (settlementsChanged) {
+        // One debounced cloud push after batch capture (hot path skipped per-hedge sync).
+        perpsPersistVariationalSettlements(perpsLoadVariationalSettlementsRaw(), { skipCloudSync: false });
+        perpsPersistVariationalRateSamples(rateSamplesBySymbol, { skipCloudSync: false });
+    }
     return settlementsChanged;
 
     function trackedLegFromSnapshotFallback(h) {
@@ -31872,6 +31936,8 @@ async function perpsHydratePerpsAuxFromCloud() {
             const localSamples = perpsLoadVariationalRateSamplesRaw();
             if (Object.keys(localSamples).length) await perpsPushVariationalRateSamplesToServer(localSamples);
         }
+        // Always prune — server/local samples historically grew to hundreds of symbols / multi‑MB.
+        perpsPruneVariationalRateSamplesStore();
         if (Array.isArray(body?.perpsClosedPairs) && body.perpsClosedPairs.length) {
             perpsMergeClosedPairsFromServer(body.perpsClosedPairs);
             changed = true;
@@ -32634,6 +32700,12 @@ function perpsApplyVariationalHedgesToData(data) {
         ...(data.variationalListings || {}),
     };
     data._variationalListingBySymbol = { ...(data._variationalListingBySymbol || {}), ...variationalBySymbol };
+    // Prune bloated multi‑MB rate-sample stores once per payload, then sample only active symbols.
+    const activeSyms = perpsActiveVariationalSampleSymbols(data);
+    const rateSamplesBySymbol = perpsRecordVariationalRateSamplesFromData(data, {
+        symbols: activeSyms,
+        skipCloudSync: true,
+    });
     const result = VH.applyVariationalHedges(data, hedges, variationalBySymbol);
     data.paired = result.paired;
     data.unhedged = result.unhedged;
@@ -32649,7 +32721,12 @@ function perpsApplyVariationalHedgesToData(data) {
     data.variationalPendingClose = result.pendingClose || [];
     data.closedPairs = perpsSanitizeVariationalClosedPairs(data);
     for (const pair of data.paired || []) {
-        if (VH.isVariationalPair?.(pair)) perpsEnrichVariationalPairFunding(pair, data);
+        if (VH.isVariationalPair?.(pair)) {
+            perpsEnrichVariationalPairFunding(pair, data, {
+                rateSamplesBySymbol,
+                skipCloudSync: true,
+            });
+        }
     }
     perpsMergeVariationalIntoDailyFundingSeries(data);
     perpsScheduleVariationalSettlementSample(data);
@@ -32849,7 +32926,7 @@ function perpsBuildVariationalDailySeries(pair, data, sinceMs, extraEvents = [])
     return points;
 }
 
-function perpsEnrichVariationalPairFunding(pair, data) {
+function perpsEnrichVariationalPairFunding(pair, data, opts = {}) {
     const trackedVenue = pair.venueA || pair.crossLegA?.venue;
     const base = pair.symbol;
     if (!trackedVenue || !base) return pair;
@@ -32885,10 +32962,14 @@ function perpsEnrichVariationalPairFunding(pair, data) {
 
     const listing = perpsResolveVariationalListing(pair, data);
     const trackedLeg = pair.crossLegA?.venue === trackedVenue ? pair.crossLegA : pair.crossLegB;
-    // Continuously sample dashboard Variational mark/rate (may be cache-stale; T−10s path refreshes).
-    const rateSamplesBySymbol = perpsRecordVariationalRateSamplesFromData(data);
-    // Estimate → show → freeze when T−10s is open and we have period-correct Variational rate/mark.
-    perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data, { rateSamplesBySymbol });
+    // Prefer shared samples from apply path — do not re-record/persist per pair.
+    const rateSamplesBySymbol = opts.rateSamplesBySymbol
+        || perpsLoadVariationalRateSamplesRaw();
+    const skipCloud = opts.skipCloudSync !== false;
+    perpsCaptureVariationalSettlementsForHedge(hedge, listing, trackedLeg, data, {
+        rateSamplesBySymbol,
+        skipCloudSync: skipCloud,
+    });
     let storedSettlements = (() => {
         const all = perpsLoadVariationalSettlementsRaw();
         return Array.isArray(all[hedge?.id]) ? all[hedge.id] : [];
@@ -32914,7 +32995,7 @@ function perpsEnrichVariationalPairFunding(pair, data) {
         const captured = VH.captureVariationalSettlementsDue(hedge, listing, prev, freezeOpts);
         if (captured !== prev) {
             all[hedge.id] = captured;
-            perpsPersistVariationalSettlements(all);
+            perpsPersistVariationalSettlements(all, { skipCloudSync: skipCloud });
             storedSettlements = captured;
             variationalEvents = VH.buildVariationalFundingEventsFrozen(hedge, listing, storedSettlements, {
                 ...freezeOpts,
