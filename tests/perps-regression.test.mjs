@@ -1116,6 +1116,9 @@ assert.match(indexHtml, /function perpsClosedLegHtml\(leg, pair\)/, 'Closed tab 
 assert.match(indexHtml, /manualVariationalClose/, 'Closed tab must show leg PnL for manual Variational closes');
 
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
+assert.match(indexHtml, /function perpsDailyRowEventsAreComplete\(/, 'range trim must detect incomplete fundingEvents after payload slim');
+assert.match(indexHtml, /Do NOT invent empty fundingEvents\/feeEvents/, 'daily funding base must not invent empty event arrays');
+assert.match(perpsJs, /recentDailyEventCutoffMs = now - 2 \* 86400000/, 'slim must keep ~2d of daily funding events for 1D boundary splits');
 assert.match(indexHtml, /dayStart < cutoff\) return null;/, 'summary-only boundary rows must not count as full last-24h PnL');
 assert.match(indexHtml, /return perpsRecomputeDailySeriesCumulative\(trimmed\);/, 'trimmed daily rows must rebuild cumulative totals from the selected window');
 assert.match(indexHtml, /perpsTrimDailySeriesToLatestSession\(rows\)/, 'All-time daily funding chart must start after the last empty bucket');
@@ -1127,6 +1130,98 @@ assert.match(perpsJs, /funding: extendedFundingWindow,/, 'Extended response must
 assert.match(perpsJs, /fundingSinceOpen: extendedFundingSinceOpen,/, 'Extended response must preserve since-open funding separately');
 assert.match(perpsJs, /function applyPairFundingSinceOpen\(/, 'paired funding since open must use payment history');
 assert.match(perpsJs, /applyPairFundingSinceOpen\(pair, base, venueA, venueB, paymentSources, sinceMs\)/, 'pair funding meta must override venue cumFunding with payment sums');
+
+{
+  // Slim + variational-only events must not wipe exchange funding on 7D/1D filters.
+  const day = (offset) => new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10);
+  const today = day(0);
+  const yesterday = day(1);
+  const weekAgo = day(6);
+  const slimRows = [
+    { day: weekAgo, dailyFunding: 40, dailyFees: 1, dailyNet: 39, byVenue: { hyperliquid: 40 } },
+    { day: yesterday, dailyFunding: 50, dailyFees: 2, dailyNet: 48, byVenue: { hyperliquid: 50 } },
+    { day: today, dailyFunding: 60, dailyFees: 0, dailyNet: 60, byVenue: { hyperliquid: 60 } },
+  ];
+  // Simulate old bug: invent empty arrays then add only variational events on today.
+  const buggy = slimRows.map((r) => ({
+    ...r,
+    fundingEvents: r.day === today
+      ? [{ time: Date.now() - 3600000, usdc: 5, venue: 'variational' }]
+      : [],
+    feeEvents: [],
+    dailyFunding: r.day === today ? r.dailyFunding + 5 : r.dailyFunding,
+    dailyNet: r.day === today ? r.dailyNet + 5 : r.dailyNet,
+  }));
+  const complete = (row) => {
+    const hasF = Array.isArray(row?.fundingEvents);
+    const hasFee = Array.isArray(row?.feeEvents);
+    if (!hasF && !hasFee) return false;
+    const eps = 0.05;
+    const funding = Number(row?.dailyFunding) || 0;
+    const fees = Number(row?.dailyFees) || 0;
+    if (hasF) {
+      const fromEvents = row.fundingEvents.reduce((s, e) => s + (e.usdc || 0), 0);
+      if (Math.abs(fromEvents - funding) > Math.max(eps, Math.abs(funding) * 1e-6)) return false;
+    } else if (Math.abs(funding) > eps) return false;
+    if (hasFee) {
+      const fromEvents = row.feeEvents.reduce((s, e) => s + (e.fee || 0), 0);
+      if (Math.abs(fromEvents - fees) > Math.max(eps, Math.abs(fees) * 1e-6)) return false;
+    } else if (Math.abs(fees) > eps) return false;
+    return true;
+  };
+  const trim = (row, cutoff) => {
+    const dayStart = Date.parse(`${row.day}T00:00:00.000Z`);
+    if (!complete(row)) {
+      if (Number.isFinite(dayStart) && dayStart < cutoff) return null;
+      return row;
+    }
+    const fundingEvents = (row.fundingEvents || []).filter((e) => (e.time || 0) >= cutoff);
+    const feeEvents = (row.feeEvents || []).filter((e) => (e.time || 0) >= cutoff);
+    if (!fundingEvents.length && !feeEvents.length && dayStart < cutoff) return null;
+    const dailyFunding = fundingEvents.reduce((s, e) => s + (e.usdc || 0), 0);
+    const dailyFees = feeEvents.reduce((s, e) => s + (e.fee || 0), 0);
+    return { ...row, dailyFunding, dailyFees, dailyNet: dailyFunding - dailyFees };
+  };
+  const fixedRows = slimRows.map((r) => {
+    const row = { ...r };
+    if (r.day === today) {
+      row.dailyFunding = r.dailyFunding + 5;
+      row.dailyNet = r.dailyNet + 5;
+      row.fundingEvents = [{ time: Date.now() - 3600000, usdc: 5, venue: 'variational' }];
+    }
+    return row;
+  });
+  assert.equal(complete(buggy.find((r) => r.day === today)), false, 'partial variational-only events must be incomplete');
+  assert.equal(complete(fixedRows.find((r) => r.day === today)), false, 'exchange aggregate + var-only events must stay incomplete');
+  // Old trim (recompute whenever Array.isArray) would zero exchange funding; new trim keeps aggregates.
+  const oldTrim = (row, cutoff) => {
+    const hasFundingEvents = Array.isArray(row.fundingEvents);
+    const hasFeeEvents = Array.isArray(row.feeEvents);
+    const dayStart = Date.parse(`${row.day}T00:00:00.000Z`);
+    if (!hasFundingEvents && !hasFeeEvents) {
+      if (Number.isFinite(dayStart) && dayStart < cutoff) return null;
+      return row;
+    }
+    const fundingEvents = hasFundingEvents ? row.fundingEvents.filter((e) => (e.time || 0) >= cutoff) : [];
+    const feeEvents = hasFeeEvents ? row.feeEvents.filter((e) => (e.time || 0) >= cutoff) : [];
+    if (!fundingEvents.length && !feeEvents.length && dayStart < cutoff) return null;
+    const dailyFunding = fundingEvents.reduce((s, e) => s + (e.usdc || 0), 0);
+    const dailyFees = feeEvents.reduce((s, e) => s + (e.fee || 0), 0);
+    return { ...row, dailyFunding, dailyFees, dailyNet: dailyFunding - dailyFees };
+  };
+  const filterWith = (rows, trimFn) => {
+    const cutoff = Date.now() - 7 * 86400000;
+    return rows
+      .filter((r) => new Date(`${r.day}T23:59:59.999Z`).getTime() >= cutoff)
+      .map((r) => trimFn(r, cutoff))
+      .filter(Boolean);
+  };
+  const sumFund = (rows) => rows.reduce((s, r) => s + (r.dailyFunding || 0), 0);
+  const old7 = sumFund(filterWith(buggy, oldTrim));
+  const fixed7 = sumFund(filterWith(fixedRows, trim));
+  assert.ok(old7 < 20, `old empty-array path must collapse 7d toward variational-only, got ${old7}`);
+  assert.ok(Math.abs(fixed7 - 155) < 1e-6, `fixed 7d funding must keep exchange totals, got ${fixed7}`);
+}
 
 {
   const openMs = 1768953600006;
@@ -4637,7 +4732,7 @@ assert.match(indexHtml, /vault-perps-pnl-track-v2/, 'PnL track v2 must re-lock b
 
 assert.match(indexHtml, /variationalPendingCloseEquityAdjust/, 'pending close equity adjust must be wired in UI');
 assert.match(variationalHedgeJs, /variationalLastUpnl/, 'open hedge build must stash last Variational uPnL for pending');
-assert.match(indexHtml, /same-mark hedges/, 'equity chart note must describe same-mark hedge accounting');
+assert.match(indexHtml, /same-mark matched size \(partials neutralized/, 'equity chart note must describe matched-size same-mark hedge accounting');
 assert.match(indexHtml, /crossVenueSameMarkAdjust/, 'client must apply cross-venue same-mark adjust');
 assert.match(indexHtml, /crossVenueAdj/, 'client equity adjust must include crossVenueAdj');
 assert.match(indexHtml, /function perpsReapplyVariationalHedgesIfMounted\(/, 'perps must re-render after late variational hedge hydration');

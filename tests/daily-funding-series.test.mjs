@@ -53,18 +53,33 @@ function sumPaymentsOnDays(payments, daySet) {
 function filterDailySeries(series, rangeMs) {
   if (!rangeMs) return series;
   const cutoff = Date.now() - rangeMs;
+  const eventsComplete = (row) => {
+    const hasF = Array.isArray(row?.fundingEvents);
+    const hasFee = Array.isArray(row?.feeEvents);
+    if (!hasF && !hasFee) return false;
+    const eps = 0.05;
+    const funding = Number(row?.dailyFunding) || 0;
+    const fees = Number(row?.dailyFees) || 0;
+    if (hasF) {
+      const fromEvents = row.fundingEvents.reduce((s, e) => s + (e.usdc || 0), 0);
+      if (Math.abs(fromEvents - funding) > Math.max(eps, Math.abs(funding) * 1e-6)) return false;
+    } else if (Math.abs(funding) > eps) return false;
+    if (hasFee) {
+      const fromEvents = row.feeEvents.reduce((s, e) => s + (e.fee || 0), 0);
+      if (Math.abs(fromEvents - fees) > Math.max(eps, Math.abs(fees) * 1e-6)) return false;
+    } else if (Math.abs(fees) > eps) return false;
+    return true;
+  };
   return series
     .filter(r => new Date(r.day + 'T23:59:59.999Z').getTime() >= cutoff)
     .map((row) => {
-      const hasFundingEvents = Array.isArray(row.fundingEvents);
-      const hasFeeEvents = Array.isArray(row.feeEvents);
       const dayStart = Date.parse((row.day || '') + 'T00:00:00.000Z');
-      if (!hasFundingEvents && !hasFeeEvents) {
+      if (!eventsComplete(row)) {
         if (Number.isFinite(dayStart) && dayStart < cutoff) return null;
         return row;
       }
-      const fundingEvents = hasFundingEvents ? row.fundingEvents.filter(e => (e.time || 0) >= cutoff) : [];
-      const feeEvents = hasFeeEvents ? row.feeEvents.filter(e => (e.time || 0) >= cutoff) : [];
+      const fundingEvents = Array.isArray(row.fundingEvents) ? row.fundingEvents.filter(e => (e.time || 0) >= cutoff) : [];
+      const feeEvents = Array.isArray(row.feeEvents) ? row.feeEvents.filter(e => (e.time || 0) >= cutoff) : [];
       if (!fundingEvents.length && !feeEvents.length && Number.isFinite(dayStart) && dayStart < cutoff) return null;
       const dailyFunding = fundingEvents.reduce((s, e) => s + (e.usdc || 0), 0);
       const dailyFees = feeEvents.reduce((s, e) => s + (e.fee || 0), 0);
@@ -117,8 +132,8 @@ function mergeVariationalIntoSeries(baseRows, events) {
   const todayDay = new Date(now).toISOString().slice(0, 10);
   const yesterdayDay = new Date(now - 86400000).toISOString().slice(0, 10);
   const payments = [
-    { time: Date.parse(`${todayDay}T08:00:00Z`), usdc: 10, symbol: 'ETH', intervalHours: 1 },
-    { time: Date.parse(`${todayDay}T14:00:00Z`), usdc: -3, symbol: 'ETH', intervalHours: 1 },
+    { time: Date.parse(`${todayDay}T01:00:00Z`), usdc: 10, symbol: 'ETH', intervalHours: 1 },
+    { time: Date.parse(`${todayDay}T02:00:00Z`), usdc: -3, symbol: 'ETH', intervalHours: 1 },
     { time: Date.parse(`${yesterdayDay}T20:00:00Z`), usdc: 5, symbol: 'ETH', intervalHours: 1 },
   ];
   const series = buildDailyFundingSeries({ hlPayments: payments, days: 30 });

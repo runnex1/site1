@@ -31110,6 +31110,29 @@ function perpsDailyRowHasActivity(row) {
         (Array.isArray(row?.feeEvents) && row.feeEvents.length > 0);
 }
 
+/** True only when event arrays fully explain the day aggregates (safe to re-split at cutoff). */
+function perpsDailyRowEventsAreComplete(row) {
+    const hasFundingEvents = Array.isArray(row?.fundingEvents);
+    const hasFeeEvents = Array.isArray(row?.feeEvents);
+    if (!hasFundingEvents && !hasFeeEvents) return false;
+    const eps = 0.05;
+    const funding = Number(row?.dailyFunding) || 0;
+    const fees = Number(row?.dailyFees) || 0;
+    if (hasFundingEvents) {
+        const fromEvents = row.fundingEvents.reduce((s, e) => s + (e.usdc || 0), 0);
+        if (Math.abs(fromEvents - funding) > Math.max(eps, Math.abs(funding) * 1e-6)) return false;
+    } else if (Math.abs(funding) > eps) {
+        return false;
+    }
+    if (hasFeeEvents) {
+        const fromEvents = row.feeEvents.reduce((s, e) => s + (e.fee || 0), 0);
+        if (Math.abs(fromEvents - fees) > Math.max(eps, Math.abs(fees) * 1e-6)) return false;
+    } else if (Math.abs(fees) > eps) {
+        return false;
+    }
+    return true;
+}
+
 function perpsTrimDailySeriesToLatestSession(rows) {
     const list = Array.isArray(rows) ? rows : [];
     let lastActive = -1;
@@ -31126,17 +31149,21 @@ function perpsTrimDailySeriesToLatestSession(rows) {
 }
 
 function perpsTrimDailyRowToCutoff(row, cutoff) {
-    const hasFundingEvents = Array.isArray(row.fundingEvents);
-    const hasFeeEvents = Array.isArray(row.feeEvents);
     const dayStart = Date.parse((row.day || '') + 'T00:00:00.000Z');
-    if (!hasFundingEvents && !hasFeeEvents) {
+    // Slimmed payloads (and variational merge on top) often have missing/partial event
+    // arrays. Rebuilding totals from those would zero exchange funding for 1D/7D/30D.
+    if (!perpsDailyRowEventsAreComplete(row)) {
         // Summary-only boundary rows cannot be split accurately, so do not count a full
         // calendar day as "last 24h" PnL.
         if (Number.isFinite(dayStart) && dayStart < cutoff) return null;
         return row;
     }
-    const fundingEvents = hasFundingEvents ? row.fundingEvents.filter(e => (e.time || 0) >= cutoff) : [];
-    const feeEvents = hasFeeEvents ? row.feeEvents.filter(e => (e.time || 0) >= cutoff) : [];
+    const fundingEvents = Array.isArray(row.fundingEvents)
+        ? row.fundingEvents.filter(e => (e.time || 0) >= cutoff)
+        : [];
+    const feeEvents = Array.isArray(row.feeEvents)
+        ? row.feeEvents.filter(e => (e.time || 0) >= cutoff)
+        : [];
     if (!fundingEvents.length && !feeEvents.length && Number.isFinite(dayStart) && dayStart < cutoff) return null;
     const dailyFunding = fundingEvents.reduce((s, e) => s + (e.usdc || 0), 0);
     const dailyFees = feeEvents.reduce((s, e) => s + (e.fee || 0), 0);
@@ -32764,12 +32791,19 @@ function perpsEnsureDailyFundingBase(data) {
     const fetchedAt = Number(data?.fetchedAt || 0);
     if (data._dailyFundingSeriesBaseFetchedAt !== fetchedAt) {
         // Shallow row clone — avoid JSON.parse/stringify of multi‑MB event arrays.
-        data._dailyFundingSeriesBase = (data.dailyFundingSeries || []).map((r) => ({
-            ...r,
-            byVenue: { ...(r?.byVenue || {}) },
-            fundingEvents: Array.isArray(r?.fundingEvents) ? r.fundingEvents.slice() : [],
-            feeEvents: Array.isArray(r?.feeEvents) ? r.feeEvents.slice() : [],
-        }));
+        // Do NOT invent empty fundingEvents/feeEvents: slimmed payloads omit them, and
+        // empty arrays would make range trim treat the day as "complete" and zero totals.
+        data._dailyFundingSeriesBase = (data.dailyFundingSeries || []).map((r) => {
+            const row = {
+                ...r,
+                byVenue: { ...(r?.byVenue || {}) },
+            };
+            if (Array.isArray(r?.fundingEvents)) row.fundingEvents = r.fundingEvents.slice();
+            else delete row.fundingEvents;
+            if (Array.isArray(r?.feeEvents)) row.feeEvents = r.feeEvents.slice();
+            else delete row.feeEvents;
+            return row;
+        });
         data._dailyFundingSeriesBaseFetchedAt = fetchedAt;
     }
     return data._dailyFundingSeriesBase || [];
@@ -32795,12 +32829,17 @@ function perpsMergeVariationalIntoDailyFundingSeries(data) {
     if (!events.length) return data;
 
     const baseRows = perpsEnsureDailyFundingBase(data);
-    const rows = baseRows.map(r => ({
-        ...r,
-        byVenue: { ...(r.byVenue || {}) },
-        fundingEvents: [...(r.fundingEvents || [])],
-        feeEvents: [...(r.feeEvents || [])],
-    }));
+    const rows = baseRows.map((r) => {
+        const row = {
+            ...r,
+            byVenue: { ...(r.byVenue || {}) },
+        };
+        if (Array.isArray(r.fundingEvents)) row.fundingEvents = [...r.fundingEvents];
+        else delete row.fundingEvents;
+        if (Array.isArray(r.feeEvents)) row.feeEvents = [...r.feeEvents];
+        else delete row.feeEvents;
+        return row;
+    });
     const byDay = new Map(rows.map(r => [r.day, r]));
 
     for (const ev of events) {
@@ -32829,6 +32868,7 @@ function perpsMergeVariationalIntoDailyFundingSeries(data) {
         row.dailyFunding = (row.dailyFunding || 0) + usdc;
         row.dailyNet = row.dailyFunding - (row.dailyFees || 0);
         row.byVenue.variational = (row.byVenue.variational || 0) + usdc;
+        if (!Array.isArray(row.fundingEvents)) row.fundingEvents = [];
         row.fundingEvents.push({ ...ev, venue: 'variational', fundingEstimated: true });
     }
 
