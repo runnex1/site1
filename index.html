@@ -5437,6 +5437,8 @@ button.news-feed-lens-chip { cursor:pointer; }
   line-height:1; cursor:pointer; display:inline-flex; align-items:center; justify-content:center;
 }
 .news-feed-tg-add:hover { border-color:rgba(0,212,170,0.35); background:var(--teal-10); }
+.news-feed-set-label-actions { display:inline-flex; align-items:center; gap:5px; flex-shrink:0; }
+.news-feed-nl-add { font-size:11px; font-weight:700; }
 .news-feed-source-remove, .news-feed-tg-remove {
   margin-left:0; border:none; background:transparent; color:var(--t3); cursor:pointer;
   font-size:7px; line-height:1; padding:0; opacity:0.45;
@@ -9232,6 +9234,21 @@ body[data-active-tab="loops"] .page-content,
                   </div>
                 </div>
               </div>
+              <div class="news-feed-tg-modal" id="newsFeedNewsletterModal" aria-hidden="true" onclick="if(event.target===this) newsFeedCloseNewsletterModal()">
+                <div class="news-feed-tg-modal-card" role="dialog" aria-labelledby="newsFeedNewsletterModalTitle">
+                  <div class="news-feed-tg-modal-head">
+                    <h4 id="newsFeedNewsletterModalTitle">Add newsletter</h4>
+                    <button type="button" class="news-feed-icon-btn" onclick="newsFeedCloseNewsletterModal()" title="Close">✕</button>
+                  </div>
+                  <p class="news-feed-tg-modal-hint">Paste a newsletter RSS URL (Substack <code>/feed</code>, Beehiiv, Ghost, etc.). Homepage Substack links are auto-converted to <code>/feed</code>.</p>
+                  <input class="news-feed-tg-modal-input" id="newsFeedNewsletterModalUrl" type="url" placeholder="https://example.substack.com/feed" onkeydown="if(event.key==='Enter'){event.preventDefault();newsFeedSubmitNewsletterModal();}">
+                  <input class="news-feed-tg-modal-input" id="newsFeedNewsletterModalLabel" type="text" placeholder="Label (optional)" onkeydown="if(event.key==='Enter'){event.preventDefault();newsFeedSubmitNewsletterModal();}">
+                  <div class="news-feed-tg-modal-actions">
+                    <button type="button" class="news-feed-tg-modal-btn" onclick="newsFeedCloseNewsletterModal()">Cancel</button>
+                    <button type="button" class="news-feed-tg-modal-btn primary" onclick="newsFeedSubmitNewsletterModal()">Add newsletter</button>
+                  </div>
+                </div>
+              </div>
               <div class="news-feed-tg-modal" id="newsFeedRemoveSourceModal" aria-hidden="true" onclick="if(event.target===this) newsFeedCloseRemoveSourceModal()">
                 <div class="news-feed-tg-modal-card" role="dialog" aria-labelledby="newsFeedRemoveSourceTitle">
                   <div class="news-feed-tg-modal-head">
@@ -12054,7 +12071,7 @@ const featureSearchItems = [
     { label: 'Prediction Markets', tab: 'prediction', keywords: 'prediction markets polymarket opinion positions bets' },
     { label: 'ETF & Stocks', tab: 'etf', keywords: 'etf stocks equity holdings watchlist' },
     { label: 'Weekly Snapshots', tab: 'history', keywords: 'weekly snapshots history first snapshot performance apr' },
-    { label: 'News Feed', tab: 'news', keywords: 'news feed daily brief headlines rss crypto defi macro telegram' },
+    { label: 'News Feed', tab: 'news', keywords: 'news feed daily brief headlines rss crypto defi macro telegram newsletter substack' },
     { label: 'Alert Terminal', tab: 'terminal', keywords: 'alert terminal ai assistant portfolio alerts' }
 ];
 let featureSearchMatches = [];
@@ -28508,6 +28525,7 @@ let _newsFeedSavedCache = null;
 let _newsFeedQuickLinksPanelBound = false;
 let _newsFeedQuickLinksCache = null;
 let _newsFeedTelegramModalCategory = null;
+let _newsFeedNewsletterModalCategory = null;
 let _newsFeedRemoveSourcePending = null;
 let _newsFeedKobeissiActiveKey = null;
 let _newsFeedKobeissiExpiryTimer = null;
@@ -28790,6 +28808,8 @@ function newsFeedIsSourcePinned(sourceKey, settings) {
 
 function newsFeedItemSourceKey(item, settings) {
     const source = String(item?.source || '').trim();
+    const nl = newsFeedNewsletterEntry(settings, source);
+    if (nl) return nl.id;
     const tg = newsFeedTelegramEntry(settings, source);
     return tg ? tg.handle : source;
 }
@@ -28972,6 +28992,7 @@ function newsFeedDefaultSettings() {
         searchBody: false,
         timeWindowHours: 24,
         telegram: [],
+        newsletters: [],
         removedSources: [],
         pinnedSources: [],
     };
@@ -29012,6 +29033,88 @@ function newsFeedTelegramQueryParam(settings) {
         .join(',');
 }
 
+function newsFeedNormalizeNewsletterFeedUrl(raw) {
+    let url = String(raw || '').trim();
+    if (!url) return '';
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    try {
+        const u = new URL(url);
+        if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+        const host = u.hostname.toLowerCase();
+        if (/\.substack\.com$/i.test(host)) {
+            const path = (u.pathname || '/').replace(/\/+$/, '') || '';
+            if (!path || path === '/') u.pathname = '/feed';
+        }
+        return u.toString();
+    } catch {
+        return '';
+    }
+}
+
+function newsFeedNewsletterLabelFromUrl(feedUrl) {
+    try {
+        const host = new URL(feedUrl).hostname.replace(/^www\./i, '');
+        if (/\.substack\.com$/i.test(host)) return host.replace(/\.substack\.com$/i, '');
+        if (/rss\.beehiiv\.com$/i.test(host)) return 'Beehiiv';
+        return host.split('.')[0] || 'Newsletter';
+    } catch {
+        return 'Newsletter';
+    }
+}
+
+function newsFeedNewsletterHomepage(feedUrl) {
+    try {
+        const u = new URL(feedUrl);
+        if (/\.substack\.com$/i.test(u.hostname)) return `${u.origin}/`;
+        return `${u.origin}/`;
+    } catch {
+        return feedUrl || '#';
+    }
+}
+
+function newsFeedNewsletterId(feedUrl) {
+    return String(feedUrl || '').trim().toLowerCase();
+}
+
+function newsFeedNormalizeNewsletterEntry(entry) {
+    const feedUrl = newsFeedNormalizeNewsletterFeedUrl(entry?.feedUrl || entry?.url || '');
+    if (!feedUrl) return null;
+    const category = NEWS_FEED_CATEGORY_TYPES.includes(String(entry?.category || '').toLowerCase())
+        ? String(entry.category).toLowerCase()
+        : 'defi';
+    let label = String(entry?.label || '').trim().slice(0, 60);
+    if (!label) label = newsFeedNewsletterLabelFromUrl(feedUrl);
+    const id = String(entry?.id || '').trim() || newsFeedNewsletterId(feedUrl);
+    const homepageUrl = String(entry?.homepageUrl || '').trim() || newsFeedNewsletterHomepage(feedUrl);
+    return { id, label, feedUrl, homepageUrl, category, enabled: entry?.enabled !== false };
+}
+
+function newsFeedEnabledNewsletters(settings) {
+    return ((settings || newsFeedLoadSettings()).newsletters || [])
+        .filter(n => n && n.enabled !== false && n.feedUrl);
+}
+
+function newsFeedNewsletterQueryParam(settings) {
+    return newsFeedEnabledNewsletters(settings)
+        .map(n => [
+            encodeURIComponent(n.label || ''),
+            encodeURIComponent(n.feedUrl),
+            encodeURIComponent(n.category || 'defi'),
+        ].join('|'))
+        .join(',');
+}
+
+function newsFeedNewsletterEntry(settings, source) {
+    const key = String(source || '').trim().toLowerCase();
+    if (!key) return null;
+    return ((settings || newsFeedLoadSettings()).newsletters || [])
+        .find(n => n.label.toLowerCase() === key || n.id.toLowerCase() === key) || null;
+}
+
+function newsFeedNewslettersForCategory(settings, type) {
+    return (settings?.newsletters || []).filter(n => n.category === type);
+}
+
 function newsFeedTelegramEntry(settings, source) {
     const key = String(source || '').toLowerCase();
     return newsFeedMigrateLegacyTelegram(settings || newsFeedLoadSettings()).telegram
@@ -29025,6 +29128,8 @@ function newsFeedSyncTelegramVault(settings) {
 }
 
 function newsFeedItemCategory(item, settings) {
+    const nl = newsFeedNewsletterEntry(settings, item.source);
+    if (nl) return nl.category;
     const tg = newsFeedTelegramEntry(settings, item.source);
     if (tg) return tg.category;
     const t = String(item.type || 'macro').toLowerCase();
@@ -29035,6 +29140,10 @@ function newsFeedItemCategory(item, settings) {
 
 function newsFeedIsTelegramItem(item, settings) {
     return Boolean(newsFeedTelegramEntry(settings, item.source));
+}
+
+function newsFeedIsNewsletterItem(item, settings) {
+    return Boolean(newsFeedNewsletterEntry(settings, item.source));
 }
 
 function newsFeedSanitizeKeywords(keywords) {
@@ -29059,6 +29168,9 @@ function newsFeedLoadSettings() {
                 : 24,
             telegram: Array.isArray(parsed.telegram)
                 ? parsed.telegram.map(newsFeedNormalizeTelegramEntry).filter(Boolean)
+                : [],
+            newsletters: Array.isArray(parsed.newsletters)
+                ? parsed.newsletters.map(newsFeedNormalizeNewsletterEntry).filter(Boolean).slice(0, 8)
                 : [],
             removedSources: Array.isArray(parsed.removedSources)
                 ? parsed.removedSources.map(s => String(s).trim()).filter(Boolean)
@@ -29572,12 +29684,17 @@ function newsFeedApplyFilters(items, settings) {
         if (newsFeedIsHidden(item)) return false;
         const type = newsFeedItemCategory(item, s);
         if (!enabledCats.includes(type)) return false;
-        const tg = newsFeedTelegramEntry(s, item.source);
-        if (tg) {
-            if (tg.enabled === false) return false;
+        const nl = newsFeedNewsletterEntry(s, item.source);
+        if (nl) {
+            if (nl.enabled === false) return false;
         } else {
-            const source = String(item.source || '').trim();
-            if (source && s.sources && Object.prototype.hasOwnProperty.call(s.sources, source) && s.sources[source] === false) return false;
+            const tg = newsFeedTelegramEntry(s, item.source);
+            if (tg) {
+                if (tg.enabled === false) return false;
+            } else {
+                const source = String(item.source || '').trim();
+                if (source && s.sources && Object.prototype.hasOwnProperty.call(s.sources, source) && s.sources[source] === false) return false;
+            }
         }
         if (!newsFeedPassesKeywordFilter(item, s)) return false;
         return true;
@@ -29773,11 +29890,14 @@ function newsFeedRenderCenterCard(item, opts = {}) {
     const href = newsFeedNormalizeUrl(item?.url || item?.link || '') || (itemKey.startsWith('fallback:') ? '#' : itemKey) || '#';
     const tag = type === 'kobeissi' ? 'kobeissi' : type;
     const tg = newsFeedIsTelegramItem(item, settings);
+    const nl = newsFeedIsNewsletterItem(item, settings);
     const tagLabel = item.type === 'kobeissi'
         ? '⚡ Kobeissi'
         : tg
             ? `✈ ${dashEsc(item.source || 'Telegram')}`
-            : (type.charAt(0).toUpperCase() + type.slice(1));
+            : nl
+                ? `✉ ${dashEsc(item.source || 'Newsletter')}`
+                : (type.charAt(0).toUpperCase() + type.slice(1));
     const matched = (item._matchedKeywords || []).length
         ? `<span>matched: ${dashNewsText(item._matchedKeywords.join(', '))}</span>` : '';
     const snippet = newsFeedExpandSnippet(item);
@@ -29918,6 +30038,18 @@ function newsFeedBuildSettingsForm() {
                 ${sourceActionBtns('telegram', t.handle)}
             </label>`;
         }).join('');
+        const newsletterRows = newsFeedNewslettersForCategory(s, type).map(n => {
+            const href = n.homepageUrl || n.feedUrl || '#';
+            const health = _newsFeedSourceHealth?.[n.label];
+            const warn = health && !health.ok
+                ? `<span class="news-feed-source-warn" title="No articles from this newsletter in the past 7 days${health.note ? ` (${health.note})` : ''}">?</span>`
+                : '';
+            return `<label class="news-feed-source-item">
+                <input type="checkbox" ${n.enabled !== false ? 'checked' : ''} onchange="newsFeedToggleNewsletter('${dashUri(n.id)}', this.checked)">
+                <a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">✉ ${dashEsc(n.label)}</a>${warn}
+                ${sourceActionBtns('newsletter', n.id)}
+            </label>`;
+        }).join('');
         const rssRows = labels.map(label => {
             const href = NEWS_FEED_SOURCE_URLS[label] || '#';
             const health = _newsFeedSourceHealth?.[label];
@@ -29929,9 +30061,12 @@ function newsFeedBuildSettingsForm() {
         return `<div class="news-feed-set-section">
             <div class="news-feed-set-label-row">
                 <div class="news-feed-set-label">Sources · ${topic}</div>
-                <button type="button" class="news-feed-tg-add" onclick="newsFeedOpenTelegramModal('${type}')" title="Add Telegram channel for ${topic}">+</button>
+                <div class="news-feed-set-label-actions">
+                    <button type="button" class="news-feed-tg-add" onclick="newsFeedOpenTelegramModal('${type}')" title="Add Telegram channel for ${topic}">+</button>
+                    <button type="button" class="news-feed-tg-add news-feed-nl-add" onclick="newsFeedOpenNewsletterModal('${type}')" title="Add newsletter RSS for ${topic}">✉</button>
+                </div>
             </div>
-            ${rssRows}${telegramRows}
+            ${rssRows}${telegramRows}${newsletterRows}
         </div>`;
     };
     body.innerHTML = `
@@ -29965,6 +30100,7 @@ function newsFeedOpenSettings() {
 
 function newsFeedCloseSettings() {
     newsFeedCloseTelegramModal();
+    newsFeedCloseNewsletterModal();
     newsFeedCloseRemoveSourceModal();
     if (_newsFeedSettingsDraft) {
         newsFeedSyncKeywordsFromInput();
@@ -29980,12 +30116,18 @@ function newsFeedOpenRemoveSourceModal(kind, encodedId) {
     const id = decodeURIComponent(String(encodedId || ''));
     if (!id) return;
     const catKind = String(kind || '').toLowerCase();
-    if (catKind !== 'rss' && catKind !== 'telegram') return;
+    if (catKind !== 'rss' && catKind !== 'telegram' && catKind !== 'newsletter') return;
     if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = JSON.parse(JSON.stringify(newsFeedLoadSettings()));
     _newsFeedRemoveSourcePending = { kind: catKind, id };
     const nameEl = document.getElementById('newsFeedRemoveSourceName');
     const modal = document.getElementById('newsFeedRemoveSourceModal');
-    if (nameEl) nameEl.textContent = catKind === 'telegram' ? `✈ ${id}` : id;
+    if (nameEl) {
+        if (catKind === 'telegram') nameEl.textContent = `✈ ${id}`;
+        else if (catKind === 'newsletter') {
+            const nl = (_newsFeedSettingsDraft.newsletters || []).find(n => n.id === id);
+            nameEl.textContent = `✉ ${nl?.label || id}`;
+        } else nameEl.textContent = id;
+    }
     if (modal) {
         modal.classList.add('open');
         modal.setAttribute('aria-hidden', 'false');
@@ -30007,6 +30149,9 @@ function newsFeedSubmitRemoveSourceModal() {
     if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
     if (pending.kind === 'telegram') {
         _newsFeedSettingsDraft.telegram = (_newsFeedSettingsDraft.telegram || []).filter(t => t.handle !== pending.id);
+    } else if (pending.kind === 'newsletter') {
+        _newsFeedSettingsDraft.newsletters = (_newsFeedSettingsDraft.newsletters || []).filter(n => n.id !== pending.id);
+        _newsFeedSettingsDraft.pinnedSources = (_newsFeedSettingsDraft.pinnedSources || []).filter(p => p !== pending.id);
     } else {
         _newsFeedSettingsDraft.removedSources = Array.isArray(_newsFeedSettingsDraft.removedSources)
             ? _newsFeedSettingsDraft.removedSources
@@ -30080,6 +30225,87 @@ function newsFeedSubmitTelegramModal() {
     if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
 }
 
+function newsFeedOpenNewsletterModal(category) {
+    const cat = String(category || '').toLowerCase();
+    if (!NEWS_FEED_CATEGORY_TYPES.includes(cat)) return;
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = JSON.parse(JSON.stringify(newsFeedLoadSettings()));
+    _newsFeedNewsletterModalCategory = cat;
+    const modal = document.getElementById('newsFeedNewsletterModal');
+    const title = document.getElementById('newsFeedNewsletterModalTitle');
+    const urlInput = document.getElementById('newsFeedNewsletterModalUrl');
+    const labelInput = document.getElementById('newsFeedNewsletterModalLabel');
+    if (title) title.textContent = `Add newsletter · ${newsFeedCategoryTitle(cat)}`;
+    if (urlInput) urlInput.value = '';
+    if (labelInput) labelInput.value = '';
+    if (urlInput) setTimeout(() => urlInput.focus(), 0);
+    if (modal) {
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function newsFeedCloseNewsletterModal() {
+    _newsFeedNewsletterModalCategory = null;
+    const modal = document.getElementById('newsFeedNewsletterModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function newsFeedSubmitNewsletterModal() {
+    const category = _newsFeedNewsletterModalCategory;
+    if (!NEWS_FEED_CATEGORY_TYPES.includes(category)) return;
+    const urlInput = document.getElementById('newsFeedNewsletterModalUrl');
+    const labelInput = document.getElementById('newsFeedNewsletterModalLabel');
+    const feedUrl = newsFeedNormalizeNewsletterFeedUrl(urlInput?.value || '');
+    if (!feedUrl) {
+        alert('Could not read that newsletter URL. Paste an https RSS feed (or a Substack homepage).');
+        return;
+    }
+    let label = String(labelInput?.value || '').trim().slice(0, 60);
+    if (!label) label = newsFeedNewsletterLabelFromUrl(feedUrl);
+    const id = newsFeedNewsletterId(feedUrl);
+    const entry = newsFeedNormalizeNewsletterEntry({
+        id,
+        label,
+        feedUrl,
+        homepageUrl: newsFeedNewsletterHomepage(feedUrl),
+        category,
+        enabled: true,
+    });
+    if (!entry) {
+        alert('Could not add that newsletter.');
+        return;
+    }
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    _newsFeedSettingsDraft.newsletters = Array.isArray(_newsFeedSettingsDraft.newsletters)
+        ? _newsFeedSettingsDraft.newsletters
+        : [];
+    const existingIdx = _newsFeedSettingsDraft.newsletters.findIndex(n => n.id === entry.id);
+    if (existingIdx >= 0) {
+        _newsFeedSettingsDraft.newsletters[existingIdx] = entry;
+    } else {
+        if (_newsFeedSettingsDraft.newsletters.length >= 8) {
+            alert('Maximum 8 newsletters supported.');
+            return;
+        }
+        const usedLabels = new Set(_newsFeedSettingsDraft.newsletters.map(n => n.label.toLowerCase()));
+        let unique = entry.label;
+        let n = 2;
+        while (usedLabels.has(unique.toLowerCase())) {
+            unique = `${entry.label} (${n})`;
+            n += 1;
+        }
+        entry.label = unique.slice(0, 60);
+        _newsFeedSettingsDraft.newsletters.push(entry);
+    }
+    newsFeedSaveSettings(_newsFeedSettingsDraft);
+    newsFeedCloseNewsletterModal();
+    newsFeedBuildSettingsForm();
+    if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
+}
+
 function newsFeedToggleCategory(key) {
     const s = newsFeedEnsureSettingsDraft();
     s.categories[key] = !s.categories[key];
@@ -30111,6 +30337,16 @@ function newsFeedToggleTelegramChannel(handle, enabled) {
     newsFeedPersistSettingsDraft({ refreshFeed: true, rebuildForm: false, refetch: true });
 }
 
+function newsFeedToggleNewsletter(encodedId, enabled) {
+    const id = decodeURIComponent(String(encodedId || ''));
+    if (!id) return;
+    const s = newsFeedEnsureSettingsDraft();
+    s.newsletters = (s.newsletters || []).map(n =>
+        n.id === id ? { ...n, enabled } : n,
+    );
+    newsFeedPersistSettingsDraft({ refreshFeed: true, rebuildForm: false, refetch: true });
+}
+
 function newsFeedToggleSetting(key) {
     const s = newsFeedEnsureSettingsDraft();
     s[key] = !s[key];
@@ -30127,6 +30363,11 @@ document.addEventListener('keydown', e => {
     const removeModal = document.getElementById('newsFeedRemoveSourceModal');
     if (removeModal?.classList.contains('open')) {
         newsFeedCloseRemoveSourceModal();
+        return;
+    }
+    const nlModal = document.getElementById('newsFeedNewsletterModal');
+    if (nlModal?.classList.contains('open')) {
+        newsFeedCloseNewsletterModal();
         return;
     }
     const tgModal = document.getElementById('newsFeedTelegramModal');
@@ -30151,6 +30392,7 @@ async function fetchDailyNews(force = false) {
     const feedSettings = newsFeedLoadSettings();
     const timeWindowHours = feedSettings.timeWindowHours || 24;
     const tgQuery = newsFeedTelegramQueryParam(feedSettings);
+    const nlQuery = newsFeedNewsletterQueryParam(feedSettings);
     const holdings = getDailyBriefHoldings();
 
     const labelMap = { crypto: 'Crypto', defi: 'DeFi', macro: 'Macro', tg: 'Telegram', x: '𝕏', kobeissi: '⚡ Kobeissi' };
@@ -30285,7 +30527,7 @@ async function fetchDailyNews(force = false) {
         renderPortfolioToGrid(briefPortfolioEl, portfolioItems, 2);
         renderNewsToGrid(briefGrid, filtered, 4);
         if (feedGrid) newsFeedRenderPage(pool, kobeissiItem);
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items: filtered, feedItems: feedPool, portfolioItems, sourceHealth: _newsFeedSourceHealth, ts: Date.now(), telegram: feedSettings.telegram || [], holdings, timeWindowHours })); } catch(e) {}
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ items: filtered, feedItems: feedPool, portfolioItems, sourceHealth: _newsFeedSourceHealth, ts: Date.now(), telegram: feedSettings.telegram || [], newsletters: feedSettings.newsletters || [], holdings, timeWindowHours })); } catch(e) {}
     }
 
     // ── Always fetch Kobeissi in parallel with everything else ────────────────
@@ -30295,11 +30537,12 @@ async function fetchDailyNews(force = false) {
     try {
         const cached = localStorage.getItem(CACHE_KEY);
         if (cached) {
-            const { items, portfolioItems, feedItems, sourceHealth, ts, telegram: cachedTelegram, holdings: cachedHoldings, timeWindowHours: cachedWindow } = JSON.parse(cached);
+            const { items, portfolioItems, feedItems, sourceHealth, ts, telegram: cachedTelegram, newsletters: cachedNewsletters, holdings: cachedHoldings, timeWindowHours: cachedWindow } = JSON.parse(cached);
             const sameTg = JSON.stringify(cachedTelegram || []) === JSON.stringify(feedSettings.telegram || []);
+            const sameNl = JSON.stringify(cachedNewsletters || []) === JSON.stringify(feedSettings.newsletters || []);
             const sameHoldings = JSON.stringify(cachedHoldings || []) === JSON.stringify(holdings);
             const sameWindow = Number(cachedWindow || 24) === Number(timeWindowHours);
-            if (!force && Date.now() - ts < CACHE_TTL && items && sameTg && sameHoldings && sameWindow) {
+            if (!force && Date.now() - ts < CACHE_TTL && items && sameTg && sameNl && sameHoldings && sameWindow) {
                 const kobeissiItem = await kobeissiPromise;
                 if (sourceHealth) _newsFeedSourceHealth = sourceHealth;
                 renderItems(items, kobeissiItem, portfolioItems || [], feedItems || items, sourceHealth || _newsFeedSourceHealth);
@@ -30313,6 +30556,7 @@ async function fetchDailyNews(force = false) {
         try {
             const params = new URLSearchParams();
             if (tgQuery) params.set('tg', tgQuery);
+            if (nlQuery) params.set('nl', nlQuery);
             if (holdings.length) params.set('holdings', holdings.join(','));
             params.set('window', String(timeWindowHours));
             const base = `/api/news${params.toString() ? '?' + params.toString() : ''}`;
@@ -30347,6 +30591,10 @@ async function fetchDailyNews(force = false) {
         { url: 'https://www.investing.com/rss/news_25.rss',       type: 'macro',  label: 'Investing.com'},
         { url: 'https://decrypt.co/feed',                         type: 'crypto', label: 'Decrypt'      },
     ];
+
+    for (const n of newsFeedEnabledNewsletters(feedSettings)) {
+        SOURCES.push({ url: n.feedUrl, type: n.category || 'defi', label: n.label });
+    }
 
     // Telegram channels — no RSS in local fallback; posts are loaded via the preview panel
     const tgSources = [];

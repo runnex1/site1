@@ -159,6 +159,56 @@ function parseTelegramChannelParam(raw) {
   }).filter(Boolean);
 }
 
+/** Newsletter RSS entries: label|feedUrl|category (each URI-encoded), comma-separated. Max 8. */
+function normalizeNewsletterFeedUrl(raw) {
+  let url = String(raw || '').trim();
+  if (!url) return '';
+  if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+    const host = u.hostname.toLowerCase();
+    if (/\.substack\.com$/i.test(host)) {
+      const path = (u.pathname || '/').replace(/\/+$/, '') || '';
+      if (!path || path === '/') u.pathname = '/feed';
+    }
+    return u.toString();
+  } catch {
+    return '';
+  }
+}
+
+function parseNewsletterParam(raw) {
+  return String(raw || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 8).map((entry) => {
+    const parts = entry.split('|');
+    if (parts.length < 2) return null;
+    let label = '';
+    let feedUrl = '';
+    let category = 'defi';
+    try {
+      label = decodeURIComponent(parts[0] || '').trim();
+      feedUrl = normalizeNewsletterFeedUrl(decodeURIComponent(parts[1] || ''));
+      category = decodeURIComponent(parts[2] || 'defi').trim().toLowerCase();
+    } catch {
+      return null;
+    }
+    if (!feedUrl) return null;
+    if (!['crypto', 'defi', 'macro'].includes(category)) category = 'defi';
+    if (!label) {
+      try {
+        const host = new URL(feedUrl).hostname.replace(/^www\./i, '');
+        label = /\.substack\.com$/i.test(host)
+          ? host.replace(/\.substack\.com$/i, '')
+          : (host.split('.')[0] || 'Newsletter');
+      } catch {
+        label = 'Newsletter';
+      }
+    }
+    label = label.slice(0, 60);
+    return { label, feedUrl, category };
+  }).filter(Boolean);
+}
+
 async function fetchTelegramChannelPosts(channel, maxPosts = 12) {
   const clean = String(channel || '').replace(/^@/, '').replace(/[^a-zA-Z0-9_]/g, '');
   if (!clean) return [];
@@ -559,6 +609,7 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'GET only' });
 
   const tgChannels = parseTelegramChannelParam(req.query?.tg || '');
+  const newsletters = parseNewsletterParam(req.query?.nl || '');
   const queryHoldings = holdingsFromQuery(req.query?.holdings || '');
   const serverHoldings = queryHoldings.length ? [] : await holdingsFromServer();
   const holdingTerms = expandHoldingTerms([...queryHoldings, ...serverHoldings]);
@@ -572,6 +623,15 @@ module.exports = async function handler(req, res) {
       handle,
       label: handle,
       type: category,
+    });
+  }
+  for (const { label, feedUrl, category } of newsletters) {
+    if (!feedUrl || !label) continue;
+    sources.push({
+      url: feedUrl,
+      label,
+      type: category,
+      kind: 'newsletter',
     });
   }
 
