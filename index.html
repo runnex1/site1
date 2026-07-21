@@ -31326,8 +31326,33 @@ function perpsConfigPayload(cfg) {
         configured: true,
     };
     // Compact PnL lock — survives localStorage eviction (loop snapshots can push quota).
-    const startMs = Number(norm.pnlStartMs);
-    const baseline = Number(norm.pnlBaseline);
+    // Always preserve an existing lock even when callers omit pnl* fields (wallet save).
+    let startMs = Number(norm.pnlStartMs);
+    let baseline = Number(norm.pnlBaseline);
+    if (!(Number.isFinite(startMs) && startMs > 0 && Number.isFinite(baseline))) {
+        if (_perpsPnlTrackMemory
+            && Number.isFinite(_perpsPnlTrackMemory.startMs)
+            && _perpsPnlTrackMemory.startMs > 0
+            && Number.isFinite(_perpsPnlTrackMemory.baseline)) {
+            startMs = _perpsPnlTrackMemory.startMs;
+            baseline = _perpsPnlTrackMemory.baseline;
+        } else {
+            try {
+                const stored = perpsNormalizeStoredConfig(JSON.parse(localStorage.getItem(PERPS_CONFIG_KEY) || '{}'));
+                startMs = Number(stored.pnlStartMs);
+                baseline = Number(stored.pnlBaseline);
+            } catch (e) {}
+            if (!(Number.isFinite(startMs) && startMs > 0 && Number.isFinite(baseline))) {
+                const fromLs = typeof perpsReadPnlTrackFromLocalStorage === 'function'
+                    ? perpsReadPnlTrackFromLocalStorage()
+                    : null;
+                if (fromLs) {
+                    startMs = fromLs.startMs;
+                    baseline = fromLs.baseline;
+                }
+            }
+        }
+    }
     if (Number.isFinite(startMs) && startMs > 0 && Number.isFinite(baseline)) {
         payload.pnlStartMs = startMs;
         payload.pnlBaseline = baseline;

@@ -4655,6 +4655,7 @@ assert.doesNotMatch(
   /pnlPoints = allPoints\.filter\(\(p\) => \(perpsParseBucketTime\(p\.bucket\) \|\| p\.time \|\| 0\) >= pnlStartMs\)/,
   'PnL series must not chop history at startMs (that re-zeroed the chart when the lock was rewritten)',
 );
+assert.match(indexHtml, /Always preserve an existing lock even when callers omit pnl/, 'config saves must not strip the PnL lock');
 assert.match(indexHtml, /perpsMapEquityChartPoints\(allPoints, 'pnl', pnlBaseline\)/, 'PnL mode must rebase full equity history to the locked baseline');
 
 {
