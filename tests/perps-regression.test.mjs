@@ -1480,6 +1480,10 @@ assert.match(newsJs, /function parseWindowHours\(/, 'news API must accept window
 assert.match(newsJs, /feedItems/, 'news API must return full feed pool for news feed tab');
 assert.match(newsJs, /i\.type === 'defi' \|\| !isPricePrediction\(i\)/, 'defi headlines must bypass price-prediction filter');
 assert.match(newsJs, /label: 'The Defiant',\s+type: 'defi'/, 'defi must include The Defiant RSS source');
+assert.match(newsJs, /function enrichDefiantDatesFromSanity\(/, 'The Defiant RSS dates must be repaired from Sanity publishedAt');
+assert.match(newsJs, /6oftkxoa\.api\.sanity\.io/, 'Defiant date repair must query The Defiant Sanity dataset');
+assert.match(indexHtml, /const at = Date\.parse\(a\.publishedAt \|\| a\.pubDate/, 'news feed must sort primarily by posting date');
+assert.match(indexHtml, /vault_news_cache_v7/, 'news cache key must bump when publish-date semantics change');
 assert.match(newsJs, /label: 'The Block', type: 'defi'/, 'The Block must be a defi source via Google News site feed');
 assert.match(newsJs, /site:theblock\.co/, 'The Block RSS must use Google News site feed workaround');
 assert.doesNotMatch(newsJs, /theblock\.co\/rss\.xml|Reuters Business|Reuters Politics|feeds\.a\.dj\.com/, 'broken direct Block/Reuters/stale WSJ feeds must be removed');

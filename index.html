@@ -28931,12 +28931,12 @@ function newsFeedBoostReason(item, settings) {
 }
 
 function newsFeedCompareItems(a, b) {
-    const am = (a._matchedKeywords || []).length;
-    const bm = (b._matchedKeywords || []).length;
-    if (bm !== am) return bm - am;
     const at = Date.parse(a.publishedAt || a.pubDate || '') || 0;
     const bt = Date.parse(b.publishedAt || b.pubDate || '') || 0;
-    return bt - at;
+    if (bt !== at) return bt - at;
+    const am = (a._matchedKeywords || []).length;
+    const bm = (b._matchedKeywords || []).length;
+    return bm - am;
 }
 
 function newsFeedOrderForDisplay(items, settings) {
@@ -30145,7 +30145,7 @@ async function fetchDailyNews(force = false) {
     const briefPortfolioEl = document.getElementById('briefPortfolioGrid');
     if (!briefGrid && !feedGrid) return;
 
-    const CACHE_KEY  = 'vault_news_cache_v6';
+    const CACHE_KEY  = 'vault_news_cache_v7';
     const CACHE_TTL  = 60 * 60 * 1000; // 1 hour
     const feedSettings = newsFeedLoadSettings();
     const timeWindowHours = feedSettings.timeWindowHours || 24;

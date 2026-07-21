@@ -210,7 +210,10 @@ async function fetchSourceItems(src) {
       publishedAt: publishedAt(i.pubDate),
     }));
   }
-  const items = await fetchRSSFeed(src.url);
+  let items = await fetchRSSFeed(src.url);
+  if (src.label === 'The Defiant') {
+    items = await enrichDefiantDatesFromSanity(items);
+  }
   return items.map(i => ({
     title: i.title,
     desc: i.desc,
@@ -218,7 +221,7 @@ async function fetchSourceItems(src) {
     type: src.type,
     source: src.label,
     pubDate: i.pubDate,
-    publishedAt: publishedAt(i.pubDate),
+    publishedAt: i.publishedAt || publishedAt(i.pubDate),
   }));
 }
 
@@ -230,6 +233,50 @@ function parseTs(pubDate) {
 function publishedAt(pubDate) {
   const ts = parseTs(pubDate);
   return ts ? new Date(ts).toISOString() : '';
+}
+
+/** The Defiant's RSS stamps many items with the same feed-build time. Sanity has real post dates. */
+const DEFIANT_SANITY_QUERY =
+  'https://6oftkxoa.api.sanity.io/v2021-10-21/data/query/production';
+
+function defiantSlugFromUrl(url) {
+  const m = String(url || '').match(/thedefiant\.io\/(?:news|converge)\/[^/?#]+\/([^/?#]+)/i);
+  return m ? decodeURIComponent(m[1]).toLowerCase() : '';
+}
+
+async function enrichDefiantDatesFromSanity(items) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) return list;
+  const slugs = [...new Set(list.map((i) => defiantSlugFromUrl(i.link || i.url)).filter(Boolean))];
+  if (!slugs.length) return list;
+  try {
+    const query = `*[_type=="blog" && slug.current in ${JSON.stringify(slugs)}]{publishedAt,_createdAt,_updatedAt,"slug":slug.current}`;
+    const res = await fetch(`${DEFIANT_SANITY_QUERY}?query=${encodeURIComponent(query)}`, {
+      signal: AbortSignal.timeout(8000),
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return list;
+    const data = await res.json();
+    const bySlug = new Map();
+    for (const row of data?.result || []) {
+      if (row?.slug) bySlug.set(String(row.slug).toLowerCase(), row);
+    }
+    if (!bySlug.size) return list;
+    return list.map((item) => {
+      const row = bySlug.get(defiantSlugFromUrl(item.link || item.url));
+      if (!row) return item;
+      const iso = row.publishedAt || row._updatedAt || row._createdAt;
+      const ts = Date.parse(iso || '');
+      if (!Number.isFinite(ts)) return item;
+      return {
+        ...item,
+        pubDate: new Date(ts).toUTCString(),
+        publishedAt: new Date(ts).toISOString(),
+      };
+    });
+  } catch {
+    return list;
+  }
 }
 
 function isWithinWindow(item, windowMs = 24 * 60 * 60 * 1000, now = Date.now()) {
