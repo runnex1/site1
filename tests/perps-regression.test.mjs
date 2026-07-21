@@ -4647,7 +4647,15 @@ assert.match(indexHtml, /ignoresCapitalSessionReset/, 'PnL mode must not reset o
 assert.match(indexHtml, /perpsEnsurePnlTracking/, 'PnL mode must lock start + baseline once');
 assert.match(indexHtml, /PERPS_PNL_BASELINE_KEY/, 'PnL mode must persist a fixed baseline level');
 assert.match(indexHtml, /ignores deposit\/withdraw resets/, 'PnL chart note must state continuous tracking');
-assert.match(indexHtml, /vault-perps-pnl-track-v2/, 'PnL track v2 must re-lock baseline once then never reset');
+assert.match(indexHtml, /vault-perps-pnl-track-v3/, 'PnL track v3 must survive localStorage eviction via config + memory');
+assert.match(indexHtml, /_perpsPnlTrackMemory/, 'PnL lock must keep an in-memory fallback when quota blocks localStorage');
+assert.match(indexHtml, /pnlBaseline/, 'PnL baseline must persist inside perps config for cloud sync');
+assert.doesNotMatch(
+  indexHtml,
+  /pnlPoints = allPoints\.filter\(\(p\) => \(perpsParseBucketTime\(p\.bucket\) \|\| p\.time \|\| 0\) >= pnlStartMs\)/,
+  'PnL series must not chop history at startMs (that re-zeroed the chart when the lock was rewritten)',
+);
+assert.match(indexHtml, /perpsMapEquityChartPoints\(allPoints, 'pnl', pnlBaseline\)/, 'PnL mode must rebase full equity history to the locked baseline');
 
 {
   const pendingAdj = variationalPendingCloseEquityAdjust([{
