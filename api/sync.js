@@ -132,6 +132,8 @@ function mergeVariationalHedgeRecord(prev, hedge) {
 }
 
 function mergeVariationalHedgeRows(existing, incoming) {
+  let VH = null;
+  try { VH = require('../lib/variational-hedge'); } catch { /* optional */ }
   const byKey = new Map((existing || []).map((h) => {
     const key = String(h?.id || `${h?.symbol}|${h?.trackedVenue}`);
     return [key, h];
@@ -141,7 +143,10 @@ function mergeVariationalHedgeRows(existing, incoming) {
     if (!key) continue;
     byKey.set(key, mergeVariationalHedgeRecord(byKey.get(key), hedge));
   }
-  return [...byKey.values()].sort((a, b) => (Number(b?.openedAt) || 0) - (Number(a?.openedAt) || 0));
+  const merged = [...byKey.values()].sort((a, b) => (Number(b?.openedAt) || 0) - (Number(a?.openedAt) || 0));
+  return VH?.pruneVariationalHedgesByClosedAge
+    ? VH.pruneVariationalHedgesByClosedAge(merged)
+    : merged;
 }
 
 function variationalSettlementFreezeQuality(row) {
@@ -214,11 +219,20 @@ function mergeVariationalRateSampleMaps(existing, incoming) {
   return out;
 }
 
-function mergeVariationalSettlementMaps(existing, incoming) {
+function mergeVariationalSettlementMaps(existing, incoming, hedges = null) {
   const out = { ...(existing && typeof existing === 'object' ? existing : {}) };
   for (const [hedgeId, rows] of Object.entries(incoming || {})) {
     if (!hedgeId || !Array.isArray(rows)) continue;
     out[hedgeId] = mergeVariationalSettlementArrays(out[hedgeId], rows);
+  }
+  if (!Array.isArray(hedges)) return out;
+  try {
+    const VH = require('../lib/variational-hedge');
+    if (typeof VH.pruneVariationalSettlementsForHedges === 'function') {
+      return VH.pruneVariationalSettlementsForHedges(out, hedges);
+    }
+  } catch {
+    // fall through
   }
   return out;
 }
@@ -1055,7 +1069,8 @@ module.exports = async function handler(req, res) {
         || body.portfolio?.perpsVariationalSettlements;
       if (portfolioSettlements && typeof portfolioSettlements === 'object' && Object.keys(portfolioSettlements).length) {
         const existing = parseJson(await kvGet('vault:perps_variational_settlements'), {});
-        const merged = mergeVariationalSettlementMaps(existing, portfolioSettlements);
+        const hedges = parseJson(await kvGet('vault:perps_variational_hedges'), []);
+        const merged = mergeVariationalSettlementMaps(existing, portfolioSettlements, hedges);
         await kvSet('vault:perps_variational_settlements', JSON.stringify(merged));
         saved.perpsVariationalSettlements = true;
       }
@@ -1182,7 +1197,8 @@ module.exports = async function handler(req, res) {
     if (body.perpsVariationalSettlements && typeof body.perpsVariationalSettlements === 'object'
       && Object.keys(body.perpsVariationalSettlements).length) {
       const existing = parseJson(await kvGet('vault:perps_variational_settlements'), {});
-      const merged = mergeVariationalSettlementMaps(existing, body.perpsVariationalSettlements);
+      const hedges = parseJson(await kvGet('vault:perps_variational_hedges'), []);
+      const merged = mergeVariationalSettlementMaps(existing, body.perpsVariationalSettlements, hedges);
       await kvSet('vault:perps_variational_settlements', JSON.stringify(merged));
       saved.perpsVariationalSettlements = true;
     }

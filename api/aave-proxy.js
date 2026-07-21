@@ -14,6 +14,7 @@ const {
   mergeVariationalRateSamples,
   recordVariationalListingSamples,
   pruneVariationalRateSamples,
+  variationalRateSampleKeepSymbols,
 } = require('../lib/variational-hedge');
 const { kvGet, kvSet } = require('../lib/kv');
 const { CACHE_KEYS, parseJson: parseCronJson } = require('../lib/cron-runner');
@@ -47,7 +48,7 @@ function expectedSyncSecret() {
   return process.env.SYNC_SECRET || process.env.CRON_SECRET || '';
 }
 
-async function persistVariationalRateSamplesFromDashboard(data) {
+async function persistVariationalRateSamplesFromDashboard(data, hedges = null) {
   const listings = {
     ...(data?.variationalListings || {}),
     ...(data?._variationalListingBySymbol || {}),
@@ -70,23 +71,21 @@ async function persistVariationalRateSamplesFromDashboard(data) {
   if (!Object.keys(combined).length) return false;
   const atMs = Number(data?.fetchedAt) || Date.now();
   const existing = parseJson(await kvGet('vault:perps_variational_rate_samples'), {});
-  // Keep only symbols that are actually open / unhedged — never grow unbounded across all markets.
-  const keep = new Set([
-    ...(data?.paired || []).map((p) => String(p?.symbol || '').toUpperCase()),
-    ...(data?.unhedged || []).map((p) => String(p?.symbol || p?.coin || '').toUpperCase().replace(/-PERP$/i, '')),
-  ].filter(Boolean));
-  // Also retain symbols already present in open variational hedges (if attached on payload).
-  for (const h of data?.variationalHedges || data?.perpsVariationalHedges || []) {
-    if (h?.symbol && (h.status === 'open' || h.status === 'pending_close')) {
-      keep.add(String(h.symbol).toUpperCase());
-    }
+  // Rate samples exist only to freeze Variational settlements — never keep live-cross-only symbols.
+  let hedgeRows = Array.isArray(hedges) ? hedges : null;
+  if (!hedgeRows) {
+    hedgeRows = data?.variationalHedges || data?.perpsVariationalHedges || null;
   }
+  if (!Array.isArray(hedgeRows)) {
+    hedgeRows = parseJson(await kvGet('vault:perps_variational_hedges'), []);
+  }
+  const keep = variationalRateSampleKeepSymbols(hedgeRows, atMs);
   const sampled = recordVariationalListingSamples(existing, combined, atMs, {
     source: 'server',
-    symbols: keep.size ? keep : undefined,
+    symbols: keep,
   });
   const merged = mergeVariationalRateSamples(existing, sampled);
-  const pruned = keep.size ? pruneVariationalRateSamples(merged, keep) : merged;
+  const pruned = pruneVariationalRateSamples(merged, keep);
   await kvSet('vault:perps_variational_rate_samples', JSON.stringify(pruned));
   return true;
 }
@@ -245,7 +244,7 @@ async function handlePerpsCronSnapshot(req, res) {
     const store = appendEquitySnapshotStore(savedSnapshots, data);
     await kvSet('vault:perps_snapshots', JSON.stringify(store));
     try {
-      await persistVariationalRateSamplesFromDashboard(data);
+      await persistVariationalRateSamplesFromDashboard(data, hedges);
     } catch (sampleErr) {
       console.warn('[perps-rate-samples]', sampleErr?.message || sampleErr);
     }

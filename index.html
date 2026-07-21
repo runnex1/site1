@@ -31442,7 +31442,14 @@ function perpsLoadVariationalHedgesRaw() {
 }
 
 function perpsPersistVariationalHedges(rows, opts = {}) {
-    const list = Array.isArray(rows) ? rows : [];
+    const VH = window.VariationalHedge;
+    let list = Array.isArray(rows) ? rows : [];
+    if (VH?.pruneVariationalHedgesByClosedAge) {
+        list = VH.pruneVariationalHedgesByClosedAge(list);
+    } else {
+        list = list.filter((h) => h.status !== 'closed'
+            || (Date.now() - Number(h.closedAt || 0)) < 90 * 86400000);
+    }
     _perpsVariationalHedgesMem = list.slice();
     let localStorageOk = false;
     try {
@@ -31450,12 +31457,28 @@ function perpsPersistVariationalHedges(rows, opts = {}) {
         localStorageOk = true;
     } catch (e) {
         try {
-            const trimmed = list.filter((h) => h.status !== 'closed'
-                || (Date.now() - Number(h.closedAt || 0)) < 90 * 86400000);
+            // Quota fallback: drop all closed hedges.
+            const trimmed = list.filter((h) => h.status !== 'closed');
             localStorage.setItem(PERPS_VARIATIONAL_HEDGES_KEY, JSON.stringify(trimmed));
             _perpsVariationalHedgesMem = trimmed.slice();
+            list = trimmed;
             localStorageOk = true;
         } catch (e2) {}
+    }
+    if (localStorageOk) {
+        try {
+            const settlements = perpsLoadVariationalSettlementsRaw();
+            const prunedSettlements = VH?.pruneVariationalSettlementsForHedges
+                ? VH.pruneVariationalSettlementsForHedges(settlements, list)
+                : settlements;
+            const prevSettleIds = Object.keys(settlements || {}).sort().join(',');
+            const nextSettleIds = Object.keys(prunedSettlements || {}).sort().join(',');
+            if (prevSettleIds !== nextSettleIds) {
+                perpsPersistVariationalSettlements(prunedSettlements, {
+                    skipCloudSync: opts.skipCloudSync === true,
+                });
+            }
+        } catch (e) {}
     }
     if (localStorageOk && !opts.skipPortfolioSync) {
         try { perpsWritePortfolioLocal(); } catch (e) {}
@@ -31609,18 +31632,16 @@ async function perpsPushVariationalRateSamplesToServer(map) {
 }
 
 function perpsActiveVariationalSampleSymbols(data) {
+    const VH = window.VariationalHedge;
+    const hedges = perpsLoadVariationalHedgesRaw();
+    if (VH?.variationalRateSampleKeepSymbols) {
+        return VH.variationalRateSampleKeepSymbols(hedges);
+    }
     const syms = new Set();
-    for (const h of perpsLoadVariationalHedgesRaw()) {
+    for (const h of hedges) {
         if (h?.symbol && (h.status === 'open' || h.status === 'pending_close')) {
             syms.add(String(h.symbol).toUpperCase());
         }
-    }
-    for (const p of data?.paired || []) {
-        if (p?.symbol) syms.add(String(p.symbol).toUpperCase());
-    }
-    for (const u of data?.unhedged || []) {
-        const s = u?.symbol || u?.coin;
-        if (s) syms.add(String(s).toUpperCase().replace(/-PERP$/i, ''));
     }
     return syms;
 }
@@ -31646,16 +31667,17 @@ function perpsRecordVariationalRateSamplesFromData(data, opts = {}) {
     return perpsPersistVariationalRateSamples(next, { skipCloudSync: opts.skipCloudSync !== false });
 }
 
-/** One-shot prune of bloated rate-sample localStorage (was multi‑MB / 500+ symbols). */
+/** Prune rate-sample localStorage to active Variational hedge symbols only. */
 function perpsPruneVariationalRateSamplesStore(data = null) {
     const VH = window.VariationalHedge;
     const keep = perpsActiveVariationalSampleSymbols(data || _perpsLastData || {});
     const prev = perpsLoadVariationalRateSamplesRaw();
-    const prevKeys = Object.keys(prev || {}).length;
-    if (prevKeys <= Math.max(keep.size, 8) && prevKeys < 40) return prev;
     const next = VH?.pruneVariationalRateSamples
         ? VH.pruneVariationalRateSamples(prev, keep)
         : prev;
+    const prevKeys = Object.keys(prev || {}).sort().join(',');
+    const nextKeys = Object.keys(next || {}).sort().join(',');
+    if (prevKeys === nextKeys) return prev;
     return perpsPersistVariationalRateSamples(next, { skipCloudSync: false });
 }
 
@@ -31677,6 +31699,7 @@ async function perpsFetchFreshVariationalListings() {
 }
 
 function perpsMergeVariationalSettlementsFromServer(serverMap) {
+    const VH = window.VariationalHedge;
     const incoming = serverMap && typeof serverMap === 'object' ? serverMap : {};
     const local = perpsLoadVariationalSettlementsRaw();
     const merged = { ...local };
@@ -31684,7 +31707,11 @@ function perpsMergeVariationalSettlementsFromServer(serverMap) {
         if (!hedgeId || !Array.isArray(rows)) continue;
         merged[hedgeId] = perpsMergeVariationalSettlementArrays(merged[hedgeId], rows);
     }
-    return perpsPersistVariationalSettlements(merged, { skipCloudSync: true });
+    const hedges = perpsLoadVariationalHedgesRaw();
+    const pruned = VH?.pruneVariationalSettlementsForHedges
+        ? VH.pruneVariationalSettlementsForHedges(merged, hedges)
+        : merged;
+    return perpsPersistVariationalSettlements(pruned, { skipCloudSync: true });
 }
 
 async function perpsPushVariationalSettlementsToServer(map) {
@@ -33333,7 +33360,10 @@ function perpsMergeSnapshotsFromServer(serverSnaps) {
                 ? perpsMergeEquitySnapshotRecord(merged[key], serverSnap)
                 : serverSnap;
         }
-        localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(merged));
+        const keys = Object.keys(merged).sort((a, b) => perpsParseBucketTime(a) - perpsParseBucketTime(b));
+        const pruned = {};
+        keys.slice(-180).forEach(k => { pruned[k] = merged[k]; });
+        localStorage.setItem(PERPS_SNAPSHOTS_KEY, JSON.stringify(pruned));
     } catch (e) {}
 }
 

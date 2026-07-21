@@ -2981,8 +2981,49 @@ assert.match(perpsJs, /clientPayloadSlim: true/, 'slimmed payload must be marked
 assert.match(perpsJs, /slimPairDaily/, 'pair dailyPerformanceSeries events must be stripped');
 assert.match(variationalHedgeJs, /VARIATIONAL_RATE_SAMPLE_LIMIT = 96/, 'rate sample retention must stay small to avoid UI freezes');
 assert.match(variationalHedgeJs, /function pruneVariationalRateSamples\(/, 'rate samples must be prunable to active symbols');
+assert.match(variationalHedgeJs, /function variationalRateSampleKeepSymbols\(/, 'rate-sample keep set must be derived from Variational hedges only');
+assert.match(variationalHedgeJs, /function pruneVariationalHedgesByClosedAge\(/, 'closed Variational hedges must age out of storage');
+assert.match(variationalHedgeJs, /function pruneVariationalSettlementsForHedges\(/, 'orphan Variational settlements must be pruned');
 assert.match(indexHtml, /perpsPruneVariationalRateSamplesStore/, 'client must prune bloated rate-sample localStorage');
 assert.match(indexHtml, /perpsActiveVariationalSampleSymbols/, 'rate samples must be limited to active symbols');
+assert.match(indexHtml, /variationalRateSampleKeepSymbols/, 'client keep-set must use Variational-hedge helper');
+assert.doesNotMatch(indexHtml, /for \(const p of data\?\.paired \|\| \[\]\) \{[\s\S]*?syms\.add/, 'rate samples must not retain live-cross-only symbols');
+assert.match(indexHtml, /pruneVariationalHedgesByClosedAge/, 'client must always prune closed hedges by age');
+assert.match(indexHtml, /pruneVariationalSettlementsForHedges/, 'client must prune orphan settlements');
+assert.match(indexHtml, /keys\.slice\(-180\)\.forEach\(k => \{ pruned\[k\] = merged\[k\]; \}\);/, 'server snapshot merge must cap at 180 buckets');
+assert.match(aaveProxyJs, /variationalRateSampleKeepSymbols\(hedgeRows/, 'server rate samples must keep only Variational hedge symbols');
+assert.doesNotMatch(aaveProxyJs, /data\?\.paired \|\| \[\]\)\.map/, 'server must not keep rate samples for all paired symbols');
+
+{
+  const {
+    variationalRateSampleKeepSymbols,
+    pruneVariationalRateSamples,
+    pruneVariationalHedgesByClosedAge,
+    pruneVariationalSettlementsForHedges,
+  } = require('../lib/variational-hedge.js');
+  const now = Date.UTC(2026, 6, 21);
+  const hedges = [
+    { id: 'open-pol', symbol: 'POL', status: 'open' },
+    { id: 'old-mega', symbol: 'MEGA', status: 'closed', closedAt: now - 10 * 86400000 },
+    { id: 'recent-atom', symbol: 'ATOM', status: 'closed', closedAt: now - 2 * 86400000 },
+  ];
+  const keep = variationalRateSampleKeepSymbols(hedges, now);
+  assert.deepEqual([...keep].sort(), ['ATOM', 'POL'], 'keep open + recently closed Var symbols only');
+  const prunedSamples = pruneVariationalRateSamples({
+    POL: [{ atMs: 1, markPx: 1, rate: 0.1 }],
+    MEGA: [{ atMs: 1, markPx: 1, rate: 0.1 }],
+    ATOM: [{ atMs: 1, markPx: 1, rate: 0.1 }],
+    HBAR: [{ atMs: 1, markPx: 1, rate: 0.1 }],
+  }, keep);
+  assert.deepEqual(Object.keys(prunedSamples).sort(), ['ATOM', 'POL'], 'drop live-cross-only and stale closed symbols');
+  const aged = pruneVariationalHedgesByClosedAge(hedges, { now, maxAgeMs: 7 * 86400000 });
+  assert.deepEqual(aged.map((h) => h.id), ['open-pol', 'recent-atom'], 'drop closed hedges older than retention');
+  assert.deepEqual(
+    Object.keys(pruneVariationalSettlementsForHedges({ 'open-pol': [1], 'old-mega': [1], orphan: [1] }, aged)).sort(),
+    ['open-pol'],
+    'drop orphan and pruned-hedge settlements',
+  );
+}
 assert.match(indexHtml, /skipCloudSync: true/, 'hot-path variational persist must skip immediate cloud sync');
 assert.match(indexHtml, /perpsScheduleCloudSave/, 'perps must debounce cloud saveData to avoid refresh freezes');
 assert.match(indexHtml, /perpsBuildCapitalNetPrefix/, 'equity chart must cache capital net prefixes instead of O\(snapshots×flows\)');
