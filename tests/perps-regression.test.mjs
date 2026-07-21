@@ -4383,14 +4383,14 @@ const {
 }
 
 {
-  // Partial trim: still mark remaining Var size at tracked mark.
+  // Partial trim: neutralize only matched size at tracked mark (Var 90 vs tracked 30 → 30).
   const openAdj = variationalOpenEquityAdjust([{
     pairType: 'hyperliquid_variational',
     venueA: 'hyperliquid',
     crossLegA: { venue: 'hyperliquid', size: -30, entryPx: 1, markPx: 1.1, unrealizedPnl: 3 },
     crossLegB: { venue: 'variational', size: 90, entryPx: 1, markPx: 1.2, unrealizedPnl: 18 },
   }], (p) => String(p.pairType || '').endsWith('_variational'));
-  assert.ok(Math.abs(openAdj - 9) < 1e-9, 'partial trim keeps full Var size MTM at tracked mark');
+  assert.ok(Math.abs(openAdj - 3) < 1e-9, 'partial trim neutralizes only matched Var size at tracked mark');
 }
 
 {
@@ -4398,7 +4398,12 @@ const {
     variationalLegPnl,
     crossVenueSameMarkAdjust,
     crossVenueSameMarkAdjustFromStates,
+    matchedVariationalSignedSize,
   } = require('../lib/variational-equity.js');
+
+  assert.equal(matchedVariationalSignedSize(90, -30), 30, 'matched size keeps Var sign, caps to tracked');
+  assert.equal(matchedVariationalSignedSize(-90, 30), -30, 'matched short Var caps to tracked');
+  assert.equal(matchedVariationalSignedSize(90, 30), null, 'same-sign sizes are not a hedge match');
 
   // Price shock on size-matched Var hedge must not move HN when using same-mark adj.
   const hnAt = (mark) => {
@@ -4420,6 +4425,24 @@ const {
   };
   assert.ok(Math.abs(hnAt(10) - hnAt(12)) < 1e-6, 'same-mark HN must be flat to underlying price');
   assert.ok(Math.abs(hnAt(10) - 10000) < 1e-6, 'flat hedge at entry marks → HN = cash');
+
+  // Uneven partial: Var leftover must not create HN price beta.
+  const hnPartialAt = (mark) => {
+    const trackedUpnl = variationalLegPnl(-30, 10, mark);
+    const pair = {
+      pairType: 'hyperliquid_variational',
+      venueA: 'hyperliquid',
+      crossLegA: {
+        venue: 'hyperliquid', size: -30, entryPx: 10, markPx: mark, unrealizedPnl: trackedUpnl,
+      },
+      crossLegB: {
+        venue: 'variational', size: 90, entryPx: 10, markPx: mark + 0.5,
+        unrealizedPnl: variationalLegPnl(90, 10, mark + 0.5),
+      },
+    };
+    return variationalNeutralEquity(10000 + trackedUpnl, variationalOpenEquityAdjust([pair], () => true));
+  };
+  assert.ok(Math.abs(hnPartialAt(10) - hnPartialAt(12)) < 1e-6, 'partial Var overhang must not move HN with price');
 
   const crossAdj = crossVenueSameMarkAdjust([{
     pairType: 'hl_nado',
