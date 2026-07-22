@@ -5032,6 +5032,74 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
 }
 
 {
+  const { applyVariationalHedges, findTrackedCloseLeg } = require('../lib/variational-hedge.js');
+  const openedAt = Date.parse('2026-07-20T00:00:00.000Z');
+  const closedAt = Date.parse('2026-07-22T18:00:00.000Z');
+  // Partial then full GRVT close: fills omit closedPnl (common on GRVT) and snapshot has no markPx.
+  const hedge = {
+    id: 'hbar-pending-exit',
+    symbol: 'HBAR',
+    trackedVenue: 'grvt',
+    trackedSize: 31260,
+    variationalSize: 384000,
+    variationalEntryPx: 0.06782,
+    openedAt,
+    status: 'pending_close',
+    pendingCloseAt: closedAt,
+    trackedLastSnapshot: { side: 'short', size: 31260, entryPx: 0.06785, unrealizedPnl: -186 },
+  };
+  const data = {
+    grvt: {
+      state: { positions: [] },
+      fills: {
+        fills: [
+          { symbol: 'HBAR', time: closedAt - 1000, side: 'BUY', sz: 15630, px: 0.0738, fee: 0.5 },
+          { symbol: 'HBAR', time: closedAt, side: 'BUY', sz: 15630, px: 0.07379, fee: 0.5 },
+        ],
+      },
+      funding: { payments: [] },
+    },
+    closedPairs: [],
+  };
+  const listing = { symbol: 'HBAR', markPx: 0.073794, fundingRateInterval: 0.0001, fundingIntervalS: 28800 };
+  const closeLeg = findTrackedCloseLeg(data, hedge, listing);
+  assert.ok(closeLeg, 'GRVT close without closedPnl must still resolve a close leg');
+  assert.ok(Number(closeLeg.avgClosePx || closeLeg.exitPx) > 0, 'close leg must carry an exit price for AUTO finalize');
+  const result = applyVariationalHedges(data, [hedge], { HBAR: listing });
+  assert.equal(result.hedges[0].status, 'closed', 'pending HBAR GRVT+Var hedge must AUTO-finalize when listing/fill price is available');
+  assert.equal(result.pendingClose.length, 0, 'finalized hedge must leave pending close empty');
+  assert.ok(result.newClosedPairs?.length, 'finalize must emit a closed pair');
+  assert.ok(Number(result.hedges[0].variationalExitPx) > 0, 'finalize must set Variational exit px');
+}
+
+{
+  const { applyVariationalHedges } = require('../lib/variational-hedge.js');
+  // No fills / no snap markPx — listing mark alone must unlock AUTO exit.
+  const hedge = {
+    id: 'hbar-listing-mark-only',
+    symbol: 'HBAR',
+    trackedVenue: 'grvt',
+    trackedSize: 31260,
+    variationalSize: 384000,
+    variationalEntryPx: 0.06782,
+    openedAt: Date.parse('2026-07-20T00:00:00.000Z'),
+    status: 'pending_close',
+    pendingCloseAt: Date.parse('2026-07-22T18:00:00.000Z'),
+    trackedLastSnapshot: { side: 'short', size: 31260, entryPx: 0.06785, unrealizedPnl: -186 },
+  };
+  const data = {
+    grvt: { state: { positions: [] }, fills: { fills: [] }, funding: { payments: [] } },
+    closedPairs: [],
+  };
+  const result = applyVariationalHedges(data, [hedge], {
+    HBAR: { symbol: 'HBAR', markPx: 0.073794 },
+  });
+  assert.equal(result.hedges[0].status, 'closed', 'pending close must finalize from Variational listing mark');
+  assert.equal(result.pendingClose.length, 0);
+  assert.ok(Number(result.hedges[0].variationalExitPx) > 0);
+}
+
+{
   const { findTrackedCloseLeg, buildVariationalClosedPair } = require('../lib/variational-hedge.js');
   const closedAt = Date.parse('2026-07-08T13:54:13.174Z');
   const openBuyAt = closedAt - 20 * 3600000;
