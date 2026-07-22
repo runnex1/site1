@@ -5100,6 +5100,39 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
 }
 
 {
+  const { applyVariationalHedges } = require('../lib/variational-hedge.js');
+  // Live HBAR stuck case: GRVT flat, fills empty, symbol absent from listings — use hedge.variationalMarkPx.
+  const hedge = {
+    id: 'var-1783951243599-8uvrw5',
+    symbol: 'HBAR',
+    trackedVenue: 'grvt',
+    trackedSize: -384000,
+    variationalSize: 384000,
+    variationalEntryPx: 0.06782,
+    variationalMarkPx: 0.066612035237272,
+    openedAt: 1783951243599,
+    status: 'pending_close',
+    pendingCloseAt: 1784416223510,
+    trackedLastSnapshot: {
+      size: -384000,
+      side: 'short',
+      entryPx: 0.067785735,
+      unrealizedPnl: 331.335552,
+      funding: -44.39509,
+      fees: 0,
+    },
+  };
+  const data = {
+    grvt: { state: { positions: [] }, fills: { fills: [] }, funding: { payments: [] } },
+    closedPairs: [],
+  };
+  const result = applyVariationalHedges(data, [hedge], {});
+  assert.equal(result.hedges[0].status, 'closed', 'pending close must finalize from hedge.variationalMarkPx');
+  assert.equal(result.pendingClose.length, 0);
+  assert.ok(Number(result.hedges[0].variationalExitPx) > 0);
+}
+
+{
   const { findTrackedCloseLeg, buildVariationalClosedPair } = require('../lib/variational-hedge.js');
   const closedAt = Date.parse('2026-07-08T13:54:13.174Z');
   const openBuyAt = closedAt - 20 * 3600000;
