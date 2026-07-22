@@ -1369,18 +1369,26 @@ assert.match(indexHtml, /loopsShouldBlockStalePaint/, 'Loops must block stale im
 assert.match(indexHtml, /loopsSyncPlaceholderHtml/, 'Loops must show syncing placeholder');
 assert.match(indexHtml, /pendleHistoryPoints/, 'Pendle cards must use snapshot history like loop cards');
 assert.match(indexHtml, /pendleRowToDisplayPosition/, 'Pendle positions must reuse loop card renderer');
-assert.match(indexHtml, /vault-loop-api-state-v8/, 'loop API local cache must bust when Aave market coverage expands');
-assert.match(aaveProxyJs, /LOOP_RATES_CACHE_VERSION = 'v8'/, 'loop-rates server cache must bust when Aave market coverage expands');
-assert.match(cronRunnerJs, /LOOP_RATES_CACHE_VERSION = 'v8'/, 'cron loopsSync cache version must match loop-rates API');
+assert.match(aaveProxyJs, /LOOP_RATES_CACHE_VERSION = 'v9'/, 'loop-rates server cache must bust when Morpho/Fluid coverage expands');
+assert.match(cronRunnerJs, /LOOP_RATES_CACHE_VERSION = 'v9'/, 'cron loopsSync cache version must match loop-rates API');
+assert.match(indexHtml, /vault-loop-api-state-v9/, 'loop API local cache must bust when Morpho/Fluid coverage expands');
 assert.match(loopRatesJs, /name: 'AaveV3Monad', chainId: 143/, 'Loops must query Aave V3 Monad for syrupUSDC/mUSD loops');
 assert.match(loopRatesJs, /name: 'AaveV3Plasma', chainId: 9745/, 'Loops must query Aave V3 Plasma');
 assert.match(loopRatesJs, /name: 'AaveV3Celo', chainId: 42220/, 'Loops must query Aave V3 Celo');
 assert.match(loopRatesJs, /name: 'AaveV3Ink', chainId: 57073/, 'Loops must query Aave V3 Ink');
 assert.match(loopRatesJs, /name: 'AaveV3Soneium', chainId: 1868/, 'Loops must query Aave V3 Soneium');
 assert.match(loopRatesJs, /name: 'AaveV3XLayer', chainId: 196/, 'Loops must query Aave V3 X Layer');
+assert.match(loopRatesJs, /chainId: 4663, chainName: 'Robinhood Chain'/, 'Loops must query Morpho Robinhood Chain');
+assert.match(loopRatesJs, /chainId: 5042, chainName: 'Arc'/, 'Loops must query Morpho Arc');
+assert.match(loopRatesJs, /chainId: 56, chainName: 'BSC'/, 'Loops must query Fluid BSC');
+assert.doesNotMatch(loopRatesJs, /FLUID_CHAIN_NAME_TO_ID = \{[^}]*optimism:/s, 'Fluid chain map must drop unsupported Optimism');
+assert.doesNotMatch(loopRatesJs, /FLUID_CHAIN_NAME_TO_ID = \{[^}]*sonic:/s, 'Fluid chain map must drop unsupported Sonic');
+assert.match(loopRatesJs, /fluid = await fetchFluidOfficial\(evmWallets\);/, 'Fluid must always query full FLUID_CHAINS list');
 {
   const loopOfficialUrlsJs = readFileSync(join(ROOT, 'lib', 'loop-official-urls.js'), 'utf8');
   assert.match(loopOfficialUrlsJs, /AaveV3Monad: 'proto_monad_v3'/, 'Aave Monad official URL must use proto_monad_v3');
+  assert.match(loopOfficialUrlsJs, /4663: 'robinhood-chain'/, 'Morpho Robinhood Chain official URL slug must exist');
+  assert.match(loopOfficialUrlsJs, /5042: 'arc'/, 'Morpho Arc official URL slug must exist');
 }
 assert.match(indexHtml, /if \(force\) qs\.set\('force', '1'\)/, 'Sync live must bypass loop-rates KV cache');
 assert.match(indexHtml, /id="loopsLendingSection"/, 'Loops tab must render a separate lending-only section');
