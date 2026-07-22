@@ -1128,6 +1128,39 @@ assert.match(indexHtml, /perpsRenderAlerts\(data\.paired \|\| \[\], data\.unhedg
 assert.doesNotMatch(perpsJs, /positions\.reduce\(\(s, p\) => s \+ \(p\.notional \|\| 0\), 0\)/, 'Extended notional must not be used as equity');
 assert.match(perpsJs, /funding: extendedFundingWindow,/, 'Extended response must expose selected-window funding');
 assert.match(perpsJs, /fundingSinceOpen: extendedFundingSinceOpen,/, 'Extended response must preserve since-open funding separately');
+assert.match(perpsJs, /throw new Error\(errorMessage\(data\.message \?\? data\.error\)/, 'Extended API object errors must be stringified before throw');
+{
+  const { errorMessage, combineErrors } = require('../lib/perps.js');
+  assert.equal(
+    errorMessage({ code: 401, message: 'Unauthorized' }),
+    'Unauthorized',
+    'errorMessage must prefer nested message fields',
+  );
+  assert.equal(
+    errorMessage({ code: 'X', detail: 'bad key' }),
+    'bad key',
+    'errorMessage must read detail when message is missing',
+  );
+  assert.match(
+    errorMessage({ code: 500, reason: 'upstream' }),
+    /"code":500/,
+    'errorMessage must JSON-stringify unknown object errors',
+  );
+  assert.equal(
+    combineErrors(
+      { error: { message: 'funding failed' } },
+      { error: { code: 1, message: 'fills failed' } },
+      { error: null },
+    ),
+    'funding failed; fills failed',
+    'combineErrors must not render [object Object]',
+  );
+  assert.doesNotMatch(
+    combineErrors({ error: { foo: 1 } }) || '',
+    /\[object Object\]/,
+    'combineErrors must never emit [object Object]',
+  );
+}
 assert.match(perpsJs, /function applyPairFundingSinceOpen\(/, 'paired funding since open must use payment history');
 assert.match(perpsJs, /applyPairFundingSinceOpen\(pair, base, venueA, venueB, paymentSources, sinceMs\)/, 'pair funding meta must override venue cumFunding with payment sums');
 
