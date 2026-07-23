@@ -5133,6 +5133,88 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
 }
 
 {
+  const {
+    applyVariationalHedges,
+    computeVariationalClosedLegPnl,
+    variationalClosedPairLooksHollow,
+    repairHollowVariationalClosedPair,
+  } = require('../lib/variational-hedge.js');
+  const { applyPeakToCloseMetrics } = require('../lib/position-peak-window.js');
+  const closedAt = Date.parse('2026-07-23T00:12:00.000Z');
+  const openedAt = Date.parse('2026-07-20T00:00:00.000Z');
+  const hedge = {
+    id: 'hbar-empty-fill-close',
+    symbol: 'HBAR',
+    trackedVenue: 'grvt',
+    trackedSize: 31260,
+    variationalSize: 384000,
+    variationalEntryPx: 0.06782,
+    openedAt,
+    status: 'pending_close',
+    pendingCloseAt: closedAt,
+    trackedLastSnapshot: {
+      side: 'short',
+      size: 31260,
+      entryPx: 0.06785,
+      markPx: 0.073794,
+      unrealizedPnl: -186,
+      funding: -12.5,
+      fees: 3.2,
+    },
+  };
+  const data = {
+    grvt: { state: { positions: [] }, fills: { fills: [] }, funding: { payments: [] } },
+    closedPairs: [],
+  };
+  const listing = { symbol: 'HBAR', markPx: 0.073794 };
+  const result = applyVariationalHedges(data, [hedge], { HBAR: listing });
+  const pair = result.newClosedPairs[0];
+  assert.ok(pair, 'empty-fill AUTO close must still emit a closed pair');
+  const grvt = pair.shortLeg?.venue === 'grvt' ? pair.shortLeg : pair.longLeg;
+  const varLeg = pair.longLeg?.venue === 'variational' ? pair.longLeg : pair.shortLeg;
+  const expectedGrvt = -31260 * (0.073794 - 0.06785);
+  const expectedSlip = -(31260 * 0.073794 * 0.0012);
+  const expectedVar = computeVariationalClosedLegPnl(expectedGrvt, expectedSlip);
+  assert.ok(Math.abs(grvt.realizedPnl - expectedGrvt) < 0.05, 'GRVT PnL must use entry/exit estimate when fills are missing');
+  assert.ok(Math.abs(varLeg.realizedPnl - expectedVar) < 0.05, 'Var PnL must be -GRVT + slippage');
+  assert.ok(Math.abs(pair.variationalCloseSlippagePnl - expectedSlip) < 0.05, 'close slippage must stay 0.12% of margin');
+  assert.equal(grvt.fees, 3.2, 'GRVT fees must survive empty-fill peak metrics via snapshot');
+  assert.equal(varLeg.fees, 0, 'Variational fees stay zero');
+  assert.equal(pair.fees, 3.2);
+  assert.equal(grvt.funding, -12.5, 'latest-session GRVT funding must fall back to snapshot when payments missing');
+  assert.ok(Math.abs(Number(pair.funding) - (grvt.funding + varLeg.funding)) < 1e-9);
+  assert.equal(pair.size, 31260, 'closed size is matched tracked size');
+  assert.equal(varLeg.size, 31260, 'Var closed size must match tracked size, not overhang');
+  assert.equal(variationalClosedPairLooksHollow(pair), false, 'repaired empty-fill close must not look hollow');
+
+  // Peak helper itself must not clobber precomputed values when fills are empty.
+  const peaked = applyPeakToCloseMetrics(pair, { grvt: [] }, { grvt: [] }, { lookbackStartMs: openedAt });
+  const peakedGrvt = peaked.shortLeg?.venue === 'grvt' ? peaked.shortLeg : peaked.longLeg;
+  assert.ok(Math.abs(peakedGrvt.realizedPnl - expectedGrvt) < 0.05, 'applyPeakToCloseMetrics must preserve estimated GRVT PnL');
+  assert.equal(peakedGrvt.fees, 3.2, 'applyPeakToCloseMetrics must preserve estimated GRVT fees');
+  assert.equal(peakedGrvt.funding, -12.5, 'applyPeakToCloseMetrics must preserve snapshot funding');
+
+  // Already-hollow cached row must be repairable on sanitize/load.
+  const hollow = {
+    ...pair,
+    closeLegEstimated: true,
+    closeSlippage: expectedSlip,
+    variationalCloseSlippagePnl: expectedSlip,
+    funding: 0,
+    fees: 0,
+    longLeg: { ...pair.longLeg, realizedPnl: expectedSlip, fees: 0, funding: 0, size: 384000 },
+    shortLeg: { ...pair.shortLeg, realizedPnl: 0, fees: 0, funding: 0 },
+  };
+  assert.equal(variationalClosedPairLooksHollow(hollow), true);
+  const repaired = repairHollowVariationalClosedPair(hollow, { ...hedge, status: 'closed', closedAt }, listing, data);
+  assert.equal(variationalClosedPairLooksHollow(repaired), false);
+  const repairedGrvt = repaired.shortLeg?.venue === 'grvt' ? repaired.shortLeg : repaired.longLeg;
+  assert.ok(Math.abs(repairedGrvt.realizedPnl - expectedGrvt) < 0.05);
+  assert.equal(repairedGrvt.fees, 3.2);
+  assert.equal(repairedGrvt.funding, -12.5);
+}
+
+{
   const { findTrackedCloseLeg, buildVariationalClosedPair } = require('../lib/variational-hedge.js');
   const closedAt = Date.parse('2026-07-08T13:54:13.174Z');
   const openBuyAt = closedAt - 20 * 3600000;

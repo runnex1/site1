@@ -36429,16 +36429,26 @@ function perpsSanitizeVariationalClosedPairs(data) {
         if (!pair?.manualVariationalClose) return pair;
         const hedge = pair.variationalHedgeId ? byId.get(pair.variationalHedgeId) : null;
         let cleaned = perpsGuardClosedPairRecord(pair);
+        if (hedge && VH.repairHollowVariationalClosedPair && VH.variationalClosedPairLooksHollow?.(cleaned)) {
+            const repaired = VH.repairHollowVariationalClosedPair(
+                cleaned,
+                hedge,
+                listingBy[hedge.symbol] || null,
+                data,
+            );
+            if (repaired && repaired !== cleaned) cleaned = repaired;
+        }
         const varLeg = cleaned.longLeg?.venue === 'variational' ? cleaned.longLeg : cleaned.shortLeg;
         const stillBad = varLeg?.realizedPnl != null
             && VH.variationalRealizedPnlLooksImplausible?.(varLeg, hedge, VH.resolveVariationalExitPx?.(hedge));
         if (stillBad && hedge && VH.buildVariationalClosedPair && VH.findTrackedCloseLeg) {
-            const closeLeg = VH.findTrackedCloseLeg(data, hedge);
-            if (closeLeg) cleaned = VH.buildVariationalClosedPair(hedge, closeLeg, listingBy[hedge.symbol] || null);
+            const closeLeg = VH.findTrackedCloseLeg(data, hedge, listingBy[hedge.symbol] || null);
+            if (closeLeg) cleaned = VH.buildVariationalClosedPair(hedge, closeLeg, listingBy[hedge.symbol] || null, data);
         }
         // Cheap identity check — avoid JSON.stringify of fat dailyPerformanceSeries.
         if (cleaned !== pair
             && (cleaned.funding !== pair.funding
+                || cleaned.fees !== pair.fees
                 || cleaned.variationalEquityPnl !== pair.variationalEquityPnl
                 || cleaned.longLeg?.realizedPnl !== pair.longLeg?.realizedPnl
                 || cleaned.shortLeg?.realizedPnl !== pair.shortLeg?.realizedPnl
