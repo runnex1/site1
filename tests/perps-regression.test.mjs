@@ -14,6 +14,7 @@ const { fetchLoopRates } = require('../lib/loop-rates.js');
 const {
   appendEquitySnapshotStore,
   buildEquitySnapshotFromDashboard,
+  repairEquitySnapshotDeposits,
   buildClosedPairs,
   buildClosedLegsFromExchangeHistory,
   grvtClosedHistoryFundingCashflow,
@@ -3013,9 +3014,49 @@ assert.match(indexHtml, /if \(!perpsIsEquitySnapshotEligible\(data\)\) return fa
 assert.match(aaveProxyJs, /portfolio\?\.perpsArb/, 'cron snapshots must recover wallet config from the saved portfolio');
 assert.match(aaveProxyJs, /kvSet\('vault:perps_config'/, 'cron snapshots must persist recovered wallet config');
 assert.match(aaveProxyJs, /fetchPerpsEquitySnapshotWithVariational\(\{/, 'cron snapshots must sample balances and compute variational adjust');
+assert.match(aaveProxyJs, /refreshCapitalFlows:\s*true/, 'cron snapshots must refresh capital flows instead of freezing prior deposits');
+assert.match(aaveProxyJs, /repairEquitySnapshotDeposits/, 'cron snapshots must repair historical frozen deposit fields');
 assert.doesNotMatch(aaveProxyJs.slice(aaveProxyJs.indexOf('async function handlePerpsCronSnapshot'), aaveProxyJs.indexOf('async function handlePerps(req')), /fetchPerpsDashboard\(\{/, 'cron snapshots must not run the heavy dashboard pipeline');
 assert.match(perpsJs, /equitySampleMode: 'concurrent_balance_only'/, 'balance-only snapshots must identify their sampling mode');
 assert.match(perpsJs, /await Promise\.all\(\[\s*fetchHyperliquidEquity/, 'venue equity endpoints must be sampled concurrently');
+assert.match(perpsJs, /function repairEquitySnapshotDeposits/, 'snapshot deposit repair helper must exist');
+
+{
+  const t0 = Date.parse('2026-07-08T12:00:00.000Z');
+  const t1 = Date.parse('2026-07-08T18:00:00.000Z');
+  const frozen = 59366.665496999965;
+  const store = {
+    '2026-07-08T12': {
+      fetchedAt: t0,
+      totalEquity: 178000,
+      cumulativeNetDeposits: frozen,
+      adjustedEquity: 178000 - frozen,
+    },
+    '2026-07-08T16': {
+      fetchedAt: t1,
+      totalEquity: 185900,
+      cumulativeNetDeposits: frozen,
+      adjustedEquity: 185900 - frozen,
+    },
+  };
+  const flows = {
+    hl: { payments: [] },
+    nado: { payments: [] },
+    grvt: { payments: [{ time: Date.parse('2026-07-08T16:01:00.000Z'), usdc: 7679.49, kind: 'deposit' }] },
+    extended: { payments: [] },
+  };
+  const { store: repaired, changed } = repairEquitySnapshotDeposits(store, flows);
+  assert.equal(changed, 2, 'deposit repair must rewrite frozen snapshot deposits');
+  assert.equal(repaired['2026-07-08T12'].cumulativeNetDeposits, 0, 'pre-deposit snapshot deposits must be 0 in this fixture');
+  assert.ok(
+    Math.abs(repaired['2026-07-08T16'].cumulativeNetDeposits - 7679.49) < 1e-6,
+    'post-deposit snapshot must include the GRVT deposit',
+  );
+  assert.ok(
+    Math.abs(repaired['2026-07-08T16'].adjustedEquity - (185900 - 7679.49)) < 1e-6,
+    'adjusted equity must use repaired deposits',
+  );
+}
 assert.match(syncJs, /const savedConfig = parseJson\(await kvGet\('vault:perps_config'\), \{\}\);/, 'fast config endpoint must use the initialized parser');
 assert.doesNotMatch(syncJs, /const perpsConfig = parse\(await kvGet\('vault:perps_config'\), \{\}\);/, 'fast config endpoint must not call a parser before initialization');
 assert.match(syncJs, /req\.query\?\.perpsSnapshots === '1'/, 'sync endpoint must expose lightweight Perps snapshot hydration');

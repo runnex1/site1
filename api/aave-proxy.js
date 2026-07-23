@@ -9,6 +9,7 @@ const {
   fetchPerpsLiveRates,
   appendEquitySnapshotStore,
   buildEquitySnapshotFromDashboard,
+  repairEquitySnapshotDeposits,
   reconstructGrvtSymbolSession,
 } = require('../lib/perps');
 const {
@@ -240,9 +241,16 @@ async function handlePerpsCronSnapshot(req, res) {
       hyperliquid: wallet,
       nado: nadoWallet,
       grvtSubAccount,
+      // Fallback only if capital-flow refresh fails; live flows override inside the fetcher.
       cumulativeNetDeposits: Number(previousSnapshot?.cumulativeNetDeposits) || 0,
-    }, { hedges, closedPairs });
-    const store = appendEquitySnapshotStore(savedSnapshots, data);
+    }, { hedges, closedPairs, refreshCapitalFlows: true });
+    let store = appendEquitySnapshotStore(savedSnapshots, data);
+    let depositRepairChanged = 0;
+    if (data.capitalFlows) {
+      const repaired = repairEquitySnapshotDeposits(store, data.capitalFlows);
+      store = repaired.store;
+      depositRepairChanged = repaired.changed;
+    }
     await kvSet('vault:perps_snapshots', JSON.stringify(store));
     try {
       await persistVariationalRateSamplesFromDashboard(data, hedges);
@@ -254,11 +262,14 @@ async function handlePerpsCronSnapshot(req, res) {
       ok: true,
       bucket: key,
       totalEquity: record.totalEquity,
+      cumulativeNetDeposits: record.cumulativeNetDeposits,
+      adjustedEquity: record.adjustedEquity,
       variationalEquityAdjust: record.variationalEquityAdjust ?? null,
       fetchedAt: record.fetchedAt,
       equityCollectionSpanMs: record.equityCollectionSpanMs,
       equityFetchedAts: record.equityFetchedAts,
       equitySampleMode: record.equitySampleMode,
+      depositRepairChanged,
       snapshotCount: Object.keys(store).length,
     });
   } catch (e) {
