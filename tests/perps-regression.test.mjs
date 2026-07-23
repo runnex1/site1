@@ -5847,6 +5847,30 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
     ? result.newClosedPairs[0].longLeg
     : result.newClosedPairs[0].shortLeg;
   assert.ok(Math.abs(autoVar.realizedPnl - expectedVar) < 1.0, 'Var PnL must follow -GRVT + 0.12% slip');
+
+  // Mid-session Var hedge (openedAt after GRVT history open) must still match history.
+  const lateHedge = {
+    ...hedge,
+    id: 'hbar-late-attach',
+    openedAt: openTime + 16 * 3600000,
+    trackedSize: -384000,
+    status: 'open',
+    pendingCloseAt: null,
+    closedAt: null,
+    closedFundingUsd: undefined,
+    closedTrackedFundingUsd: undefined,
+    closedVariationalFundingUsd: undefined,
+  };
+  const lateResult = applyVariationalHedges(data, [lateHedge], { HBAR: listing });
+  assert.equal(lateResult.hedges[0].status, 'closed', 'flat GRVT + history must close late-attached hedge');
+  assert.equal(lateResult.newClosedPairs[0]?.size, 384000);
+  const lateGrvt = lateResult.newClosedPairs[0].shortLeg?.venue === 'grvt'
+    ? lateResult.newClosedPairs[0].shortLeg
+    : lateResult.newClosedPairs[0].longLeg;
+  assert.ok(Math.abs(lateGrvt.realizedPnl - (-1785.68)) < 0.05, 'late-attach must use history PnL');
+  assert.ok(Math.abs(lateGrvt.fees - 18.80) < 0.05, 'late-attach must use history fees');
+  assert.ok(Math.abs(lateGrvt.funding - 73.09) < 0.05, 'late-attach must use full-session history funding');
+  assert.equal(lateResult.newClosedPairs[0].closeLegEstimated, false);
 }
 
 console.log('PASS: perps accounting and dashboard regression checks');
