@@ -36425,18 +36425,61 @@ function perpsSanitizeVariationalClosedPairs(data) {
     const byId = new Map(hedges.map((h) => [h.id, h]));
     const listingBy = data?._variationalListingBySymbol || perpsVariationalBySymbolFromSpread(data?.rateSpread || []);
     let changed = false;
+    let hedgesChanged = false;
+
+    // Close zombie open/pending hedges when exchange history shows a completed session and venue is flat.
+    for (const hedge of hedges) {
+        if (hedge.status !== 'open' && hedge.status !== 'pending_close') continue;
+        if (!VH.findTrackedCloseLegFromExchangeHistory || !VH.buildVariationalClosedPair) continue;
+        const live = VH.findTrackedLeg?.(data, hedge);
+        if (live && Math.abs(Number(live.size || 0)) > 1e-9) continue;
+        const hist = VH.findTrackedCloseLegFromExchangeHistory(data, hedge);
+        if (!hist) continue;
+        const listing = listingBy[hedge.symbol] || null;
+        const closedPair = VH.finalizeVariationalCloseIfReady
+            ? VH.finalizeVariationalCloseIfReady(hedge, data, listing, VH.findTrackedCloseLeg)
+            : VH.buildVariationalClosedPair(
+                { ...hedge, status: 'closed', closedAt: hedge.closedAt || hist.closeTime || Date.now(), pendingCloseAt: null },
+                hist,
+                listing,
+                data,
+            );
+        if (!closedPair) continue;
+        hedge.status = 'closed';
+        hedge.closedAt = closedPair.closeTime || hist.closeTime || Date.now();
+        hedge.pendingCloseAt = null;
+        hedge.updatedAt = Date.now();
+        hedgesChanged = true;
+        const already = (data.closedPairs || []).some((p) => p?.variationalHedgeId === hedge.id);
+        if (!already) {
+            data.closedPairs = [...(data.closedPairs || []), closedPair];
+            changed = true;
+        }
+    }
+
     const next = (data?.closedPairs || []).map((pair) => {
         if (!pair?.manualVariationalClose) return pair;
         const hedge = pair.variationalHedgeId ? byId.get(pair.variationalHedgeId) : null;
         let cleaned = perpsGuardClosedPairRecord(pair);
-        if (hedge && VH.repairHollowVariationalClosedPair && VH.variationalClosedPairLooksHollow?.(cleaned)) {
+        const needsRepair = hedge && (
+            (VH.variationalClosedPairNeedsHistoryRepair?.(cleaned, hedge, data))
+            || (VH.repairHollowVariationalClosedPair && VH.variationalClosedPairLooksHollow?.(cleaned))
+        );
+        if (needsRepair && VH.repairHollowVariationalClosedPair) {
             const repaired = VH.repairHollowVariationalClosedPair(
                 cleaned,
                 hedge,
                 listingBy[hedge.symbol] || null,
                 data,
             );
-            if (repaired && repaired !== cleaned) cleaned = repaired;
+            if (repaired && repaired !== cleaned) {
+                cleaned = repaired;
+                if (VH.closeZombieVariationalHedgeFromHistory?.(hedge, cleaned)) {
+                    hedgesChanged = true;
+                } else if (Math.abs(Number(hedge.trackedSize || 0)) !== Math.abs(Number(pair.size || 0))) {
+                    hedgesChanged = true;
+                }
+            }
         }
         const varLeg = cleaned.longLeg?.venue === 'variational' ? cleaned.longLeg : cleaned.shortLeg;
         const stillBad = varLeg?.realizedPnl != null
@@ -36449,6 +36492,8 @@ function perpsSanitizeVariationalClosedPairs(data) {
         if (cleaned !== pair
             && (cleaned.funding !== pair.funding
                 || cleaned.fees !== pair.fees
+                || cleaned.size !== pair.size
+                || cleaned.closeLegEstimated !== pair.closeLegEstimated
                 || cleaned.variationalEquityPnl !== pair.variationalEquityPnl
                 || cleaned.longLeg?.realizedPnl !== pair.longLeg?.realizedPnl
                 || cleaned.shortLeg?.realizedPnl !== pair.shortLeg?.realizedPnl
@@ -36457,6 +36502,9 @@ function perpsSanitizeVariationalClosedPairs(data) {
         }
         return cleaned;
     });
+    if (hedgesChanged) {
+        try { perpsPersistVariationalHedges(hedges, { skipCloudSync: true }); } catch (_) { /* ignore */ }
+    }
     if (changed) perpsPersistCachedClosedPairs(next, { skipCloudSync: true });
     return next;
 }

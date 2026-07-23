@@ -16,6 +16,9 @@ const {
   buildEquitySnapshotFromDashboard,
   buildClosedPairs,
   buildClosedLegsFromExchangeHistory,
+  grvtClosedHistoryFundingCashflow,
+  mapGrvtClosedPositionToLeg,
+  slimExchangeClosedHistoryLegs,
   enrichClosedPairsSessionPnl,
   buildPairDailyPerformanceSeries,
   pairLatestSessionTotals,
@@ -5596,6 +5599,247 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
     assert.ok(Math.abs(future.usdc - expectedFuture) < 1e-9, 'future estimate must use current 176k size');
     assert.equal(future.sampleAtMs, Date.parse('2026-06-25T00:00:00.000Z') - 10000);
   }
+}
+
+{
+  // GRVT position_history preferred over empty fills; funding payment sign / negated raw.
+  const {
+    findTrackedCloseLeg,
+    findTrackedCloseLegFromExchangeHistory,
+    buildVariationalClosedPair,
+    applyVariationalHedges,
+    variationalClosedPairLooksHollow,
+    variationalClosedPairNeedsHistoryRepair,
+    repairHollowVariationalClosedPair,
+    computeVariationalClosedLegPnl,
+  } = require('../lib/variational-hedge.js');
+  const { applyPeakToCloseMetrics } = require('../lib/position-peak-window.js');
+
+  const openTime = Date.parse('2026-07-20T00:00:00.000Z');
+  const closeTime = Date.parse('2026-07-23T00:12:00.000Z');
+  const historyLeg = {
+    venue: 'grvt',
+    symbol: 'HBAR',
+    side: 'short',
+    size: 384000,
+    openTime,
+    closeTime,
+    realizedPnl: -1785.68,
+    fees: 18.80,
+    funding: 73.09,
+    fundingRaw: -73.09,
+    entryPx: 0.067785735,
+    avgEntryPx: 0.067785735,
+    exitPx: 0.072435924,
+    avgClosePx: 0.072435924,
+    fromExchangeHistory: true,
+    closeLegEstimated: false,
+  };
+
+  // Funding: payments first, else negate raw.
+  const rawNegated = grvtClosedHistoryFundingCashflow(
+    { cumulative_realized_funding_payment: -73.09 },
+    'HBAR',
+    openTime,
+    closeTime,
+    { grvt: [] },
+  );
+  assert.ok(Math.abs(rawNegated - 73.09) < 1e-9, 'empty payments must negate GRVT fundingRaw');
+  const fromPayments = grvtClosedHistoryFundingCashflow(
+    { cumulative_realized_funding_payment: -73.09 },
+    'HBAR',
+    openTime,
+    closeTime,
+    { grvt: [{ symbol: 'HBAR', time: openTime + 3600000, usdc: 40 }, { symbol: 'HBAR', time: openTime + 7200000, usdc: 33.09 }] },
+  );
+  assert.ok(Math.abs(fromPayments - 73.09) < 1e-6, 'payment-history cashflow preferred when present');
+
+  const mapped = mapGrvtClosedPositionToLeg({
+    status: 2,
+    open_time: String(openTime * 1e6),
+    close_time: String(closeTime * 1e6),
+    instrument: 'HBAR_USDT_Perp',
+    is_long: false,
+    entry_price: '0.067785735',
+    exit_price: '0.072435924',
+    closed_volume_base: '384000',
+    realized_pnl: '-1785.68',
+    cumulative_fee: '18.80',
+    cumulative_realized_funding_payment: '-73.09',
+  }, { grvt: [] });
+  assert.ok(mapped);
+  assert.equal(mapped.fromExchangeHistory, true);
+  assert.equal(mapped.closeLegEstimated, false);
+  assert.ok(Math.abs(mapped.funding - 73.09) < 1e-6);
+  assert.ok(slimExchangeClosedHistoryLegs([mapped])[0].fundingRaw === -73.09);
+
+  const exchangeLegs = buildClosedLegsFromExchangeHistory(
+    {
+      grvt: [{
+        status: 2,
+        open_time: String(openTime * 1e6),
+        close_time: String(closeTime * 1e6),
+        instrument: 'HBAR_USDT_Perp',
+        is_long: false,
+        entry_price: '0.067785735',
+        exit_price: '0.072435924',
+        closed_volume_base: '384000',
+        realized_pnl: '-1785.68',
+        cumulative_fee: '18.80',
+        cumulative_realized_funding_payment: '-73.09',
+      }],
+      extended: [],
+    },
+    { grvt: [] },
+  );
+  assert.equal(exchangeLegs.length, 1);
+  assert.ok(Math.abs(exchangeLegs[0].funding - 73.09) < 1e-6, 'buildClosedLegsFromExchangeHistory funding must use negated raw');
+
+  const hedge = {
+    id: 'hbar-history-close',
+    symbol: 'HBAR',
+    trackedVenue: 'grvt',
+    trackedSize: -31260,
+    variationalSize: 384000,
+    variationalEntryPx: 0.06782,
+    openedAt: openTime,
+    status: 'pending_close',
+    pendingCloseAt: closeTime,
+    trackedLastSnapshot: {
+      side: 'short',
+      size: -31260,
+      entryPx: 0.06785,
+      markPx: 0.073794,
+      fees: 0,
+      funding: 0,
+    },
+  };
+  const data = {
+    grvt: {
+      state: { positions: [] },
+      fills: { fills: [] },
+      funding: { payments: [] },
+      positionHistory: [historyLeg],
+    },
+    closedPairs: [],
+  };
+  const listing = { symbol: 'HBAR', markPx: 0.072435924, fundingRateInterval: 0, fundingIntervalS: 28800 };
+
+  const found = findTrackedCloseLegFromExchangeHistory(data, { ...hedge });
+  assert.ok(found, 'history close leg must be found');
+  assert.equal(found.fromExchangeHistory, true);
+  assert.equal(found.closeLegEstimated, false);
+  assert.equal(found.size, 384000);
+
+  const closeLeg = findTrackedCloseLeg(data, hedge, listing);
+  assert.equal(closeLeg.fromExchangeHistory, true, 'findTrackedCloseLeg must prefer position_history over empty fills');
+  assert.equal(Math.abs(Number(hedge.trackedSize)), 384000, 'history match must repin trackedSize');
+
+  const pair = buildVariationalClosedPair(hedge, closeLeg, listing, data);
+  const grvt = pair.shortLeg?.venue === 'grvt' ? pair.shortLeg : pair.longLeg;
+  assert.equal(pair.size, 384000);
+  assert.ok(Math.abs(grvt.realizedPnl - (-1785.68)) < 0.05);
+  assert.ok(Math.abs(grvt.fees - 18.80) < 0.05);
+  assert.ok(Math.abs(grvt.funding - 73.09) < 0.05, 'GRVT funding cashflow must stay +73.09');
+  assert.equal(pair.closeLegEstimated, false);
+
+  // Peak empty window must not clobber history-backed legs (via applyVariationalPeakToClosePair).
+  const rePeak = buildVariationalClosedPair(
+    { ...hedge, status: 'closed', closedAt: closeTime, pendingCloseAt: null, closedFundingUsd: undefined },
+    closeLeg,
+    listing,
+    data,
+  );
+  const rePeakGrvt = rePeak.shortLeg?.venue === 'grvt' ? rePeak.shortLeg : rePeak.longLeg;
+  assert.ok(Math.abs(rePeakGrvt.realizedPnl - (-1785.68)) < 0.05, 'peak path must not wipe history realized');
+  assert.ok(Math.abs(rePeakGrvt.fees - 18.80) < 0.05, 'peak path must not wipe history fees');
+  assert.equal(rePeak.size, 384000);
+  assert.equal(rePeak.closeLegEstimated, false);
+
+  // Raw peak helper may zero empty-fill windows; history path above must still win after rebuild.
+  const peaked = applyPeakToCloseMetrics(pair, { grvt: [] }, { grvt: [] }, { lookbackStartMs: openTime });
+  assert.ok(peaked, 'applyPeakToCloseMetrics still runs');
+  void peaked;
+
+  // Wrong-size / wiped Closed row must repair to verified HBAR metrics.
+  const hollowWrongSize = {
+    ...pair,
+    size: 31260,
+    closeLegEstimated: true,
+    closeSlippage: -27.68,
+    variationalCloseSlippagePnl: -27.68,
+    funding: 0,
+    fees: 0,
+    longLeg: {
+      venue: 'variational',
+      symbol: 'HBAR',
+      side: 'long',
+      size: 31260,
+      realizedPnl: -27.68,
+      fees: 0,
+      funding: 0,
+      avgClosePx: 0.0724,
+    },
+    shortLeg: {
+      venue: 'grvt',
+      symbol: 'HBAR',
+      side: 'short',
+      size: 31260,
+      realizedPnl: 0,
+      fees: 0,
+      funding: 0,
+      avgEntryPx: 0.06785,
+      avgClosePx: 0.073794,
+    },
+    manualVariationalClose: true,
+  };
+  assert.equal(
+    variationalClosedPairNeedsHistoryRepair(hollowWrongSize, hedge, data),
+    true,
+    'size mismatch vs history must trigger repair',
+  );
+  const repaired = repairHollowVariationalClosedPair(
+    hollowWrongSize,
+    { ...hedge, status: 'closed', closedAt: closeTime, closedFundingUsd: undefined },
+    listing,
+    data,
+  );
+  assert.equal(variationalClosedPairLooksHollow(repaired), false);
+  const repairedGrvt = repaired.shortLeg?.venue === 'grvt' ? repaired.shortLeg : repaired.longLeg;
+  assert.equal(repaired.size, 384000, 'repaired HBAR size must be 384000');
+  assert.ok(Math.abs(repairedGrvt.realizedPnl - (-1785.68)) < 0.05, 'repaired GRVT PnL ≈ -1785.68');
+  assert.ok(Math.abs(repairedGrvt.fees - 18.80) < 0.05, 'repaired fees ≈ 18.80');
+  assert.ok(Math.abs(repairedGrvt.funding - 73.09) < 0.05, 'repaired GRVT funding ≈ +73.09');
+  assert.equal(repaired.closeLegEstimated, false);
+
+  // AUTO-finalize pending close with history present.
+  const pendingHedge = {
+    ...hedge,
+    trackedSize: -31260,
+    status: 'pending_close',
+    pendingCloseAt: closeTime,
+    closedFundingUsd: undefined,
+    closedTrackedFundingUsd: undefined,
+    closedVariationalFundingUsd: undefined,
+  };
+  const result = applyVariationalHedges(data, [pendingHedge], { HBAR: listing });
+  assert.equal(result.hedges[0].status, 'closed');
+  assert.equal(result.newClosedPairs.length, 1);
+  assert.equal(result.newClosedPairs[0].size, 384000);
+  const autoGrvt = result.newClosedPairs[0].shortLeg?.venue === 'grvt'
+    ? result.newClosedPairs[0].shortLeg
+    : result.newClosedPairs[0].longLeg;
+  assert.ok(Math.abs(autoGrvt.realizedPnl - (-1785.68)) < 0.05);
+  assert.ok(Math.abs(autoGrvt.fees - 18.80) < 0.05);
+  assert.ok(Math.abs(autoGrvt.funding - 73.09) < 0.05);
+
+  // Sanity: Var PnL formula still -GRVT + slip.
+  const expectedSlip = -(384000 * 0.072435924 * 0.0012);
+  const expectedVar = computeVariationalClosedLegPnl(-1785.68, expectedSlip);
+  const autoVar = result.newClosedPairs[0].longLeg?.venue === 'variational'
+    ? result.newClosedPairs[0].longLeg
+    : result.newClosedPairs[0].shortLeg;
+  assert.ok(Math.abs(autoVar.realizedPnl - expectedVar) < 1.0, 'Var PnL must follow -GRVT + 0.12% slip');
 }
 
 console.log('PASS: perps accounting and dashboard regression checks');
