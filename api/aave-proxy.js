@@ -521,6 +521,7 @@ module.exports = async function handler(req, res) {
     || req.query.hyperliquid
     || req.query.cronSnapshot === '1'
     || req.query.live === '1'
+    || req.query.grvtLeg === '1'
   )) {
     return handlePerps(req, res);
   }
