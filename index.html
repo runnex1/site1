@@ -33569,6 +33569,12 @@ function perpsCacheNewClosedPairs(freshPairs) {
         if (merged.length !== before) changed = true;
     }
     merged.sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
+    const VH = window.VariationalHedge;
+    if (VH?.dedupeVariationalClosedPairsByExchangeSession) {
+        const beforeDedup = merged.length;
+        merged = VH.dedupeVariationalClosedPairsByExchangeSession(merged, null);
+        if (merged.length !== beforeDedup) changed = true;
+    }
     if (changed) perpsPersistCachedClosedPairs(merged);
     return merged;
 }
@@ -36435,6 +36441,15 @@ function perpsSanitizeVariationalClosedPairs(data) {
         if (live && Math.abs(Number(live.size || 0)) > 1e-9) continue;
         const hist = VH.findTrackedCloseLegFromExchangeHistory(data, hedge);
         if (!hist) continue;
+        // Do not mint another Closed row when a history-backed session pair already exists.
+        const alreadyGood = (data.closedPairs || []).some((p) => (
+            p?.variationalHedgeId === hedge.id
+            || VH.variationalClosedPairCoversHedgeSession?.(p, hedge, data)
+        ));
+        if (alreadyGood) {
+            if (VH.closeZombieVariationalHedgeFromHistory?.(hedge)) hedgesChanged = true;
+            continue;
+        }
         const listing = listingBy[hedge.symbol] || null;
         const closedPair = VH.finalizeVariationalCloseIfReady
             ? VH.finalizeVariationalCloseIfReady(hedge, data, listing, VH.findTrackedCloseLeg)
@@ -36450,11 +36465,8 @@ function perpsSanitizeVariationalClosedPairs(data) {
         hedge.pendingCloseAt = null;
         hedge.updatedAt = Date.now();
         hedgesChanged = true;
-        const already = (data.closedPairs || []).some((p) => p?.variationalHedgeId === hedge.id);
-        if (!already) {
-            data.closedPairs = [...(data.closedPairs || []), closedPair];
-            changed = true;
-        }
+        data.closedPairs = [...(data.closedPairs || []), closedPair];
+        changed = true;
     }
 
     const next = (data?.closedPairs || []).map((pair) => {
@@ -36502,11 +36514,17 @@ function perpsSanitizeVariationalClosedPairs(data) {
         }
         return cleaned;
     });
+
+    const deduped = VH.dedupeVariationalClosedPairsByExchangeSession
+        ? VH.dedupeVariationalClosedPairsByExchangeSession(next, data)
+        : next;
+    if (deduped.length !== next.length) changed = true;
+
     if (hedgesChanged) {
         try { perpsPersistVariationalHedges(hedges, { skipCloudSync: true }); } catch (_) { /* ignore */ }
     }
-    if (changed) perpsPersistCachedClosedPairs(next, { skipCloudSync: true });
-    return next;
+    if (changed) perpsPersistCachedClosedPairs(deduped, { skipCloudSync: true });
+    return deduped;
 }
 
 function perpsNormalizeClosedPairForDisplay(pair) {

@@ -5873,4 +5873,187 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   assert.equal(lateResult.newClosedPairs[0].closeLegEstimated, false);
 }
 
+{
+  // Dedupe: keep good 384k history row; drop 31k EST and 384k EST slip-only duplicates.
+  const {
+    dedupeVariationalClosedPairsByExchangeSession,
+    variationalClosedPairLooksHollow,
+    applyVariationalHedges,
+  } = require('../lib/variational-hedge.js');
+
+  const openTime = Date.parse('2026-07-20T00:00:00.000Z');
+  const histClose = Date.parse('2026-07-22T17:19:00.000Z'); // Jul 22 8:19 PM UTC+3
+  const estClose31260 = Date.parse('2026-07-22T21:12:00.000Z'); // Jul 23 12:12 AM UTC+3
+  const estClose384k = Date.parse('2026-07-23T10:38:00.000Z'); // Jul 23 1:38 PM UTC+3
+
+  const good = {
+    symbol: 'HBAR',
+    pairLabel: 'GRVT + Var',
+    size: 384000,
+    openTime,
+    closeTime: histClose,
+    closeLegEstimated: false,
+    manualVariationalClose: true,
+    fees: 18.80,
+    funding: 73.09,
+    closeSlippage: -33.38,
+    longLeg: {
+      venue: 'variational',
+      symbol: 'HBAR',
+      side: 'long',
+      size: 384000,
+      realizedPnl: 1752.30,
+      fees: 0,
+      funding: 0,
+    },
+    shortLeg: {
+      venue: 'grvt',
+      symbol: 'HBAR',
+      side: 'short',
+      size: 384000,
+      realizedPnl: -1785.68,
+      fees: 18.80,
+      funding: 73.09,
+      fromExchangeHistory: true,
+      avgEntryPx: 0.067785735,
+      avgClosePx: 0.072435924,
+    },
+  };
+  const hollow31260 = {
+    symbol: 'HBAR',
+    size: 31260,
+    openTime,
+    closeTime: estClose31260,
+    closeLegEstimated: true,
+    manualVariationalClose: true,
+    fees: 0,
+    funding: 0,
+    closeSlippage: -2.77,
+    variationalCloseSlippagePnl: -2.77,
+    longLeg: {
+      venue: 'variational',
+      symbol: 'HBAR',
+      side: 'long',
+      size: 31260,
+      realizedPnl: -2.77,
+      fees: 0,
+      funding: 0,
+    },
+    shortLeg: {
+      venue: 'grvt',
+      symbol: 'HBAR',
+      side: 'short',
+      size: 31260,
+      realizedPnl: 0,
+      fees: 0,
+      funding: 0,
+    },
+  };
+  const hollow384kEst = {
+    symbol: 'HBAR',
+    size: 384000,
+    openTime,
+    closeTime: estClose384k,
+    closeLegEstimated: true,
+    manualVariationalClose: true,
+    fees: 0,
+    funding: 0,
+    closeSlippage: -30.69,
+    variationalCloseSlippagePnl: -30.69,
+    longLeg: {
+      venue: 'variational',
+      symbol: 'HBAR',
+      side: 'long',
+      size: 384000,
+      realizedPnl: -30.69,
+      fees: 0,
+      funding: 0,
+    },
+    shortLeg: {
+      venue: 'grvt',
+      symbol: 'HBAR',
+      side: 'short',
+      size: 384000,
+      realizedPnl: 0,
+      fees: 0,
+      funding: 0,
+    },
+  };
+
+  assert.equal(variationalClosedPairLooksHollow(hollow31260), true);
+  assert.equal(variationalClosedPairLooksHollow(hollow384kEst), true);
+
+  const deduped = dedupeVariationalClosedPairsByExchangeSession(
+    [hollow384kEst, hollow31260, good],
+    {
+      grvt: {
+        positionHistory: [{
+          venue: 'grvt',
+          symbol: 'HBAR',
+          side: 'short',
+          size: 384000,
+          openTime,
+          closeTime: histClose,
+          realizedPnl: -1785.68,
+          fees: 18.80,
+          funding: 73.09,
+          fromExchangeHistory: true,
+          closeLegEstimated: false,
+        }],
+      },
+    },
+  );
+  assert.equal(deduped.length, 1, 'must keep a single HBAR Closed row');
+  assert.equal(deduped[0].size, 384000);
+  assert.equal(deduped[0].closeLegEstimated, false);
+  assert.ok(Math.abs(deduped[0].shortLeg.realizedPnl - (-1785.68)) < 0.05);
+  assert.ok(Math.abs(deduped[0].fees - 18.80) < 0.05);
+
+  // Finalizing zombie must not mint another Closed row when good history pair exists.
+  const data = {
+    grvt: {
+      state: { positions: [] },
+      fills: { fills: [] },
+      funding: { payments: [] },
+      positionHistory: [{
+        venue: 'grvt',
+        symbol: 'HBAR',
+        side: 'short',
+        size: 384000,
+        openTime,
+        closeTime: histClose,
+        realizedPnl: -1785.68,
+        fees: 18.80,
+        funding: 73.09,
+        entryPx: 0.067785735,
+        exitPx: 0.072435924,
+        fromExchangeHistory: true,
+        closeLegEstimated: false,
+      }],
+    },
+    closedPairs: [good],
+  };
+  const zombie = {
+    id: 'hbar-zombie',
+    symbol: 'HBAR',
+    trackedVenue: 'grvt',
+    trackedSize: -384000,
+    variationalSize: 384000,
+    variationalEntryPx: 0.06782,
+    openedAt: openTime + 16 * 3600000,
+    status: 'open',
+  };
+  const listing = { symbol: 'HBAR', markPx: 0.072435924, fundingRateInterval: 0, fundingIntervalS: 28800 };
+  const result = applyVariationalHedges(data, [zombie], { HBAR: listing });
+  assert.equal(result.hedges[0].status, 'closed', 'zombie must still close');
+  assert.equal(result.newClosedPairs.length, 0, 'must not create a second Closed row for same session');
+  const after = dedupeVariationalClosedPairsByExchangeSession(
+    [...data.closedPairs, ...result.newClosedPairs, hollow31260, hollow384kEst],
+    data,
+  );
+  assert.equal(after.length, 1);
+  assert.equal(after[0].closeLegEstimated, false);
+  assert.equal(after[0].size, 384000);
+}
+
 console.log('PASS: perps accounting and dashboard regression checks');
