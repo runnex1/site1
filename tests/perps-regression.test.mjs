@@ -3141,6 +3141,13 @@ assert.match(perpsJs, /grvtFillsCount/, 'perps summary must expose GRVT fill cou
 assert.match(perpsJs, /grvtPositionHistoryCount/, 'perps summary must expose GRVT position-history counts for production debugging');
 assert.match(perpsJs, /fetchExtendedPositionHistory/, 'closed positions must load Extended native position history');
 assert.match(perpsJs, /buildClosedLegsFromExchangeHistory/, 'closed positions must map exchange-native closed rounds');
+assert.match(perpsJs, /grvtClosedHistoryFundingCashflow/, 'GRVT history funding must prefer payments then negate raw');
+assert.match(perpsJs, /positionHistory: grvtClosedPositionHistory/, 'dashboard grvt block must expose slim closed positionHistory');
+assert.match(perpsJs, /positionHistory: slimExchangeClosedHistoryLegs\(payload\.grvt\.positionHistory\)/, 'slimPerpsClientPayload must keep grvt positionHistory');
+assert.match(variationalHedgeJs, /findTrackedCloseLegFromExchangeHistory/, 'Var close must resolve GRVT/Extended position_history first');
+assert.match(variationalHedgeJs, /fromExchangeHistory/, 'history-backed close legs must be marked fromExchangeHistory');
+assert.match(variationalHedgeJs, /variationalClosedPairNeedsHistoryRepair/, 'hollow/wrong-size Closed rows must repair from history');
+assert.match(indexHtml, /variationalClosedPairNeedsHistoryRepair/, 'sanitize must repair size-mismatch Closed rows from history');
 assert.match(perpsJs, /const PERPS_MAX_FILL_HISTORY_DAYS = 365;/, 'Closed tab must fetch a long enough fill history to show older closed rounds');
 assert.match(closedLegReconstructJs, /reconstructedFromClosingFills: true/, 'Closed tab must recover rounds whose opening fill is outside the fetched history');
 assert.match(perpsJs, /function parseGrvtIsBuyer\(value\)/, 'GRVT fill side parsing must normalize string booleans');
