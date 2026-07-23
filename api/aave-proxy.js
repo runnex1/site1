@@ -9,6 +9,7 @@ const {
   fetchPerpsLiveRates,
   appendEquitySnapshotStore,
   buildEquitySnapshotFromDashboard,
+  reconstructGrvtSymbolSession,
 } = require('../lib/perps');
 const {
   mergeVariationalRateSamples,
@@ -313,6 +314,22 @@ async function handlePerps(req, res) {
     } catch (e) {
       console.error('[perps-live]', e);
       return res.status(500).json({ error: e.message || 'Live rates fetch failed' });
+    }
+  }
+
+  if (req.query.grvtLeg === '1') {
+    try {
+      const symbol = String(req.query.symbol || 'HBAR').trim().toUpperCase();
+      const legDays = Math.min(365, Math.max(1, parseInt(req.query.days || '90', 10) || 90));
+      const result = await reconstructGrvtSymbolSession({
+        subAccountId: grvtSubAccount,
+        symbol,
+        days: legDays,
+      });
+      return res.status(200).json({ ok: true, ...result });
+    } catch (e) {
+      console.error('[perps-grvt-leg]', e);
+      return res.status(500).json({ error: e.message || 'GRVT leg reconstruct failed' });
     }
   }
 
