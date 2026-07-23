@@ -32887,7 +32887,7 @@ function perpsOpenVariationalModal(opts = {}) {
     _perpsVariationalModalLeg = opts.unhedgedLeg || null;
     if (title) title.textContent = opts.mode === 'exit' ? 'Variational exit price' : 'Hedge with Variational';
     if (meta) meta.textContent = opts.meta || '';
-    if (label) label.textContent = opts.mode === 'exit' ? 'Avg exit price' : 'Variational avg fill price';
+    if (label) label.textContent = opts.mode === 'exit' ? 'Avg exit price' : 'Open Var uPnL (automatic)';
     input.value = opts.value != null && Number.isFinite(Number(opts.value)) ? String(opts.value) : '';
     const trackedEntry = Number(opts.trackedEntryPx);
     if (trackedWrap) {
