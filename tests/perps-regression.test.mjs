@@ -1832,6 +1832,11 @@ assert.match(indexHtml, /watcher-v2-pos-error/, 'PM wallet expand must show dist
 assert.match(indexHtml, /Positions API failed\./, 'PM wallet expand must show API failed message distinct from empty-state copy');
 assert.match(indexHtml, /watcher-v2-wallet-positions/, 'PM wallet expand must render positions panel');
 assert.match(indexHtml, /WATCHER_PM_POSITION_MIN_USD\s*=\s*100/, 'PM expanded positions must filter at $100');
+assert.match(indexHtml, /function watcherPmPositionUnrealizedPnl\(/, 'PM expanded positions must compute per-position unrealized PnL');
+assert.match(indexHtml, /cashPnl\s*\?\?\s*p\?\.cash_pnl/, 'PM watcher uPnL must prefer Polymarket cashPnl');
+assert.match(indexHtml, /watcher-v2-pos-pnl/, 'PM expanded positions must render a uPnL column');
+assert.match(indexHtml, /value · uPnL/, 'PM expanded positions header must label value and uPnL');
+assert.match(indexHtml, /\.watcher-v2,\s*#watcherTab,\s*#watcherWalletModal/, 'privacy mask must skip Watcher so PM uPnL stays visible');
 assert.doesNotMatch(indexHtml, /watcherPmWalletSubhead/, 'Wallet Watchlist must not show separate Polymarket Wallets subhead');
 assert.doesNotMatch(indexHtml, /watcher-v2-subhead-title">Polymarket Wallets/, 'Wallet Watchlist must not show separate Polymarket Wallets section header');
 assert.doesNotMatch(indexHtml, /watcherPmWalletRows/, 'Wallet Watchlist must not render separate PM wallet rows container');

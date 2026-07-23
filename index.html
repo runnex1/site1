@@ -591,14 +591,17 @@ html { height: 100%; }
   background:rgba(183,140,255,0.12); color:var(--wv-violet); font-family:var(--ff-mono); font-size:0.62rem; font-weight:800; cursor:pointer;
 }
 .watcher-v2-pos-row {
-  display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; gap:0.55rem;
+  display:grid; grid-template-columns:minmax(0,1fr) auto auto auto auto; gap:0.45rem 0.55rem;
   padding:0.55rem 0; border-top:1px solid rgba(134,159,179,0.11); align-items:center; font-size:0.76rem;
 }
 .watcher-v2-pos-row:first-of-type { border-top:none; }
 .watcher-v2-pos-title { font-weight:800; color:var(--t1); line-height:1.25; }
 .watcher-v2-pos-side { font-family:var(--ff-mono); font-size:0.66rem; font-weight:800; color:var(--wv-blue); white-space:nowrap; }
 .watcher-v2-pos-size { font-family:var(--ff-mono); font-size:0.66rem; font-weight:700; color:var(--wv-muted); white-space:nowrap; }
-.watcher-v2-pos-value { font-family:var(--ff-mono); font-size:0.68rem; font-weight:900; color:var(--wv-green); white-space:nowrap; }
+.watcher-v2-pos-value { font-family:var(--ff-mono); font-size:0.68rem; font-weight:900; color:var(--t1); white-space:nowrap; }
+.watcher-v2-pos-pnl { font-family:var(--ff-mono); font-size:0.68rem; font-weight:900; white-space:nowrap; }
+.watcher-v2-pos-pnl.good { color:var(--wv-green); }
+.watcher-v2-pos-pnl.bad { color:var(--wv-amber); }
 .watcher-v2-pos-empty, .watcher-v2-pos-loading { font-family:var(--ff-mono); font-size:0.66rem; color:var(--wv-muted); font-weight:700; padding:0.2rem 0; }
 .watcher-v2-pos-error { font-family:var(--ff-mono); font-size:0.66rem; color:var(--wv-amber); font-weight:800; padding:0.2rem 0; line-height:1.35; }
 .watcher-v2-row-meta { margin-top:0.1rem; font-family:var(--ff-mono); font-size:0.68rem; color:var(--wv-muted); }
@@ -10124,6 +10127,8 @@ function vaultPrivacyShouldSkipEl(el) {
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'OPTION') return true;
     if (el.isContentEditable) return true;
     if (el.closest('input, textarea, select, [contenteditable="true"], script, style')) return true;
+    // Watcher / watchlist stay readable (including PM position uPnL) when privacy mask is on.
+    if (el.closest('.watcher-v2, #watcherTab, #watcherWalletModal, [data-vault-privacy-skip]')) return true;
     return false;
 }
 
@@ -12702,6 +12707,21 @@ async function fetchServerPolymarketPositions(wallets) {
     return payload;
 }
 
+async function fetchServerPolymarketActivity(wallets, lookbackSec) {
+    if (location.protocol === 'file:') return null;
+    const clean = mergeWalletAddresses(wallets || []);
+    if (!clean.length) return [];
+    const qs = new URLSearchParams({
+        polymarketActivity: '1',
+        wallets: clean.join(','),
+        lookbackSec: String(Number.isFinite(lookbackSec) && lookbackSec > 0 ? Math.floor(lookbackSec) : 86400),
+    });
+    const response = await fetch('/api/sync?' + qs.toString(), { signal: AbortSignal.timeout(45000) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Polymarket activity returned HTTP ${response.status}`);
+    return Array.isArray(payload.trades) ? payload.trades : [];
+}
+
 async function fetchPolymarketPositions(options = {}) {
     const silent = !!options.silent;
     const skipUpdateUI = !!options.skipUpdateUI;
@@ -12860,13 +12880,14 @@ function switchPredSubtab(name, el) {
     }
 }
 
-// ── Shared fetch helper (direct → corsproxy.io → allorigins → codetabs) ────────
+// ── Shared fetch helper (same-origin proxy → direct → corsproxy.io → allorigins → codetabs) ────────
 async function pmFetch(url) {
     const PROXIES = [
-        u => u,                                                                       // 1. Direct
-        u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,                   // 2. corsproxy.io
-        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,          // 3. allorigins
-        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,     // 4. codetabs
+        u => `/api/pm-proxy?url=${encodeURIComponent(u)}`,                               // 1. Same-origin server proxy
+        u => u,                                                                           // 2. Direct
+        u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,                       // 3. corsproxy.io
+        u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,              // 4. allorigins
+        u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,         // 5. codetabs
     ];
     for (const proxy of PROXIES) {
         try {
@@ -12876,6 +12897,10 @@ async function pmFetch(url) {
             // allorigins wraps response in { contents: "..." }
             if (raw && typeof raw === 'object' && 'contents' in raw && typeof raw.contents === 'string') {
                 return JSON.parse(raw.contents);
+            }
+            // Server proxy error payload — try next hop
+            if (raw && typeof raw === 'object' && raw.error && !Array.isArray(raw) && Object.keys(raw).length <= 2) {
+                continue;
             }
             return raw;
         } catch(e) {
@@ -13196,9 +13221,25 @@ function groupFilledTradesByWindow(trades, groupMs = PM_ORDER_FILL_GROUP_MS) {
 // ── Filled orders: activity?type=TRADE in selected lookback window ───────────
 async function fetchFilledOrders(wallets, lookbackSec) {
     const windowSec = Number.isFinite(lookbackSec) && lookbackSec > 0 ? lookbackSec : watcherPmGetActivityLookbackSec();
+    const list = mergeWalletAddresses(wallets || []);
+    if (!list.length) return [];
+
+    if (location.protocol !== 'file:') {
+        try {
+            const serverTrades = await fetchServerPolymarketActivity(list, windowSec);
+            if (Array.isArray(serverTrades)) {
+                return serverTrades
+                    .map(t => ({ ...t, _wallet: t._wallet || t.user || '' }))
+                    .sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+            }
+        } catch (err) {
+            console.warn('Server Polymarket activity failed; falling back to browser fetch:', err);
+        }
+    }
+
     const since = Math.floor(Date.now() / 1000) - windowSec;
     const trades = [];
-    for (const wallet of wallets) {
+    for (const wallet of list) {
         let offset = 0;
         while (true) {
             const url = `https://data-api.polymarket.com/activity?user=${encodeURIComponent(wallet)}&type=TRADE&limit=500&offset=${offset}&start=${since}&sortBy=TIMESTAMP&sortDirection=DESC`;
@@ -23738,7 +23779,7 @@ function renderWatcherWallets() {
             ${rowHtml}
             <div class="watcher-v2-wallet-positions" id="watcherPmPositions-${w.id}" data-watcher-pm-wallet="${dashEsc(w.address)}">
                 <div class="watcher-v2-pos-head">
-                    <span>Positions ≥ $${WATCHER_PM_POSITION_MIN_USD}</span>
+                    <span>Positions ≥ $${WATCHER_PM_POSITION_MIN_USD} · value · uPnL</span>
                     <button type="button" onclick="watcherPmClearActivityFilter()" title="Collapse">×</button>
                 </div>
                 <div class="watcher-v2-pos-body"><div class="watcher-v2-pos-loading">Loading positions…</div></div>
@@ -31029,6 +31070,29 @@ function watcherPmPositionValue(p) {
     return 0;
 }
 
+// Prefer Polymarket cashPnl (currentValue − initialValue; handles partial exits).
+// Fall back to currentValue − size × avgPrice when cashPnl is absent.
+function watcherPmPositionUnrealizedPnl(p) {
+    const cash = parseFloat(p?.cashPnl ?? p?.cash_pnl ?? p?.unrealizedPnl ?? p?.unrealized_pnl);
+    if (Number.isFinite(cash)) return cash;
+    const size = parseFloat(p?.size || 0);
+    const avgPrice = parseFloat(p?.avgPrice ?? p?.avg_price ?? 0);
+    const currentValue = watcherPmPositionValue(p);
+    if (Number.isFinite(size) && size > 0 && Number.isFinite(avgPrice) && Number.isFinite(currentValue)) {
+        return currentValue - (size * avgPrice);
+    }
+    return 0;
+}
+
+function watcherPmFormatUsdCompact(n, { signed = false } = {}) {
+    const num = Number(n);
+    if (!Number.isFinite(num)) return signed ? '+$0.00' : '$0.00';
+    const abs = Math.abs(num);
+    const body = abs >= 1000 ? Math.round(abs).toLocaleString('en-US') : abs.toFixed(2);
+    if (!signed) return '$' + body;
+    return (num >= 0 ? '+' : '-') + '$' + body;
+}
+
 async function watcherPmFetchWalletPositions(wallet) {
     const key = String(wallet || '').toLowerCase();
     if (!key) return [];
@@ -31069,25 +31133,28 @@ async function watcherPmFetchWalletPositions(wallet) {
 
 function watcherPmRenderPositionsHtml(positions) {
     const filtered = (positions || [])
-        .map(p => ({ p, value: watcherPmPositionValue(p) }))
+        .map(p => ({ p, value: watcherPmPositionValue(p), pnl: watcherPmPositionUnrealizedPnl(p) }))
         .filter(x => x.value >= WATCHER_PM_POSITION_MIN_USD)
         .sort((a, b) => b.value - a.value);
     if (!filtered.length) {
         return `<div class="watcher-v2-pos-empty">No open positions ≥ $${WATCHER_PM_POSITION_MIN_USD}.</div>`;
     }
-    return filtered.map(({ p, value }) => {
+    return filtered.map(({ p, value, pnl }) => {
         const title = p.title || p.marketTitle || 'Unknown market';
         const side = (p.outcome || p.side || '').toUpperCase() || '—';
         const size = parseFloat(p.size || 0);
         const sizeStr = Number.isFinite(size) && size > 0
             ? (size >= 1000 ? Math.round(size).toLocaleString('en-US') : size.toFixed(1)) + ' sh'
             : '—';
-        const valueStr = value >= 1000 ? '$' + Math.round(value).toLocaleString('en-US') : '$' + value.toFixed(2);
+        const valueStr = watcherPmFormatUsdCompact(value);
+        const pnlStr = watcherPmFormatUsdCompact(pnl, { signed: true });
+        const pnlClass = pnl >= 0 ? 'good' : 'bad';
         return `<div class="watcher-v2-pos-row">
             <div class="watcher-v2-pos-title">${dashEsc(title)}</div>
             <div class="watcher-v2-pos-side">${dashEsc(side)}</div>
             <div class="watcher-v2-pos-size">${dashEsc(sizeStr)}</div>
             <div class="watcher-v2-pos-value">${dashEsc(valueStr)}</div>
+            <div class="watcher-v2-pos-pnl ${pnlClass}" title="Unrealized PnL">${dashEsc(pnlStr)}</div>
         </div>`;
     }).join('');
 }
