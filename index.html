@@ -9595,7 +9595,7 @@ body[data-active-tab="loops"] .page-content,
               <div style="display:grid;gap:0.75rem;margin-top:0.5rem;">
                 <div id="perpsVariationalTrackedEntryWrap" style="display:none;">
                   <label id="perpsVariationalTrackedEntryLabel" style="display:block;font-size:0.78rem;color:var(--muted);margin-bottom:0.35rem;">Exchange avg entry</label>
-                  <div id="perpsVariationalTrackedEntryVal" style="font-family:var(--ff-mono);font-size:0.92rem;font-weight:800;color:#9dacbb;padding:0.45rem 0.55rem;border-radius:8px;border:1px solid rgba(134,159,179,0.18);background:rgba(255,255,255,0.03);"></div>
+                  <div id="perpsVariationalTrackedEntryVal" data-vault-privacy-skip="1" style="font-family:var(--ff-mono);font-size:0.92rem;font-weight:800;color:#9dacbb;padding:0.45rem 0.55rem;border-radius:8px;border:1px solid rgba(134,159,179,0.18);background:rgba(255,255,255,0.03);"></div>
                 </div>
                 <div>
                   <label for="perpsVariationalPxInput" id="perpsVariationalPxLabel" style="display:block;font-size:0.78rem;color:var(--muted);margin-bottom:0.35rem;">Avg entry price</label>
@@ -15786,18 +15786,21 @@ function drawerLendingLoopTotalAprHtml(breakdown) {
 }
 function protocolDrawerPriceHtml(pos, unitPrices = null) {
     const tokens = pos.tokens || [];
-    if (tokens.length !== 1) return '<span class="drawer-leg-price">—</span>';
+    if (tokens.length !== 1) return '<span class="drawer-leg-price" data-vault-privacy-skip="1">—</span>';
     const unit = protocolPositionUnitPrice(pos, unitPrices);
-    if (unit === null) return '<span class="drawer-leg-price">—</span>';
+    if (unit === null) return '<span class="drawer-leg-price" data-vault-privacy-skip="1">—</span>';
     const fixed = stableUnitPriceInPegBand(unit);
     const txt = fixed
         ? '$1.0000'
         : '$' + unit.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
-    return `<span class="drawer-leg-price${fixed ? ' fixed' : ''}">${txt}</span>`;
+    return `<span class="drawer-leg-price${fixed ? ' fixed' : ''}" data-vault-privacy-skip="1">${txt}</span>`;
 }
 function protocolDrawerQtyCellHtml(pos, protocolIndex, sectionIndex, positionIndex, unitPrices = null, editable = true) {
     const tokens = pos.tokens || [];
     if (!tokens.length) return '<span class="drawer-leg-qty">—</span>';
+    if (typeof vaultPrivacyEnabled === 'function' && vaultPrivacyEnabled()) {
+        return tokens.map(() => `<span class="drawer-leg-qty vault-privacy-mask-val">${VAULT_PRIVACY_MASK}</span>`).join('');
+    }
     if (!editable) {
         return tokens.map(t => `<span class="drawer-leg-qty">${dashEsc(protocolTokenDisplayText(pos, t, unitPrices))}</span>`).join('');
     }
@@ -15838,13 +15841,16 @@ function buildLendingLoopDrawerTableHtml(sec, ctx) {
             const positionIndex = sec.positions.indexOf(pos);
             const aprHtml = aprHtmlFn(pos, secType, secIdx);
             const usdVal = Number(valueFn(pos, unitPrices) || 0);
-            const usdHtml = editable
+            const privacyOn = typeof vaultPrivacyEnabled === 'function' && vaultPrivacyEnabled();
+            const usdHtml = privacyOn
+                ? `<span class="drawer-leg-usd vault-privacy-mask-val">${VAULT_PRIVACY_MASK}</span>`
+                : editable
                 ? `<input class="defi-edit-input drawer-leg-usd-input" type="number" min="0" step="0.01" value="${usdVal.toFixed(2)}" aria-label="Edit USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionUsd(${protocolIndex},${sectionIndex},${positionIndex},this.value)" onblur="updateProtocolPositionUsd(${protocolIndex},${sectionIndex},${positionIndex},this.value)">`
                 : `<span class="drawer-leg-usd">${protocolDrawerFmtUsd(usdVal)}</span>`;
             rows += `<tr class="drawer-leg-row drawer-leg-row-${subClass}">
                 <td class="drawer-leg-pool">${dashEsc(pos.pool)}</td>
                 <td class="drawer-leg-qty-cell">${protocolDrawerQtyCellHtml(pos, protocolIndex, sectionIndex, positionIndex, unitPrices, editable)}</td>
-                <td class="drawer-leg-price-cell">${protocolDrawerPriceHtml(pos, unitPrices)}</td>
+                <td class="drawer-leg-price-cell" data-vault-privacy-skip="1">${protocolDrawerPriceHtml(pos, unitPrices)}</td>
                 <td class="drawer-leg-apr-cell">${aprHtml}</td>
                 <td class="drawer-leg-usd-cell">${usdHtml}</td>
             </tr>`;
@@ -15903,13 +15909,16 @@ function buildSimpleDrawerTableHtml(sec, ctx) {
         })();
         const aprHtml = aprHtmlFn(pos, secType, secIdx);
         const usdVal = Number(valueFn(pos, unitPrices) || 0);
-        const usdHtml = editable
+        const privacyOn = typeof vaultPrivacyEnabled === 'function' && vaultPrivacyEnabled();
+        const usdHtml = privacyOn
+            ? `<span class="drawer-leg-usd vault-privacy-mask-val">${VAULT_PRIVACY_MASK}</span>`
+            : editable
             ? `<input class="defi-edit-input drawer-leg-usd-input" type="number" min="0" step="0.01" value="${usdVal.toFixed(2)}" aria-label="Edit USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolPositionUsd(${protocolIndex},${sectionIndex},${positionIndex},this.value)" onblur="updateProtocolPositionUsd(${protocolIndex},${sectionIndex},${positionIndex},this.value)">`
             : `<span class="drawer-leg-usd">${protocolDrawerFmtUsd(usdVal)}</span>`;
         rows += `<tr class="drawer-leg-row drawer-leg-row-simple">
             <td class="drawer-leg-pool">${dashEsc(pos.pool)}</td>
             <td class="drawer-leg-qty-cell">${protocolDrawerQtyCellHtml(pos, protocolIndex, sectionIndex, positionIndex, unitPrices, editable)}</td>
-            <td class="drawer-leg-price-cell">${protocolDrawerPriceHtml(pos, unitPrices)}</td>
+            <td class="drawer-leg-price-cell" data-vault-privacy-skip="1">${protocolDrawerPriceHtml(pos, unitPrices)}</td>
             <td class="drawer-leg-apr-cell">${aprHtml}</td>
             <td class="drawer-leg-usd-cell">${usdHtml}</td>
         </tr>`;
@@ -19432,6 +19441,15 @@ function renderTokens() {
         const network = tokenNetworkLabel(t);
         const change = tokenChange24h(t);
         const chCls = change >= 0 ? 'pos' : 'neg';
+        const privacy = typeof vaultPrivacyEnabled === 'function' && vaultPrivacyEnabled();
+        const amountCell = privacy
+            ? `<div class="value vault-privacy-mask-val">${VAULT_PRIVACY_MASK}</div>`
+            : `<div><input class="defi-edit-input" type="number" min="0" step="0.0001" value="${amount.toFixed(4)}" aria-label="Edit ${dashEsc(t.symbol)} balance" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateTokenEditable(${i},'amount',this.value)" onblur="updateTokenEditable(${i},'amount',this.value)"></div>`;
+        // Price stays visible in privacy mode; Balance + Value are masked.
+        const priceCell = `<div class="value" data-vault-privacy-skip="1">${amount > 0 ? '$' + price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4}) : '-'}</div>`;
+        const valueCell = privacy
+            ? `<div class="value vault-privacy-mask-val">${VAULT_PRIVACY_MASK}</div>`
+            : `<div><input class="defi-edit-input" type="number" min="0" step="0.01" value="${value.toFixed(2)}" aria-label="Edit ${dashEsc(t.symbol)} USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateTokenEditable(${i},'value',this.value)" onblur="updateTokenEditable(${i},'value',this.value)"></div>`;
         return `
         <div class="table-row tokens-row row-token" ondblclick="deleteItem('tokens',${i})">
             <div class="token-info">
@@ -19440,9 +19458,9 @@ function renderTokens() {
             </div>
             <div>${dashEsc(String(t.symbol || '').toUpperCase())}</div>
             <div><span class="defi-network-pill ${/hyperliquid/i.test(network) ? 'alt' : ''}">${dashEsc(network)}</span></div>
-            <div><input class="defi-edit-input" type="number" min="0" step="0.0001" value="${amount.toFixed(4)}" aria-label="Edit ${dashEsc(t.symbol)} balance" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateTokenEditable(${i},'amount',this.value)" onblur="updateTokenEditable(${i},'amount',this.value)"></div>
-            <div class="value">${amount > 0 ? '$' + price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:4}) : '-'}</div>
-            <div><input class="defi-edit-input" type="number" min="0" step="0.01" value="${value.toFixed(2)}" aria-label="Edit ${dashEsc(t.symbol)} USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateTokenEditable(${i},'value',this.value)" onblur="updateTokenEditable(${i},'value',this.value)"></div>
+            ${amountCell}
+            ${priceCell}
+            ${valueCell}
             <div class="defi-change ${chCls}">${change >= 0 ? '+' : ''}${change.toFixed(2)}%</div>
             <div class="percentage">${pct}%</div>
             <div><button class="row-x-btn" onclick="event.stopPropagation();deleteToken(${i})" title="Remove token">&times;</button></div>
@@ -20139,7 +20157,7 @@ function renderProtocols() {
         return;
     }
 
-    const fmtV = v => '$' + v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const fmtV = v => vaultPrivacyFormat('$' + v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}));
     function tokenAmountAndSymbol(raw) {
         const m = String(raw || '').trim().match(/^([\d,]+(?:\.\d+)?)\s+(.+)$/);
         if (!m) return null;
@@ -20257,8 +20275,11 @@ function renderProtocols() {
         const breakdown = protocolEntryAprBreakdown(entry) || {};
         const netValue = protocolEntryNetValue(entry);
         const summary = protocolEntrySummary(entry);
+        const privacyOn = typeof vaultPrivacyEnabled === 'function' && vaultPrivacyEnabled();
         const netCell = entry.kind === 'lending'
             ? `<div class="value" style="text-align:right">${fmtV(netValue)}</div>`
+            : privacyOn
+            ? `<div class="protocol-net-input"><span class="defi-edit-input vault-privacy-mask-val">${VAULT_PRIVACY_MASK}</span></div>`
             : `<div class="protocol-net-input"><input class="defi-edit-input" type="number" min="0" step="0.01" value="${Number(netValue || 0).toFixed(2)}" aria-label="Edit ${dashEsc(p.name)} USD value" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()" onkeydown="defiEditKeydown(event)" onchange="updateProtocolEditable(${i},this.value)" onblur="updateProtocolEditable(${i},this.value)"></div>`;
 
         return `<div class="protocol-row-wrap">
@@ -22043,11 +22064,11 @@ function renderPredictionMarkets() {
             </div>
             <div class="token-amount">${dashEsc(p.outcome)}</div>
             <div class="token-amount">${p.size.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-            <div class="value">$${fmtTokenPrice(p.avgPrice)}</div>
-            <div class="value">$${fmtTokenPrice(curPrice)}</div>
+            <div class="value" data-vault-privacy-skip="1">$${fmtTokenPrice(p.avgPrice)}</div>
+            <div class="value" data-vault-privacy-skip="1">$${fmtTokenPrice(curPrice)}</div>
             <div class="value" title="${currentApr ? `${currentApr.days} days to expiry if NO wins` : ''}">${currentApr ? dashPct(currentApr.apy * 100).replace('+','') : '-'}</div>
             <div class="value" style="${upnlColor}">${dashSignedUsd(upnl)}</div>
-            <div class="value">$${p.currentValue.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+            <div class="value">${vaultPrivacyFormat('$' + Number(p.currentValue || 0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}))}</div>
         </div>`;
     }).join('');
 }
@@ -22162,11 +22183,11 @@ function renderOpinionMarkets() {
             </div>
             <div class="token-amount" style="${outcomeColor};font-weight:700">${p.outcome}</div>
             <div class="token-amount">${p.size.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-            <div class="value">$${fmtTokenPrice(p.avgPrice)}</div>
-            <div class="value">$${fmtTokenPrice(curPrice)}</div>
+            <div class="value" data-vault-privacy-skip="1">$${fmtTokenPrice(p.avgPrice)}</div>
+            <div class="value" data-vault-privacy-skip="1">$${fmtTokenPrice(curPrice)}</div>
             <div class="value" title="${currentApr ? `${currentApr.days} days to expiry if NO wins` : ''}">${currentApr ? dashPct(currentApr.apy * 100).replace('+','') : '-'}</div>
             <div class="value" style="${upnlColor}">${dashSignedUsd(upnl)}</div>
-            <div class="value">$${p.currentValue.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+            <div class="value">${vaultPrivacyFormat('$' + Number(p.currentValue || 0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}))}</div>
         </div>`;
     }).join('');
 }
@@ -34187,7 +34208,8 @@ function perpsFmtRate(r) {
 
 function perpsFmtPx(n) {
     if (n == null || !Number.isFinite(n)) return '—';
-    return vaultPrivacyFormat('$' + n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 }));
+    // Mark / avg / liq / TP-SL prices stay visible in privacy mode.
+    return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 });
 }
 
 function perpsFmtSize(n) {
@@ -37428,8 +37450,8 @@ function perpsRenderPairedTable(paired) {
             <td>${dashEsc(pairLabel)}</td>
             <td>${perpsSideBadgeHtml(legs.a.size)}${dashEsc(legs.a.label)} ${legs.a.size != null ? perpsFmtSize(legs.a.size) : '—'}</td>
             <td>${perpsSideBadgeHtml(legs.b.size)}${dashEsc(legs.b.label)} ${legs.b.size != null ? perpsFmtSize(legs.b.size) : '—'}</td>
-            <td>${legs.a.entry != null ? perpsFmtPx(legs.a.entry) : '—'}</td>
-            <td>${legs.b.entry != null ? perpsFmtPx(legs.b.entry) : '—'}</td>
+            <td data-vault-privacy-skip="1">${legs.a.entry != null ? perpsFmtPx(legs.a.entry) : '—'}</td>
+            <td data-vault-privacy-skip="1">${legs.b.entry != null ? perpsFmtPx(legs.b.entry) : '—'}</td>
             <td class="${perpsSignedCls(legs.a.upnl)}">${legs.a.upnl != null ? perpsFmtUsd(legs.a.upnl) : '—'}</td>
             <td class="${perpsSignedCls(legs.b.upnl)}">${legs.b.upnl != null ? perpsFmtUsd(legs.b.upnl) : '—'}</td>
             <td class="${perpsSignedCls(p.combinedUpnl)}">${perpsFmtUsd(p.combinedUpnl)}</td>
@@ -37505,7 +37527,7 @@ function perpsRenderVariationalPending(pending) {
     </tr></thead><tbody>${pending.map(h => `<tr>
         <td>${dashEsc(h.symbol)}</td>
         <td>${dashEsc(perpsVenueShort(h.trackedVenue))}</td>
-        <td>${h.variationalEntryPx != null ? perpsFmtPx(h.variationalEntryPx) : '—'}</td>
+        <td data-vault-privacy-skip="1">${h.variationalEntryPx != null ? perpsFmtPx(h.variationalEntryPx) : '—'}</td>
         <td>Tracked leg closed — finalizing Variational close (0.12% of 24h peak margin)</td>
         <td><span class="perps-pos-pill">AUTO</span></td>
     </tr>`).join('')}</tbody></table>`;

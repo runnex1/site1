@@ -1840,7 +1840,7 @@ assert.match(indexHtml, /function watcherPmPositionUnrealizedPnl\(/, 'PM expande
 assert.match(indexHtml, /cashPnl\s*\?\?\s*p\?\.cash_pnl/, 'PM watcher uPnL must prefer Polymarket cashPnl');
 assert.match(indexHtml, /watcher-v2-pos-pnl/, 'PM expanded positions must render a uPnL column');
 assert.match(indexHtml, /value · uPnL/, 'PM expanded positions header must label value and uPnL');
-assert.match(indexHtml, /\.watcher-v2,\s*#watcherTab,\s*#watcherWalletModal/, 'privacy mask must skip Watcher so PM uPnL stays visible');
+assert.match(indexHtml, /VAULT_PRIVACY_SKIP_SEL[\s\S]*?#watcherTab[\s\S]*?\.watcher-v2[\s\S]*?#watcherWalletModal/, 'privacy mask must skip Watcher so PM uPnL stays visible');
 assert.doesNotMatch(indexHtml, /watcherPmWalletSubhead/, 'Wallet Watchlist must not show separate Polymarket Wallets subhead');
 assert.doesNotMatch(indexHtml, /watcher-v2-subhead-title">Polymarket Wallets/, 'Wallet Watchlist must not show separate Polymarket Wallets section header');
 assert.doesNotMatch(indexHtml, /watcherPmWalletRows/, 'Wallet Watchlist must not render separate PM wallet rows container');
@@ -3597,6 +3597,37 @@ assert.match(indexHtml, /vaultPrivacyInit/, 'portfolio privacy mask must initial
 assert.match(indexHtml, /topbarHeroPrivacyToggle/, 'Total Portfolio Value must be the privacy double-tap target');
 assert.match(indexHtml, /vault-privacy-mask-v1/, 'privacy mode must persist in localStorage');
 assert.match(indexHtml, /vaultPrivacyFormat/, 'USD formatters must honor privacy mask');
+assert.match(indexHtml, /VAULT_PRIVACY_SKIP_SEL/, 'privacy DOM scanner must define skip regions');
+assert.match(indexHtml, /\.pred-intelligence-panel/, 'Market Pulse must be excluded from privacy masking');
+assert.match(indexHtml, /#watcherTab/, 'Watcher tab must be excluded from privacy masking');
+assert.match(indexHtml, /#marketTicker/, 'top token bar must stay visible under privacy mask');
+assert.match(indexHtml, /#dashboardEventLog/, 'Event Log must stay visible under privacy mask');
+assert.match(indexHtml, /#dashboardOpportunityRows/, 'Opportunities must stay visible under privacy mask');
+assert.match(indexHtml, /Price stays visible in privacy mode/, 'Wallet Tokens Price must stay visible; Balance\/Value masked');
+assert.match(indexHtml, /const valueCell = privacy/, 'Wallet Tokens Value must use privacy mask cells');
+assert.match(indexHtml, /drawer-leg-qty vault-privacy-mask-val/, 'DeFi Positions Qty must mask when privacy is on');
+assert.match(indexHtml, /drawer-leg-usd vault-privacy-mask-val/, 'DeFi Positions USD must mask when privacy is on');
+assert.match(indexHtml, /Mark \/ avg \/ liq \/ TP-SL prices stay visible/, 'perpsFmtPx must not wrap vaultPrivacyFormat');
+assert.doesNotMatch(
+  indexHtml,
+  /function perpsFmtPx\(n\) \{\s*if \(n == null \|\| !Number\.isFinite\(n\)\) return '—';\s*return vaultPrivacyFormat/,
+  'perps mark\/avg\/liq prices must not be privacy-masked',
+);
+assert.match(indexHtml, /data-vault-privacy-skip="1">\$\$\{fmtTokenPrice\(p\.avgPrice\)\}/, 'prediction avg\/price cells must opt out of privacy scanner');
+assert.match(indexHtml, /VAULT_PRIVACY_SKIP_SEL/, 'privacy mask must define an explicit skip selector list');
+assert.match(indexHtml, /#marketTicker/, 'privacy mask must skip top token / market ticker bar');
+assert.match(indexHtml, /#dashboardInfoEvents/, 'privacy mask must skip event log');
+assert.match(indexHtml, /#dashboardInfoBrief/, 'privacy mask must skip daily brief');
+assert.match(indexHtml, /#dashboardOpportunityRows/, 'privacy mask must skip opportunities');
+assert.match(indexHtml, /#terminalAlertsList/, 'privacy mask must skip active alerts');
+assert.match(indexHtml, /\.pred-intelligence-panel/, 'privacy mask must skip market pulse');
+assert.match(indexHtml, /\.perps-pos-liq-val/, 'privacy mask must skip liq price');
+assert.match(indexHtml, /\.perps-tpsl-tooltip/, 'privacy mask must skip TP/SL tooltips');
+assert.match(indexHtml, /Mark \/ avg \/ liq \/ TP-SL prices stay visible/, 'perpsFmtPx must stay unmasked in privacy mode');
+assert.match(indexHtml, /const amountCell = privacy/, 'Wallet Tokens balance cells must mask under privacy mode');
+assert.match(indexHtml, /Price stays visible in privacy mode/, 'Wallet Tokens price must stay visible under privacy mode');
+assert.match(indexHtml, /drawer-leg-qty vault-privacy-mask-val/, 'DeFi Positions QTY must mask under privacy mode');
+assert.match(indexHtml, /drawer-leg-usd vault-privacy-mask-val/, 'DeFi Positions USD must mask under privacy mode');
 assert.match(indexHtml, /const total\s*=\s*dashCurrentTotal\(\)/, 'Total Portfolio Value must use dashCurrentTotal (same as Net Worth Trend)');
 assert.match(indexHtml, /function dashCurrentTotal\(\)[\s\S]*?dashboardPerpsEquityValue\(\)/, 'dashCurrentTotal must include perps equity');
 assert.match(indexHtml, /function dashboardChartCurrentValue\(\)[\s\S]*?return dashCurrentTotal\(\)/, 'Net Worth Trend Now point must use dashCurrentTotal');
