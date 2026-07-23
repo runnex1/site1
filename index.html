@@ -14317,7 +14317,8 @@ window.updateUI = function updateUI() {
     const totalETF       = data.etfs.reduce((s,e) => s+(Number(e.shares||0)*Number(e.currentPrice||0)), 0);
     const totalPM        = (data.predictionMarkets || []).reduce((s,p) => s+p.currentValue, 0);
     const totalOpinion   = (data.opinionMarkets || []).reduce((s,p) => s+p.currentValue, 0);
-    const total          = totalWallet + totalProtos + totalETF + totalPM + totalOpinion;
+    // Same total as Net Worth Trend "Now" (includes perps equity via dashCurrentTotal).
+    const total          = dashCurrentTotal();
     const fmt = n => '$' + n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
     const fmtSigned = n => (n < 0 ? '-' : '+') + '$' + Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
 
@@ -27244,7 +27245,9 @@ function renderDailyBrief() {
     const totalETF     = (data.etfs||[]).reduce((s,e) => s+(e.shares*e.currentPrice), 0);
     const totalPM      = (data.predictionMarkets||[]).reduce((s,p) => s+p.currentValue, 0);
     const totalOp      = (data.opinionMarkets||[]).reduce((s,p) => s+p.currentValue, 0);
-    const grandTotal   = totalWallet + totalProtos + totalETF + totalPM + totalOp;
+    const grandTotal   = typeof dashCurrentTotal === 'function'
+        ? dashCurrentTotal()
+        : (totalWallet + totalProtos + totalETF + totalPM + totalOp);
 
     // ── 1. Pendle expiries ───────────────────────────────────────────────────
     const expiryItems = [];
@@ -36479,6 +36482,17 @@ function perpsRenderMobileFundingRates(data) {
 function perpsRenderStatsBar(data) {
     _perpsLastData = data;
     if (typeof updateCharts === 'function' && document.body.dataset.activeTab === 'overview') updateCharts(true);
+    // Keep Total Portfolio Value in sync with Net Worth Trend once perps equity loads.
+    if (typeof dashCurrentTotal === 'function' && typeof animateValue === 'function') {
+        animateValue('totalNetWorth', dashCurrentTotal());
+    }
+    if (typeof dashboardMonthlyPnl === 'function' && typeof dashSignedUsd === 'function') {
+        const monthly = dashboardMonthlyPnl();
+        const pnlEl = document.getElementById('dashMonthlyPnl');
+        const pnlSub = document.getElementById('dashMonthlyPnlSub');
+        if (pnlEl) { pnlEl.textContent = dashSignedUsd(monthly.pnl); pnlEl.style.color = monthly.pnl < 0 ? 'var(--red)' : 'var(--t1)'; }
+        if (pnlSub && typeof dashPct === 'function') { pnlSub.textContent = dashPct(monthly.pct); pnlSub.style.color = monthly.pnl < 0 ? 'var(--red)' : 'var(--green)'; }
+    }
     const stats = perpsComputePortfolioStats(data);
     _perpsVenueEquity = stats.venueEquity;
     const set = (id, val, cls) => {

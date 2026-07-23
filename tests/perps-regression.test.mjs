@@ -3583,6 +3583,10 @@ assert.match(indexHtml, /vaultPrivacyInit/, 'portfolio privacy mask must initial
 assert.match(indexHtml, /topbarHeroPrivacyToggle/, 'Total Portfolio Value must be the privacy double-tap target');
 assert.match(indexHtml, /vault-privacy-mask-v1/, 'privacy mode must persist in localStorage');
 assert.match(indexHtml, /vaultPrivacyFormat/, 'USD formatters must honor privacy mask');
+assert.match(indexHtml, /const total\s*=\s*dashCurrentTotal\(\)/, 'Total Portfolio Value must use dashCurrentTotal (same as Net Worth Trend)');
+assert.match(indexHtml, /function dashCurrentTotal\(\)[\s\S]*?dashboardPerpsEquityValue\(\)/, 'dashCurrentTotal must include perps equity');
+assert.match(indexHtml, /function dashboardChartCurrentValue\(\)[\s\S]*?return dashCurrentTotal\(\)/, 'Net Worth Trend Now point must use dashCurrentTotal');
+assert.match(indexHtml, /animateValue\('totalNetWorth',\s*dashCurrentTotal\(\)\)/, 'perps refresh must keep Total Portfolio Value synced with Net Worth Trend');
 assert.match(indexHtml, /Open Var uPnL is calculated automatically/, 'edit avg fill must be disabled for open variational hedges');
 assert.doesNotMatch(indexHtml, /onclick="perpsEditVariationalEntry/, 'open variational legs must not show Edit avg-fill button');
 assert.match(indexHtml, /perps-pos-size-warn/, 'perps position cards must show size mismatch warning');
