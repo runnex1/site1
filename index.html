@@ -960,12 +960,12 @@ body[data-active-tab="perps"] .topbar,
 }
 .perps-pos-row { min-width:0; }
 .perps-pos-row.closed {
-  grid-template-columns:minmax(132px,1.1fr) minmax(188px,1.35fr) repeat(5,minmax(84px,0.88fr)) minmax(104px,0.95fr);
+  grid-template-columns:minmax(132px,1.1fr) minmax(188px,1.35fr) repeat(6,minmax(84px,0.88fr)) minmax(104px,0.95fr);
   gap:0.45rem 0.7rem;
   align-items:center;
 }
 .perps-pos-head.closed {
-  grid-template-columns:minmax(132px,1.1fr) minmax(188px,1.35fr) repeat(5,minmax(84px,0.88fr)) minmax(104px,0.95fr);
+  grid-template-columns:minmax(132px,1.1fr) minmax(188px,1.35fr) repeat(6,minmax(84px,0.88fr)) minmax(104px,0.95fr);
   gap:0.45rem 0.7rem;
   align-items:end;
   padding-left:0.85rem;
@@ -36166,6 +36166,7 @@ function perpsRenderClosedPositionsV3(closedPairs) {
     }
     el.innerHTML = closedPairs.map(pairRaw => {
         const pair = perpsNormalizeClosedPairForDisplay(pairRaw);
+        const margin = perpsClosedPairAvgNotional(pair);
         const closedAt = pair.closeTime
             ? new Date(pair.closeTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
             : '—';
@@ -36181,6 +36182,7 @@ function perpsRenderClosedPositionsV3(closedPairs) {
             <div class="perps-mv3-grid2">
                 ${perpsMv3Cell('Realized', perpsFmtUsd(pair.netPnl), perpsSignedCls(pair.netPnl))}
                 ${perpsMv3Cell('Funding', perpsFmtUsd(pair.funding), perpsSignedCls(pair.funding))}
+                ${perpsMv3Cell('Margin', margin != null ? perpsFmtUsd(margin) : '—')}
             </div>
         </article>`;
     }).join('');
@@ -36690,6 +36692,7 @@ function perpsRenderClosedPositions(closedPairs) {
         <div>Exchange PnL</div>
         <div>Net PnL</div>
         <div>APR</div>
+        <div>Margin</div>
         <div>Close Slippage</div>
         <div>Funding</div>
         <div>Fees</div>
@@ -36702,6 +36705,7 @@ function perpsRenderClosedPositions(closedPairs) {
         const sessionApr = perpsClosedPairSessionApr(pair);
         const aprTip = perpsClosedPairAprTip(pair, sessionApr);
         const slipTip = perpsClosedSlippageTip(pair);
+        const margin = perpsClosedPairAvgNotional(pair);
         const feesAbs = Math.abs(Number(pair.fees || 0));
         return `<div class="perps-pos-card"><div class="perps-pos-row closed">
             <div class="perps-pos-token">
@@ -36721,6 +36725,7 @@ function perpsRenderClosedPositions(closedPairs) {
             </div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.netPnl)}">${perpsFmtUsd(pair.netPnl)}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">APR</div><div class="perps-pos-apr-val ${sessionApr != null ? perpsSignedCls(sessionApr) : ''}" title="${dashEsc(aprTip)}">${sessionApr != null ? perpsFmtPct(sessionApr) : '—'}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Margin</div><div class="perps-pos-metric-val">${margin != null ? perpsFmtUsd(margin) : '—'}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.closeSlippage)}" title="${dashEsc(slipTip)}">${perpsFmtUsd(pair.closeSlippage)}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.funding)}">${perpsFmtUsd(pair.funding)}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Fees</div><div class="perps-pos-metric-val neg">-${perpsFmtUsd(feesAbs)}</div></div>
