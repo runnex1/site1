@@ -5871,6 +5871,116 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   assert.ok(Math.abs(lateGrvt.fees - 18.80) < 0.05, 'late-attach must use history fees');
   assert.ok(Math.abs(lateGrvt.funding - 73.09) < 0.05, 'late-attach must use full-session history funding');
   assert.equal(lateResult.newClosedPairs[0].closeLegEstimated, false);
+
+  // Mid-session + payment evidence must still freeze full-session history funding (not hedge-open window only).
+  const latePayHedge = {
+    ...lateHedge,
+    id: 'hbar-late-pay',
+    status: 'pending_close',
+    pendingCloseAt: closeTime,
+    closedAt: null,
+    closedFundingUsd: undefined,
+    closedTrackedFundingUsd: undefined,
+    closedVariationalFundingUsd: undefined,
+  };
+  const latePayData = {
+    ...data,
+    grvt: {
+      ...data.grvt,
+      funding: {
+        payments: [
+          { symbol: 'HBAR', time: openTime + 3600000, usdc: 40 },
+          { symbol: 'HBAR', time: openTime + 20 * 3600000, usdc: 33.09 },
+        ],
+      },
+    },
+  };
+  const latePayResult = applyVariationalHedges(latePayData, [latePayHedge], { HBAR: listing });
+  const latePayGrvt = latePayResult.newClosedPairs[0].shortLeg?.venue === 'grvt'
+    ? latePayResult.newClosedPairs[0].shortLeg
+    : latePayResult.newClosedPairs[0].longLeg;
+  assert.ok(
+    Math.abs(latePayGrvt.funding - 73.09) < 0.05,
+    'late-attach with payments must prefer full-session history funding, not post-attach payment window',
+  );
+  assert.ok(
+    Math.abs(Number(latePayResult.hedges[0].closedTrackedFundingUsd) - 73.09) < 0.05,
+    'frozen tracked funding must match history session',
+  );
+
+  // History lag: EST finalize first, then upgrade once position_history arrives.
+  const estFirstHedge = {
+    id: 'btc-est-first',
+    symbol: 'BTC',
+    trackedVenue: 'grvt',
+    trackedSize: -1.5,
+    variationalSize: 1.5,
+    variationalEntryPx: 100010,
+    openedAt: openTime,
+    status: 'pending_close',
+    pendingCloseAt: closeTime,
+    trackedLastSnapshot: {
+      side: 'short',
+      size: -1.5,
+      entryPx: 100000,
+      markPx: 100080,
+      fees: 0,
+      funding: 0,
+    },
+  };
+  const estFirstListing = { symbol: 'BTC', markPx: 100080, fundingRateInterval: 0, fundingIntervalS: 28800 };
+  const estFirstResult = applyVariationalHedges(
+    {
+      grvt: { state: { positions: [] }, fills: { fills: [] }, funding: { payments: [] }, positionHistory: [] },
+      closedPairs: [],
+    },
+    [estFirstHedge],
+    { BTC: estFirstListing },
+  );
+  assert.equal(estFirstResult.newClosedPairs.length, 1);
+  assert.equal(estFirstResult.newClosedPairs[0].closeLegEstimated, true, 'missing history must still EST-finalize');
+  const estPair = estFirstResult.newClosedPairs[0];
+  const histLater = {
+    venue: 'grvt',
+    symbol: 'BTC',
+    side: 'short',
+    size: 1.5,
+    openTime,
+    closeTime,
+    realizedPnl: -120.5,
+    fees: 2.1,
+    funding: 5.5,
+    fundingRaw: -5.5,
+    entryPx: 100000,
+    avgEntryPx: 100000,
+    exitPx: 100080,
+    avgClosePx: 100080,
+    fromExchangeHistory: true,
+    closeLegEstimated: false,
+  };
+  const histLaterData = {
+    grvt: {
+      state: { positions: [] },
+      fills: { fills: [] },
+      funding: { payments: [] },
+      positionHistory: [histLater],
+    },
+  };
+  assert.equal(
+    variationalClosedPairNeedsHistoryRepair(estPair, estFirstResult.hedges[0], histLaterData),
+    true,
+    'EST pair must repair once matching position_history appears',
+  );
+  const upgraded = repairHollowVariationalClosedPair(
+    estPair,
+    { ...estFirstResult.hedges[0], closedFundingUsd: undefined },
+    estFirstListing,
+    histLaterData,
+  );
+  assert.equal(upgraded.closeLegEstimated, false);
+  const upgradedGrvt = upgraded.shortLeg?.venue === 'grvt' ? upgraded.shortLeg : upgraded.longLeg;
+  assert.ok(Math.abs(upgradedGrvt.realizedPnl - (-120.5)) < 0.05);
+  assert.ok(Math.abs(upgradedGrvt.fees - 2.1) < 0.05);
 }
 
 {
