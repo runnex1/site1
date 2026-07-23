@@ -4861,14 +4861,20 @@ assert.match(indexHtml, /pnlCumulativeNetDeposits/, 'equity series points must c
 assert.match(indexHtml, /ignoresCapitalSessionReset/, 'PnL mode must not reset on deposit/withdraw sessions');
 assert.match(indexHtml, /perpsEnsurePnlTracking/, 'PnL mode must lock start + baseline once');
 assert.match(indexHtml, /PERPS_PNL_BASELINE_KEY/, 'PnL mode must persist a fixed baseline level');
-assert.match(indexHtml, /PERPS_EQUITY_CHART_EPOCH_MS/, 'equity/PnL chart must define a fixed epoch start');
-assert.match(indexHtml, /2026-07-22T00:00:00\.000Z/, 'equity/PnL chart epoch must be Jul 22 2026');
-assert.match(indexHtml, /perpsFilterEquityPointsFromEpoch/, 'equity chart must filter points from the Jul 22 epoch');
+assert.match(indexHtml, /PERPS_PNL_CHART_EPOCH_MS/, 'PnL chart must define a fixed Jul 22 epoch start');
+assert.match(indexHtml, /2026-07-22T00:00:00\.000Z/, 'PnL chart epoch must be Jul 22 2026');
+assert.match(indexHtml, /perpsFilterPnlPointsFromEpoch/, 'PnL chart must filter points from the Jul 22 epoch');
+assert.match(indexHtml, /PnL only: chop \+ rebase from Jul 22/, 'Jul 22 epoch must apply only in PnL value mode');
+assert.doesNotMatch(
+  indexHtml,
+  /const allPoints = perpsFilterPnlPointsFromEpoch\(allPoints/,
+  'non-PnL equity modes must not pre-filter all points by the Jul 22 epoch',
+);
 assert.match(indexHtml, /ignores deposit\/withdraw resets/, 'PnL chart note must state continuous tracking');
 assert.match(indexHtml, /vault-perps-pnl-track-v4/, 'PnL track v4 must use Jul 22 epoch + survive localStorage eviction');
 assert.match(indexHtml, /_perpsPnlTrackMemory/, 'PnL lock must keep an in-memory fallback when quota blocks localStorage');
 assert.match(indexHtml, /pnlBaseline/, 'PnL baseline must persist inside perps config for cloud sync');
-assert.match(indexHtml, /perpsMapEquityChartPoints\(allPoints, 'pnl', baseline\)/, 'PnL mode must rebase epoch equity history to the Jul 22 baseline');
+assert.match(indexHtml, /perpsMapEquityChartPoints\(pnlPoints, 'pnl', baseline\)/, 'PnL mode must rebase epoch equity history to the Jul 22 baseline');
 assert.match(indexHtml, /Always preserve an existing lock even when callers omit pnl/, 'config saves must not strip the PnL lock');
 
 {

@@ -34180,18 +34180,18 @@ function perpsLastCapitalEventMs(data) {
 const PERPS_PNL_CHART_START_KEY = 'vault-perps-pnl-chart-start-ms';
 const PERPS_PNL_BASELINE_KEY = 'vault-perps-pnl-baseline-level';
 const PERPS_PNL_TRACK_VER_KEY = 'vault-perps-pnl-track-v4';
-/** Portfolio equity / PnL chart window starts here (UTC). */
-const PERPS_EQUITY_CHART_EPOCH_MS = Date.parse('2026-07-22T00:00:00.000Z');
+/** PnL chart only — window starts here (UTC). Other equity modes keep full history. */
+const PERPS_PNL_CHART_EPOCH_MS = Date.parse('2026-07-22T00:00:00.000Z');
 let _perpsPnlTrackMemory = null;
 
 function perpsEquityPointTimeMs(point) {
     return Number(perpsParseBucketTime(point?.bucket) || point?.time || 0) || 0;
 }
 
-/** Keep equity-chart points from the Jul 22 2026 epoch onward. */
-function perpsFilterEquityPointsFromEpoch(points) {
+/** Keep PnL-chart points from the Jul 22 2026 epoch onward (PnL mode only). */
+function perpsFilterPnlPointsFromEpoch(points) {
     const rows = Array.isArray(points) ? points : [];
-    const filtered = rows.filter((p) => perpsEquityPointTimeMs(p) >= PERPS_EQUITY_CHART_EPOCH_MS);
+    const filtered = rows.filter((p) => perpsEquityPointTimeMs(p) >= PERPS_PNL_CHART_EPOCH_MS);
     if (filtered.length) return filtered;
     return rows.length ? [rows[rows.length - 1]] : [];
 }
@@ -34202,7 +34202,7 @@ function perpsReadPnlTrackFromConfig() {
         const startMs = Number(cfg?.pnlStartMs);
         const baseline = Number(cfg?.pnlBaseline);
         if (Number.isFinite(startMs) && startMs > 0 && Number.isFinite(baseline)) {
-            if (startMs < PERPS_EQUITY_CHART_EPOCH_MS) return null;
+            if (startMs < PERPS_PNL_CHART_EPOCH_MS) return null;
             return { startMs, baseline };
         }
     } catch (e) {}
@@ -34219,8 +34219,8 @@ function perpsReadPnlTrackFromLocalStorage() {
         const startMs = Number(localStorage.getItem(PERPS_PNL_CHART_START_KEY));
         const baseline = Number(localStorage.getItem(PERPS_PNL_BASELINE_KEY));
         if (Number.isFinite(startMs) && startMs > 0 && Number.isFinite(baseline)) {
-            // Migrate pre-epoch locks to the Jul 22 2026 chart window.
-            if (startMs < PERPS_EQUITY_CHART_EPOCH_MS) return null;
+            // Migrate pre-epoch locks to the Jul 22 2026 PnL window.
+            if (startMs < PERPS_PNL_CHART_EPOCH_MS) return null;
             return { startMs, baseline };
         }
     } catch (e) {}
@@ -34257,12 +34257,12 @@ function perpsEnsurePnlChartStartMs() {
 function perpsEnsurePnlTracking(liveCapitalNeutralLevel, epochBaselineLevel = null) {
     if (_perpsPnlTrackMemory
         && Number.isFinite(_perpsPnlTrackMemory.startMs)
-        && _perpsPnlTrackMemory.startMs >= PERPS_EQUITY_CHART_EPOCH_MS
+        && _perpsPnlTrackMemory.startMs >= PERPS_PNL_CHART_EPOCH_MS
         && Number.isFinite(_perpsPnlTrackMemory.baseline)) {
         return { ..._perpsPnlTrackMemory };
     }
     const existing = perpsReadPnlTrackFromLocalStorage() || perpsReadPnlTrackFromConfig();
-    if (existing && existing.startMs >= PERPS_EQUITY_CHART_EPOCH_MS) {
+    if (existing && existing.startMs >= PERPS_PNL_CHART_EPOCH_MS) {
         _perpsPnlTrackMemory = { ...existing };
         try {
             localStorage.setItem(PERPS_PNL_CHART_START_KEY, String(existing.startMs));
@@ -34284,11 +34284,11 @@ function perpsEnsurePnlTracking(liveCapitalNeutralLevel, epochBaselineLevel = nu
         } catch (e) {}
         return { ...existing };
     }
-    // Lock at the Jul 22 2026 epoch (or live level if epoch snapshot missing).
+    // Lock at the Jul 22 2026 PnL epoch (or live level if epoch snapshot missing).
     const epochBase = Number(epochBaselineLevel);
     const live = Number(liveCapitalNeutralLevel);
     const baseline = Number.isFinite(epochBase) ? epochBase : (Number.isFinite(live) ? live : 0);
-    const track = { startMs: PERPS_EQUITY_CHART_EPOCH_MS, baseline };
+    const track = { startMs: PERPS_PNL_CHART_EPOCH_MS, baseline };
     perpsPersistPnlTrack(track);
     return { ...track };
 }
@@ -34372,20 +34372,19 @@ function perpsMapEquityChartPoints(points, valueMode = _perpsEquityValueMode, fi
 }
 
 function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityValueMode) {
-    const allPointsRaw = (series?.points || []).slice().sort((a, b) => {
+    const allPoints = (series?.points || []).slice().sort((a, b) => {
         const ta = perpsEquityPointTimeMs(a);
         const tb = perpsEquityPointTimeMs(b);
         return ta - tb;
     });
-    // Chart window always starts Jul 22 2026 UTC.
-    const allPoints = perpsFilterEquityPointsFromEpoch(allPointsRaw);
     const chartMode = mode === 'all' ? 'all' : 'session';
 
-    // PnL: rebase to Jul 22 epoch capital-neutral level (ignores deposit/withdraw session chops).
+    // PnL only: chop + rebase from Jul 22 2026. Hedge-neutral / Exchange keep full history.
     if (valueMode === 'pnl') {
+        const pnlPoints = perpsFilterPnlPointsFromEpoch(allPoints);
         const VE = window.VariationalEquity;
-        const firstPt = allPoints.length ? allPoints[0] : null;
-        const lastPt = allPoints.length ? allPoints[allPoints.length - 1] : null;
+        const firstPt = pnlPoints.length ? pnlPoints[0] : null;
+        const lastPt = pnlPoints.length ? pnlPoints[pnlPoints.length - 1] : null;
         const epochBaseline = firstPt && VE?.capitalNeutralHedgeNeutralFromPoint
             ? VE.capitalNeutralHedgeNeutralFromPoint(firstPt)
             : (Number(firstPt?.variationalNeutralEquity) || Number(firstPt?.totalEquity) || 0);
@@ -34398,16 +34397,16 @@ function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityV
             ? epochBaseline
             : pnlBaseline;
         if (Number.isFinite(epochBaseline) && Math.abs(Number(pnlBaseline) - epochBaseline) > 1e-6) {
-            perpsPersistPnlTrack({ startMs: PERPS_EQUITY_CHART_EPOCH_MS, baseline: epochBaseline });
+            perpsPersistPnlTrack({ startMs: PERPS_PNL_CHART_EPOCH_MS, baseline: epochBaseline });
         }
-        const points = perpsMapEquityChartPoints(allPoints, 'pnl', baseline);
+        const points = perpsMapEquityChartPoints(pnlPoints, 'pnl', baseline);
         return {
             ...series,
             points,
             chartMode: 'pnl',
             valueMode: 'pnl',
-            sessionMs: PERPS_EQUITY_CHART_EPOCH_MS,
-            pnlStartMs: PERPS_EQUITY_CHART_EPOCH_MS,
+            sessionMs: PERPS_PNL_CHART_EPOCH_MS,
+            pnlStartMs: PERPS_PNL_CHART_EPOCH_MS,
             pnlBaselineLevel: baseline,
             pointCount: points.length,
             ignoresCapitalSessionReset: true,
@@ -34422,17 +34421,14 @@ function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityV
             points,
             chartMode,
             valueMode,
-            sessionMs: PERPS_EQUITY_CHART_EPOCH_MS,
             pointCount: points.length,
         };
     }
 
-    const capitalSessionMs = perpsLastCapitalEventMs(data);
-    const sessionMs = Math.max(
-        PERPS_EQUITY_CHART_EPOCH_MS,
-        Number(capitalSessionMs) > 0 ? Number(capitalSessionMs) : PERPS_EQUITY_CHART_EPOCH_MS,
-    );
-    let sessionPoints = allPoints.filter((p) => perpsEquityPointTimeMs(p) >= sessionMs);
+    const sessionMs = perpsLastCapitalEventMs(data);
+    let sessionPoints = sessionMs > 0
+        ? allPoints.filter((p) => perpsEquityPointTimeMs(p) >= sessionMs)
+        : allPoints.slice();
     if (!sessionPoints.length && allPoints.length) {
         sessionPoints = [allPoints[allPoints.length - 1]];
     }
