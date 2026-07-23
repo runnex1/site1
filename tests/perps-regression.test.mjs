@@ -3153,6 +3153,8 @@ assert.match(indexHtml, /perpsVenueWithSideHtml\(entry\.venue, entry\.leg\.size\
 assert.match(indexHtml, /perpsSetPositionsTab\('closed'/, 'Positions panel must expose a Closed tab');
 assert.match(indexHtml, /function perpsRenderClosedPositions\(closedPairs\)/, 'Closed tab must render fully closed position rounds');
 assert.match(indexHtml, /perps-pos-head closed[\s\S]{0,180}<div>APR<\/div>/, 'Closed tab must show APR column beside Net PnL');
+assert.match(indexHtml, /perps-pos-head closed[\s\S]{0,220}<div>Margin<\/div>/, 'Closed tab must show Margin column from peak avgNotional');
+assert.match(indexHtml, /perpsClosedPairAvgNotional\(pair\)/, 'Closed Margin must reuse perpsClosedPairAvgNotional (same peak margin as APR)');
 assert.match(indexHtml, /function perpsClosedPairCarryBasis\(/, 'closed APR must prefer full-hold carry when lifetime fields exist');
 assert.match(indexHtml, /lifetimeFunding/, 'closed display must surface full-hold funding when available');
 assert.match(perpsJs, /function closedPairLifetimeMetrics\(/, 'closed pairs must preserve full-hold funding before peak window');
@@ -3573,9 +3575,12 @@ assert.equal(perpHedgedSizesExactMatch(44000, 43999), false, 'any hedged size di
 assert.match(perpsJs, /!perpHedgedSizesExactMatch/, 'paired hedges must alert on non-exact sizes');
 assert.match(indexHtml, /perpsPairHasSizeMismatch/, 'perps UI must detect hedged size mismatch');
 assert.match(indexHtml, /variationalPairHasSizeMismatch/, 'size mismatch must compare live variational vs exchange legs');
-assert.match(indexHtml, /resolveVariationalSizesOnEntryEdit/, 'entry edit must resolve variational fill size from explicit input or live exchange leg');
-assert.match(indexHtml, /perpsVariationalSizeInput/, 'variational entry modal must expose fill size when editing an open hedge');
+assert.match(indexHtml, /resolveVariationalSizesOnEntryEdit/, 'entry edit helpers must still resolve variational size from live exchange leg');
+assert.match(indexHtml, /perpsVariationalSizeInput/, 'variational modal markup may still expose size input for legacy exit flows');
 assert.match(indexHtml, /function perpsMergeVariationalHedgeRecord\(/, 'variational hedge merge must prefer newer local fill sizes');
+assert.match(indexHtml, /createHedgeFromUnhedged\(leg, null\)/, 'hedge with Variational must create without manual avg fill');
+assert.match(indexHtml, /Variational open uPnL is calculated automatically/, 'edit avg fill must be disabled for open variational hedges');
+assert.doesNotMatch(indexHtml, /onclick="perpsEditVariationalEntry/, 'open variational legs must not show Edit avg-fill button');
 assert.match(indexHtml, /perps-pos-size-warn/, 'perps position cards must show size mismatch warning');
 
 assert.match(indexHtml, /function dashWalletSuffix4\(/, 'order fills must expose wallet suffix helper');
@@ -4154,14 +4159,38 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
 }
 
 {
-  const { buildVariationalSyntheticLeg } = require('../lib/variational-hedge.js');
+  const {
+    buildVariationalSyntheticLeg,
+    computeVariationalClosedLegPnl,
+    computeVariationalOpenLegUpnl,
+    VARIATIONAL_VS_TRACKED_CLOSE_SLIPPAGE_PCT,
+  } = require('../lib/variational-hedge.js');
   const hedge = {
-    variationalSize: -90000,
+    variationalSize: -80000,
     variationalEntryPx: 0.217785,
   };
-  const leg = buildVariationalSyntheticLeg(hedge, { markPx: 0.213705, fundingRateInterval: 0.0001, fundingIntervalS: 28800 });
-  assert.ok(Math.abs(leg.unrealizedPnl - 367.2) < 0.15, 'uPnL must use avg fill vs live Variational mark');
-  assert.equal(leg.markPx, 0.213705);
+  const trackedLeg = {
+    venue: 'grvt',
+    size: 90000,
+    unrealizedPnl: -89,
+    notional: 18900,
+    markPx: 0.21,
+  };
+  const leg = buildVariationalSyntheticLeg(
+    hedge,
+    { markPx: 0.213705, fundingRateInterval: 0.0001, fundingIntervalS: 28800 },
+    trackedLeg,
+  );
+  assert.equal(leg.size, -90000, 'open Var size must always match live tracked size');
+  const expectedSlip = -18900 * VARIATIONAL_VS_TRACKED_CLOSE_SLIPPAGE_PCT;
+  const expected = computeVariationalClosedLegPnl(-89, expectedSlip);
+  assert.ok(Math.abs(leg.unrealizedPnl - expected) < 0.05, 'open Var uPnL must equal −tracked uPnL + 0.12% slip');
+  assert.equal(leg.variationalUpnlOffset, true);
+  const viaHelper = computeVariationalOpenLegUpnl(trackedLeg, -90000, 0.213705);
+  assert.ok(Math.abs(viaHelper - expected) < 0.05, 'computeVariationalOpenLegUpnl must match Closed offset formula');
+  // No tracked leg: legacy fill-vs-mark still works when entry is stored.
+  const legacy = buildVariationalSyntheticLeg(hedge, { markPx: 0.213705 });
+  assert.ok(Math.abs(legacy.unrealizedPnl - 326.4) < 0.2, 'without tracked leg, fallback uses fill vs Var mark');
 }
 
 {
@@ -4290,8 +4319,13 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
   const trackedLeg = { venue: 'grvt', size: 90000, side: 'long', entryPx: 0.21, unrealizedPnl: -89, fundingSinceOpen: 1, fees: 0, notional: 18900 };
   const hedge = { id: 'h1', symbol: 'XLM', trackedVenue: 'grvt', trackedSize: 90000, variationalSize: -80000, variationalEntryPx: 0.218, openedAt: Date.now() - 2 * 86400000 };
   const pair = buildVariationalOpenPair(trackedLeg, hedge, { markPx: 0.22, fundingRate8h: 0.0001, fundingRateInterval: 0.0001, fundingIntervalS: 28800 }, null);
-  assert.ok(pair.alerts.includes('size_mismatch'), 'variational pair must flag tracked vs synthetic size drift');
-  assert.ok(pair.sizeMismatchPct > 0);
+  assert.ok(!pair.alerts.includes('size_mismatch'), 'open Var size must auto-match tracked leg (no mismatch)');
+  assert.equal(pair.crossLegB.size, -90000, 'open Var display size must equal −tracked size');
+  assert.equal(hedge.variationalSize, -90000, 'pin must rewrite stored Var size to match live tracked');
+  const expectedSlip = -18900 * 0.0012;
+  const expectedVar = -(-89) + expectedSlip;
+  assert.ok(Math.abs(pair.crossLegB.unrealizedPnl - expectedVar) < 0.05, 'open Var uPnL must use Closed offset formula');
+  assert.ok(Math.abs(pair.combinedUpnl - expectedSlip) < 0.05, 'combined open uPnL must collapse to 0.12% slip');
   assert.ok(pair.daysOpen != null && pair.daysOpen >= 1);
   assert.equal(pair.combinedUpnl != null, true);
 }
@@ -4303,7 +4337,7 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
     paired: [],
     unhedged: [],
     rateSpread: [{ symbol: 'ADA', variational8h: 0.08 / 1095, variationalMarkPx: 0.147 }],
-    hyperliquid: { state: { positions: [{ symbol: 'ADA', size: 176000, side: 'long', entryPx: 0.15, markPx: 0.147, unrealizedPnl: -437, fundingSinceOpen: 20, fees: 0 }] } },
+    hyperliquid: { state: { positions: [{ symbol: 'ADA', size: 176000, side: 'long', entryPx: 0.15, markPx: 0.147, unrealizedPnl: -437, fundingSinceOpen: 20, fees: 0, notional: 25872 }] } },
     nado: { state: { positions: [] } },
     grvt: { state: { positions: [] } },
     extended: { state: { positions: [] } },
@@ -4315,19 +4349,24 @@ assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose
     symbol: 'ADA',
     trackedVenue: 'hyperliquid',
     trackedSize: 160000,
+    variationalSize: -160000,
     variationalEntryPx: 0.145,
     status: 'open',
     openedAt: Date.now() - 5 * 86400000,
   };
   let result = applyVariationalHedges(data, [hedge], { ADA: listing });
-  assert.equal(result.hedges[0].variationalSize, -160000, 'apply must pin explicit variational fill size');
-  assert.ok(result.paired[0].alerts.includes('size_mismatch'));
+  assert.equal(result.hedges[0].variationalSize, -176000, 'apply must auto-match Var size to live exchange leg');
+  assert.ok(!result.paired[0].alerts.includes('size_mismatch'), 'matched open Var size must not alert mismatch');
+  assert.equal(result.paired[0].crossLegB.size, -176000);
+  const expectedSlip = -25872 * 0.0012;
+  const expectedVar = -(-437) + expectedSlip;
+  assert.ok(Math.abs(result.paired[0].crossLegB.unrealizedPnl - expectedVar) < 0.05, 'open apply must use −tracked uPnL + slip');
   hedge.variationalEntryPx = 0.146;
   hedge.variationalSize = -160000;
   hedge.updatedAt = Date.now();
   result = applyVariationalHedges(data, [hedge], { ADA: listing });
-  assert.ok(result.paired[0].alerts.includes('size_mismatch'), 'entry edit must not clear size mismatch');
-  assert.equal(result.paired[0].crossLegB.size, -160000);
+  assert.ok(!result.paired[0].alerts.includes('size_mismatch'), 'live pin must clear stale size mismatch');
+  assert.equal(result.paired[0].crossLegB.size, -176000);
   const serverStale = [{
     ...hedge,
     variationalEntryPx: 0.145,
@@ -4575,9 +4614,9 @@ function mergeVariationalHedgeRecord(prev, hedge) {
 }
 
 assert.ok(indexHtml.includes('PERPS_VARIATIONAL_HEDGES_KEY'), 'index must persist variational hedges');
-assert.ok(indexHtml.includes('perpsVariationalTrackedEntryWrap'), 'variational modal must show tracked exchange entry read-only');
-assert.ok(indexHtml.includes('trackedEntryPx'), 'variational modal must pass tracked exchange entry into edit flow');
 assert.ok(indexHtml.includes('Hedge with Variational'), 'index must expose hedge action');
+assert.match(indexHtml, /createHedgeFromUnhedged\(leg, null\)/, 'open hedge create must not require avg fill price');
+assert.match(indexHtml, /Variational open uPnL is calculated automatically/, 'avg-fill edit must explain auto open uPnL');
 assert.match(indexHtml, /function perpsHedgeWithVariational\(symbol, venue\)/, 'variational hedge action must resolve unhedged leg by symbol+venue');
 assert.match(indexHtml, /function perpsResolveUnhedgedLegForVariationalModal\(/, 'variational modal save must resolve unhedged leg by stable key');
 assert.match(indexHtml, /function perpsDataForVariationalAction\(/, 'variational hedge must fall back to cached perps payload');
@@ -4590,7 +4629,7 @@ assert.match(indexHtml, /_perpsVariationalModalMode === 'entry' && !_perpsVariat
 assert.match(indexHtml, /_perpsVariationalHedgesMem/, 'variational hedges must keep in-memory fallback when localStorage is full');
 assert.match(indexHtml, /skipPortfolioSync: true/, 'variational hedge save must not require full portfolio localStorage write');
 assert.match(indexHtml, /_perpsVariationalModalLeg/, 'variational modal must stash unhedged leg at open for save');
-assert.match(indexHtml, /unhedgedLeg:\s*leg/, 'hedge action must pass resolved leg into variational modal');
+assert.match(indexHtml, /perpsResolveUnhedgedLegForHedge\(symbol, venue\)/, 'hedge action must resolve unhedged leg then create without fill modal');
 assert.match(indexHtml, /_perpsUnhedgedRenderCache/, 'unhedged render must cache legs for hedge lookup');
 assert.match(indexHtml, /function perpsResolveUnhedgedLegForHedge\(/, 'variational hedge must resolve leg from data or render cache');
 assert.ok(indexHtml.includes('lib/variational-hedge.js'), 'index must load variational hedge module');
@@ -4608,40 +4647,49 @@ const {
 } = require('../lib/variational-equity.js');
 
 {
-  // Same-mark: Var MTM at tracked venue mark (not Variational listing mark).
+  // Offset formula: prefer synthetic Var uPnL (−tracked + 0.12% slip).
   const openAdj = variationalOpenEquityAdjust([{
     pairType: 'grvt_variational',
     venueA: 'grvt',
-    crossLegA: { venue: 'grvt', size: -100, entryPx: 1.0, markPx: 1.0, unrealizedPnl: 0 },
-    crossLegB: { venue: 'variational', size: 100, entryPx: 0.99, markPx: 1.05, unrealizedPnl: 6 },
+    crossLegA: { venue: 'grvt', size: -100, entryPx: 1.0, markPx: 1.0, unrealizedPnl: 0, notional: 100 },
+    crossLegB: {
+      venue: 'variational',
+      size: 100,
+      entryPx: 0.99,
+      markPx: 1.05,
+      unrealizedPnl: -0.12,
+      variationalUpnlOffset: true,
+    },
   }], (p) => p.pairType === 'grvt_variational');
-  assert.ok(Math.abs(openAdj - 1) < 1e-9, 'open adjust must mark Var leg at tracked venue mark');
+  assert.ok(Math.abs(openAdj - (-0.12)) < 1e-9, 'open adjust uses Var offset uPnL (−tracked + slip)');
   assert.ok(
-    Math.abs(variationalNeutralEquity(10000, openAdj) - 10001) < 1e-9,
-    'hedge-neutral must be exchange + same-mark Variational MTM',
+    Math.abs(variationalNeutralEquity(10000, openAdj) - 9999.88) < 1e-9,
+    'hedge-neutral equity adds offset Var uPnL (adverse slip)',
   );
 }
 
 {
+  // No precomputed Var uPnL: derive −trackedUpnl + slip from tracked leg.
   const openAdj = variationalOpenEquityAdjust([{
     pairType: 'hyperliquid_variational',
     venueA: 'hyperliquid',
-    crossLegA: { venue: 'hyperliquid', size: -50, entryPx: 2, markPx: 2, unrealizedPnl: 0 },
-    crossLegB: { venue: 'variational', size: 50, entryPx: 2, markPx: 2.5, unrealizedPnl: 25 },
+    crossLegA: { venue: 'hyperliquid', size: -50, entryPx: 2, markPx: 2, unrealizedPnl: 0, notional: 100 },
+    crossLegB: { venue: 'variational', size: 50, entryPx: 2, markPx: 2.5 },
   }], (p) => String(p.pairType || '').endsWith('_variational'));
-  assert.equal(openAdj, 0, 'matched hedge at same entry/mark → Var adj $0');
-  assert.equal(variationalNeutralEquity(10000, openAdj), 10000);
+  assert.ok(Math.abs(openAdj - (-0.12)) < 1e-9, 'matched hedge at flat tracked uPnL → adverse slip only');
+  assert.ok(Math.abs(variationalNeutralEquity(10000, openAdj) - 9999.88) < 1e-9);
 }
 
 {
-  // Partial trim: neutralize only matched size at tracked mark (Var 90 vs tracked 30 → 30).
+  // Partial: derive from tracked when Var uPnL missing (−3 + slip on matched notional 33).
   const openAdj = variationalOpenEquityAdjust([{
     pairType: 'hyperliquid_variational',
     venueA: 'hyperliquid',
-    crossLegA: { venue: 'hyperliquid', size: -30, entryPx: 1, markPx: 1.1, unrealizedPnl: 3 },
-    crossLegB: { venue: 'variational', size: 90, entryPx: 1, markPx: 1.2, unrealizedPnl: 18 },
+    crossLegA: { venue: 'hyperliquid', size: -30, entryPx: 1, markPx: 1.1, unrealizedPnl: 3, notional: 33 },
+    crossLegB: { venue: 'variational', size: 90, entryPx: 1, markPx: 1.2 },
   }], (p) => String(p.pairType || '').endsWith('_variational'));
-  assert.ok(Math.abs(openAdj - 3) < 1e-9, 'partial trim neutralizes only matched Var size at tracked mark');
+  const expected = -3 + (-33 * 0.0012);
+  assert.ok(Math.abs(openAdj - expected) < 1e-9, 'partial match derives −tracked + slip when Var uPnL absent');
 }
 
 {
@@ -4656,44 +4704,48 @@ const {
   assert.equal(matchedVariationalSignedSize(-90, 30), -30, 'matched short Var caps to tracked');
   assert.equal(matchedVariationalSignedSize(90, 30), null, 'same-sign sizes are not a hedge match');
 
-  // Price shock on size-matched Var hedge must not move HN when using same-mark adj.
+  // Offset formula: HN = cash + trackedUpnl + (−trackedUpnl + slip) = cash + slip.
+  // Slip scales slightly with mark×size, but underlying price PnL cancels.
   const hnAt = (mark) => {
     const trackedUpnl = variationalLegPnl(-100, 10, mark);
+    const notional = 100 * mark;
+    const slip = -notional * 0.0012;
     const pair = {
       pairType: 'hyperliquid_variational',
       venueA: 'hyperliquid',
       crossLegA: {
-        venue: 'hyperliquid', size: -100, entryPx: 10, markPx: mark, unrealizedPnl: trackedUpnl,
+        venue: 'hyperliquid', size: -100, entryPx: 10, markPx: mark, unrealizedPnl: trackedUpnl, notional,
       },
       crossLegB: {
         venue: 'variational', size: 100, entryPx: 10, markPx: mark + 0.5,
-        unrealizedPnl: variationalLegPnl(100, 10, mark + 0.5),
+        // Prefer omitting listing-mark uPnL so adjust derives −tracked + slip.
       },
     };
     const equity = 10000 + trackedUpnl; // cash 10k when flat at entry
     const adj = variationalOpenEquityAdjust([pair], () => true);
+    assert.ok(Math.abs(adj - (-trackedUpnl + slip)) < 1e-6, 'adj must be −tracked + slip');
     return variationalNeutralEquity(equity, adj);
   };
-  assert.ok(Math.abs(hnAt(10) - hnAt(12)) < 1e-6, 'same-mark HN must be flat to underlying price');
-  assert.ok(Math.abs(hnAt(10) - 10000) < 1e-6, 'flat hedge at entry marks → HN = cash');
+  assert.ok(Math.abs(hnAt(10) - hnAt(12)) < 0.5, 'offset HN only drifts by slip×mark (not full price beta)');
+  assert.ok(Math.abs(hnAt(10) - (10000 - 100 * 10 * 0.0012)) < 1e-6, 'flat hedge at entry → HN = cash + adverse slip');
 
-  // Uneven partial: Var leftover must not create HN price beta.
+  // Uneven partial: Var leftover omitted; only matched notional slip + tracked cancel.
   const hnPartialAt = (mark) => {
     const trackedUpnl = variationalLegPnl(-30, 10, mark);
+    const notional = 30 * mark;
     const pair = {
       pairType: 'hyperliquid_variational',
       venueA: 'hyperliquid',
       crossLegA: {
-        venue: 'hyperliquid', size: -30, entryPx: 10, markPx: mark, unrealizedPnl: trackedUpnl,
+        venue: 'hyperliquid', size: -30, entryPx: 10, markPx: mark, unrealizedPnl: trackedUpnl, notional,
       },
       crossLegB: {
         venue: 'variational', size: 90, entryPx: 10, markPx: mark + 0.5,
-        unrealizedPnl: variationalLegPnl(90, 10, mark + 0.5),
       },
     };
     return variationalNeutralEquity(10000 + trackedUpnl, variationalOpenEquityAdjust([pair], () => true));
   };
-  assert.ok(Math.abs(hnPartialAt(10) - hnPartialAt(12)) < 1e-6, 'partial Var overhang must not move HN with price');
+  assert.ok(Math.abs(hnPartialAt(10) - hnPartialAt(12)) < 0.2, 'partial Var overhang must not move HN with full price beta');
 
   const crossAdj = crossVenueSameMarkAdjust([{
     pairType: 'hl_nado',
@@ -4848,16 +4900,17 @@ assert.match(indexHtml, /perpsMapEquityChartPoints\(allPoints, 'pnl', pnlBaselin
     }],
     closedPairs: [],
     states: {
-      grvt: { state: { positions: [{ symbol: 'XLM', unrealizedPnl: -120, markPx: 0.42 }] } },
+      grvt: { state: { positions: [{ symbol: 'XLM', size: 50, unrealizedPnl: -120, markPx: 0.42, notional: 21 }] } },
     },
   });
-  // Short 50 @ 0.40 tracked-mark 0.42 → −1 same-mark Var MTM (not venue listing alone).
-  assert.ok(Math.abs(adjust.openAdj - (-1)) < 1e-9, 'server hedge adjust must use same-mark Variational MTM');
-  assert.ok(Math.abs(adjust.totalAdj - (-1)) < 1e-9, 'total hedge adjust must include open Variational MTM');
+  // −tracked uPnL + 0.12% slip = 120 − 21*0.0012
+  const expected = 120 - 21 * 0.0012;
+  assert.ok(Math.abs(adjust.openAdj - expected) < 1e-9, 'server hedge adjust must use −tracked uPnL + 0.12% slip');
+  assert.ok(Math.abs(adjust.totalAdj - expected) < 1e-9, 'total hedge adjust must include open Var offset uPnL');
 }
 
 {
-  // Tracked mark differs from Var listing mark — equity must use tracked mark.
+  // Tracked mark / listing divergence: offset uses tracked uPnL, not Var listing MTM.
   const adjust = computeVariationalEquityAdjustFromHedges({
     hedges: [{
       id: 'zro-hl',
@@ -4870,11 +4923,11 @@ assert.match(indexHtml, /perpsMapEquityChartPoints\(allPoints, 'pnl', pnlBaselin
     }],
     closedPairs: [],
     states: {
-      hyperliquid: { state: { positions: [{ symbol: 'ZRO', size: -100, unrealizedPnl: -5, markPx: 1.05 }] } },
+      hyperliquid: { state: { positions: [{ symbol: 'ZRO', size: -100, unrealizedPnl: -5, markPx: 1.05, notional: 105 }] } },
     },
   });
-  // Long 100 @ 1.0 marked at tracked 1.05 → +5 (not +10 from Var mark 1.10)
-  assert.ok(Math.abs(adjust.openAdj - 5) < 1e-9, 'same-mark must prefer tracked venue mark over Var listing');
+  const expected = -(-5) + (-105 * 0.0012);
+  assert.ok(Math.abs(adjust.openAdj - expected) < 1e-9, 'open adjust must offset tracked uPnL + slip (ignore Var listing mark)');
 }
 
 {

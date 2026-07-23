@@ -33439,54 +33439,51 @@ function perpsEnrichVariationalPairFunding(pair, data, opts = {}) {
 }
 
 function perpsHedgeWithVariational(symbol, venue) {
-    try {
-        const leg = perpsResolveUnhedgedLegForHedge(symbol, venue);
-        if (!leg) {
-            alert('Could not find that unhedged leg — refresh Perps and try again.');
-            return;
+    void (async () => {
+        try {
+            const VH = window.VariationalHedge;
+            if (!VH?.createHedgeFromUnhedged) {
+                alert('Variational hedge module failed to load — hard-refresh and try again.');
+                return;
+            }
+            const leg = perpsResolveUnhedgedLegForHedge(symbol, venue);
+            if (!leg) {
+                alert('Could not find that unhedged leg — refresh Perps and try again.');
+                return;
+            }
+            // Open Var uPnL uses −tracked + 0.12% slip; no manual avg fill required.
+            const hedge = VH.createHedgeFromUnhedged(leg, null);
+            const hedges = perpsLoadVariationalHedges().filter((h) => !(h.status !== 'closed' && (
+                VH.variationalHedgeMatchKey
+                    ? VH.variationalHedgeMatchKey(h.symbol, h.trackedVenue) === VH.variationalHedgeMatchKey(leg.symbol, leg.venue)
+                    : h.symbol === leg.symbol && h.trackedVenue === leg.venue
+            )));
+            hedges.push(hedge);
+            const persistResult = perpsPersistVariationalHedges(hedges, { skipPortfolioSync: true });
+            const inSession = perpsLoadVariationalHedgesRaw().some((h) => h.id === hedge.id);
+            if (!inSession) {
+                alert('Could not save hedge — try again.');
+                return;
+            }
+            if (!persistResult.localStorageOk) {
+                const cloudOk = await perpsPushVariationalHedgesToServer(hedges);
+                if (!cloudOk) {
+                    console.warn('Variational hedge saved for this session only (storage full).');
+                }
+            }
+            const data = perpsDataForVariationalAction();
+            if (data) perpsApplyVariationalHedgesToData(data);
+            perpsRenderDashboard(data || {});
+        } catch (e) {
+            console.error('perpsHedgeWithVariational failed', e);
+            alert(`Hedge with Variational failed: ${e?.message || e}`);
         }
-        perpsOpenVariationalModal({
-            mode: 'entry',
-            unhedgedSymbol: leg.symbol,
-            unhedgedVenue: leg.venue,
-            unhedgedLeg: leg,
-            value: null,
-            trackedEntryPx: leg.entryPx ?? leg.entry,
-            trackedVenue: leg.venue,
-            meta: `${leg.symbol} · ${perpsVenueShort(leg.venue)} ${leg.side || ''} ${perpsFmtSize(leg.size)}`,
-        });
-    } catch (e) {
-        console.error('perpsHedgeWithVariational failed', e);
-        alert(`Hedge with Variational failed: ${e?.message || e}`);
-    }
+    })();
 }
 
 function perpsEditVariationalEntry(hedgeId) {
-    const hedge = perpsLoadVariationalHedges().find(h => h.id === hedgeId);
-    if (!hedge) return;
-    const pair = (_perpsLastData?.paired || []).find(p => p.variationalHedgeId === hedgeId);
-    const trackedLeg = pair?.crossLegA?.venue === hedge.trackedVenue
-        ? pair.crossLegA
-        : pair?.crossLegB?.venue === hedge.trackedVenue
-            ? pair.crossLegB
-            : pair?.crossLegB;
-    const varLeg = pair?.crossLegA?.venue === 'variational'
-        ? pair.crossLegA
-        : pair?.crossLegB?.venue === 'variational'
-            ? pair.crossLegB
-            : null;
-    const variationalSize = Math.abs(Number(hedge.variationalSize ?? varLeg?.size ?? trackedLeg?.size ?? 0)) || null;
-    perpsOpenVariationalModal({
-        mode: 'entry',
-        hedgeId,
-        symbol: hedge.symbol,
-        value: hedge.variationalEntryPx,
-        variationalSize,
-        hadSizeMismatch: pair ? perpsPairHasSizeMismatch(pair) : false,
-        trackedEntryPx: trackedLeg?.entryPx ?? trackedLeg?.entry ?? hedge.trackedLastSnapshot?.entryPx,
-        trackedVenue: hedge.trackedVenue,
-        meta: `${hedge.symbol} · ${perpsVenueShort(hedge.trackedVenue)} + Var (open)`,
-    });
+    // Open Var uPnL no longer uses manual avg fill — size auto-matches the exchange leg.
+    alert('Variational open uPnL is calculated automatically (−exchange uPnL + 0.12% slip). Size always matches the exchange leg.');
 }
 
 function perpsEditVariationalExit(hedgeId) {
@@ -36085,13 +36082,9 @@ function perpsMv3Cell(label, val, cls) {
 function perpsMv3LegHtml(entry, p) {
     const side = Number(entry.leg.size) >= 0 ? 'long' : 'short';
     const label = perpsVenueLabel(entry.venue);
-    const hedgeId = p.variationalHedgeId;
-    const varEdit = entry.venue === 'variational' && hedgeId
-        ? ` <button type="button" class="perps-btn secondary" style="padding:0.1rem 0.4rem;font-size:0.65rem;margin-left:0.25rem;" onclick="perpsEditVariationalEntry('${hedgeId}'); event.stopPropagation();">Edit</button>`
-        : '';
     const upnlCls = entry.leg.upnl != null ? perpsSignedCls(entry.leg.upnl) : '';
     const upnlVal = entry.leg.upnl != null ? perpsFmtUsd(entry.leg.upnl) : '—';
-    return `<div class="perps-mv3-leg"><span><span class="perps-mv3-badge ${side}">${side === 'long' ? 'L' : 'S'}</span>${dashEsc(label)}${varEdit}</span><span class="perps-mv3-val ${upnlCls}">${upnlVal}</span></div>`;
+    return `<div class="perps-mv3-leg"><span><span class="perps-mv3-badge ${side}">${side === 'long' ? 'L' : 'S'}</span>${dashEsc(label)}</span><span class="perps-mv3-val ${upnlCls}">${upnlVal}</span></div>`;
 }
 
 function perpsRenderPortfolioPositionsV3(paired) {
@@ -36350,12 +36343,8 @@ function perpsRenderPortfolioPositions(paired) {
             </div>
             <div class="perps-pos-legs">
                 ${displayLegs.map(entry => {
-                    const hedgeId = p.variationalHedgeId;
-                    const varEdit = entry.venue === 'variational' && hedgeId
-                        ? ` <button type="button" class="perps-btn secondary" style="padding:0.1rem 0.4rem;font-size:0.65rem;margin-left:0.25rem;" onclick="perpsEditVariationalEntry('${hedgeId}'); event.stopPropagation();">Edit</button>`
-                        : '';
                     const fundEst = entry.leg.fundingEstimated ? ' ~est.' : '';
-                    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}${varEdit}</span><span class="perps-pos-metric-val ${entry.leg.upnl != null ? perpsSignedCls(entry.leg.upnl) : ''}">${entry.leg.upnl != null ? perpsFmtUsd(entry.leg.upnl) : '—'}</span></div>`;
+                    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="perps-pos-metric-val ${entry.leg.upnl != null ? perpsSignedCls(entry.leg.upnl) : ''}">${entry.leg.upnl != null ? perpsFmtUsd(entry.leg.upnl) : '—'}</span></div>`;
                 }).join('')}
             </div>
             ${perpsPositionLiqStackHtml(p, displayLegs)}
