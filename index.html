@@ -9473,7 +9473,7 @@ body[data-active-tab="loops"] .page-content,
               </div>
               <span class="perps-pill" style="border-color:rgba(167,139,250,0.35);color:#c4b5fd;background:rgba(167,139,250,0.1);" id="perpsEquityChartBadge">—</span>
             </div>
-            <div class="perps-pnl-note" id="perpsEquityChartNote" style="padding:0 1rem 0.35rem;font-size:0.68rem;">Hedge-neutral · same-mark matched size (partials neutralized; basis/funding remain)</div>
+            <div class="perps-pnl-note" id="perpsEquityChartNote" style="padding:0 1rem 0.35rem;font-size:0.68rem;">Hedge-neutral · Var uPnL = −exchange + 0.12% slip (matched size; funding remains)</div>
             <div class="perps-panel-body perps-panel-body--chart">
               <div class="perps-pnl-chart hoverable" id="perpsEquityChartWrap">
                 <svg id="perpsEquityChart" viewBox="0 0 760 160" preserveAspectRatio="none" role="img" aria-label="Portfolio PnL chart">
@@ -32915,12 +32915,8 @@ function perpsOpenVariationalModal(opts = {}) {
     if (hint) {
         if (opts.mode === 'exit') {
             hint.textContent = 'Variational exit is derived automatically from the tracked exchange close (+0.12% of 24h peak margin).';
-        } else if (opts.hadSizeMismatch) {
-            hint.textContent = 'Enter your Variational avg fill. Size syncs automatically to the exchange leg.';
-        } else if (opts.hedgeId) {
-            hint.textContent = 'Enter your average Variational fill. Size syncs automatically to the exchange leg.';
         } else {
-            hint.textContent = 'Enter your average Variational fill. uPnL = fill vs live Variational mark (not size-tier quotes). Funding shown as ~est.';
+            hint.textContent = 'Open Var uPnL is calculated automatically (−exchange + 0.12% slip). Size always matches the exchange leg.';
         }
         hint.style.color = '';
     }
@@ -32944,11 +32940,6 @@ function perpsSaveVariationalModal() {
     void (async () => {
         try {
             const input = document.getElementById('perpsVariationalPxInput');
-            const px = Number(String(input?.value || '').replace(/,/g, ''));
-            if (!Number.isFinite(px) || px <= 0) {
-                perpsVariationalModalSetStatus('Enter a valid price.', true);
-                return;
-            }
             const VH = window.VariationalHedge;
             if (!VH) {
                 perpsVariationalModalSetStatus('Variational hedge module failed to load — hard-refresh and try again.', true);
@@ -32962,7 +32953,8 @@ function perpsSaveVariationalModal() {
                     perpsVariationalModalSetStatus('Could not find that unhedged leg — refresh Perps and try again.', true);
                     return;
                 }
-                const hedge = VH.createHedgeFromUnhedged(leg, px);
+                // Open Var uPnL uses −tracked + 0.12% slip; no manual avg fill required.
+                const hedge = VH.createHedgeFromUnhedged(leg, null);
                 const hedges = perpsLoadVariationalHedges().filter(h =>
                     !(h.status !== 'closed' && (
                         VH.variationalHedgeMatchKey
@@ -32991,6 +32983,17 @@ function perpsSaveVariationalModal() {
                     perpsVariationalModalSetStatus('Could not find that Variational hedge — reopen and try again.', true);
                     return;
                 }
+                if (_perpsVariationalModalMode === 'entry') {
+                    // Open Var uPnL no longer uses manual avg fill.
+                    perpsVariationalModalSetStatus('Open Var uPnL is calculated automatically (−exchange + 0.12% slip).', false);
+                    perpsCloseVariationalModal();
+                    return;
+                }
+                const px = Number(String(input?.value || '').replace(/,/g, ''));
+                if (!Number.isFinite(px) || px <= 0) {
+                    perpsVariationalModalSetStatus('Enter a valid price.', true);
+                    return;
+                }
                 if (_perpsVariationalModalMode === 'exit') {
                     const listing = _perpsLastData?._variationalListingBySymbol?.[hedge.symbol]
                         || perpsVariationalBySymbolFromSpread(_perpsLastData?.rateSpread || [])[hedge.symbol]
@@ -33003,24 +33006,6 @@ function perpsSaveVariationalModal() {
                     hedge.variationalExitPx = px;
                     hedge.closedAt = Date.now();
                     hedge.updatedAt = Date.now();
-                } else {
-                    hedge.variationalEntryPx = px;
-                    hedge.updatedAt = Date.now();
-                    const pair = (_perpsLastData?.paired || []).find(p => p.variationalHedgeId === hedge.id);
-                    const trackedLeg = pair?.crossLegA?.venue === hedge.trackedVenue
-                        ? pair.crossLegA
-                        : pair?.crossLegB?.venue === hedge.trackedVenue
-                            ? pair.crossLegB
-                            : VH.findTrackedLeg?.(_perpsLastData, hedge) || null;
-                    if (VH.resolveVariationalSizesOnEntryEdit) {
-                        VH.resolveVariationalSizesOnEntryEdit(hedge, trackedLeg);
-                    }
-                    if (VH.recordVariationalSizeChange) {
-                        const signedSize = VH.resolveVariationalFundingSize?.(hedge, trackedLeg);
-                        if (Number.isFinite(signedSize) && signedSize !== 0) {
-                            VH.recordVariationalSizeChange(hedge, signedSize, Date.now());
-                        }
-                    }
                 }
                 const persistResult = perpsPersistVariationalHedges(hedges, { skipPortfolioSync: true });
                 if (!persistResult.localStorageOk) {
@@ -33483,7 +33468,7 @@ function perpsHedgeWithVariational(symbol, venue) {
 
 function perpsEditVariationalEntry(hedgeId) {
     // Open Var uPnL no longer uses manual avg fill — size auto-matches the exchange leg.
-    alert('Variational open uPnL is calculated automatically (−exchange uPnL + 0.12% slip). Size always matches the exchange leg.');
+    alert('Open Var uPnL is calculated automatically (−exchange uPnL + 0.12% slip). Size always matches the exchange leg.');
 }
 
 function perpsEditVariationalExit(hedgeId) {
@@ -34509,7 +34494,7 @@ function perpsRenderEquityChart(data) {
             ? 'Exchange equity · raw HL + Nado + GRVT + Extended account values'
             : (_perpsEquityValueMode === 'pnl'
                 ? 'PnL · locked baseline (config + memory) · ignores deposit/withdraw resets'
-                : 'Hedge-neutral · same-mark matched size (partials neutralized; basis/funding remain)');
+                : 'Hedge-neutral · Var uPnL = −exchange + 0.12% slip (matched size; funding remains)');
     }
     if (lineEl) lineEl.setAttribute('d', chart.line);
     if (areaEl) areaEl.setAttribute('d', chart.area || '');
