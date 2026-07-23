@@ -3579,6 +3579,10 @@ assert.match(variationalHedgeJs, /resolveVariationalSizesOnEntryEdit/, 'entry ed
 assert.match(indexHtml, /perpsVariationalSizeInput/, 'variational modal markup may still expose size input for legacy exit flows');
 assert.match(indexHtml, /function perpsMergeVariationalHedgeRecord\(/, 'variational hedge merge must prefer newer local fill sizes');
 assert.match(indexHtml, /createHedgeFromUnhedged\(leg, null\)/, 'hedge with Variational must create without manual avg fill');
+assert.match(indexHtml, /vaultPrivacyInit/, 'portfolio privacy mask must initialize on load');
+assert.match(indexHtml, /topbarHeroPrivacyToggle/, 'Total Portfolio Value must be the privacy double-tap target');
+assert.match(indexHtml, /vault-privacy-mask-v1/, 'privacy mode must persist in localStorage');
+assert.match(indexHtml, /vaultPrivacyFormat/, 'USD formatters must honor privacy mask');
 assert.match(indexHtml, /Open Var uPnL is calculated automatically/, 'edit avg fill must be disabled for open variational hedges');
 assert.doesNotMatch(indexHtml, /onclick="perpsEditVariationalEntry/, 'open variational legs must not show Edit avg-fill button');
 assert.match(indexHtml, /perps-pos-size-warn/, 'perps position cards must show size mismatch warning');

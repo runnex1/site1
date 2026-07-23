@@ -1534,6 +1534,18 @@ body::after {
 
 .topbar-hero {
   display: flex; flex-direction: column; gap: 0.2rem;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.topbar-hero:focus-visible {
+  outline: 1px solid rgba(167,139,250,0.55);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+body.vault-privacy-on .topbar-hero-value {
+  letter-spacing: 0.12em;
 }
 .topbar-hero-label {
   font-size: 0.7rem; font-weight: 600; letter-spacing: 0.12em;
@@ -8410,7 +8422,7 @@ body[data-active-tab="loops"] .page-content,
 
     <div class="overview-top-chrome">
     <header class="topbar">
-      <div class="topbar-hero">
+      <div class="topbar-hero" id="topbarHeroPrivacyToggle" title="Double-tap within 2s to hide or show balances" role="button" tabindex="0" aria-label="Total Portfolio Value. Double-tap to hide or show balances.">
         <div class="topbar-hero-label">Total Portfolio Value</div>
         <div class="topbar-hero-value" id="totalNetWorth">$0</div>
       </div>
@@ -10050,10 +10062,19 @@ function animateValue(id, endVal, duration = 600) {
     if (!el) return;
     const startVal = parseFloat(el.getAttribute('data-raw') || '0') || 0;
     el.setAttribute('data-raw', endVal);
+    if (typeof vaultPrivacyEnabled === 'function' && vaultPrivacyEnabled()) {
+        cancelAnimationFrame(_animTargets[id]);
+        el.textContent = vaultPrivacyMaskToken();
+        return;
+    }
     if (Math.abs(endVal - startVal) < 1) { el.textContent = '$' + Math.round(endVal).toLocaleString('en-US'); return; }
     cancelAnimationFrame(_animTargets[id]);
     const startTs = performance.now();
     const tick = (ts) => {
+        if (typeof vaultPrivacyEnabled === 'function' && vaultPrivacyEnabled()) {
+            el.textContent = vaultPrivacyMaskToken();
+            return;
+        }
         const p = Math.min((ts - startTs) / duration, 1);
         const eased = 1 - Math.pow(1 - p, 3);
         const current = startVal + (endVal - startVal) * eased;
@@ -10061,6 +10082,218 @@ function animateValue(id, endVal, duration = 600) {
         if (p < 1) _animTargets[id] = requestAnimationFrame(tick);
     };
     _animTargets[id] = requestAnimationFrame(tick);
+}
+
+// ─── PRIVACY MASK (double-tap Total Portfolio Value) ───────
+const VAULT_PRIVACY_KEY = 'vault-privacy-mask-v1';
+const VAULT_PRIVACY_MASK = '****';
+let _vaultPrivacyTapTs = 0;
+let _vaultPrivacyObserver = null;
+
+function vaultPrivacyMaskToken() {
+    return VAULT_PRIVACY_MASK;
+}
+
+function vaultPrivacyEnabled() {
+    return document.body.classList.contains('vault-privacy-on');
+}
+
+function vaultPrivacyMaskMoneyString(text) {
+    if (typeof text !== 'string' || !text) return text;
+    let s = text;
+    // ~+$1,234.56 / -$12 / $0
+    s = s.replace(/(~?\s*[+\-−–—]?\s*)\$\s*[\d,]+(?:\.\d+)?/g, (_, pfx) => `${pfx || ''}${VAULT_PRIVACY_MASK}`);
+    // Token / size amounts with thousands separators: 384,000
+    s = s.replace(/\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b/g, VAULT_PRIVACY_MASK);
+    return s;
+}
+
+function vaultPrivacyFormat(formatted) {
+    if (!vaultPrivacyEnabled()) return formatted;
+    if (formatted == null) return formatted;
+    const s = String(formatted);
+    if (!s || s === '—' || s === '-' || s === '–') return formatted;
+    if (s.includes(VAULT_PRIVACY_MASK) && !/\$\s*[\d,]/.test(s)) return formatted;
+    return vaultPrivacyMaskMoneyString(s);
+}
+
+function vaultPrivacyShouldSkipEl(el) {
+    if (!el || el.nodeType !== 1) return true;
+    const tag = el.tagName;
+    if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'SVG' || tag === 'PATH') return true;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'OPTION') return true;
+    if (el.isContentEditable) return true;
+    if (el.closest('input, textarea, select, [contenteditable="true"], script, style')) return true;
+    return false;
+}
+
+function vaultPrivacyMaskLeaf(el) {
+    if (vaultPrivacyShouldSkipEl(el)) return;
+    if (el.children.length > 0) return;
+    const text = el.textContent;
+    if (!text || !/\$|,\d{3}/.test(text)) return;
+    const masked = vaultPrivacyMaskMoneyString(text);
+    if (masked === text) return;
+    if (!el.hasAttribute('data-vault-privacy-orig')) {
+        el.setAttribute('data-vault-privacy-orig', text);
+    }
+    el.textContent = masked;
+}
+
+function vaultPrivacyScanDom(root = document.body) {
+    if (!vaultPrivacyEnabled() || !root) return;
+    const walk = (node) => {
+        if (!node) return;
+        if (node.nodeType === 1) {
+            if (vaultPrivacyShouldSkipEl(node)) return;
+            if (node.children.length === 0) {
+                vaultPrivacyMaskLeaf(node);
+                return;
+            }
+            // Also mask elements whose direct text matters (mixed children rare for money cells)
+            for (const child of Array.from(node.childNodes)) {
+                if (child.nodeType === 3) {
+                    const raw = child.nodeValue || '';
+                    if (!/\$|,\d{3}/.test(raw)) continue;
+                    const masked = vaultPrivacyMaskMoneyString(raw);
+                    if (masked !== raw) child.nodeValue = masked;
+                } else if (child.nodeType === 1) {
+                    walk(child);
+                }
+            }
+            return;
+        }
+    };
+    walk(root);
+}
+
+function vaultPrivacyRestoreDom(root = document.body) {
+    if (!root) return;
+    root.querySelectorAll('[data-vault-privacy-orig]').forEach((el) => {
+        el.textContent = el.getAttribute('data-vault-privacy-orig') || '';
+        el.removeAttribute('data-vault-privacy-orig');
+    });
+}
+
+function vaultPrivacyStartObserver() {
+    vaultPrivacyStopObserver();
+    if (!window.MutationObserver || !document.body) return;
+    _vaultPrivacyObserver = new MutationObserver((mutations) => {
+        if (!vaultPrivacyEnabled()) return;
+        for (const m of mutations) {
+            if (m.type === 'characterData' && m.target?.parentElement) {
+                vaultPrivacyMaskLeaf(m.target.parentElement);
+            }
+            for (const node of m.addedNodes || []) {
+                if (node.nodeType === 1) vaultPrivacyScanDom(node);
+                else if (node.nodeType === 3 && node.parentElement) vaultPrivacyMaskLeaf(node.parentElement);
+            }
+        }
+    });
+    _vaultPrivacyObserver.observe(document.body, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+    });
+}
+
+function vaultPrivacyStopObserver() {
+    if (_vaultPrivacyObserver) {
+        _vaultPrivacyObserver.disconnect();
+        _vaultPrivacyObserver = null;
+    }
+}
+
+function vaultPrivacyRefreshVisibleUi() {
+    try {
+        const raw = document.getElementById('totalNetWorth')?.getAttribute('data-raw');
+        if (raw != null && Number.isFinite(Number(raw))) animateValue('totalNetWorth', Number(raw), 0);
+    } catch (e) {}
+    try {
+        if (typeof _perpsLastData !== 'undefined' && _perpsLastData && typeof perpsRenderDashboard === 'function') {
+            perpsRenderDashboard(_perpsLastData);
+        }
+    } catch (e) {}
+    try {
+        if (typeof data === 'object' && data && typeof renderDashboardOverview === 'function') {
+            renderDashboardOverview(data);
+        }
+    } catch (e) {}
+}
+
+function vaultSetPrivacyMode(on, { persist = true } = {}) {
+    const enabled = !!on;
+    document.body.classList.toggle('vault-privacy-on', enabled);
+    document.body.setAttribute('data-vault-privacy', enabled ? '1' : '0');
+    if (persist) {
+        try { localStorage.setItem(VAULT_PRIVACY_KEY, enabled ? '1' : '0'); } catch (e) {}
+    }
+    const hero = document.getElementById('topbarHeroPrivacyToggle');
+    if (hero) {
+        hero.title = enabled
+            ? 'Double-tap within 2s to show balances'
+            : 'Double-tap within 2s to hide balances';
+        hero.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+    }
+    if (enabled) {
+        vaultPrivacyScanDom(document.body);
+        vaultPrivacyStartObserver();
+        vaultPrivacyRefreshVisibleUi();
+        vaultPrivacyScanDom(document.body);
+    } else {
+        vaultPrivacyStopObserver();
+        vaultPrivacyRestoreDom(document.body);
+        vaultPrivacyRefreshVisibleUi();
+    }
+}
+
+function vaultTogglePrivacyMode() {
+    vaultSetPrivacyMode(!vaultPrivacyEnabled());
+}
+
+function vaultPrivacyHeroActivate(ev) {
+    if (ev) {
+        // Ignore multi-touch / non-primary mouse buttons.
+        if (ev.pointerType === 'mouse' && typeof ev.button === 'number' && ev.button !== 0) return;
+        if (typeof ev.isPrimary === 'boolean' && !ev.isPrimary) return;
+    }
+    const now = Date.now();
+    if (_vaultPrivacyTapTs && (now - _vaultPrivacyTapTs) <= 2000) {
+        _vaultPrivacyTapTs = 0;
+        if (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+        }
+        vaultTogglePrivacyMode();
+        return;
+    }
+    _vaultPrivacyTapTs = now;
+}
+
+function vaultPrivacyBindHero() {
+    const hero = document.getElementById('topbarHeroPrivacyToggle')
+        || document.querySelector('.topbar-hero');
+    if (!hero || hero.dataset.privacyBound === '1') return;
+    hero.dataset.privacyBound = '1';
+    hero.addEventListener('pointerup', vaultPrivacyHeroActivate, { passive: false });
+    hero.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            vaultPrivacyHeroActivate(ev);
+        }
+    });
+}
+
+function vaultPrivacyInit() {
+    vaultPrivacyBindHero();
+    let saved = false;
+    try { saved = localStorage.getItem(VAULT_PRIVACY_KEY) === '1'; } catch (e) {}
+    if (saved) vaultSetPrivacyMode(true, { persist: false });
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', vaultPrivacyInit);
+} else {
+    vaultPrivacyInit();
 }
 
 // =============================================================================
@@ -14190,11 +14423,11 @@ function openDashboardUrl(url) {
 }
 function dashUsd(v, digits=0) {
     const n = Number(v) || 0;
-    return '$' + n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    return vaultPrivacyFormat('$' + n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }));
 }
 function dashSignedUsd(v) {
     const n = Number(v) || 0;
-    return (n < 0 ? '-' : '+') + dashUsd(Math.abs(n));
+    return vaultPrivacyFormat((n < 0 ? '-' : '+') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }));
 }
 function dashPct(v) {
     const n = Number(v) || 0;
@@ -15476,7 +15709,7 @@ function protocolDrawerQtyCellHtml(pos, protocolIndex, sectionIndex, positionInd
     }).join('');
 }
 function protocolDrawerFmtUsd(v) {
-    return '$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return vaultPrivacyFormat('$' + Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 }
 function buildLendingLoopDrawerTableHtml(sec, ctx) {
     const {
@@ -21857,11 +22090,11 @@ function etfPositionRows() {
 function fmtEtfSignedUsd(value) {
     const num = Number(value || 0);
     const sign = num > 0 ? '+' : num < 0 ? '-' : '';
-    return sign + '$' + Math.abs(num).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    return vaultPrivacyFormat(sign + '$' + Math.abs(num).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }));
 }
 
 function fmtEtfUsd(value, digits = 0) {
-    return '$' + Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    return vaultPrivacyFormat('$' + Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }));
 }
 
 function etfSnapshotSeries(currentValue) {
@@ -22890,7 +23123,8 @@ function fmtPnl(val) {
     if (val === null || val === undefined) return '<span class="pnl-zero">—</span>';
     const sign = val > 0 ? '+' : '';
     const cls  = pnlColor(val);
-    return `<span class="${cls}">${sign}$${Math.abs(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`;
+    const amt = vaultPrivacyFormat(sign + '$' + Math.abs(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    return `<span class="${cls}">${amt}</span>`;
 }
 
 async function fetchWalletPnlAllFrames(walletAddress) {
@@ -28454,6 +28688,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof newsFeedBindSaveClicks === 'function') newsFeedBindSaveClicks();
     if (typeof newsFeedBindSavedPanel === 'function') newsFeedBindSavedPanel();
     if (typeof newsFeedBindQuickLinksPanel === 'function') newsFeedBindQuickLinksPanel();
+    if (typeof vaultPrivacyInit === 'function') vaultPrivacyInit();
     let mobileChartResizeT;
     window.addEventListener('resize', () => {
         clearTimeout(mobileChartResizeT);
@@ -33805,11 +34040,12 @@ function perpsToggleFundingFees() {
 function perpsFmtUsd(n, digits = 2) {
     if (n == null || !Number.isFinite(n)) return '—';
     const sign = n >= 0 ? '' : '-';
-    return sign + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    return vaultPrivacyFormat(sign + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }));
 }
 
 function perpsFmtEstUsd(n, digits = 2) {
     if (n == null || !Number.isFinite(n)) return '—';
+    if (vaultPrivacyEnabled()) return `~ ${VAULT_PRIVACY_MASK}`;
     return `~ ${perpsFmtUsd(n, digits)}`;
 }
 
@@ -33825,11 +34061,12 @@ function perpsFmtRate(r) {
 
 function perpsFmtPx(n) {
     if (n == null || !Number.isFinite(n)) return '—';
-    return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 });
+    return vaultPrivacyFormat('$' + n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 }));
 }
 
 function perpsFmtSize(n) {
     if (n == null || !Number.isFinite(n)) return '—';
+    if (vaultPrivacyEnabled()) return VAULT_PRIVACY_MASK;
     return Math.abs(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
 
