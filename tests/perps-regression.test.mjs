@@ -1825,6 +1825,10 @@ assert.match(indexHtml, /function watcherPmSetActivityDays\(/, 'PM activity time
 assert.match(indexHtml, /WATCHER_PM_ACTIVITY_DAYS_KEY/, 'PM activity timeframe must persist in localStorage');
 assert.match(indexHtml, /function watcherPmGetActivityLookbackSec\(/, 'PM activity must derive lookback from timeframe');
 assert.match(indexHtml, /fetchFilledOrders\(wallets,\s*watcherPmGetActivityLookbackSec\(\)\)/, 'PM activity fetch must use selected timeframe');
+assert.match(indexHtml, /function fetchServerPolymarketActivity\(/, 'Wallet Watchlist must fetch PM activity via server proxy');
+assert.match(indexHtml, /polymarketActivity:\s*'1'/, 'PM activity must call sync polymarketActivity endpoint');
+assert.match(indexHtml, /fetchServerPolymarketActivity\(list,\s*windowSec\)/, 'fetchFilledOrders must prefer server activity before browser fallback');
+assert.match(indexHtml, /\/api\/pm-proxy\?url=/, 'pmFetch must prefer same-origin Polymarket proxy');
 assert.match(indexHtml, /function watcherPmFetchWalletPositions\(/, 'PM wallet expand must fetch positions for expanded wallet');
 assert.match(indexHtml, /fetchServerPolymarketPositions\(\[wallet\]\)/, 'PM wallet expand must prefer server positions sync before browser fallback');
 assert.match(indexHtml, /throw new Error\('Polymarket positions API unreachable'\)/, 'PM wallet expand must treat pmFetch null as API failure not empty positions');
@@ -1842,7 +1846,12 @@ assert.doesNotMatch(indexHtml, /watcher-v2-subhead-title">Polymarket Wallets/, '
 assert.doesNotMatch(indexHtml, /watcherPmWalletRows/, 'Wallet Watchlist must not render separate PM wallet rows container');
 assert.doesNotMatch(indexHtml, /function renderWatcherPmWalletRows\(/, 'Wallet Watchlist must not render PM wallets separately');
 assert.match(syncJs, /polymarketProfile === '1'/, 'sync must expose polymarketProfile resolver');
+assert.match(syncJs, /polymarketActivity === '1'/, 'sync must expose polymarketActivity endpoint');
+assert.match(syncJs, /pmProxy === '1'/, 'sync must expose generic Polymarket URL proxy');
+assert.match(syncJs, /data-api\.polymarket\.com\/activity/, 'polymarketActivity must hit Polymarket data-api activity');
 assert.match(syncJs, /resolvePolymarketProfile/, 'sync polymarketProfile must use shared resolver');
+assert.match(vercelJson, /"\/api\/pm-proxy"/, 'vercel must rewrite /api/pm-proxy into sync');
+assert.match(vercelJson, /pmProxy=1/, 'vercel pm-proxy rewrite must set pmProxy=1');
 const { parsePolymarketProfileInput } = require('../lib/polymarket-profile.js');
 assert.equal(parsePolymarketProfileInput('0x2ec0aa99d26b703585f58bded217a640d09e976b')?.kind, 'address');
 assert.equal(parsePolymarketProfileInput('https://polymarket.com/@Theo4')?.value, 'Theo4');

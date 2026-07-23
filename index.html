@@ -1550,6 +1550,15 @@ body::after {
 body.vault-privacy-on .topbar-hero-value {
   letter-spacing: 0.12em;
 }
+body.vault-privacy-on .vault-privacy-mask-val {
+  display: inline-flex;
+  align-items: center;
+  letter-spacing: 0.14em;
+  font-family: var(--ff-mono);
+  font-weight: 700;
+  color: var(--t2);
+  user-select: none;
+}
 .topbar-hero-label {
   font-size: 0.7rem; font-weight: 600; letter-spacing: 0.12em;
   text-transform: uppercase; color: var(--t3);
@@ -10120,6 +10129,35 @@ function vaultPrivacyFormat(formatted) {
     return vaultPrivacyMaskMoneyString(s);
 }
 
+// Regions / cells that must stay readable while privacy mask is on
+// (prices, market pulse, watcher, event log, daily brief, opportunities, alerts, ticker).
+const VAULT_PRIVACY_SKIP_SEL = [
+    '[data-vault-privacy-skip]',
+    '#marketTicker',
+    '.market-ticker-strip',
+    '#dashboardInfoEvents',
+    '#dashboardEventLog',
+    '#dashboardInfoBrief',
+    '.daily-brief',
+    '#dashboardOpportunityRows',
+    '#opportunityMonitorModal',
+    '#watcherTab',
+    '.watcher-v2',
+    '#watcherWalletModal',
+    '#predictionMixedRows',
+    '.pred-intelligence-panel',
+    '#terminalAlertsList',
+    '.term-alerts',
+    '.term-right',
+    '.drawer-leg-price-cell',
+    '.drawer-leg-price',
+    '.perps-pos-live-px',
+    '.perps-mv3-px',
+    '.perps-pos-liq-val',
+    '.perps-tpsl-tooltip',
+    '.perps-tpsl-tooltip-row',
+].join(',');
+
 function vaultPrivacyShouldSkipEl(el) {
     if (!el || el.nodeType !== 1) return true;
     const tag = el.tagName;
@@ -10129,6 +10167,9 @@ function vaultPrivacyShouldSkipEl(el) {
     if (el.closest('input, textarea, select, [contenteditable="true"], script, style')) return true;
     // Watcher / watchlist stay readable (including PM position uPnL) when privacy mask is on.
     if (el.closest('.watcher-v2, #watcherTab, #watcherWalletModal, [data-vault-privacy-skip]')) return true;
+    try {
+        if (el.matches?.(VAULT_PRIVACY_SKIP_SEL) || el.closest?.(VAULT_PRIVACY_SKIP_SEL)) return true;
+    } catch (e) {}
     return false;
 }
 
@@ -10224,6 +10265,16 @@ function vaultPrivacyRefreshVisibleUi() {
             renderDashboardOverview(data);
         }
     } catch (e) {}
+    try { if (typeof renderTokens === 'function') renderTokens(); } catch (e) {}
+    try { if (typeof renderTokensOverview === 'function') renderTokensOverview(); } catch (e) {}
+    try {
+        if (typeof _protocolView !== 'undefined' && _protocolView === 'snapshot') {
+            if (typeof renderProtocolsSnapshot === 'function') renderProtocolsSnapshot();
+        } else if (typeof renderProtocols === 'function') {
+            renderProtocols();
+        }
+    } catch (e) {}
+    try { if (typeof syncWalletFocusStrip === 'function') syncWalletFocusStrip(); } catch (e) {}
 }
 
 function vaultSetPrivacyMode(on, { persist = true } = {}) {
@@ -12745,13 +12796,14 @@ async function fetchPolymarketPositions(options = {}) {
     let aggregatedPositions = [];
     let errors = 0;
 
-    // Multi-proxy fallback: direct → corsproxy.io → allorigins.win → codetabs.com
+    // Multi-proxy fallback: same-origin → direct → corsproxy.io → allorigins.win → codetabs.com
     async function smartFetch(url) {
         const PROXIES = [
-            u => u,                                                                          // 1. Direct
-            u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,                      // 2. corsproxy.io
-            u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,             // 3. allorigins
-            u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,        // 4. codetabs
+            u => `/api/pm-proxy?url=${encodeURIComponent(u)}`,                              // 1. Same-origin server proxy
+            u => u,                                                                          // 2. Direct
+            u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,                      // 3. corsproxy.io
+            u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,             // 4. allorigins
+            u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,        // 5. codetabs
         ];
         for (const proxy of PROXIES) {
             try {
@@ -12761,6 +12813,9 @@ async function fetchPolymarketPositions(options = {}) {
                 // allorigins wraps in { contents: "..." }
                 if (raw && typeof raw === 'object' && 'contents' in raw && typeof raw.contents === 'string') {
                     return JSON.parse(raw.contents);
+                }
+                if (raw && typeof raw === 'object' && raw.error && !Array.isArray(raw) && Object.keys(raw).length <= 2) {
+                    continue;
                 }
                 return raw;
             } catch (e) {
@@ -23242,9 +23297,10 @@ async function fetchDomePnL() {
         // Since predictionMarkets doesn't store cashPnl yet, re-fetch it inline.
         const unrealizedPerWallet = await Promise.all(wallets.map(async wallet => {
             // Try to get cashPnl directly from Polymarket positions API
-            // Multi-proxy fallback: direct → corsproxy.io → allorigins → codetabs
+            // Multi-proxy fallback: same-origin → direct → corsproxy.io → allorigins → codetabs
             const posUrl = `https://data-api.polymarket.com/positions?user=${encodeURIComponent(wallet)}&limit=500&sizeThreshold=0.01`;
             const PNL_PROXIES = [
+                u => `/api/pm-proxy?url=${encodeURIComponent(u)}`,
                 u => u,
                 u => `https://corsproxy.io/?url=${encodeURIComponent(u)}`,
                 u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,

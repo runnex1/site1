@@ -35,10 +35,20 @@ const MARKET_MOVES_ASSET_LIMIT = 40;
 const MARKET_MOVES_CONCURRENCY = 8;
 const PM_POSITIONS_CACHE_MS = 5 * 60 * 1000;
 const PM_BALANCES_CACHE_MS = 2 * 60 * 1000;
+const PM_ACTIVITY_CACHE_MS = 60 * 1000;
+const PM_PROXY_CACHE_MS = 20 * 1000;
 const PM_METADATA_CONCURRENCY = 4;
+const PM_PROXY_HOSTS = new Set([
+  'data-api.polymarket.com',
+  'clob.polymarket.com',
+  'gamma-api.polymarket.com',
+  'user-pnl-api.polymarket.com',
+]);
 const marketMovesCache = new Map();
 const polymarketPositionsCache = new Map();
 const polymarketBalancesCache = new Map();
+const polymarketActivityCache = new Map();
+const polymarketProxyCache = new Map();
 
 async function statusFetch(url, timeout=6000) {
   const start = Date.now();
@@ -616,6 +626,107 @@ async function getPolymarketPositions(query) {
   }
 }
 
+function pmActivityLookbackSec(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 86400;
+  return Math.min(Math.max(Math.floor(n), 3600), 7 * 86400);
+}
+
+async function fetchWalletActivityTrades(wallets, lookbackSec) {
+  const windowSec = pmActivityLookbackSec(lookbackSec);
+  const since = Math.floor(Date.now() / 1000) - windowSec;
+  const trades = [];
+  for (const wallet of wallets) {
+    let offset = 0;
+    let pages = 0;
+    while (pages < 10) {
+      const url = new URL('https://data-api.polymarket.com/activity');
+      url.searchParams.set('user', wallet);
+      url.searchParams.set('type', 'TRADE');
+      url.searchParams.set('limit', '500');
+      url.searchParams.set('offset', String(offset));
+      url.searchParams.set('start', String(since));
+      url.searchParams.set('sortBy', 'TIMESTAMP');
+      url.searchParams.set('sortDirection', 'DESC');
+      const page = await fetchPolymarketJson(url, 15000);
+      if (!Array.isArray(page) || !page.length) break;
+      const recent = page.filter(t => (t.timestamp || 0) >= since);
+      trades.push(...recent.map(t => ({ ...t, _wallet: wallet })));
+      if (page.length < 500 || recent.length < page.length) break;
+      offset += 500;
+      pages++;
+    }
+  }
+  return trades.sort((a, b) => (Number(b.timestamp) || 0) - (Number(a.timestamp) || 0));
+}
+
+async function getPolymarketActivity(query) {
+  const wallets = pnlWalletList(query.wallets);
+  if (!wallets.length) return { status: 400, body: { error: 'No valid Polymarket wallet addresses provided' } };
+  const lookbackSec = pmActivityLookbackSec(query.lookbackSec || query.lookback);
+  const key = `${wallets.map(w => w.toLowerCase()).sort().join('|')}|${lookbackSec}`;
+  const cached = polymarketActivityCache.get(key);
+  if (cached && Date.now() - cached.ts < PM_ACTIVITY_CACHE_MS) {
+    return { status: 200, body: { ok: true, cached: true, ...cached.body } };
+  }
+  try {
+    const trades = await fetchWalletActivityTrades(wallets, lookbackSec);
+    const body = { wallets: wallets.length, lookbackSec, tradeCount: trades.length, trades };
+    polymarketActivityCache.set(key, { ts: Date.now(), body });
+    return { status: 200, body: { ok: true, cached: false, ...body } };
+  } catch (e) {
+    if (cached?.body) {
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          cached: true,
+          stale: true,
+          ...cached.body,
+          error: e.message || 'Polymarket activity refresh failed',
+        },
+      };
+    }
+    return { status: 502, body: { error: e.message || 'Polymarket activity refresh failed' } };
+  }
+}
+
+async function getPolymarketProxy(query) {
+  const raw = String(query.url || '').trim();
+  if (!raw) return { status: 400, body: { error: 'Missing url' } };
+  let target;
+  try {
+    target = new URL(raw);
+  } catch (e) {
+    return { status: 400, body: { error: 'Invalid url' } };
+  }
+  if (target.protocol !== 'https:') {
+    return { status: 400, body: { error: 'Only https Polymarket URLs are allowed' } };
+  }
+  if (!PM_PROXY_HOSTS.has(target.hostname.toLowerCase())) {
+    return { status: 403, body: { error: `Host not allowed: ${target.hostname}` } };
+  }
+  const cacheKey = target.toString();
+  const cached = polymarketProxyCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < PM_PROXY_CACHE_MS) {
+    return { status: 200, body: cached.body, headers: { 'Cache-Control': 'public, max-age=20' } };
+  }
+  try {
+    const body = await fetchPolymarketJson(target, 15000);
+    polymarketProxyCache.set(cacheKey, { ts: Date.now(), body });
+    return { status: 200, body, headers: { 'Cache-Control': 'public, max-age=20' } };
+  } catch (e) {
+    if (cached?.body !== undefined) {
+      return {
+        status: 200,
+        body: cached.body,
+        headers: { 'Cache-Control': 'public, max-age=10', 'X-PM-Proxy-Stale': '1' },
+      };
+    }
+    return { status: 502, body: { error: e.message || 'Polymarket proxy fetch failed' } };
+  }
+}
+
 async function getPolymarketMarketMoves(query) {
   const wallets = pnlWalletList(query.wallets);
   if (!wallets.length) return { status: 400, body: { error: 'No valid Polymarket wallet addresses provided' } };
@@ -839,6 +950,17 @@ module.exports = async function handler(req, res) {
       }
       if (req.query?.polymarketPositions === '1') {
         const result = await getPolymarketPositions(req.query || {});
+        return res.status(result.status).json(result.body);
+      }
+      if (req.query?.polymarketActivity === '1') {
+        const result = await getPolymarketActivity(req.query || {});
+        return res.status(result.status).json(result.body);
+      }
+      if (req.query?.pmProxy === '1') {
+        const result = await getPolymarketProxy(req.query || {});
+        if (result.headers) {
+          for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);
+        }
         return res.status(result.status).json(result.body);
       }
       if (req.query?.polymarketBalances === '1') {
