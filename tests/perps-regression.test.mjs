@@ -1458,7 +1458,10 @@ assert.match(loopRatesJs, /buildDefillama7dApyCache/, 'loop rates must prefetch 
 assert.match(loopRatesJs, /defillamaApyMode: defillamaYield\.error \? null : 'chart-7d-avg'/, 'loop coverage must report DeFiLlama 7d chart APY mode');
 assert.match(loopRatesJs, /if \(leg\.isCollateral\) return true/, 'collateral yield legs must prefer DeFiLlama over protocol supply APY');
 assert.match(loopRatesJs, /if \(leg\.defillamaApy != null\) continue/, 'Merkl supply incentives must not stack on DeFiLlama intrinsic yield legs');
-assert.match(loopRatesJs, /const dlApy = percent\(dlApyRaw\)/, 'DeFiLlama APY must normalize to protocol percent units');
+assert.match(loopRatesJs, /DeFiLlama pools\/charts already report APY in percent/, 'DeFiLlama APY must stay in Llama percent units (not percent()-inflated)');
+assert.doesNotMatch(loopRatesJs, /const dlApy = percent\(dlApyRaw\)/, 'DeFiLlama enrichment must not percent()-inflate sub-1% APYs');
+assert.match(loopRatesJs, /SYRUPUSDC: new Set\(\['maple'\]\)/, 'syrupUSDC must prefer Maple native yield on DeFiLlama');
+assert.match(loopRatesJs, /function defillamaPoolAliasSymbols\(/, 'Maple Syrup USDC must alias to SYRUPUSDC for index lookup');
 assert.match(loopRatesJs, /require\('\.\/pendle'\)/, 'loop rates must integrate Pendle APY enrichment');
 assert.match(loopRatesJs, /api\.spark\.fi/, 'Spark savings must use the official Savings Data API');
 assert.match(loopRatesJs, /spark-api\.pages\.dev/, 'SparkLend must use the official Spark API');
@@ -2168,6 +2171,62 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   assert.ok(liveIndex.bySymbolChain.get('4326:USDM')?.apy > 0.01, 'MegaETH pools must be indexed');
   assert.ok(liveIndex.bySymbolChain.get('143:AUSD')?.apy > 0.01, 'Monad pools must be indexed');
   assert.ok(liveIndex.bySymbolChain.get('1:STCUSD')?.apy > 0.01, 'stcUSD native yield must be indexed on mainnet');
+
+  // Guard: DeFiLlama APYs are already percent; percent(0.46) must not become 46.
+  {
+    const ajnaIndex = {
+      bySymbolChain: new Map([['1:SYRUPUSDC', {
+        apy: 0.45925,
+        poolId: '788b0d81-8533-468c-8789-88ac64b7d5c8',
+        score: 0.45925,
+        project: 'ajna-v2',
+      }]]),
+      byAddress: new Map(),
+    };
+    const ajnaChart = new Map([['788b0d81-8533-468c-8789-88ac64b7d5c8', 0.45925]]);
+    const ajnaLeg = { symbol: 'syrupUSDC', apy: 0, isCollateral: true, value: 86000 };
+    const ajnaPos = {
+      chainId: 143,
+      totalSupplied: 86000,
+      totalBorrowed: 77000,
+      supplied: [ajnaLeg],
+      borrowed: [{ symbol: 'mUSD', value: 77000, apy: 4 }],
+      suppliedYieldUsd: 0,
+      borrowedCostUsd: 308000,
+    };
+    enrichPositionWithDefillamaYield(ajnaPos, ajnaIndex, ajnaChart);
+    assert.ok(Math.abs(ajnaLeg.apy - 0.45925) < 0.001, `sub-1% Llama APY must stay as-is (not ×100), got ${ajnaLeg.apy}`);
+  }
+
+  // syrupUSDC: Maple lists as symbol USDC; Ajna lending ~0.46% must not become ~46% via percent().
+  const syrupEntry = liveIndex.bySymbolChain.get('1:SYRUPUSDC');
+  assert.ok(syrupEntry?.poolId, 'syrupUSDC must resolve a DeFiLlama pool');
+  assert.equal(syrupEntry.project, 'maple', 'syrupUSDC must prefer Maple Syrup USDC over Ajna/lending markets');
+  assert.ok(syrupEntry.apy > 3 && syrupEntry.apy < 12, `Maple syrupUSDC APY should be mid-single digits, got ${syrupEntry.apy}`);
+  const syrupLeg = {
+    symbol: 'syrupUSDC',
+    apy: 0,
+    address: '0xaB6e5a0C3799d020c790D34F7B2C02639e238AF7',
+    isCollateral: true,
+    value: 86000,
+  };
+  const syrupChart = new Map([[syrupEntry.poolId, syrupEntry.apy]]);
+  const syrupPos = {
+    chainId: 143,
+    totalSupplied: 86000,
+    totalBorrowed: 77000,
+    supplied: [syrupLeg],
+    borrowed: [{ symbol: 'mUSD', value: 77000, apy: 4 }],
+    suppliedYieldUsd: 0,
+    borrowedCostUsd: 308000,
+    supplyApy: 0,
+    borrowApy: 4,
+  };
+  enrichPositionWithDefillamaYield(syrupPos, liveIndex, syrupChart);
+  assert.ok(syrupPos.defillamaBoost, 'syrupUSDC Monad loop must use DeFiLlama intrinsic yield');
+  assert.ok(syrupLeg.apy > 3 && syrupLeg.apy < 12, `syrupUSDC leg APY must stay ~Maple %, got ${syrupLeg.apy}`);
+  assert.ok(syrupLeg.apy < 20, 'syrupUSDC must not inflate sub-1% Llama APYs via percent() (0.46→46)');
+  assert.equal(syrupLeg.defillamaPoolId, syrupEntry.poolId, 'syrupUSDC must use Maple pool id');
 }
 
 {
