@@ -1186,8 +1186,10 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 assert.match(indexHtml, /function perpsClosedPairAvgNotional\(/, 'Closed tab must recompute margin from leg prices and live marks');
-assert.match(indexHtml, /function perpsClosedLegHtml\(leg, pair\)/, 'Closed tab must hide gross leg PnL on exchange hedges');
-assert.match(indexHtml, /manualVariationalClose/, 'Closed tab must show leg PnL for manual Variational closes');
+assert.match(indexHtml, /function perpsClosedLegHtml\(leg, pair\)/, 'Closed tab must render per-leg Exchange PnL');
+assert.doesNotMatch(indexHtml, /Gross leg PnL is hedged/, 'Closed Exchange PnL must not be blanked for hedged exchange pairs');
+assert.match(indexHtml, /manualVariationalClose/, 'Closed tab must support manual Variational closes');
+assert.match(indexHtml, /perpsFmtUsd\(pnl\)/, 'Closed Exchange PnL must format each leg realized PnL when available');
 
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
 assert.match(indexHtml, /function perpsDailyRowEventsAreComplete\(/, 'range trim must detect incomplete fundingEvents after payload slim');
