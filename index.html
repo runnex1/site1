@@ -33031,7 +33031,7 @@ function perpsClosedPairVarShouldYieldToExchangeOnly(varPair, soloPair) {
 }
 
 function perpsClosedPairBaseSymbol(pairOrSym) {
-    return String(pairOrSym?.symbol ?? pairOrSym || '')
+    return String((pairOrSym?.symbol ?? pairOrSym) || '')
         .trim()
         .toUpperCase()
         .replace(/-PERP$/i, '');
