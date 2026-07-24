@@ -32923,49 +32923,26 @@ function perpsClosedPairIsHollowEstVariational(pair) {
     return hollowPnl && (hollowFees || Boolean(tracked?.closeLegEstimated));
 }
 
-/** Var closes that were never a real hedge (unhedged until end) — yield to exchange-only. */
-function perpsClosedPairIsSyntheticVariational(pair) {
-    if (!pair?.manualVariationalClose) return false;
-    if (perpsClosedPairIsHollowEstVariational(pair)) return true;
-    const varLeg = [pair.longLeg, pair.shortLeg].find((l) => l?.venue === 'variational');
-    if (!varLeg) return false;
-    return Boolean(varLeg.fundingEstimated) || Boolean(pair.closeLegEstimated);
-}
-
-function perpsDemoteSyntheticVariationalClosedPair(pair) {
-    if (!perpsClosedPairIsSyntheticVariational(pair)) return pair;
-    const tracked = [pair.longLeg, pair.shortLeg].find((l) => l && l.venue !== 'variational');
-    if (!tracked || !Number.isFinite(Number(tracked.realizedPnl))) return pair;
-    const realized = Number(tracked.realizedPnl);
-    const funding = Number.isFinite(Number(tracked.funding)) ? Number(tracked.funding) : Number(pair.funding || 0);
-    const fees = Math.abs(Number.isFinite(Number(tracked.fees)) ? Number(tracked.fees) : Number(pair.fees || 0));
-    const size = Math.abs(Number(tracked.size || pair.size || 0));
-    if (!(size > 0)) return pair;
-    const longLeg = tracked.side === 'long' ? { ...tracked, size } : null;
-    const shortLeg = tracked.side === 'short' ? { ...tracked, size } : null;
-    return {
-        symbol: pair.symbol,
-        pairLabel: perpsVenueShort(tracked.venue),
-        pairType: 'exchange_only',
-        exchangeOnly: true,
-        openTime: pair.openTime || (tracked.openTimeKnown ? tracked.openTime : null),
-        closeTime: pair.closeTime || tracked.closeTime,
-        size,
-        sizeMismatchPct: 0,
-        longLeg,
-        shortLeg,
-        closeSlippage: realized,
-        funding,
-        fees,
-        netPnl: realized + funding - fees,
-        avgNotional: pair.avgNotional || null,
-        demotedFromVariational: true,
-        variationalHedgeId: pair.variationalHedgeId || null,
-        sessionStartDay: pair.sessionStartDay,
-        sessionEndDay: pair.sessionEndDay,
-        sessionDayCount: pair.sessionDayCount,
-        dailyPerformanceSeries: pair.dailyPerformanceSeries,
-    };
+/**
+ * Only truly hollow EST Var rows yield to exchange-only (unhedged-until-end like BTC).
+ * Real delta-neutral Var hedges (HBAR etc.) often have fundingEstimated — that must NOT demote them.
+ */
+function perpsClosedPairVarShouldYieldToExchangeOnly(varPair, soloPair) {
+    if (!varPair?.manualVariationalClose) return false;
+    if (perpsClosedPairIsHollowEstVariational(varPair)) return true;
+    const tracked = [varPair.longLeg, varPair.shortLeg].find((l) => l && l.venue !== 'variational');
+    if (!tracked) return false;
+    // GRVT/Ext history-backed hedges are real delta-neutral closes — never yield.
+    if (tracked.fromExchangeHistory) return false;
+    if (!soloPair?.exchangeOnly) return false;
+    if (varPair.closeLegEstimated || tracked.closeLegEstimated) return true;
+    const soloSize = Math.abs(Number(soloPair.size || 0));
+    const trackedSize = Math.abs(Number(tracked.size || varPair.size || 0));
+    if (soloSize > 0 && trackedSize > 0) {
+        const mismatch = Math.abs(soloSize - trackedSize) / Math.max(soloSize, trackedSize);
+        if (mismatch > 0.05) return true;
+    }
+    return false;
 }
 
 function perpsLoadCachedClosedPairs() {
@@ -33981,8 +33958,8 @@ function perpsCacheNewClosedPairs(freshPairs) {
         changed = true;
     }
     let merged = [...byKey.values()];
-    // Prefer solid Variational closes over overlapping hedged reconstructions.
-    // Prefer exchange-only (unhedged-until-end) over hollow/EST Variational closes.
+    // Prefer real Variational delta-neutral closes over overlapping exchange-only reconstructions.
+    // Only hollow EST Var rows (unhedged-until-end) yield to exchange-only.
     const varCloses = merged.filter((p) => p?.manualVariationalClose);
     const exchangeOnly = merged.filter((p) => p?.exchangeOnly);
     if (varCloses.length || exchangeOnly.length) {
@@ -33995,19 +33972,16 @@ function perpsCacheNewClosedPairs(freshPairs) {
                 return oSym === sym && Math.abs(Number(other?.closeTime || 0) - ct) <= 2 * 86400000;
             };
             if (p?.manualVariationalClose) {
-                if (!perpsClosedPairIsSyntheticVariational(p)) return true;
-                // Synthetic / EST Var row loses to a real exchange-only close for the same session.
-                return !exchangeOnly.some(covers);
+                const solo = exchangeOnly.find(covers);
+                if (!solo) return true;
+                return !perpsClosedPairVarShouldYieldToExchangeOnly(p, solo);
             }
             if (p?.exchangeOnly) {
                 const coveringVar = varCloses.find(covers);
                 if (!coveringVar) return true;
-                // Keep exchange-only when the Var card is synthetic (unhedged until end).
-                return perpsClosedPairIsSyntheticVariational(coveringVar);
+                return perpsClosedPairVarShouldYieldToExchangeOnly(coveringVar, p);
             }
-            // Non-Var hedged reconstruction: drop when any Var close covers (solid or hollow —
-            // hollow Var still preferred over a mismatched two-venue reconstruction).
-            if (p?.manualVariationalClose) return true;
+            // Non-Var hedged reconstruction: drop when any Var close covers.
             return !varCloses.some(covers);
         });
         if (merged.length !== before) changed = true;
@@ -36991,11 +36965,6 @@ function perpsSanitizeVariationalClosedPairs(data) {
                 || cleaned.shortLeg?.realizedPnl !== pair.shortLeg?.realizedPnl
                 || cleaned.aprUnavailable !== pair.aprUnavailable)) {
             changed = true;
-        }
-        const demoted = perpsDemoteSyntheticVariationalClosedPair(cleaned);
-        if (demoted !== cleaned && demoted?.exchangeOnly) {
-            changed = true;
-            return demoted;
         }
         return cleaned;
     });
