@@ -3012,7 +3012,7 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   assert.ok(juiced?.startsWith('data:image/png;base64,'), 'JUICED pinned logo must embed as PNG data URL');
 }
 
-assert.match(aaveProxyJs, /ensureLoopLogoCache/, 'loop rates cron must persist embedded logos server-side');
+assert.match(aaveProxyJs, /ensureLoopLogoCache/, 'loop rates cron must persist server-side logos');
 assert.match(syncJs, /logoCache === '1'/, 'sync endpoint must expose server logo cache for loops hydration');
 assert.match(syncJs, /geckoSymbolIds === '1'/, 'sync endpoint must expose server gecko symbol ids');
 assert.match(syncJs, /mergeGeckoSymbolIds/, 'sync must persist gecko symbol ids for high-value positions');
@@ -3024,6 +3024,7 @@ assert.match(indexHtml, /warnEl\.textContent = _perpsRefreshError/, 'perps API f
 assert.match(indexHtml, /function makeLoopLogo\(symbol, isProtocol/, 'loops tab must render logos from server cache only');
 assert.match(indexHtml, /makeLoopLogo\(symbol, false, size\)/, 'loop token logos must read server-cached images via makeLoopLogo');
 const logoResolverJs = readFileSync(join(ROOT, 'lib', 'logo-resolver.js'), 'utf8');
+assert.match(logoResolverJs, /sanitizeLogoCacheForStorage/, 'logo cache must strip base64 blobs before KV/sync');
 assert.match(logoResolverJs, /async function coingeckoImageUrlForSymbol\(/, 'token logos must try CoinGecko first on the server');
 assert.match(logoResolverJs, /async function resolveTokenLogoDataUrl\(/, 'token logos must fall back to DeFiLlama after CoinGecko');
 assert.match(logoResolverJs, /readLocalLoopLogoDataUrl/, 'loop logos must support pinned USDm and JUICED assets');
@@ -3212,7 +3213,8 @@ assert.match(syncJs, /mergeVariationalHedgeRows/, 'sync must merge Variational h
 assert.match(syncJs, /portfolio\?\.perpsArb\?\.variationalHedges/, 'portfolio sync must extract Variational hedges to server KV');
 assert.match(indexHtml, /function perpsImportVariationalHedgesFromPortfolio\(/, 'Perps must import Variational hedges from synced portfolio');
 assert.match(indexHtml, /function perpsPushVariationalHedgesToServer\(/, 'Perps must push local hedges to server when server copy is missing');
-assert.match(indexHtml, /variationalHedges/, 'portfolio perpsArb must carry Variational hedges for cross-device sync');
+assert.match(indexHtml, /perpsVariationalHedges:/, 'Variational hedges sync via dedicated perpsVariationalHedges payload key');
+assert.doesNotMatch(indexHtml, /variationalHedges: perpsLoadVariationalHedgesRaw\(\)/, 'portfolio perpsArb must not re-embed Variational hedges');
 assert.match(indexHtml, /await perpsHydratePerpsAuxFromCloud\(\)/, 'Perps refresh must hydrate server aux before rendering');
 assert.match(indexHtml, /function perpsNormalizeVariationalHedgeRecord\(/, 'corrupt open+closedAt hedges must normalize before apply');
 assert.match(indexHtml, /function perpsSafeApplyVariationalHedgesToData\(/, 'hedge apply must not break Perps render on bad records');

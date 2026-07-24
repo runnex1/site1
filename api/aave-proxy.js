@@ -29,7 +29,7 @@ const {
   persistLoopSnapshotStore,
   ensureUsdeUsdmSnapshotsPurged,
 } = require('../lib/loop-snapshots');
-const { ensureLoopLogoCache } = require('../lib/logo-resolver');
+const { ensureLoopLogoCache, sanitizeLogoCacheForStorage } = require('../lib/logo-resolver');
 
 const responseCache = new Map();
 const PERPS_DASHBOARD_CACHE_MS = 5 * 60 * 1000;
@@ -388,10 +388,12 @@ async function handlePerps(req, res) {
 
 async function persistLoopLogoCache(positions) {
   try {
-    const saved = parseJson(await kvGet('vault:logo_cache'), {});
+    const raw = parseJson(await kvGet('vault:logo_cache'), {});
+    const saved = sanitizeLogoCacheForStorage(raw);
+    const strippedBase64 = Object.keys(saved).length !== Object.keys(raw || {}).length;
     const { cache, changed } = await ensureLoopLogoCache(saved, positions, { maxResolve: 16 });
-    if (changed) await kvSet('vault:logo_cache', JSON.stringify(cache));
-    return changed;
+    if (changed || strippedBase64) await kvSet('vault:logo_cache', JSON.stringify(cache));
+    return changed || strippedBase64;
   } catch (e) {
     console.warn('[loop-logos]', e.message || e);
     return false;

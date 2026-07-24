@@ -10366,10 +10366,38 @@ const LogoEngine = (() => {
     const LOGO_META_KEY = 'vault-logo-meta-v1';
     let persistedCache = {};
     let persistTimer = null;
+    let logoCloudDirty = false;
+
+    function isGeneratedFallbackLogo(url) {
+        return String(url || '').startsWith('data:image/svg+xml;base64,');
+    }
+
+    function isPersistableLogoUrl(url) {
+        const u = String(url || '');
+        if (/^https?:\/\//i.test(u)) return true;
+        if (/^data:image\/svg\+xml;charset=/i.test(u) && u.length < 2048) return true;
+        return false;
+    }
+
+    function sanitizeLogoCache(cacheObj) {
+        const out = {};
+        for (const [key, item] of Object.entries(cacheObj && typeof cacheObj === 'object' ? cacheObj : {})) {
+            if (!key || !item?.url || !isPersistableLogoUrl(item.url) || isGeneratedFallbackLogo(item.url)) continue;
+            const entry = { url: item.url, ts: Number(item.ts || 0) || Date.now() };
+            if (item.source) entry.source = item.source;
+            if (item.geckoId) entry.geckoId = item.geckoId;
+            out[key] = entry;
+        }
+        return out;
+    }
 
     try {
         const parsed = JSON.parse(localStorage.getItem(LOGO_CACHE_KEY) || '{}');
-        if (parsed && typeof parsed === 'object') persistedCache = parsed;
+        if (parsed && typeof parsed === 'object') {
+            persistedCache = sanitizeLogoCache(parsed);
+            // One-shot: push URL-only cache after stripping legacy base64 blobs.
+            if (Object.keys(persistedCache).length !== Object.keys(parsed).length) logoCloudDirty = true;
+        }
     } catch(e) { persistedCache = {}; }
 
     function freshLogoUrl(key) {
@@ -10379,28 +10407,31 @@ const LogoEngine = (() => {
         return item.url;
     }
 
-    function isGeneratedFallbackLogo(url) {
-        return String(url || '').startsWith('data:image/svg+xml;base64,');
-    }
-
     function isLockedLogoSymbol(symbol) {
         return String(symbol || '').toUpperCase().startsWith('INDEX_');
+    }
+
+    function markLogoCloudDirty() {
+        logoCloudDirty = true;
     }
 
     function savePersistedCacheSoon() {
         clearTimeout(persistTimer);
         persistTimer = setTimeout(() => {
             try {
+                persistedCache = sanitizeLogoCache(persistedCache);
                 localStorage.setItem(LOGO_CACHE_KEY, JSON.stringify(persistedCache));
             } catch(e) {}
         }, 250);
     }
 
-    function setLogoCache(key, url, { persist = true } = {}) {
+    function setLogoCache(key, url, { persist = true, source } = {}) {
         if (!key || !url) return;
         cache[key] = url;
-        if (!persist || isGeneratedFallbackLogo(url)) return;
-        persistedCache[key] = { url, ts: Date.now() };
+        if (!persist || isGeneratedFallbackLogo(url) || !isPersistableLogoUrl(url)) return;
+        const prev = persistedCache[key]?.url;
+        persistedCache[key] = { url, ts: Date.now(), ...(source ? { source } : {}) };
+        if (prev !== url) markLogoCloudDirty();
         savePersistedCacheSoon();
     }
 
@@ -10649,16 +10680,36 @@ const LogoEngine = (() => {
     }
 
     function exportCache() {
-        return persistedCache && typeof persistedCache === 'object' ? persistedCache : {};
+        return sanitizeLogoCache(persistedCache);
+    }
+
+    /** Only when local logos changed — avoids rewriting vault:logo_cache on every saveData. */
+    function exportCacheForSync() {
+        if (!logoCloudDirty) return undefined;
+        const cleaned = sanitizeLogoCache(persistedCache);
+        if (!Object.keys(cleaned).length) {
+            logoCloudDirty = false;
+            return undefined;
+        }
+        return cleaned;
+    }
+
+    function acknowledgeCloudSync() {
+        logoCloudDirty = false;
     }
 
     function importCache(remote) {
         if (!remote || typeof remote !== 'object') return;
         let changed = false;
-        Object.entries(remote).forEach(([key, item]) => {
+        Object.entries(sanitizeLogoCache(remote)).forEach(([key, item]) => {
             if (!key || !item?.url || isGeneratedFallbackLogo(item.url)) return;
             if (!persistedCache[key] || Number(item.ts || 0) >= Number(persistedCache[key]?.ts || 0)) {
-                persistedCache[key] = { url: item.url, ts: Number(item.ts || 0) || Date.now() };
+                persistedCache[key] = {
+                    url: item.url,
+                    ts: Number(item.ts || 0) || Date.now(),
+                    ...(item.source ? { source: item.source } : {}),
+                    ...(item.geckoId ? { geckoId: item.geckoId } : {}),
+                };
                 cache[key] = item.url;
                 changed = true;
             }
@@ -10666,7 +10717,11 @@ const LogoEngine = (() => {
         if (changed) savePersistedCacheSoon();
     }
 
-    return { init, getTokenLogo, getProtocolLogo, makeSvgFallback, _injectTokenImage, _peekTokenImage, _peekProtocolImage, exportCache, importCache };
+    return {
+        init, getTokenLogo, getProtocolLogo, makeSvgFallback,
+        _injectTokenImage, _peekTokenImage, _peekProtocolImage,
+        exportCache, exportCacheForSync, acknowledgeCloudSync, importCache,
+    };
 })();
 
 // =============================================================================
@@ -11595,8 +11650,10 @@ async function saveData(syncOpts = {}) {
             aaveMarkets:    _ls('aavecap-markets-v1', '[]'),
             // Custom token address mappings
             customTokens:   _ls(CUSTOM_TOKEN_LS, '{}'),
-            // Current server-level logo cache; do not refresh external logo sources in the browser.
-            logoCache:      (typeof LogoEngine !== 'undefined' && LogoEngine.exportCache ? LogoEngine.exportCache() : {}),
+            // Logo URL map only when dirty (no base64 blobs; skip unchanged rewrites).
+            logoCache:      (typeof LogoEngine !== 'undefined' && LogoEngine.exportCacheForSync
+                ? LogoEngine.exportCacheForSync()
+                : undefined),
             // Opportunity Zone monitor settings
             opportunityMonitors: _ls(OPPORTUNITY_MONITORS_KEY, '{"pegTokens":[],"includePmNoApy":true}'),
             // Portfolio weekly snapshots
@@ -11605,11 +11662,6 @@ async function saveData(syncOpts = {}) {
             opinionWallets: (opinionConfig?.wallets?.length
                 ? opinionConfig.wallets
                 : (opinionConfig?.walletAddress ? [opinionConfig.walletAddress] : [])),
-            // Chart comparison tickers
-            chartTickers:   {
-                c1: typeof getChartTicker === 'function' ? getChartTicker(1) : '',
-                c2: typeof getChartTicker === 'function' ? getChartTicker(2) : ''
-            },
             // Telegram / news feed channel handles
             tgChannels:     _ls(X_HANDLES_KEY, '[]'),
             // Perps arb exchange wallets + equity snapshots
@@ -11645,15 +11697,26 @@ async function saveData(syncOpts = {}) {
             // News Feed user state (settings, saved, seen, hidden, quick links, kobeissi)
             newsFeed: typeof buildNewsFeedSyncPayload === 'function' ? buildNewsFeedSyncPayload() : undefined,
         });
+        // Never re-embed Variational hedges inside portfolio — dedicated perpsVariationalHedges key.
+        if (payload.portfolio?.perpsArb && Object.prototype.hasOwnProperty.call(payload.portfolio.perpsArb, 'variationalHedges')) {
+            const arb = { ...payload.portfolio.perpsArb };
+            delete arb.variationalHedges;
+            delete arb.variationalSettlements;
+            payload.portfolio = { ...payload.portfolio, perpsArb: arb };
+        }
         if (!syncPayloadHasPersistableData(payload)) return;
         if (syncOpts.watcherWalletsClear) payload.watcherWalletsClear = true;
         if (syncOpts.watcherLinksClear) payload.watcherLinksClear = true;
-        await fetch('/api/sync', {
+        if (payload.logoCache === undefined) delete payload.logoCache;
+        const res = await fetch('/api/sync', {
             method:    'POST',
             headers:   { 'Content-Type': 'application/json' },
             body:      JSON.stringify(payload),
             keepalive: true,
         });
+        if (res.ok && payload.logoCache && typeof LogoEngine?.acknowledgeCloudSync === 'function') {
+            LogoEngine.acknowledgeCloudSync();
+        }
     } catch(e) { if (location.protocol !== 'file:') console.error('Cloud save error:', e); }
 }
 
@@ -18998,6 +19061,8 @@ function orderOpportunityRows(rows) {
     try { seen = JSON.parse(localStorage.getItem(OPPORTUNITY_SEEN_KEY) || '{}') || {}; } catch(e) { seen = {}; }
     let changed = false;
     const now = Date.now();
+    const SEEN_TTL_MS = 90 * 86400000;
+    const SEEN_STALE_ABSENT_MS = 30 * 86400000;
     const currentKeys = new Set();
     rows.forEach((row) => {
         const key = opportunityRowKey(row);
@@ -19013,6 +19078,15 @@ function orderOpportunityRows(rows) {
         }
         row._seenAt = seen[key];
     });
+    for (const key of Object.keys(seen)) {
+        const ts = Number(seen[key] || 0);
+        const absent = !currentKeys.has(key);
+        if (!Number.isFinite(ts) || ts <= 0 || (now - ts) > SEEN_TTL_MS
+            || (absent && (now - ts) > SEEN_STALE_ABSENT_MS)) {
+            delete seen[key];
+            changed = true;
+        }
+    }
     if (changed) {
         try { localStorage.setItem(OPPORTUNITY_SEEN_KEY, JSON.stringify(seen)); } catch(e) {}
     }
@@ -27869,7 +27943,9 @@ function tickerSaveCustomEntries(entries) {
     });
     try {
         localStorage.setItem(TICKER_CUSTOM_V2_KEY, JSON.stringify(deduped));
-        localStorage.setItem(TICKER_CUSTOM_KEY, JSON.stringify(deduped.map(e => e.symbol)));
+        // Stop dual-writing legacy symbol-only key; prune old slot keys.
+        localStorage.removeItem(TICKER_CUSTOM_KEY);
+        for (let n = 1; n <= 2; n++) localStorage.removeItem(`vault_tk_c${n}`);
     } catch (e) {}
     return deduped;
 }
@@ -31507,16 +31583,12 @@ function perpsResolveHlWallet() {
 function perpsApplyArbToDataObject() {
     const cfg = perpsGetSavedConfig();
     if (!perpsIsValidEthAddress(cfg.hyperliquid)) return;
-    let variationalHedges = perpsLoadVariationalHedgesRaw();
-    if (!variationalHedges.length && Array.isArray(data?.perpsArb?.variationalHedges)) {
-        variationalHedges = data.perpsArb.variationalHedges;
-    }
+    // Hedges live in vault-perps-variational-hedges / dedicated sync key — not portfolio blob.
     data.perpsArb = {
         hyperliquid: cfg.hyperliquid.trim(),
         nado: cfg.nado || '',
         grvtSubAccount: cfg.grvtSubAccount || '4860249204328359',
         statRange: cfg.statRange || _perpsStatRange,
-        variationalHedges,
     };
 }
 
@@ -31544,7 +31616,6 @@ function perpsRestoreWalletSnapshot(snapshot) {
             nado: snapshot.nado || '',
             grvtSubAccount: snapshot.grvtSubAccount || '4860249204328359',
             statRange: snapshot.statRange || _perpsStatRange,
-            variationalHedges: perpsLoadVariationalHedgesRaw(),
         };
     }
 }
@@ -32008,17 +32079,15 @@ function perpsReadPortfolioArbConfig() {
 function perpsSyncConfigToPortfolio(payload) {
     if (!payload) return;
     try {
-        const hedges = perpsLoadVariationalHedgesRaw();
-        const arb = {
-            ...payload,
-            ...(hedges.length ? { variationalHedges: hedges } : {}),
-        };
+        const arb = { ...payload };
+        delete arb.variationalHedges;
+        delete arb.variationalSettlements;
         if (typeof data === 'object' && data) data.perpsArb = arb;
         const portfolio = JSON.parse(localStorage.getItem('portfolio-data-pro') || '{}');
-        portfolio.perpsArb = {
-            ...(portfolio.perpsArb || {}),
-            ...arb,
-        };
+        const prevArb = portfolio.perpsArb && typeof portfolio.perpsArb === 'object' ? { ...portfolio.perpsArb } : {};
+        delete prevArb.variationalHedges;
+        delete prevArb.variationalSettlements;
+        portfolio.perpsArb = { ...prevArb, ...arb };
         if (Array.isArray(portfolio.tokens)) {
             localStorage.setItem('portfolio-data-pro', JSON.stringify(portfolio));
         } else {

@@ -24,6 +24,7 @@ const { mergeWatcherWalletsForSync } = require('../lib/watcher-wallet-sync');
 const { collectEvents } = require('../lib/event-log');
 const { fetchPolymarketWalletBalances } = require('../lib/polymarket-balance');
 const { resolvePolymarketProfile } = require('../lib/polymarket-profile');
+const { sanitizeLogoCacheForStorage } = require('../lib/logo-resolver');
 const https = require('https');
 
 const SYNC_SECRET = process.env.SYNC_SECRET || '';
@@ -1013,7 +1014,11 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ ok: true, loopSnapshots });
       }
       if (req.query?.logoCache === '1') {
-        const logoCache = parseJson(await kvGet('vault:logo_cache'), {});
+        const rawLogoCache = parseJson(await kvGet('vault:logo_cache'), {});
+        const logoCache = sanitizeLogoCacheForStorage(rawLogoCache);
+        if (Object.keys(logoCache).length !== Object.keys(rawLogoCache || {}).length) {
+          await kvSet('vault:logo_cache', JSON.stringify(logoCache));
+        }
         return res.status(200).json({ ok: true, logoCache });
       }
       if (req.query?.geckoSymbolIds === '1') {
@@ -1044,7 +1049,7 @@ module.exports = async function handler(req, res) {
           _perpsVariationalHedges: parse(perpsVariationalHedgesRaw, []),
           _perpsClosedPairs: parse(perpsClosedPairsRaw, []),
           _perpsVariationalSettlements: parse(perpsVariationalSettlementsRaw, {}),
-          _logoCache:      parse(logoCacheRaw, {}),
+          _logoCache:      sanitizeLogoCacheForStorage(parse(logoCacheRaw, {})),
           _eventHistory:   parse(eventHistoryRaw, []),
         };
         return res.status(200).json({ ok: true, result: JSON.stringify(result) });
@@ -1100,7 +1105,7 @@ module.exports = async function handler(req, res) {
       const perpsVariationalHedges = parse(perpsVariationalHedgesRaw, []);
       const perpsClosedPairs    = parse(perpsClosedPairsRaw, []);
       const perpsVariationalSettlements = parse(perpsVariationalSettlementsRaw, {});
-      const logoCache           = parse(logoCacheRaw, {});
+      const logoCache           = sanitizeLogoCacheForStorage(parse(logoCacheRaw, {}));
       const geckoSymbolIds      = parse(geckoSymbolIdsRaw, {});
       const newsFeed            = parse(newsFeedRaw, null);
 
@@ -1223,7 +1228,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (body.logoCache && typeof body.logoCache === 'object') {
-      await kvSet('vault:logo_cache', JSON.stringify(body.logoCache));
+      await kvSet('vault:logo_cache', JSON.stringify(sanitizeLogoCacheForStorage(body.logoCache)));
       saved.logoCache = true;
     }
 
@@ -1287,12 +1292,6 @@ module.exports = async function handler(req, res) {
     if (body.snapshots) {
       await kvSet('vault:snapshots', JSON.stringify(body.snapshots));
       saved.snapshots = true;
-    }
-
-    // Chart comparison tickers
-    if (body.chartTickers) {
-      await kvSet('vault:chart_tickers', JSON.stringify(body.chartTickers));
-      saved.chartTickers = true;
     }
 
     // TG / news feed channel handles

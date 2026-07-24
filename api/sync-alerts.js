@@ -166,10 +166,7 @@ module.exports = async function handler(req, res) {
     const merged = [...mergedMap.values()];
 
     await kvSet(ALERTS_KEY, JSON.stringify(merged));
-
-    if (Array.isArray(tgChannels) && tgChannels.length > 0) {
-      await kvSet('vault:tg_channels', JSON.stringify(tgChannels));
-    }
+    // Note: channel handles sync via /api/sync → vault:feed_channels (not vault:tg_channels).
 
     return res.status(200).json({
       ok: true,
