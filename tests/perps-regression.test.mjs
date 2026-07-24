@@ -284,7 +284,8 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.ok(Math.abs(btc[0].funding - (-3.4)) < 1e-6, 'exchange-only funding must come from the solo leg window');
   assert.ok(Math.abs(btc[0].fees - 5) < 1e-6, 'exchange-only fees must sum fill fees');
   assert.match(indexHtml, /exchangeOnly/, 'Closed UI must support exchange-only solo rows');
-  assert.match(indexHtml, /perpsClosedPairVarShouldYieldToExchangeOnly/, 'only hollow EST / matching-PnL Var closes may yield to exchange-only');
+  assert.match(indexHtml, /perpsClosedPairLooksLikeNeverHedgedSyntheticVar/, 'client must detect synthetic never-hedged Var cards');
+  assert.match(indexHtml, /perpsDemoteVariationalClosedPairToSolo/, 'client must demote synthetic Var cards to SOLO');
   assert.match(indexHtml, /perpsPruneExchangeOnlyClosedPairs/, 'client must prune false SOLO Closed rows');
   assert.match(perpsJs, /closedLegIsNeverHedgedSolo/, 'solo rows must use never-hedged classifier');
   assert.match(perpsJs, /CLOSED_NEVER_HEDGED_LOOKBACK_MS/, 'never-hedged solos must be limited to 14d lookback');
