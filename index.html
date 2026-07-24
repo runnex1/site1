@@ -32898,10 +32898,29 @@ async function perpsSaveConfigAndRefresh() {
 function perpsClosedPairKey(pair) {
     const symbol = String(pair?.symbol || '').trim().toUpperCase();
     const closeTime = Number(pair?.closeTime || 0);
+    if (!symbol || !closeTime) return '';
     const longVenue = pair?.longLeg?.venue || '';
     const shortVenue = pair?.shortLeg?.venue || '';
-    if (!symbol || !closeTime || !longVenue || !shortVenue) return '';
+    if (pair?.exchangeOnly || (longVenue && !shortVenue) || (!longVenue && shortVenue)) {
+        const solo = pair?.longLeg || pair?.shortLeg;
+        const venue = solo?.venue || longVenue || shortVenue;
+        const side = solo?.side || (longVenue ? 'long' : 'short');
+        if (!venue) return '';
+        return `${symbol}|${closeTime}|${venue}|solo|${side}`;
+    }
+    if (!longVenue || !shortVenue) return '';
     return `${symbol}|${closeTime}|${longVenue}|${shortVenue}`;
+}
+
+function perpsClosedPairIsHollowEstVariational(pair) {
+    if (!pair?.manualVariationalClose) return false;
+    if (!pair.closeLegEstimated && !pair.aprUnavailable) return false;
+    const tracked = pair.longLeg?.venue === 'variational' ? pair.shortLeg : pair.longLeg;
+    const trackedPnl = Number(tracked?.realizedPnl);
+    const fees = Number(pair.fees);
+    const hollowPnl = !Number.isFinite(trackedPnl) || Math.abs(trackedPnl) < 1e-9;
+    const hollowFees = !Number.isFinite(fees) || Math.abs(fees) < 1e-9;
+    return hollowPnl && (hollowFees || Boolean(tracked?.closeLegEstimated));
 }
 
 function perpsLoadCachedClosedPairs() {
@@ -33917,18 +33936,34 @@ function perpsCacheNewClosedPairs(freshPairs) {
         changed = true;
     }
     let merged = [...byKey.values()];
-    // Prefer Variational closed cards over overlapping exchange-only reconstructions.
+    // Prefer solid Variational closes over overlapping hedged reconstructions.
+    // Prefer exchange-only (unhedged-until-end) over hollow/EST Variational closes.
     const varCloses = merged.filter((p) => p?.manualVariationalClose);
-    if (varCloses.length) {
+    const exchangeOnly = merged.filter((p) => p?.exchangeOnly);
+    if (varCloses.length || exchangeOnly.length) {
         const before = merged.length;
         merged = merged.filter((p) => {
-            if (p?.manualVariationalClose) return true;
             const sym = String(p?.symbol || '').toUpperCase().replace(/-PERP$/i, '');
             const ct = Number(p?.closeTime || 0);
-            return !varCloses.some((v) => {
-                const vSym = String(v?.symbol || '').toUpperCase().replace(/-PERP$/i, '');
-                return vSym === sym && Math.abs(Number(v?.closeTime || 0) - ct) <= 2 * 86400000;
-            });
+            const covers = (other) => {
+                const oSym = String(other?.symbol || '').toUpperCase().replace(/-PERP$/i, '');
+                return oSym === sym && Math.abs(Number(other?.closeTime || 0) - ct) <= 2 * 86400000;
+            };
+            if (p?.manualVariationalClose) {
+                if (!perpsClosedPairIsHollowEstVariational(p)) return true;
+                // Hollow EST Var row loses to a real exchange-only close for the same session.
+                return !exchangeOnly.some(covers);
+            }
+            if (p?.exchangeOnly) {
+                const coveringVar = varCloses.find(covers);
+                if (!coveringVar) return true;
+                // Keep exchange-only when the Var card is hollow EST (unhedged until end).
+                return perpsClosedPairIsHollowEstVariational(coveringVar);
+            }
+            // Non-Var hedged reconstruction: drop when any Var close covers (solid or hollow —
+            // hollow Var still preferred over a mismatched two-venue reconstruction).
+            if (p?.manualVariationalClose) return true;
+            return !varCloses.some(covers);
         });
         if (merged.length !== before) changed = true;
     }
@@ -36550,7 +36585,7 @@ function perpsRenderClosedPositionsV3(closedPairs) {
     if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
     if (!el) return;
     if (!closedPairs.length) {
-        el.innerHTML = '<div class="perps-empty">No fully closed hedged rounds found in the available fill history.</div>';
+        el.innerHTML = '<div class="perps-empty">No fully closed rounds found in the available fill history.</div>';
         return;
     }
     el.innerHTML = closedPairs.map(pairRaw => {
@@ -36559,7 +36594,7 @@ function perpsRenderClosedPositionsV3(closedPairs) {
         const closedAt = pair.closeTime
             ? new Date(pair.closeTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
             : '—';
-        const meta = `${perpsFmtSize(pair.size)} · ${dashEsc(pair.pairLabel || 'HL + Nado')} · closed ${dashEsc(closedAt)}`;
+        const meta = `${perpsFmtSize(pair.size)} · ${dashEsc(pair.pairLabel || (pair.exchangeOnly ? 'Exchange' : 'HL + Nado'))} · closed ${dashEsc(closedAt)}`;
         return `<article class="perps-mv3-card">
             <div class="perps-mv3-head">
                 <div class="perps-mv3-icon">${makeLogo(pair.symbol, false, 36)}</div>
@@ -36769,13 +36804,15 @@ function perpsRenderPortfolioPositions(paired) {
 }
 
 function perpsClosedLegHtml(leg, pair) {
+    if (!leg) return '';
     const signedSize = leg.side === 'short' ? -Math.abs(leg.size || 0) : Math.abs(leg.size || 0);
     const venueHtml = perpsVenueWithSideHtml(leg.venue, signedSize);
-    if (!pair?.manualVariationalClose) {
+    const exchangeOnly = Boolean(pair?.exchangeOnly) || !(pair?.longLeg && pair?.shortLeg);
+    if (!pair?.manualVariationalClose && !exchangeOnly) {
         return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val muted" title="Gross leg PnL is hedged — see Close Slippage and Net PnL">—</span></div>`;
     }
     if (!Number.isFinite(leg.realizedPnl)) {
-        return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val muted" title="Variational exit price missing or estimated">—</span></div>`;
+        return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val muted" title="${exchangeOnly ? 'Exchange PnL unavailable' : 'Variational exit price missing or estimated'}">—</span></div>`;
     }
     const pnlLabel = (leg.venue === 'variational'
         ? !leg.variationalExitDerived && !Number.isFinite(Number(leg.avgClosePx))
@@ -37052,6 +37089,9 @@ function perpsClosedDebugNoticeHtml(debug) {
 }
 
 function perpsClosedSlippageTip(pair) {
+    if (pair?.exchangeOnly) {
+        return 'Unhedged until close — Close Slippage is the exchange realized PnL for this leg';
+    }
     const legs = [pair?.longLeg, pair?.shortLeg].filter(Boolean);
     const tracked = legs.find((leg) => leg?.venue !== 'variational');
     const variational = legs.find((leg) => leg?.venue === 'variational');
@@ -37080,7 +37120,7 @@ function perpsRenderClosedPositions(closedPairs) {
     if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
     if (!el) return;
     if (!closedPairs.length) {
-        el.innerHTML = '<div class="perps-empty">No fully closed hedged rounds found in the available fill history.</div>';
+        el.innerHTML = '<div class="perps-empty">No fully closed rounds found in the available fill history.</div>';
         return;
     }
     const head = `<div class="perps-pos-head closed">
@@ -37103,21 +37143,25 @@ function perpsRenderClosedPositions(closedPairs) {
         const slipTip = perpsClosedSlippageTip(pair);
         const margin = perpsClosedPairAvgNotional(pair);
         const feesAbs = Math.abs(Number(pair.fees || 0));
+        const legsHtml = [pair.longLeg, pair.shortLeg]
+            .filter(Boolean)
+            .map((leg) => perpsClosedLegHtml(leg, pair))
+            .join('');
         return `<div class="perps-pos-card"><div class="perps-pos-row closed">
             <div class="perps-pos-token">
                 <div class="perps-pos-token-row">
                     ${makeLogo(pair.symbol, false, 36)}
                     <div>
                         <div class="perps-pos-token-name">${dashEsc(pair.symbol)}</div>
-                        <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}</div>
+                        <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}${pair.exchangeOnly ? ` · ${dashEsc(pair.pairLabel || 'Exchange')}` : ''}</div>
                         <span class="perps-pos-pill">CLOSED</span>
+                        ${pair.exchangeOnly ? '<span class="perps-pos-pill" title="Unhedged until close — exchange leg only">SOLO</span>' : ''}
                         ${pair.closeLegEstimated || pair.manualVariationalClose && pair.aprUnavailable ? '<span class="perps-pos-pill warn" title="Tracked close leg or PnL is estimated">EST</span>' : ''}
                     </div>
                 </div>
             </div>
             <div class="perps-pos-legs">
-                ${perpsClosedLegHtml(pair.longLeg, pair)}
-                ${perpsClosedLegHtml(pair.shortLeg, pair)}
+                ${legsHtml}
             </div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.netPnl)}">${perpsFmtUsd(pair.netPnl)}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">APR</div><div class="perps-pos-apr-val ${sessionApr != null ? perpsSignedCls(sessionApr) : ''}" title="${dashEsc(aprTip)}">${sessionApr != null ? perpsFmtPct(sessionApr) : '—'}</div></div>

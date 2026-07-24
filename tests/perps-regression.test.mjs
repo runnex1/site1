@@ -263,6 +263,32 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 {
+  // Unhedged-until-end BTC-style close → Closed shows exchange leg only.
+  const open = now - 8 * 3600000;
+  const close = now - 2 * 3600000;
+  const closed = buildClosedPairs({
+    hyperliquid: [
+      { venue: 'hyperliquid', symbol: 'BTC', time: open, side: 'B', px: 63000, sz: 0.19, fee: 1.2, closedPnl: 0, dir: 'Open Long' },
+      { venue: 'hyperliquid', symbol: 'BTC', time: close - 1000, side: 'A', px: 64000, sz: 0.1, fee: 2, closedPnl: 100, dir: 'Close Long' },
+      { venue: 'hyperliquid', symbol: 'BTC', time: close, side: 'A', px: 64300, sz: 0.09, fee: 1.8, closedPnl: 126.24, dir: 'Close Long' },
+    ],
+  }, {
+    hyperliquid: [{ venue: 'hyperliquid', symbol: 'BTC', time: open + 3600000, usdc: -3.4 }],
+  });
+  const btc = closed.filter((p) => p.symbol === 'BTC');
+  assert.equal(btc.length, 1, 'unhedged BTC close must emit one Closed row');
+  assert.equal(btc[0].exchangeOnly, true, 'unhedged close must be exchange-only');
+  assert.equal(btc[0].pairLabel, 'HL');
+  assert.ok(btc[0].longLeg && !btc[0].shortLeg, 'BTC long must show only the HL leg');
+  assert.ok(Math.abs(btc[0].closeSlippage - 226.24) < 1e-6, 'exchange-only slippage must be realized PnL');
+  assert.ok(Math.abs(btc[0].funding - (-3.4)) < 1e-6, 'exchange-only funding must come from the solo leg window');
+  assert.ok(Math.abs(btc[0].fees - 5) < 1e-6, 'exchange-only fees must sum fill fees');
+  assert.match(indexHtml, /exchangeOnly/, 'Closed UI must support exchange-only solo rows');
+  assert.match(indexHtml, /perpsClosedPairIsHollowEstVariational/, 'hollow EST Var closes must yield to exchange-only');
+  assert.match(indexHtml, /Unhedged until close/, 'solo Closed pill must explain exchange-only rows');
+}
+
+{
   const assets = ['ZK', 'POL', 'MON', 'VIRTUAL', 'IP', 'KAITO'];
   const grvtHistory = assets.map((symbol, idx) => {
     const closeTime = now - (idx + 2) * 86400000;
@@ -599,7 +625,9 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
       { venue: 'grvt', symbol: 'VIRTUAL', time: closeGrvt, side: 'buy', px: 1.11, sz: 1000, fee: 1, closedPnl: -38 },
     ],
   }, {});
-  assert.equal(farApart.length, 0, 'legs closed more than 30 minutes apart must not pair');
+  assert.equal(farApart.length, 2, 'far-apart closes must not pair; each unhedged leg becomes its own Closed row');
+  assert.ok(farApart.every((p) => p.exchangeOnly), 'far-apart closes must be exchange-only solo rows');
+  assert.equal(farApart.filter((p) => p.longLeg && p.shortLeg).length, 0, 'far-apart legs must not form a hedged pair');
 
   const close = now - 86400000;
   const withinWindow = buildClosedPairs({
@@ -693,7 +721,9 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
       { venue: 'nado', symbol: 'TEST', time: close + 1000, side: 'buy', px: 1, size: 600, fee: 1, realizedPnl: -98 },
     ],
   }, {});
-  assert.equal(closed.length, 0, 'large raw fill-vs-fill size mismatches must still be rejected');
+  assert.equal(closed.filter((p) => !p.exchangeOnly).length, 0, 'large raw fill-vs-fill size mismatches must still be rejected as hedged pairs');
+  assert.equal(closed.length, 2, 'rejected mismatches still appear as unhedged exchange-only Closed rows');
+  assert.ok(closed.every((p) => p.exchangeOnly), 'rejected mismatches must be exchange-only solo rows');
 }
 
 {
