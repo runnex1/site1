@@ -16042,6 +16042,8 @@ let loopApiState = {
     coverage: null,
 };
 const LOOP_SNAPSHOTS_KEY = 'vault-loop-snapshots';
+/** Match server: ~30d at 2h buckets. */
+const LOOP_SNAPSHOT_MAX_ENTRIES = 360;
 const LOOP_USDE_USDM_PURGE_KEY = 'vault-loop-snapshots-usde-usdm-purged';
 const LOOP_API_STATE_KEY = 'vault-loop-api-state-v9';
 const LOOP_API_LAST_SYNC_KEY = 'vault-loop-last-auto-sync';
@@ -16252,11 +16254,19 @@ function loopsSnapshotBucketKey(ms) {
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}T${String(h).padStart(2, '0')}`;
 }
 
+function loopsTrimSnapshotStoreInPlace(maxEntries = LOOP_SNAPSHOT_MAX_ENTRIES) {
+    const keys = Object.keys(loopSnapshotsStore || {}).sort();
+    while (keys.length > maxEntries) {
+        delete loopSnapshotsStore[keys.shift()];
+    }
+}
+
 function loopsUploadSnapshotsToServer() {
     if (location.protocol === 'file:') return;
     const upload = async () => {
         try {
             await loopsEnsureSnapshotsHydrated();
+            loopsTrimSnapshotStoreInPlace();
             await fetch('/api/sync', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -16380,10 +16390,7 @@ function loopsAppendSnapshotFromApiData(data) {
         pendlePositions,
     };
     loopSnapshotsStore[key] = loopsMergeSnapshotBucketRecords(loopSnapshotsStore[key], record);
-    const keys = Object.keys(loopSnapshotsStore).sort();
-    while (keys.length > 360) {
-        delete loopSnapshotsStore[keys.shift()];
-    }
+    loopsTrimSnapshotStoreInPlace();
     try { localStorage.setItem(LOOP_SNAPSHOTS_KEY, JSON.stringify(loopSnapshotsStore)); } catch (e) {}
     loopsUploadSnapshotsToServer();
     return true;

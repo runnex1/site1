@@ -1481,8 +1481,8 @@ assert.match(indexHtml, /loopsShouldBlockStalePaint/, 'Loops must block stale im
 assert.match(indexHtml, /loopsSyncPlaceholderHtml/, 'Loops must show syncing placeholder');
 assert.match(indexHtml, /pendleHistoryPoints/, 'Pendle cards must use snapshot history like loop cards');
 assert.match(indexHtml, /pendleRowToDisplayPosition/, 'Pendle positions must reuse loop card renderer');
-assert.match(aaveProxyJs, /LOOP_RATES_CACHE_VERSION = 'v9'/, 'loop-rates server cache must bust when Morpho/Fluid coverage expands');
-assert.match(cronRunnerJs, /LOOP_RATES_CACHE_VERSION = 'v9'/, 'cron loopsSync cache version must match loop-rates API');
+assert.match(aaveProxyJs, /LOOP_RATES_CACHE_VERSION = 'v10'/, 'loop-rates server cache must bust when Morpho/Fluid coverage expands');
+assert.match(cronRunnerJs, /LOOP_RATES_CACHE_VERSION = 'v10'/, 'cron loopsSync cache version must match loop-rates API');
 assert.match(indexHtml, /vault-loop-api-state-v9/, 'loop API local cache must bust when Morpho/Fluid coverage expands');
 assert.match(loopRatesJs, /name: 'AaveV3Monad', chainId: 143/, 'Loops must query Aave V3 Monad for syrupUSDC/mUSD loops');
 assert.match(loopRatesJs, /name: 'AaveV3Plasma', chainId: 9745/, 'Loops must query Aave V3 Plasma');
@@ -2721,6 +2721,10 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
     resolveLoopYieldWallets,
     persistLoopSnapshotStore,
     parseLoopYieldWalletsFromRatesCache,
+    decodeLoopSnapshotStore,
+    encodeLoopSnapshotStore,
+    ensureLoopSnapshotsCompressed,
+    LOOP_SNAPSHOT_KV_GZIP_PREFIX,
   } = require('../lib/loop-snapshots.js');
   const cacheWallets = parseLoopYieldWalletsFromRatesCache({
     key: 'v2:0xabcdef0000000000000000000000000000000001,0x1234567890123456789012345678901234567890',
@@ -2728,7 +2732,7 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
     data: {},
   });
   assert.equal(cacheWallets.length, 2, 'loop rates cache key must provide fallback yield wallets');
-  let stored = {};
+  let storedRaw = null;
   const kv = {
     async kvGet(key) {
       if (key === 'vault:watcherwallets') return JSON.stringify([]);
@@ -2736,11 +2740,11 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
       if (key === 'vault:loop_rates_cache') {
         return JSON.stringify({ key: 'v2:0xabcdef0000000000000000000000000000000001', fetchedAt: Date.now(), data: {} });
       }
-      if (key === 'vault:loop_snapshots') return JSON.stringify(stored);
+      if (key === 'vault:loop_snapshots') return storedRaw;
       return null;
     },
     async kvSet(key, value) {
-      if (key === 'vault:loop_snapshots') stored = JSON.parse(value);
+      if (key === 'vault:loop_snapshots') storedRaw = value;
     },
   };
   const wallets = await resolveLoopYieldWallets(kv);
@@ -2748,6 +2752,24 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   const store = { '2026-07-07T12': { bucket: '2026-07-07T12', fetchedAt: 1000, positions: [{ id: 'a' }] } };
   const persisted = await persistLoopSnapshotStore({ ...kv, store });
   assert.equal(persisted.latestFetchedAt, 1000, 'persistLoopSnapshotStore must verify read-back fetchedAt');
+  assert.ok(String(storedRaw || '').startsWith(LOOP_SNAPSHOT_KV_GZIP_PREFIX), 'loop snapshots must persist gzip-encoded');
+  assert.equal(decodeLoopSnapshotStore(storedRaw)['2026-07-07T12'].fetchedAt, 1000, 'gzip read-back must restore store');
+
+  let plainRaw = JSON.stringify({ '2026-07-07T14': { bucket: '2026-07-07T14', fetchedAt: 2000, positions: [] } });
+  const migrateKv = {
+    async kvGet(key) {
+      if (key === 'vault:loop_snapshots') return plainRaw;
+      return null;
+    },
+    async kvSet(key, value) {
+      if (key === 'vault:loop_snapshots') plainRaw = value;
+    },
+  };
+  const migrated = await ensureLoopSnapshotsCompressed(migrateKv);
+  assert.equal(migrated.rewritten, true, 'plain JSON loop snapshots must migrate to gzip');
+  assert.ok(String(plainRaw).startsWith(LOOP_SNAPSHOT_KV_GZIP_PREFIX), 'migrated value must use gzip prefix');
+  assert.equal(decodeLoopSnapshotStore(plainRaw)['2026-07-07T14'].fetchedAt, 2000);
+  assert.ok(encodeLoopSnapshotStore({}).startsWith(LOOP_SNAPSHOT_KV_GZIP_PREFIX));
 }
 
 {
@@ -2793,6 +2815,7 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   );
 
   let flag = '';
+  const { decodeLoopSnapshotStore, LOOP_SNAPSHOT_KV_GZIP_PREFIX } = require('../lib/loop-snapshots.js');
   const kv = {
     async get(key) {
       if (key === 'vault:loop_snapshots_usde_usdm_purged') return flag;
@@ -2808,19 +2831,21 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   const first = await ensureUsdeUsdmSnapshotsPurged({
     kvGet: kv.get,
     kvSet: kv.set,
-    parseJson: (raw, fallback) => {
-      try { return JSON.parse(raw); } catch { return fallback; }
-    },
   });
   assert.equal(first.purged, true);
   assert.equal(first.removedPositions, 2);
   assert.ok(kv.saved, 'one-time purge must rewrite loop snapshot store');
+  assert.ok(String(kv.saved).startsWith(LOOP_SNAPSHOT_KV_GZIP_PREFIX), 'purge rewrite must gzip-encode');
+  assert.equal(decodeLoopSnapshotStore(kv.saved)['2026-06-09T00'].positions[0].protocol, 'Jupiter');
+  // After first purge, kvGet must return the rewritten (gzip) value, not the original plain JSON.
+  kv.get = async (key) => {
+    if (key === 'vault:loop_snapshots_usde_usdm_purged') return flag;
+    if (key === 'vault:loop_snapshots') return kv.saved;
+    return null;
+  };
   const second = await ensureUsdeUsdmSnapshotsPurged({
     kvGet: kv.get,
     kvSet: kv.set,
-    parseJson: (raw, fallback) => {
-      try { return JSON.parse(raw); } catch { return fallback; }
-    },
   });
   assert.equal(second.purged, false, 'USDe/USDm purge must run only once server-side');
 }

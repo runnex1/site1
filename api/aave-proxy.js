@@ -27,7 +27,9 @@ const {
   resolveLoopYieldWallets,
   persistLoopYieldWallets,
   persistLoopSnapshotStore,
+  loadLoopSnapshotStore,
   ensureUsdeUsdmSnapshotsPurged,
+  ensureLoopSnapshotsCompressed,
 } = require('../lib/loop-snapshots');
 const { ensureLoopLogoCache, sanitizeLogoCacheForStorage } = require('../lib/logo-resolver');
 
@@ -418,9 +420,9 @@ async function handleLoopCronSnapshot(req, res) {
     const data = mergeRecentLoopPositions(freshData, previousCache?.data, {
       previousFetchedAt: previousCache?.fetchedAt,
     });
-    const savedSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
+    const savedSnapshots = await loadLoopSnapshotStore(kvGet);
     const store = appendLoopSnapshotStore(savedSnapshots, data);
-    const persisted = await persistLoopSnapshotStore({ kvGet, kvSet, parseJson, store });
+    const persisted = await persistLoopSnapshotStore({ kvGet, kvSet, store });
     await persistLoopYieldWallets(kvSet, wallets);
     const logosUpdated = await persistLoopLogoCache(data.positions);
     await kvSet(CACHE_KEYS.loopRates, JSON.stringify({
@@ -454,7 +456,10 @@ async function handleLoopSnapshots(req, res) {
 
   try {
     await ensureUsdeUsdmSnapshotsPurged({ kvGet, kvSet, parseJson });
-    const loopSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
+    await ensureLoopSnapshotsCompressed({ kvGet, kvSet }).catch((e) => {
+      console.warn('[loop-snapshots] compress failed:', e.message || e);
+    });
+    const loopSnapshots = await loadLoopSnapshotStore(kvGet);
     return res.status(200).json({ ok: true, loopSnapshots });
   } catch (e) {
     console.error('[loop-snapshots]', e);
@@ -464,9 +469,9 @@ async function handleLoopSnapshots(req, res) {
 
 async function persistLoopSnapshotsFromRates(data, wallets = []) {
   try {
-    const savedSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
+    const savedSnapshots = await loadLoopSnapshotStore(kvGet);
     const store = appendLoopSnapshotStore(savedSnapshots, data);
-    const persisted = await persistLoopSnapshotStore({ kvGet, kvSet, parseJson, store });
+    const persisted = await persistLoopSnapshotStore({ kvGet, kvSet, store });
     if (wallets.length) await persistLoopYieldWallets(kvSet, wallets);
     return persisted;
   } catch (e) {

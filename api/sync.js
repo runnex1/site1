@@ -13,7 +13,15 @@
  */
 
 const { kvGet, kvSet } = require('../lib/kv');
-const { mergeLoopSnapshotStores, ensureUsdeUsdmSnapshotsPurged, loopYieldWalletsFromWatcherList, persistLoopYieldWallets, persistLoopSnapshotStore } = require('../lib/loop-snapshots');
+const {
+  mergeLoopSnapshotStores,
+  ensureUsdeUsdmSnapshotsPurged,
+  ensureLoopSnapshotsCompressed,
+  loadLoopSnapshotStore,
+  loopYieldWalletsFromWatcherList,
+  persistLoopYieldWallets,
+  persistLoopSnapshotStore,
+} = require('../lib/loop-snapshots');
 const {
   shouldPersistSyncArray,
   shouldPersistWatcherWallets,
@@ -1010,7 +1018,11 @@ module.exports = async function handler(req, res) {
       }
       if (req.query?.loopSnapshots === '1') {
         await ensureUsdeUsdmSnapshotsPurged({ kvGet, kvSet, parseJson });
-        const loopSnapshots = parseJson(await kvGet('vault:loop_snapshots'), {});
+        // Migrate plain JSON → gzip in KV (no history loss). Response stays plain JSON for mobile/desktop.
+        await ensureLoopSnapshotsCompressed({ kvGet, kvSet }).catch((e) => {
+          console.warn('[sync] loop snapshot compress failed:', e.message || e);
+        });
+        const loopSnapshots = await loadLoopSnapshotStore(kvGet);
         return res.status(200).json({ ok: true, loopSnapshots });
       }
       if (req.query?.logoCache === '1') {
@@ -1364,9 +1376,9 @@ module.exports = async function handler(req, res) {
 
     if (body.loopSnapshots && typeof body.loopSnapshots === 'object') {
       await ensureUsdeUsdmSnapshotsPurged({ kvGet, kvSet, parseJson });
-      const existing = parseJson(await kvGet('vault:loop_snapshots'), {});
+      const existing = await loadLoopSnapshotStore(kvGet);
       const merged = mergeLoopSnapshotStores(existing, body.loopSnapshots);
-      await persistLoopSnapshotStore({ kvGet, kvSet, parseJson, store: merged });
+      await persistLoopSnapshotStore({ kvGet, kvSet, store: merged });
       saved.loopSnapshots = true;
     }
 
