@@ -284,7 +284,7 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.ok(Math.abs(btc[0].funding - (-3.4)) < 1e-6, 'exchange-only funding must come from the solo leg window');
   assert.ok(Math.abs(btc[0].fees - 5) < 1e-6, 'exchange-only fees must sum fill fees');
   assert.match(indexHtml, /exchangeOnly/, 'Closed UI must support exchange-only solo rows');
-  assert.match(indexHtml, /perpsClosedPairIsHollowEstVariational/, 'hollow EST Var closes must yield to exchange-only');
+  assert.match(indexHtml, /perpsClosedPairIsSyntheticVariational/, 'synthetic Var closes must yield to exchange-only');
   assert.match(indexHtml, /Unhedged until close/, 'solo Closed pill must explain exchange-only rows');
 }
 
