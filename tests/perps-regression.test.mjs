@@ -285,8 +285,25 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.ok(Math.abs(btc[0].fees - 5) < 1e-6, 'exchange-only fees must sum fill fees');
   assert.match(indexHtml, /exchangeOnly/, 'Closed UI must support exchange-only solo rows');
   assert.match(indexHtml, /perpsClosedPairVarShouldYieldToExchangeOnly/, 'only hollow EST Var closes may yield to exchange-only');
+  assert.match(perpsJs, /closedLegHasHedgeCounterpart/, 'solo rows must skip legs that had a hedge counterpart');
+  assert.match(perpsJs, /CLOSED_PAIR_STAGGER_MATCH_WINDOW_MS/, 'staggered hedge exits must use an extended pair window');
   assert.doesNotMatch(indexHtml, /perpsDemoteSyntheticVariationalClosedPair/, 'must not auto-demote real Var hedges via fundingEstimated');
-  assert.match(indexHtml, /Unhedged until close/, 'solo Closed pill must explain exchange-only rows');
+  assert.match(indexHtml, /Never hedged/, 'solo Closed pill must explain never-hedged rows');
+}
+
+{
+  // Closing-fill fragments must not become solo Closed rows.
+  const close = now - 3600000;
+  const fragments = buildClosedPairs({
+    hyperliquid: [
+      { venue: 'hyperliquid', symbol: 'ATOM', time: close, side: 'A', px: 4, sz: 1500, fee: 1, closedPnl: -30 },
+    ],
+  }, {});
+  assert.equal(
+    fragments.filter((p) => p.symbol === 'ATOM' && p.exchangeOnly).length,
+    0,
+    'reconstructed closing-fill fragments must not appear as never-hedged solos',
+  );
 }
 
 {
@@ -616,7 +633,8 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 {
   const closeHl = now - 2 * 86400000;
   const closeGrvt = now - 86400000;
-  const farApart = buildClosedPairs({
+  // Overlapping hedge life, staggered exits ~1 day apart → still one hedged Closed row.
+  const staggered = buildClosedPairs({
     hyperliquid: [
       { venue: 'hyperliquid', symbol: 'VIRTUAL', time: closeHl - 86400000, side: 'B', px: 1, sz: 1000, fee: 1, closedPnl: 0 },
       { venue: 'hyperliquid', symbol: 'VIRTUAL', time: closeHl, side: 'A', px: 1.1, sz: 1000, fee: 1, closedPnl: 40 },
@@ -626,9 +644,23 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
       { venue: 'grvt', symbol: 'VIRTUAL', time: closeGrvt, side: 'buy', px: 1.11, sz: 1000, fee: 1, closedPnl: -38 },
     ],
   }, {});
-  assert.equal(farApart.length, 2, 'far-apart closes must not pair; each unhedged leg becomes its own Closed row');
-  assert.ok(farApart.every((p) => p.exchangeOnly), 'far-apart closes must be exchange-only solo rows');
-  assert.equal(farApart.filter((p) => p.longLeg && p.shortLeg).length, 0, 'far-apart legs must not form a hedged pair');
+  assert.equal(staggered.length, 1, 'staggered hedge exits days apart must still pair when open windows overlap');
+  assert.equal(staggered[0].exchangeOnly, undefined, 'staggered hedge must not become exchange-only solo');
+  assert.ok(staggered[0].longLeg && staggered[0].shortLeg, 'staggered hedge must keep both exchange legs');
+
+  // Non-overlapping sequential legs far apart → no pair and no solo spam.
+  const sequential = buildClosedPairs({
+    hyperliquid: [
+      { venue: 'hyperliquid', symbol: 'DOGE', time: now - 20 * 86400000, side: 'B', px: 1, sz: 1000, fee: 1, closedPnl: 0 },
+      { venue: 'hyperliquid', symbol: 'DOGE', time: now - 18 * 86400000, side: 'A', px: 1.1, sz: 1000, fee: 1, closedPnl: 40 },
+    ],
+    grvt: [
+      { venue: 'grvt', symbol: 'DOGE', time: now - 5 * 86400000, side: 'sell', px: 1, sz: 1000, fee: 1, closedPnl: 0 },
+      { venue: 'grvt', symbol: 'DOGE', time: now - 3 * 86400000, side: 'buy', px: 1.11, sz: 1000, fee: 1, closedPnl: -38 },
+    ],
+  }, {});
+  assert.equal(sequential.filter((p) => !p.exchangeOnly).length, 0, 'non-overlapping sequential rounds must not pair');
+  assert.equal(sequential.filter((p) => p.exchangeOnly).length, 2, 'never-overlapping venue rounds may each show as never-hedged solos');
 
   const close = now - 86400000;
   const withinWindow = buildClosedPairs({
@@ -723,8 +755,8 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     ],
   }, {});
   assert.equal(closed.filter((p) => !p.exchangeOnly).length, 0, 'large raw fill-vs-fill size mismatches must still be rejected as hedged pairs');
-  assert.equal(closed.length, 2, 'rejected mismatches still appear as unhedged exchange-only Closed rows');
-  assert.ok(closed.every((p) => p.exchangeOnly), 'rejected mismatches must be exchange-only solo rows');
+  // Opposite venue nearby ⇒ treated as staggered/partial hedge leftover, not never-hedged solo.
+  assert.equal(closed.filter((p) => p.exchangeOnly).length, 0, 'size-mismatch hedge leftovers must not spam exchange-only Closed rows');
 }
 
 {

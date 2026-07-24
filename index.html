@@ -33958,18 +33958,19 @@ function perpsCacheNewClosedPairs(freshPairs) {
         changed = true;
     }
     let merged = [...byKey.values()];
-    // Prefer real Variational delta-neutral closes over overlapping exchange-only reconstructions.
-    // Only hollow EST Var rows (unhedged-until-end) yield to exchange-only.
+    // Prefer real Variational / hedged closes over overlapping exchange-only reconstructions.
+    // Only never-hedged (or hollow EST Var) rows keep exchange-only.
     const varCloses = merged.filter((p) => p?.manualVariationalClose);
+    const hedgedPairs = merged.filter((p) => !p?.exchangeOnly && p?.longLeg && p?.shortLeg);
     const exchangeOnly = merged.filter((p) => p?.exchangeOnly);
-    if (varCloses.length || exchangeOnly.length) {
+    if (varCloses.length || exchangeOnly.length || hedgedPairs.length) {
         const before = merged.length;
         merged = merged.filter((p) => {
             const sym = String(p?.symbol || '').toUpperCase().replace(/-PERP$/i, '');
             const ct = Number(p?.closeTime || 0);
             const covers = (other) => {
                 const oSym = String(other?.symbol || '').toUpperCase().replace(/-PERP$/i, '');
-                return oSym === sym && Math.abs(Number(other?.closeTime || 0) - ct) <= 2 * 86400000;
+                return oSym === sym && Math.abs(Number(other?.closeTime || 0) - ct) <= 7 * 86400000;
             };
             if (p?.manualVariationalClose) {
                 const solo = exchangeOnly.find(covers);
@@ -33977,9 +33978,28 @@ function perpsCacheNewClosedPairs(freshPairs) {
                 return !perpsClosedPairVarShouldYieldToExchangeOnly(p, solo);
             }
             if (p?.exchangeOnly) {
+                // Any real two-leg hedged close for this symbol/session wins over solo.
+                if (hedgedPairs.some(covers)) return false;
                 const coveringVar = varCloses.find(covers);
-                if (!coveringVar) return true;
-                return perpsClosedPairVarShouldYieldToExchangeOnly(coveringVar, p);
+                if (coveringVar) {
+                    return perpsClosedPairVarShouldYieldToExchangeOnly(coveringVar, p);
+                }
+                // Drop solos when a Variational hedge existed for this symbol/session
+                // even if the Closed Var card was lost — those were never "unhedged".
+                try {
+                    const hedges = typeof perpsLoadVariationalHedges === 'function'
+                        ? perpsLoadVariationalHedges()
+                        : [];
+                    const coveredByVarHedge = (hedges || []).some((h) => {
+                        const hSym = String(h?.symbol || '').toUpperCase().replace(/-PERP$/i, '');
+                        if (hSym !== sym) return false;
+                        const closedAt = Number(h?.closedAt || h?.pendingCloseAt || 0);
+                        if (!closedAt) return false;
+                        return Math.abs(closedAt - ct) <= 7 * 86400000;
+                    });
+                    if (coveredByVarHedge) return false;
+                } catch (_) { /* ignore */ }
+                return true;
             }
             // Non-Var hedged reconstruction: drop when any Var close covers.
             return !varCloses.some(covers);
@@ -37174,7 +37194,7 @@ function perpsRenderClosedPositions(closedPairs) {
                         <div class="perps-pos-token-name">${dashEsc(pair.symbol)}</div>
                         <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}${pair.exchangeOnly ? ` · ${dashEsc(pair.pairLabel || 'Exchange')}` : ''}</div>
                         <span class="perps-pos-pill">CLOSED</span>
-                        ${pair.exchangeOnly ? '<span class="perps-pos-pill" title="Unhedged until close — exchange leg only">SOLO</span>' : ''}
+                        ${pair.exchangeOnly ? '<span class="perps-pos-pill" title="Never hedged — shown with the single exchange leg only">SOLO</span>' : ''}
                         ${pair.closeLegEstimated || pair.manualVariationalClose && pair.aprUnavailable ? '<span class="perps-pos-pill warn" title="Tracked close leg or PnL is estimated">EST</span>' : ''}
                     </div>
                 </div>
