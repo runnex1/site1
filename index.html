@@ -32924,8 +32924,11 @@ function perpsClosedPairIsHollowEstVariational(pair) {
 }
 
 /**
- * Only truly hollow EST Var rows yield to exchange-only (unhedged-until-end like BTC).
- * Real delta-neutral Var hedges (HBAR etc.) often have fundingEstimated — that must NOT demote them.
+ * Only hollow EST / unhedged-until-end Var rows yield to a never-hedged exchange-only row.
+ * Real delta-neutral Var hedges (HBAR, ADA, FIL, …) always win over SOLO reconstructions.
+ *
+ * BTC signal: server SOLO realized PnL matches the Var card's tracked-leg PnL (same HL round
+ * pasted onto a synthetic Var close). Real Var hedges usually have a different solo leftover PnL.
  */
 function perpsClosedPairVarShouldYieldToExchangeOnly(varPair, soloPair) {
     if (!varPair?.manualVariationalClose) return false;
@@ -32935,14 +32938,52 @@ function perpsClosedPairVarShouldYieldToExchangeOnly(varPair, soloPair) {
     // GRVT/Ext history-backed hedges are real delta-neutral closes — never yield.
     if (tracked.fromExchangeHistory) return false;
     if (!soloPair?.exchangeOnly) return false;
-    if (varPair.closeLegEstimated || tracked.closeLegEstimated) return true;
-    const soloSize = Math.abs(Number(soloPair.size || 0));
-    const trackedSize = Math.abs(Number(tracked.size || varPair.size || 0));
-    if (soloSize > 0 && trackedSize > 0) {
-        const mismatch = Math.abs(soloSize - trackedSize) / Math.max(soloSize, trackedSize);
-        if (mismatch > 0.05) return true;
+    const trackedPnl = Number(tracked.realizedPnl);
+    const soloPnl = Number(soloPair.closeSlippage);
+    if (Number.isFinite(trackedPnl) && Number.isFinite(soloPnl) && Math.abs(trackedPnl - soloPnl) <= 1e-4) {
+        return true;
     }
     return false;
+}
+
+function perpsClosedPairBaseSymbol(pairOrSym) {
+    return String(pairOrSym?.symbol ?? pairOrSym || '')
+        .trim()
+        .toUpperCase()
+        .replace(/-PERP$/i, '');
+}
+
+/** Prefer real hedges/Var closes; keep only true never-hedged SOLOs (≤14d). */
+function perpsPruneExchangeOnlyClosedPairs(pairs) {
+    const list = Array.isArray(pairs) ? pairs : [];
+    const nowMs = Date.now();
+    const lookbackMs = 14 * 86400000;
+    const varCloses = list.filter((p) => p?.manualVariationalClose);
+    const exchangeOnly = list.filter((p) => p?.exchangeOnly);
+    const hedgedPairs = list.filter((p) => !p?.exchangeOnly && !p?.manualVariationalClose && p?.longLeg && p?.shortLeg);
+    return list.filter((p) => {
+        const sym = perpsClosedPairBaseSymbol(p);
+        const ct = Number(p?.closeTime || 0);
+        const covers = (other) => (
+            perpsClosedPairBaseSymbol(other) === sym
+            && Math.abs(Number(other?.closeTime || 0) - ct) <= 2 * 86400000
+        );
+        if (p?.manualVariationalClose) {
+            const solo = exchangeOnly.find(covers);
+            if (!solo) return true;
+            // Drop synthetic / unhedged-until-end Var when a true SOLO exists for the session.
+            return !perpsClosedPairVarShouldYieldToExchangeOnly(p, solo);
+        }
+        if (p?.exchangeOnly) {
+            if (!ct || nowMs - ct > lookbackMs) return false;
+            if (hedgedPairs.some(covers)) return false;
+            const coveringVar = varCloses.find(covers);
+            if (!coveringVar) return true;
+            return perpsClosedPairVarShouldYieldToExchangeOnly(coveringVar, p);
+        }
+        // Prefer Variational closed cards over overlapping exchange reconstructions.
+        return !varCloses.some(covers);
+    });
 }
 
 function perpsLoadCachedClosedPairs() {
@@ -33929,22 +33970,21 @@ function perpsMergeClosedPairRecord(prev, fresh) {
 
 function perpsMergeClosedPairsFromServer(serverRows) {
     const incoming = Array.isArray(serverRows) ? serverRows : [];
-    if (!incoming.length) return perpsLoadCachedClosedPairs();
+    if (!incoming.length) return perpsPruneExchangeOnlyClosedPairs(perpsLoadCachedClosedPairs());
     const local = perpsLoadCachedClosedPairs();
-    if (!local.length) {
-        perpsPersistCachedClosedPairs(incoming, { skipCloudSync: true });
-        return incoming;
-    }
     const byKey = new Map(local.map(p => [perpsClosedPairKey(p), p]));
-    let changed = false;
+    let changed = !local.length;
     for (const pair of incoming) {
         const key = perpsClosedPairKey(pair);
         if (!key) continue;
         byKey.set(key, perpsMergeClosedPairRecord(byKey.get(key), pair));
         changed = true;
     }
-    const merged = [...byKey.values()].sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
-    if (changed) perpsPersistCachedClosedPairs(merged, { skipCloudSync: true });
+    let merged = perpsPruneExchangeOnlyClosedPairs([...byKey.values()]);
+    merged.sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
+    if (changed || merged.length !== byKey.size) {
+        perpsPersistCachedClosedPairs(merged, { skipCloudSync: true });
+    }
     return merged;
 }
 
@@ -33957,55 +33997,8 @@ function perpsCacheNewClosedPairs(freshPairs) {
         byKey.set(key, perpsMergeClosedPairRecord(byKey.get(key), pair));
         changed = true;
     }
-    let merged = [...byKey.values()];
-    // Prefer real Variational / hedged closes over overlapping exchange-only reconstructions.
-    // Only never-hedged (or hollow EST Var) rows keep exchange-only.
-    const varCloses = merged.filter((p) => p?.manualVariationalClose);
-    const hedgedPairs = merged.filter((p) => !p?.exchangeOnly && p?.longLeg && p?.shortLeg);
-    const exchangeOnly = merged.filter((p) => p?.exchangeOnly);
-    if (varCloses.length || exchangeOnly.length || hedgedPairs.length) {
-        const before = merged.length;
-        merged = merged.filter((p) => {
-            const sym = String(p?.symbol || '').toUpperCase().replace(/-PERP$/i, '');
-            const ct = Number(p?.closeTime || 0);
-            const covers = (other) => {
-                const oSym = String(other?.symbol || '').toUpperCase().replace(/-PERP$/i, '');
-                return oSym === sym && Math.abs(Number(other?.closeTime || 0) - ct) <= 7 * 86400000;
-            };
-            if (p?.manualVariationalClose) {
-                const solo = exchangeOnly.find(covers);
-                if (!solo) return true;
-                return !perpsClosedPairVarShouldYieldToExchangeOnly(p, solo);
-            }
-            if (p?.exchangeOnly) {
-                // Any real two-leg hedged close for this symbol/session wins over solo.
-                if (hedgedPairs.some(covers)) return false;
-                const coveringVar = varCloses.find(covers);
-                if (coveringVar) {
-                    return perpsClosedPairVarShouldYieldToExchangeOnly(coveringVar, p);
-                }
-                // Drop solos when a Variational hedge existed for this symbol/session
-                // even if the Closed Var card was lost — those were never "unhedged".
-                try {
-                    const hedges = typeof perpsLoadVariationalHedges === 'function'
-                        ? perpsLoadVariationalHedges()
-                        : [];
-                    const coveredByVarHedge = (hedges || []).some((h) => {
-                        const hSym = String(h?.symbol || '').toUpperCase().replace(/-PERP$/i, '');
-                        if (hSym !== sym) return false;
-                        const closedAt = Number(h?.closedAt || h?.pendingCloseAt || 0);
-                        if (!closedAt) return false;
-                        return Math.abs(closedAt - ct) <= 7 * 86400000;
-                    });
-                    if (coveredByVarHedge) return false;
-                } catch (_) { /* ignore */ }
-                return true;
-            }
-            // Non-Var hedged reconstruction: drop when any Var close covers.
-            return !varCloses.some(covers);
-        });
-        if (merged.length !== before) changed = true;
-    }
+    let merged = perpsPruneExchangeOnlyClosedPairs([...byKey.values()]);
+    if (merged.length !== byKey.size) changed = true;
     merged.sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
     const VH = window.VariationalHedge;
     if (VH?.dedupeVariationalClosedPairsByExchangeSession) {
