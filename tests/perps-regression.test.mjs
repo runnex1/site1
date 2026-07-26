@@ -1404,10 +1404,21 @@ assert.match(indexHtml, /EVENT_LOG_REFRESH_MS = 5 \* 60 \* 1000/, 'event log mus
 assert.match(indexHtml, /forceCollect: true/, 'dashboard event log polls must force fresh Kobeissi checks');
 assert.match(indexHtml, /eventLog=1&force=1/, 'dashboard must request forced event-log collection');
 const eventLogJs = readFileSync(join(ROOT, 'lib', 'event-log.js'), 'utf8');
+const activityJs = readFileSync(join(ROOT, 'lib', 'activity.js'), 'utf8');
 assert.match(eventLogJs, /fetchKobeissiPosts/, 'event log must scrape Kobeissi Letter Telegram headlines');
+assert.match(eventLogJs, /fetchKobeissiPosts\(now - TTL_MS\)/, 'event log must backfill Kobeissi BREAKING across the full 48h TTL');
+assert.doesNotMatch(eventLogJs, /lastCheck - 60000/, 'event log must not use a 60s lastCheck window that skips Telegram headlines');
+assert.doesNotMatch(eventLogJs, /KOBEISSI_TTL_MS/, 'event log must not extend Kobeissi retention beyond the shared 48h TTL');
+assert.doesNotMatch(
+  eventLogJs,
+  /kind !== 'Order Filled' && e\?\.kind !== 'PM Price Move'/,
+  'event log must retain Order Filled and PM Price Move across collects inside 48h',
+);
+assert.match(eventLogJs, /MAX_POLY_ACTIVITY_ITEMS = 100/, 'event log must keep more than a top-8 Polymarket activity snapshot');
 assert.match(eventLogJs, /walletSuffix4\(g\.wallet\)/, 'server event log must append wallet suffix to order fills');
 assert.match(eventLogJs, /if \(!\/\\bBREAKING\\b\/i\.test\(text\)\) continue;/, 'event log must include only breaking Kobeissi headlines');
 assert.doesNotMatch(eventLogJs, /'Kobeissi Letter'/, 'event log must not add non-breaking Kobeissi headlines');
+assert.match(activityJs, /portfolio\?\.polymarketWallets/, 'activity wallets must fall back to portfolio polymarket wallets');
 assert.match(indexHtml, /ticker-strip-viewport/, 'market ticker must use a scrolling viewport for overflow symbols');
 assert.match(indexHtml, /function syncTabRefreshTimers\(tab\)/, 'tab switches must start and stop feature refresh timers');
 for (const rel of [
