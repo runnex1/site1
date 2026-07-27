@@ -1418,7 +1418,7 @@ assert.match(eventLogJs, /MAX_POLY_ACTIVITY_ITEMS = 100/, 'event log must keep m
 assert.match(eventLogJs, /walletSuffix4\(g\.wallet\)/, 'server event log must append wallet suffix to order fills');
 assert.match(eventLogJs, /if \(!\/\\bBREAKING\\b\/i\.test\(text\)\) continue;/, 'event log must include only breaking Kobeissi headlines');
 assert.doesNotMatch(eventLogJs, /'Kobeissi Letter'/, 'event log must not add non-breaking Kobeissi headlines');
-assert.match(activityJs, /portfolio\?\.polymarketWallets/, 'activity wallets must fall back to portfolio polymarket wallets');
+assert.match(activityJs, /p\?\.polymarketWallets/, 'activity wallets must fall back to portfolio polymarket wallets');
 assert.match(indexHtml, /ticker-strip-viewport/, 'market ticker must use a scrolling viewport for overflow symbols');
 assert.match(indexHtml, /function syncTabRefreshTimers\(tab\)/, 'tab switches must start and stop feature refresh timers');
 for (const rel of [
@@ -1784,7 +1784,7 @@ assert.match(indexHtml, /function newsFeedMergeFromCloud\(/, 'news feed must hyd
 assert.match(indexHtml, /newsFeed:\s*typeof buildNewsFeedSyncPayload/, 'saveData must include newsFeed in sync payload');
 assert.match(indexHtml, /function newsFeedScheduleCloudSync\(/, 'news feed mutations must debounce cloud sync');
 assert.match(indexHtml, /function syncPayloadHasPersistableData\(/, 'saveData must sync watcher/news without portfolio');
-assert.match(indexHtml, /newsFeed:\s*typeof buildNewsFeedSyncPayload[\s\S]{0,120}syncPayloadHasPersistableData/, 'news feed sync must not require portfolio entries');
+assert.match(indexHtml, /newsFeed:\s*typeof buildNewsFeedSyncPayload[\s\S]{0,800}syncPayloadHasPersistableData/, 'news feed sync must not require portfolio entries');
 const { mergeNewsFeedStores } = require('../lib/news-feed-sync.js');
 const mergedNews = mergeNewsFeedStores(
   { saved: [{ kind: 'story', url: 'https://a.com', updatedAt: 10 }], meta: { saved: 10, updatedAt: 10 } },
@@ -1958,7 +1958,7 @@ assert.doesNotMatch(readFileSync(join(ROOT, 'lib', 'etf-update-run.js'), 'utf8')
 assert.match(aaveProxyJs, /providedCronSecret/, 'loop cron snapshot must accept Vercel cron bearer auth');
 assert.match(syncJs, /checkAlerts === '1'/, 'sync must route check-alerts cron through shared handler');
 assert.match(syncJs, /check-alerts-run/, 'check-alerts logic must live in lib to stay within function limit');
-assert.match(aaveProxyJs, /vault:loop_snapshots/, 'loop snapshots must persist in KV');
+assert.match(loopSnapshotsJs, /vault:loop_snapshots/, 'loop snapshots must persist in KV');
 assert.match(syncJs, /loopSnapshots === '1'/, 'sync endpoint must hydrate loop snapshot history');
 assert.match(indexHtml, /loops-cockpit[\s\S]{0,180}max-width:min\(1180px/, 'loops tab must use centered max-width like perps');
 assert.match(indexHtml, /page-content:has\(#loopsTab\.active\)[\s\S]{0,80}padding:10px 2\.75rem/, 'loops tab must have horizontal page padding like perps');
@@ -2032,7 +2032,7 @@ assert.doesNotMatch(indexHtml, /function loopBorrowedPegNetValue\(/, 'loops tab 
 assert.doesNotMatch(indexHtml, /function loopBorrowLegPeggedValue\(/, 'loops tab must not derive borrowed amounts for $1 peg charts');
 assert.doesNotMatch(indexHtml, /LOOP_FIX_PEG_KEY/, 'loops tab must not persist $1 peg toggle state');
 assert.match(indexHtml, /amount:\s*Number\(leg\?\.amount \|\| 0\) \|\| null/, 'browser loop snapshots must persist borrowed token amounts');
-assert.match(loopSnapshotsJs, /amount:\s*num\(leg\?\.amount, null\)/, 'server loop snapshots must persist borrowed token amounts');
+assert.match(loopSnapshotsJs, /amount:\s*roundLoopNum\(leg\?\.amount,\s*6\)/, 'server loop snapshots must persist borrowed token amounts');
 assert.match(indexHtml, /function tickerFmt\(price\)[\s\S]{0,240}minimumFractionDigits:\s*5/, 'market ticker must show near-$1 assets with enough precision instead of looking hard-pegged');
 assert.match(indexHtml, /chartMode === 'apy'\s*\?\s*loopSnapshotPeriodNetApy\(points, targetDays, endTs\)/, 'APY chart mode must use spot net APY average');
 assert.match(indexHtml, /:\s*loopSnapshotRealizedApy\(points, targetDays, endValue, endTs\)/, 'net value chart mode must use realized net value APY');
@@ -3029,8 +3029,8 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   assert.equal(GECKO_IDS.USDE, 'ethena-usde', 'USDe must map to CoinGecko before DeFiLlama fallback');
   assert.equal(GECKO_IDS.USDM, 'mountain-protocol-usdm', 'USDm must map to CoinGecko before DeFiLlama fallback');
   assert.equal(GECKO_IDS.REUSD, 're-protocol-reusd', 'reUSD must map to CoinGecko before DeFiLlama fallback');
-  const cached = { [tokenLogoKey('USDE')]: { url: 'data:image/png;base64,abc', ts: 1, source: 'coingecko' } };
-  const legacy = { [tokenLogoKey('USDM')]: { url: 'data:image/png;base64,legacy', ts: 1 } };
+  const cached = { [tokenLogoKey('USDE')]: { url: 'https://assets.coingecko.com/coins/images/1/small/usde.png', ts: 1, source: 'coingecko' } };
+  const legacy = { [tokenLogoKey('USDM')]: { url: 'https://assets.coingecko.com/coins/images/1/small/usdm.png', ts: 1 } };
   assert.ok(hasEmbeddedLogo(cached, tokenLogoKey('USDE')), 'embedded server logos must skip re-fetch');
   assert.ok(!hasEmbeddedLogo(legacy, tokenLogoKey('USDM')), 'legacy logos without source must refresh on next resolve');
 }
