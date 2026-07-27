@@ -33148,7 +33148,12 @@ function perpsPruneExchangeOnlyClosedPairs(pairs) {
     });
 }
 
+let _perpsClosedPairsMem = null;
+
 function perpsLoadCachedClosedPairs() {
+    if (Array.isArray(_perpsClosedPairsMem) && _perpsClosedPairsMem.length) {
+        return _perpsClosedPairsMem;
+    }
     try {
         const rows = JSON.parse(localStorage.getItem(PERPS_CLOSED_PAIRS_KEY) || '[]');
         const list = Array.isArray(rows)
@@ -33162,9 +33167,10 @@ function perpsLoadCachedClosedPairs() {
                 localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, slimJson);
             }
         } catch (_) {}
+        _perpsClosedPairsMem = list;
         return list;
     } catch (e) {
-        return [];
+        return Array.isArray(_perpsClosedPairsMem) ? _perpsClosedPairsMem : [];
     }
 }
 
@@ -33183,13 +33189,33 @@ function perpsSlimClosedPairForStorage(pair) {
 }
 
 function perpsPersistCachedClosedPairs(rows, opts = {}) {
+    const list = (Array.isArray(rows) ? rows : [])
+        .map((p) => perpsGuardClosedPairRecord(p))
+        .map((p) => perpsSlimClosedPairForStorage(p));
+    _perpsClosedPairsMem = list;
     try {
-        const list = (Array.isArray(rows) ? rows : [])
-            .map((p) => perpsGuardClosedPairRecord(p))
-            .map((p) => perpsSlimClosedPairForStorage(p));
         localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, JSON.stringify(list));
-        if (!opts.skipCloudSync) perpsScheduleCloudSave();
-    } catch (e) {}
+    } catch (e) { /* keep mem even if quota blocks localStorage */ }
+    if (!opts.skipCloudSync) {
+        perpsScheduleCloudSave();
+        perpsPushClosedPairsToServer(list);
+    }
+}
+
+async function perpsPushClosedPairsToServer(rows) {
+    const list = Array.isArray(rows) ? rows : perpsLoadCachedClosedPairs();
+    if (!list.length || location.protocol === 'file:') return false;
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ perpsClosedPairs: list }),
+            keepalive: true,
+        });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
 }
 
 function perpsLoadVariationalHedges() {
@@ -33675,6 +33701,14 @@ function perpsApplyVariationalHedgesToData(data) {
         ...(data.variationalListings || {}),
     };
     data._variationalListingBySymbol = { ...(data._variationalListingBySymbol || {}), ...variationalBySymbol };
+    // Seed API closedPairs with local/cloud cache so closedPairAlreadyCached + equity adjust see Var closes.
+    const cachedClosed = perpsLoadCachedClosedPairs();
+    if (cachedClosed.length || (data.closedPairs || []).length) {
+        data.closedPairs = perpsCacheNewClosedPairs([
+            ...cachedClosed,
+            ...(data.closedPairs || []),
+        ]);
+    }
     // Prune bloated multi‑MB rate-sample stores once per payload, then sample only active symbols.
     const activeSyms = perpsActiveVariationalSampleSymbols(data);
     const rateSamplesBySymbol = perpsRecordVariationalRateSamplesFromData(data, {
@@ -34232,6 +34266,7 @@ function perpsMergeClosedPairsFromServer(serverRows) {
     let merged = perpsPruneExchangeOnlyClosedPairs([...byKey.values()]);
     merged.sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
     if (changed || merged.length !== byKey.size) {
+        // Keep local/cloud merge; dedicated push happens on next mint/save.
         perpsPersistCachedClosedPairs(merged, { skipCloudSync: true });
     }
     return merged;
@@ -37146,6 +37181,27 @@ function perpsSanitizeVariationalClosedPairs(data) {
     const listingBy = data?._variationalListingBySymbol || perpsVariationalBySymbolFromSpread(data?.rateSpread || []);
     let changed = false;
     let hedgesChanged = false;
+    let mintedClosed = false;
+
+    const pairCoversHedge = (hedge) => (data.closedPairs || []).some((p) => (
+        p?.variationalHedgeId === hedge.id
+        || VH.variationalClosedPairCoversHedgeSession?.(p, hedge, data)
+    ));
+
+    // Already-closed hedges must always have a Closed Var pair (equity + Closed tab).
+    for (const hedge of hedges) {
+        if (hedge.status !== 'closed') continue;
+        if (pairCoversHedge(hedge)) continue;
+        const listing = listingBy[hedge.symbol] || null;
+        const closedPair = VH.ensureVariationalClosedPairForHedge?.(hedge, data, listing)
+            || VH.recoverFrozenVariationalClosedPair?.(hedge, data, listing, VH.findTrackedCloseLeg)
+            || null;
+        if (!closedPair) continue;
+        hedgesChanged = true;
+        mintedClosed = true;
+        data.closedPairs = [...(data.closedPairs || []), closedPair];
+        changed = true;
+    }
 
     // Close zombie open/pending hedges when exchange history shows a completed session and venue is flat.
     for (const hedge of hedges) {
@@ -37156,29 +37212,23 @@ function perpsSanitizeVariationalClosedPairs(data) {
         const hist = VH.findTrackedCloseLegFromExchangeHistory(data, hedge);
         if (!hist) continue;
         // Do not mint another Closed row when a history-backed session pair already exists.
-        const alreadyGood = (data.closedPairs || []).some((p) => (
-            p?.variationalHedgeId === hedge.id
-            || VH.variationalClosedPairCoversHedgeSession?.(p, hedge, data)
-        ));
-        if (alreadyGood) {
+        if (pairCoversHedge(hedge)) {
             if (VH.closeZombieVariationalHedgeFromHistory?.(hedge)) hedgesChanged = true;
             continue;
         }
         const listing = listingBy[hedge.symbol] || null;
-        const closedPair = VH.finalizeVariationalCloseIfReady
-            ? VH.finalizeVariationalCloseIfReady(hedge, data, listing, VH.findTrackedCloseLeg)
-            : VH.buildVariationalClosedPair(
-                { ...hedge, status: 'closed', closedAt: hedge.closedAt || hist.closeTime || Date.now(), pendingCloseAt: null },
-                hist,
-                listing,
-                data,
-            );
+        const closedPair = VH.ensureVariationalClosedPairForHedge?.(hedge, data, listing)
+            || (VH.finalizeVariationalCloseIfReady
+                ? VH.finalizeVariationalCloseIfReady(hedge, data, listing, VH.findTrackedCloseLeg)
+                : null)
+            || VH.buildVariationalClosedPair(hedge, hist, listing, data);
         if (!closedPair) continue;
         hedge.status = 'closed';
-        hedge.closedAt = closedPair.closeTime || hist.closeTime || Date.now();
+        hedge.closedAt = closedPair.closeTime || hist.closeTime || hedge.closedAt || Date.now();
         hedge.pendingCloseAt = null;
         hedge.updatedAt = Date.now();
         hedgesChanged = true;
+        mintedClosed = true;
         data.closedPairs = [...(data.closedPairs || []), closedPair];
         changed = true;
     }
@@ -37241,9 +37291,10 @@ function perpsSanitizeVariationalClosedPairs(data) {
     }
 
     if (hedgesChanged) {
-        try { perpsPersistVariationalHedges(hedges, { skipCloudSync: true }); } catch (_) { /* ignore */ }
+        // Minting/closing hedges must reach cloud with the new Closed rows.
+        try { perpsPersistVariationalHedges(hedges, { skipCloudSync: !mintedClosed }); } catch (_) { /* ignore */ }
     }
-    if (changed) perpsPersistCachedClosedPairs(pruned, { skipCloudSync: true });
+    if (changed) perpsPersistCachedClosedPairs(pruned, { skipCloudSync: false });
     return pruned;
 }
 

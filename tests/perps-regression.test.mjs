@@ -5034,6 +5034,59 @@ const {
 }
 
 {
+  const {
+    ensureVariationalClosedPairForHedge,
+    applyVariationalHedges,
+  } = require('../lib/variational-hedge.js');
+  // Closed hedge with exit cleared / no fills must still mint a Closed Var pair from snapshot.
+  const hedge = {
+    id: 'xlm-closed-no-exit',
+    symbol: 'XLM',
+    trackedVenue: 'grvt',
+    trackedSize: 40000,
+    variationalSize: -40000,
+    variationalEntryPx: 0.218,
+    status: 'closed',
+    closedAt: Date.parse('2026-07-15T12:00:00.000Z'),
+    variationalExitPx: null,
+    closedFundingUsd: 0,
+    closedTrackedFundingUsd: 0,
+    closedVariationalFundingUsd: 0,
+    trackedLastSnapshot: {
+      size: 40000,
+      side: 'long',
+      entryPx: 0.218,
+      unrealizedPnl: -10,
+      funding: -1,
+      fees: 0,
+    },
+  };
+  const data = {
+    closedPairs: [],
+    paired: [],
+    unhedged: [],
+    grvt: { state: { positions: [] }, fills: { fills: [] }, funding: { payments: [] } },
+  };
+  const pair = ensureVariationalClosedPairForHedge({ ...hedge }, data, null);
+  assert.ok(pair?.manualVariationalClose, 'ensure must mint Closed Var pair without exit px');
+  assert.equal(pair.variationalHedgeId, hedge.id);
+  assert.ok(Number(pair.closeTime) > 0, 'minted pair must carry closeTime');
+
+  const applied = applyVariationalHedges({ ...data, closedPairs: [] }, [{ ...hedge }], {});
+  assert.equal(applied.newClosedPairs.length, 1, 'apply must remint Closed Var pair for status=closed hedges');
+  assert.equal(applied.newClosedPairs[0].symbol, 'XLM');
+}
+
+assert.match(indexHtml, /ensureVariationalClosedPairForHedge/, 'client must remint Closed Var pairs for closed hedges');
+assert.match(indexHtml, /perpsPushClosedPairsToServer/, 'Closed Var pairs must push to cloud like hedges');
+assert.match(indexHtml, /Seed API closedPairs with local\/cloud cache/, 'apply must seed closedPairs from cache before hedge apply');
+assert.match(
+  indexHtml,
+  /Already-closed hedges must always have a Closed Var pair/,
+  'sanitize must mint Closed Var pairs for already-closed hedges',
+);
+
+{
   const point = { totalEquity: 10000, variationalEquityAdjust: 294, variationalNeutralEquity: 10294 };
   assert.equal(equityPointChartValue(point, 'neutral'), 10294);
   assert.equal(equityPointChartValue(point, 'raw'), 10000);
