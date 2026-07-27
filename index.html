@@ -33733,15 +33733,102 @@ function perpsEnsureDailyFundingBase(data) {
 function perpsCollectVariationalFundingEvents(data) {
     const VH = window.VariationalHedge;
     const events = [];
-    for (const p of data.paired || []) {
-        if (!VH?.isVariationalPair?.(p)) continue;
-        for (const row of p.dailyPerformanceSeries || []) {
-            for (const ev of row.fundingEvents || []) {
-                if (ev.venue !== 'variational') continue;
-                events.push(ev);
+    const seen = new Set();
+
+    const pushEv = (ev, { allowUnsettled = false } = {}) => {
+        if (!ev) return;
+        if (ev.venue && ev.venue !== 'variational') return;
+        if (ev.isUnsettled && !allowUnsettled) return;
+        const time = Number(ev.time) || 0;
+        if (!time) return;
+        const usdc = Number(ev.usdc);
+        if (!Number.isFinite(usdc)) return;
+        const key = `${time}|${usdc.toFixed(6)}|${String(ev.symbol || '').toUpperCase()}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        events.push({
+            ...ev,
+            venue: 'variational',
+            fundingEstimated: ev.fundingEstimated !== false,
+        });
+    };
+
+    const fromPairSeries = (pairs, allowUnsettled) => {
+        for (const p of pairs || []) {
+            for (const row of p.dailyPerformanceSeries || []) {
+                for (const ev of row.fundingEvents || []) {
+                    if (ev.venue === 'variational') pushEv(ev, { allowUnsettled });
+                }
             }
         }
-    }
+    };
+
+    // Open pairs: keep live ~est. (including unsettled previews).
+    fromPairSeries(data.paired, true);
+
+    // Closed Var pairs: keep already-accrued ~est. in the daily chart (must not vanish on close).
+    fromPairSeries(
+        (data.closedPairs || []).filter((p) => (
+            p?.manualVariationalClose
+            || p?.longLeg?.venue === 'variational'
+            || p?.shortLeg?.venue === 'variational'
+            || String(p?.pairType || '').includes('variational')
+        )),
+        false,
+    );
+
+    // After close, peak enrich often replaces dailyPerformanceSeries with exchange-only rows.
+    // Rebuild settled Variational events from frozen settlements / schedule so collected funding stays.
+    try {
+        const hedges = typeof perpsLoadVariationalHedges === 'function' ? perpsLoadVariationalHedges() : [];
+        const settlementsMap = typeof perpsLoadVariationalSettlementsRaw === 'function'
+            ? perpsLoadVariationalSettlementsRaw()
+            : {};
+        const listingBy = data?._variationalListingBySymbol
+            || (typeof perpsVariationalBySymbolFromSpread === 'function'
+                ? perpsVariationalBySymbolFromSpread(data?.rateSpread || [])
+                : {});
+        const rateSamples = typeof perpsLoadVariationalRateSamplesRaw === 'function'
+            ? perpsLoadVariationalRateSamplesRaw()
+            : {};
+
+        for (const hedge of hedges) {
+            if (!hedge || (hedge.status !== 'closed' && hedge.status !== 'pending_close')) continue;
+            const closed = hedge.status === 'closed';
+            const listing = listingBy[hedge.symbol] || null;
+            const stored = Array.isArray(settlementsMap[hedge.id]) ? settlementsMap[hedge.id] : [];
+            const sinceMs = VH?.variationalHedgeOpenedAtMs?.(hedge) || Number(hedge.openedAt) || 0;
+            const now = closed ? (Number(hedge.closedAt) || Date.now()) : Date.now();
+            let rebuilt = [];
+            if (VH?.buildVariationalFundingEventsFrozen) {
+                rebuilt = VH.buildVariationalFundingEventsFrozen(hedge, listing, stored, {
+                    sinceMs,
+                    now,
+                    captureMissing: false,
+                    allowCatchUp: false,
+                    listingFetchedAt: data?.fetchedAt || Date.now(),
+                    rateSamplesBySymbol: rateSamples,
+                }) || [];
+            }
+            if (!rebuilt.length && VH?.buildVariationalFundingEventsScheduled) {
+                rebuilt = VH.buildVariationalFundingEventsScheduled(hedge, listing, { sinceMs, now }) || [];
+            }
+            if (!rebuilt.length && closed) {
+                const lump = Number(hedge.closedVariationalFundingUsd);
+                if (Number.isFinite(lump) && Math.abs(lump) > 1e-9) {
+                    rebuilt = [{
+                        venue: 'variational',
+                        time: Number(hedge.closedAt) || Date.now(),
+                        usdc: lump,
+                        symbol: hedge.symbol,
+                        fundingEstimated: true,
+                    }];
+                }
+            }
+            for (const ev of rebuilt) pushEv(ev, { allowUnsettled: !closed });
+        }
+    } catch (e) {}
+
     return events;
 }
 

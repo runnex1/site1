@@ -4223,6 +4223,21 @@ assert.match(variationalHedgeJs, /resolveVariationalNativeRate/, 'variational he
 assert.match(variationalHedgeJs, /VariationalFundingClock/, 'variational hedge helpers must load funding clock in browser');
 assert.match(indexHtml, /resolveVariationalNativeRate/, 'perps must resolve variational native interval rates for non-8h markets like TRUMP');
 assert.match(indexHtml, /~Variational est\./, 'daily funding chart must disclose variational estimates');
+assert.match(
+  indexHtml,
+  /Closed Var pairs: keep already-accrued/,
+  'daily funding chart must retain Variational funding after a pair closes',
+);
+assert.match(
+  indexHtml,
+  /hedge\.status !== 'closed' && hedge\.status !== 'pending_close'/,
+  'daily funding chart must rebuild Variational events from closed/pending hedges',
+);
+assert.match(
+  indexHtml,
+  /closedVariationalFundingUsd/,
+  'daily funding chart must fall back to frozen closed Variational funding if settlements are missing',
+);
 
 {
   const hedge = {
