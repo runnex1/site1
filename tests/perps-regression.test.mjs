@@ -1536,9 +1536,12 @@ assert.match(indexHtml, /loopsShouldBlockStalePaint/, 'Loops must block stale im
 assert.match(indexHtml, /loopsSyncPlaceholderHtml/, 'Loops must show syncing placeholder');
 assert.match(indexHtml, /pendleHistoryPoints/, 'Pendle cards must use snapshot history like loop cards');
 assert.match(indexHtml, /pendleRowToDisplayPosition/, 'Pendle positions must reuse loop card renderer');
-assert.match(aaveProxyJs, /LOOP_RATES_CACHE_VERSION = 'v10'/, 'loop-rates server cache must bust when Morpho/Fluid coverage expands');
-assert.match(cronRunnerJs, /LOOP_RATES_CACHE_VERSION = 'v10'/, 'cron loopsSync cache version must match loop-rates API');
-assert.match(indexHtml, /vault-loop-api-state-v9/, 'loop API local cache must bust when Morpho/Fluid coverage expands');
+assert.match(aaveProxyJs, /LOOP_RATES_CACHE_VERSION = 'v11'/, 'loop-rates server cache must bust when Morpho/Fluid coverage expands');
+assert.match(cronRunnerJs, /LOOP_RATES_CACHE_VERSION = 'v11'/, 'cron loopsSync cache version must match loop-rates API');
+assert.match(indexHtml, /vault-loop-api-state-v10/, 'loop API local cache must bust when Morpho/Fluid coverage expands');
+assert.match(loopRatesJs, /MORPHO_MIDNIGHT_API = 'https:\/\/api\.morpho\.org\/v0\/midnight'/, 'Loops must call Morpho Midnight REST API');
+assert.match(loopRatesJs, /morphoMidnight: MORPHO_MIDNIGHT_CHAINS/, 'loop coverage must expose Morpho Midnight chains');
+assert.match(loopRatesJs, /function mapMorphoMidnightPosition\(/, 'Morpho Midnight positions must map into Loops\/Lending cards');
 assert.match(loopRatesJs, /name: 'AaveV3Monad', chainId: 143/, 'Loops must query Aave V3 Monad for syrupUSDC/mUSD loops');
 assert.match(loopRatesJs, /name: 'AaveV3Plasma', chainId: 9745/, 'Loops must query Aave V3 Plasma');
 assert.match(loopRatesJs, /name: 'AaveV3Celo', chainId: 42220/, 'Loops must query Aave V3 Celo');
@@ -1556,6 +1559,7 @@ assert.match(loopRatesJs, /fluid = await fetchFluidOfficial\(evmWallets\);/, 'Fl
   assert.match(loopOfficialUrlsJs, /AaveV3Monad: 'proto_monad_v3'/, 'Aave Monad official URL must use proto_monad_v3');
   assert.match(loopOfficialUrlsJs, /4663: 'robinhood-chain'/, 'Morpho Robinhood Chain official URL slug must exist');
   assert.match(loopOfficialUrlsJs, /5042: 'arc'/, 'Morpho Arc official URL slug must exist');
+  assert.match(loopOfficialUrlsJs, /app\.morpho\.org\/midnight\/market/, 'Morpho Midnight official URL must deep-link to the Midnight market page');
 }
 assert.match(indexHtml, /if \(force\) qs\.set\('force', '1'\)/, 'Sync live must bypass loop-rates KV cache');
 assert.match(indexHtml, /id="loopsLendingSection"/, 'Loops tab must render a separate lending-only section');
@@ -2535,6 +2539,57 @@ assert.match(watcherPreviewHtml, /linear-gradient\(180deg, rgba\(7,18,26,\.95\),
   assert.ok(lending.id.startsWith('morpho-supply:'), 'lending supply id must use morpho-supply prefix');
   assert.ok(Math.abs(loop.netValue - (75270 - 65427)) < 1, 'loop net must exclude loan supply');
   assert.ok(Math.abs(lending.netValue - 34800) < 1, 'lending net must equal loan supply only');
+}
+
+{
+  const { mapMorphoMidnightPosition } = require('../lib/loop-rates.js');
+  const { officialLoopPageUrl } = require('../lib/loop-official-urls.js');
+  const wallet = '0xfeed46c11F57B7126a773EeC6ae9cA7aE1C03C9a';
+  const chain = { chainId: 8453, chainName: 'Base' };
+  const assets = new Map([
+    ['0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', symbol: 'USDC', decimals: 6, price: { usd: 1 } }],
+    ['0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', { address: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf', symbol: 'cbBTC', decimals: 8, price: { usd: 64000 } }],
+  ]);
+  const lend = mapMorphoMidnightPosition(wallet, chain, {
+    chain_id: 8453,
+    market_id: '0x168e31250e0008b50d2255a5ab85e0265acd6c12e4f9a1336134b36a65a47937',
+    type: 'lend',
+    loan_token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    credit: '100000000',
+    debt: '0',
+    maturity: 1785510000,
+    effective_rate_wad: '50000000000000000',
+    collaterals: [],
+  }, assets);
+  assert.ok(lend, 'Midnight lend must map');
+  assert.equal(lend.lendingOnly, true);
+  assert.ok(lend.midnight, 'Midnight lend must be flagged');
+  assert.ok(Math.abs(lend.totalSupplied - 100) < 0.01, 'Midnight lend USD must use loan decimals');
+  assert.ok(Math.abs(lend.supplyApy - 5) < 1e-9, 'Midnight effective_rate_wad must convert to percent APY');
+  assert.ok(lend.id.startsWith('morpho-midnight:'), 'Midnight id prefix');
+  assert.match(lend.marketName, /Midnight/, 'market name must mention Midnight');
+  assert.equal(
+    officialLoopPageUrl(lend),
+    'https://app.morpho.org/midnight/market/0x168e31250e0008b50d2255a5ab85e0265acd6c12e4f9a1336134b36a65a47937',
+  );
+
+  const borrow = mapMorphoMidnightPosition(wallet, chain, {
+    chain_id: 8453,
+    market_id: '0x168e31250e0008b50d2255a5ab85e0265acd6c12e4f9a1336134b36a65a47937',
+    type: 'borrow',
+    loan_token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    credit: '0',
+    debt: '50000000',
+    maturity: 1785510000,
+    effective_rate_wad: '100000000000000000',
+    collaterals: [{ token: '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf', amount: '1000000' }],
+  }, assets);
+  assert.ok(borrow, 'Midnight borrow must map');
+  assert.equal(borrow.lendingOnly, false);
+  assert.ok(Math.abs(borrow.totalBorrowed - 50) < 0.01);
+  assert.ok(Math.abs(borrow.totalSupplied - 640) < 1, 'collateral USD from cbBTC amount*price');
+  assert.equal(borrow.borrowed[0].symbol, 'USDC');
+  assert.equal(borrow.supplied[0].symbol, 'cbBTC');
 }
 
 {
