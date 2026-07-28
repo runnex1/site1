@@ -10918,6 +10918,8 @@ const PERPS_CONFIG_BACKUP_KEY = 'vault-perps-config-backup';
 const PERPS_SESSION_KEY = 'vault-perps-wallets-session';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
 const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pairs';
+/** Closed tab shows / remembers only rounds closed within this window. */
+const PERPS_CLOSED_PAIRS_MAX_AGE_MS = 30 * 86400000;
 const PERPS_VARIATIONAL_HEDGES_KEY = 'vault-perps-variational-hedges';
 const PERPS_VARIATIONAL_SETTLEMENTS_KEY = 'vault-perps-variational-settlements';
 const PERPS_VARIATIONAL_RATE_SAMPLES_KEY = 'vault-perps-variational-rate-samples';
@@ -33155,27 +33157,46 @@ function perpsPruneExchangeOnlyClosedPairs(pairs) {
 
 let _perpsClosedPairsMem = null;
 
+function perpsPruneClosedPairsByAge(pairs, now = Date.now(), maxAgeMs = PERPS_CLOSED_PAIRS_MAX_AGE_MS) {
+    const cutoff = Number(now) - Number(maxAgeMs);
+    return (Array.isArray(pairs) ? pairs : []).filter((p) => {
+        const closeTime = Number(p?.closeTime || p?.closedAt || 0);
+        return Number.isFinite(closeTime) && closeTime > 0 && closeTime >= cutoff;
+    });
+}
+
 function perpsLoadCachedClosedPairs() {
-    if (Array.isArray(_perpsClosedPairsMem) && _perpsClosedPairsMem.length) {
+    if (Array.isArray(_perpsClosedPairsMem)) {
+        const prunedMem = perpsPruneClosedPairsByAge(_perpsClosedPairsMem);
+        if (prunedMem.length !== _perpsClosedPairsMem.length) {
+            perpsPersistCachedClosedPairs(prunedMem);
+        } else {
+            _perpsClosedPairsMem = prunedMem;
+        }
         return _perpsClosedPairsMem;
     }
     try {
         const rows = JSON.parse(localStorage.getItem(PERPS_CLOSED_PAIRS_KEY) || '[]');
-        const list = Array.isArray(rows)
-            ? rows.map((p) => perpsSlimClosedPairForStorage(perpsGuardClosedPairRecord(p)))
-            : [];
-        // One-time local shrink for older bloated closed-pair payloads.
+        const list = perpsPruneClosedPairsByAge(
+            Array.isArray(rows)
+                ? rows.map((p) => perpsSlimClosedPairForStorage(perpsGuardClosedPairRecord(p)))
+                : [],
+        );
+        // One-time local shrink for older bloated closed-pair payloads + drop aged-out rows.
         try {
             const raw = localStorage.getItem(PERPS_CLOSED_PAIRS_KEY) || '[]';
             const slimJson = JSON.stringify(list);
-            if (slimJson.length + 2048 < raw.length) {
+            if (slimJson.length + 2048 < raw.length || list.length !== (Array.isArray(rows) ? rows.length : 0)) {
                 localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, slimJson);
+                if (list.length !== (Array.isArray(rows) ? rows.length : 0)) {
+                    perpsPushClosedPairsToServer(list);
+                }
             }
         } catch (_) {}
         _perpsClosedPairsMem = list;
         return list;
     } catch (e) {
-        return Array.isArray(_perpsClosedPairsMem) ? _perpsClosedPairsMem : [];
+        return Array.isArray(_perpsClosedPairsMem) ? perpsPruneClosedPairsByAge(_perpsClosedPairsMem) : [];
     }
 }
 
@@ -33194,7 +33215,7 @@ function perpsSlimClosedPairForStorage(pair) {
 }
 
 function perpsPersistCachedClosedPairs(rows, opts = {}) {
-    const list = (Array.isArray(rows) ? rows : [])
+    const list = perpsPruneClosedPairsByAge(Array.isArray(rows) ? rows : [])
         .map((p) => perpsGuardClosedPairRecord(p))
         .map((p) => perpsSlimClosedPairForStorage(p));
     _perpsClosedPairsMem = list;
@@ -33209,7 +33230,7 @@ function perpsPersistCachedClosedPairs(rows, opts = {}) {
 
 async function perpsPushClosedPairsToServer(rows) {
     const list = Array.isArray(rows) ? rows : perpsLoadCachedClosedPairs();
-    if (!list.length || location.protocol === 'file:') return false;
+    if (location.protocol === 'file:') return false;
     try {
         const res = await fetch('/api/sync', {
             method: 'POST',
@@ -34276,11 +34297,12 @@ function perpsMergeClosedPairsFromServer(serverRows) {
         byKey.set(key, perpsMergeClosedPairRecord(byKey.get(key), pair));
         changed = true;
     }
-    let merged = perpsPruneExchangeOnlyClosedPairs([...byKey.values()]);
+    let merged = perpsPruneClosedPairsByAge(perpsPruneExchangeOnlyClosedPairs([...byKey.values()]));
     merged.sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
     if (changed || merged.length !== byKey.size) {
-        // Keep local/cloud merge; dedicated push happens on next mint/save.
+        // Skip full saveData; still push Closed list when rows were dropped (age / SOLO prune).
         perpsPersistCachedClosedPairs(merged, { skipCloudSync: true });
+        if (merged.length !== byKey.size) void perpsPushClosedPairsToServer(merged);
     }
     return merged;
 }
@@ -34294,7 +34316,7 @@ function perpsCacheNewClosedPairs(freshPairs) {
         byKey.set(key, perpsMergeClosedPairRecord(byKey.get(key), pair));
         changed = true;
     }
-    let merged = perpsPruneExchangeOnlyClosedPairs([...byKey.values()]);
+    let merged = perpsPruneClosedPairsByAge(perpsPruneExchangeOnlyClosedPairs([...byKey.values()]));
     if (merged.length !== byKey.size) changed = true;
     merged.sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
     const VH = window.VariationalHedge;
@@ -36938,15 +36960,16 @@ function perpsRenderPortfolioPositionsV3(paired) {
 }
 
 function perpsRenderClosedPositionsV3(closedPairs) {
+    const rows = perpsPruneClosedPairsByAge(closedPairs);
     const el = document.getElementById('perpsPositionsList');
     const badge = document.getElementById('perpsPairsBadge');
-    if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
+    if (badge) badge.textContent = rows.length + (rows.length === 1 ? ' closed' : ' closed');
     if (!el) return;
-    if (!closedPairs.length) {
-        el.innerHTML = '<div class="perps-empty">No fully closed rounds found in the available fill history.</div>';
+    if (!rows.length) {
+        el.innerHTML = '<div class="perps-empty">No fully closed rounds in the past 30 days.</div>';
         return;
     }
-    el.innerHTML = closedPairs.map(pairRaw => {
+    el.innerHTML = rows.map(pairRaw => {
         const pair = perpsNormalizeClosedPairForDisplay(pairRaw);
         const margin = perpsClosedPairAvgNotional(pair);
         const closedAt = pair.closeTime
@@ -37326,7 +37349,7 @@ function perpsSanitizeVariationalClosedPairs(data) {
         : next;
     if (deduped.length !== next.length) changed = true;
 
-    const pruned = perpsPruneExchangeOnlyClosedPairs(deduped);
+    const pruned = perpsPruneClosedPairsByAge(perpsPruneExchangeOnlyClosedPairs(deduped));
     if (pruned.length !== deduped.length
         || pruned.some((p, i) => p !== deduped[i] && (p?.exchangeOnly !== deduped[i]?.exchangeOnly || p?.manualVariationalClose !== deduped[i]?.manualVariationalClose))) {
         changed = true;
@@ -37493,12 +37516,13 @@ function perpsClosedSlippageTip(pair) {
 
 function perpsRenderClosedPositions(closedPairs) {
     if (perpsIsMobileV3()) return perpsRenderClosedPositionsV3(closedPairs);
+    const rows = perpsPruneClosedPairsByAge(closedPairs);
     const el = document.getElementById('perpsPositionsList');
     const badge = document.getElementById('perpsPairsBadge');
-    if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
+    if (badge) badge.textContent = rows.length + (rows.length === 1 ? ' closed' : ' closed');
     if (!el) return;
-    if (!closedPairs.length) {
-        el.innerHTML = '<div class="perps-empty">No fully closed rounds found in the available fill history.</div>';
+    if (!rows.length) {
+        el.innerHTML = '<div class="perps-empty">No fully closed rounds in the past 30 days.</div>';
         return;
     }
     const head = `<div class="perps-pos-head closed">
@@ -37512,7 +37536,7 @@ function perpsRenderClosedPositions(closedPairs) {
         <div>Fees</div>
         <div>Closed</div>
     </div>`;
-    el.innerHTML = head + closedPairs.map((p, closedIdx) => {
+    el.innerHTML = head + rows.map((p, closedIdx) => {
         const pair = perpsNormalizeClosedPairForDisplay(p);
         const sizeLabel = pair.size != null ? `${perpsFmtSize(pair.size)} ${pair.symbol}` : pair.symbol;
         const closedAt = perpsFormatEventTime(pair.closeTime);

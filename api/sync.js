@@ -38,6 +38,25 @@ const https = require('https');
 const SYNC_SECRET = process.env.SYNC_SECRET || '';
 const ALERTS_KEY = 'vault:alerts';
 const ALERT_HARD_LIMIT = 200;
+/** Closed pairs retained in KV / returned to clients for this window only. */
+const PERPS_CLOSED_PAIRS_MAX_AGE_MS = 30 * 86400000;
+
+function pruneClosedPairsByAge(pairs, now = Date.now(), maxAgeMs = PERPS_CLOSED_PAIRS_MAX_AGE_MS) {
+  const cutoff = Number(now) - Number(maxAgeMs);
+  return (Array.isArray(pairs) ? pairs : []).filter((p) => {
+    const closeTime = Number(p?.closeTime || p?.closedAt || 0);
+    return Number.isFinite(closeTime) && closeTime > 0 && closeTime >= cutoff;
+  }).sort((a, b) => (Number(b?.closeTime) || 0) - (Number(a?.closeTime) || 0));
+}
+
+async function persistPrunedClosedPairsIfNeeded(rawRows, kvSet) {
+  const rows = Array.isArray(rawRows) ? rawRows : [];
+  const pruned = pruneClosedPairsByAge(rows);
+  if (pruned.length !== rows.length) {
+    try { await kvSet('vault:perps_closed_pairs', JSON.stringify(pruned)); } catch (_) { /* best-effort */ }
+  }
+  return pruned;
+}
 const POLYMARKET_PNL_BASE = 'https://user-pnl-api.polymarket.com/user-pnl';
 const MARKET_MOVES_CACHE_MS = 5 * 60 * 1000;
 const MARKET_MOVES_ASSET_LIMIT = 40;
@@ -1046,11 +1065,12 @@ module.exports = async function handler(req, res) {
           kvGet('vault:perps_variational_settlements'),
           kvGet('vault:perps_variational_rate_samples'),
         ]);
+        const perpsClosedPairs = await persistPrunedClosedPairsIfNeeded(parseJson(perpsClosedPairsRaw, []), kvSet);
         return res.status(200).json({
           ok: true,
           perpsSnapshots: parseJson(perpsSnapshotsRaw, {}),
           perpsVariationalHedges: parseJson(perpsVariationalHedgesRaw, []),
-          perpsClosedPairs: parseJson(perpsClosedPairsRaw, []),
+          perpsClosedPairs,
           perpsVariationalSettlements: parseJson(perpsVariationalSettlementsRaw, {}),
           perpsVariationalRateSamples: parseJson(perpsVariationalRateSamplesRaw, {}),
         });
@@ -1098,7 +1118,7 @@ module.exports = async function handler(req, res) {
           _snapshots:      parse(snapshotsRaw, {}),
           _perpsSnapshots: parse(perpsSnapshotsRaw, {}),
           _perpsVariationalHedges: parse(perpsVariationalHedgesRaw, []),
-          _perpsClosedPairs: parse(perpsClosedPairsRaw, []),
+          _perpsClosedPairs: await persistPrunedClosedPairsIfNeeded(parse(perpsClosedPairsRaw, []), kvSet),
           _perpsVariationalSettlements: parse(perpsVariationalSettlementsRaw, {}),
           _logoCache:      sanitizeLogoCacheForStorage(parse(logoCacheRaw, {})),
           _eventHistory:   parse(eventHistoryRaw, []),
@@ -1154,7 +1174,7 @@ module.exports = async function handler(req, res) {
       const perpsConfig         = parse(perpsConfigRaw, {});
       const perpsSnapshots      = parse(perpsSnapshotsRaw, {});
       const perpsVariationalHedges = parse(perpsVariationalHedgesRaw, []);
-      const perpsClosedPairs    = parse(perpsClosedPairsRaw, []);
+      const perpsClosedPairs    = await persistPrunedClosedPairsIfNeeded(parse(perpsClosedPairsRaw, []), kvSet);
       const perpsVariationalSettlements = parse(perpsVariationalSettlementsRaw, {});
       const logoCache           = sanitizeLogoCacheForStorage(parse(logoCacheRaw, {}));
       const geckoSymbolIds      = parse(geckoSymbolIdsRaw, {});
@@ -1384,7 +1404,7 @@ module.exports = async function handler(req, res) {
       await kvSet('vault:perps_variational_rate_samples', JSON.stringify(merged));
       saved.perpsVariationalRateSamples = true;
     }
-    if (Array.isArray(body.perpsClosedPairs) && body.perpsClosedPairs.length) {
+    if (Array.isArray(body.perpsClosedPairs)) {
       const existing = parseJson(await kvGet('vault:perps_closed_pairs'), []);
       const byKey = new Map((existing || []).map((p) => {
         const symbol = String(p?.symbol || '').trim().toUpperCase();
@@ -1403,7 +1423,8 @@ module.exports = async function handler(req, res) {
         const prev = byKey.get(key);
         byKey.set(key, prev ? { ...prev, ...pair } : pair);
       }
-      await kvSet('vault:perps_closed_pairs', JSON.stringify([...byKey.values()].sort((a, b) => (Number(b?.closeTime) || 0) - (Number(a?.closeTime) || 0))));
+      const pruned = pruneClosedPairsByAge([...byKey.values()]);
+      await kvSet('vault:perps_closed_pairs', JSON.stringify(pruned));
       saved.perpsClosedPairs = true;
     }
     if (body.grvtStateCache?.subAccountId && Array.isArray(body.grvtStateCache.positions) && body.grvtStateCache.positions.length) {

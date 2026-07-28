@@ -1391,8 +1391,27 @@ assert.match(perpsJs, /latestActivitySessionBounds/, 'closed enrich must bound p
 assert.match(perpsJs, /peakMetricsApplied/, 'closed pairs must flag peak-to-close metrics');
 assert.match(perpsJs, /function filterFreshClosedPairs\(pairs, knownClosedKeys\)/, 'known closed pairs must skip full payload on incremental fetches');
 assert.match(perpsJs, /closedPairRefreshes/, 'known closed pairs must still receive refreshed session metrics from the server');
+{
+  const { pruneClosedPairsByAge, CLOSED_PAIRS_MAX_AGE_MS } = require('../lib/perps.js');
+  const now = Date.UTC(2026, 6, 28);
+  const kept = pruneClosedPairsByAge([
+    { symbol: 'ADA', closeTime: now - 10 * 86400000 },
+    { symbol: 'BTC', closeTime: now - 45 * 86400000 },
+    { symbol: 'ETH', closeTime: now - CLOSED_PAIRS_MAX_AGE_MS - 1000 },
+    { symbol: 'SOL', closeTime: now - CLOSED_PAIRS_MAX_AGE_MS + 1000 },
+  ], now);
+  assert.deepEqual(kept.map((p) => p.symbol), ['ADA', 'SOL'], 'Closed retention must keep only rounds within 30 days');
+}
 assert.match(aaveProxyJs, /knownClosedKeys\.length/, 'incremental closed-pair requests must bypass the shared dashboard cache');
 assert.match(indexHtml, /const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pairs'/, 'closed pairs must persist locally');
+assert.match(indexHtml, /PERPS_CLOSED_PAIRS_MAX_AGE_MS = 30 \* 86400000/, 'Closed tab must retain only the past 30 days');
+assert.match(indexHtml, /function perpsPruneClosedPairsByAge\(/, 'Closed pairs must be age-pruned from memory');
+assert.match(indexHtml, /No fully closed rounds in the past 30 days/, 'Closed empty state must mention the 30-day window');
+assert.match(perpsJs, /CLOSED_PAIRS_MAX_AGE_MS = 30 \* 86400000/, 'API closed pairs must use a 30-day retention window');
+assert.match(perpsJs, /pruneClosedPairsByAge\(filterFullyClosedPairs/, 'dashboard closed pairs must drop rounds older than 30 days');
+assert.match(variationalHedgeJs, /VARIATIONAL_CLOSED_HEDGE_RETENTION_MS = 30 \* 86400000/, 'closed Variational hedges must age out after 30 days');
+assert.match(syncJs, /PERPS_CLOSED_PAIRS_MAX_AGE_MS = 30 \* 86400000/, 'cloud Closed pairs must prune after 30 days');
+assert.match(syncJs, /pruneClosedPairsByAge/, 'sync must age-prune Closed pairs on read\/write');
 assert.match(indexHtml, /params\.set\('knownClosedKeys', knownClosedKeys\.join\(','\)\)/, 'perps refresh must tell the API which closed rounds are already cached');
 assert.match(indexHtml, /data\.closedPairs = perpsCacheNewClosedPairs\(\[[\s\S]{0,120}closedPairRefreshes/, 'dashboard render must merge fresh and refreshed closed pairs into the cache');
 assert.match(indexHtml, /const TICKER_REFRESH_MS = 60 \* 1000/, 'market ticker must refresh every minute');
