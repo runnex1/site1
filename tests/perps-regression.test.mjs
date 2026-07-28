@@ -3490,7 +3490,18 @@ assert.match(indexHtml, /if \(data\.rateSpread\) perpsApplyLiveRates\(data\.rate
 assert.match(indexHtml, /const PERPS_SCHEDULED_REFRESH_MINUTES = \[10, 50, 55\]/, 'Perps dashboard must refresh on a fixed hourly schedule');
 assert.match(indexHtml, /function perpsManualRefresh\(/, 'Positions panel must expose a manual refresh control');
 assert.match(indexHtml, /id="perpsManualRefreshBtn"/, 'Positions panel must render the manual refresh button');
-assert.match(indexHtml, /function perpsShouldRenderEquityChart\(snapshotAdded, cloudSnapshotsAdded\)/, 'equity chart must refresh only when a new 4h snapshot point is added');
+assert.match(indexHtml, /function perpsShouldRenderEquityChart\(snapshotAdded, cloudSnapshotsAdded, adjustChanged = false\)/, 'equity chart must refresh on new snaps or hedge-neutral adjust changes');
+assert.match(indexHtml, /_perpsLastEquityAdjSig/, 'equity chart must track adjust signature to redraw after Var close');
+assert.match(indexHtml, /perpsSnapshotVariationalAdjust\(snap, 0\)/, 'historical equity snaps must not inherit live closed Var adjust');
+assert.match(indexHtml, /Open pairs: settled ~est\. only/, 'daily funding chart must exclude unsettled Var previews');
+assert.match(syncJs, /mergePerpsEquitySnapshots/, 'sync must merge equity snapshots instead of blind overwrite');
+assert.match(syncJs, /without allowing empty payloads to wipe cron history/, 'empty perpsSnapshots POST must not wipe KV');
+assert.match(perpsJs, /OPEN_PAIR_MAX_SIZE_MISMATCH_PCT/, 'open pairing must reject huge size mismatches');
+assert.match(indexHtml, /equityChartMode: server\.equityChartMode \|\| local\.equityChartMode/, 'cloud config apply must preserve equity chart modes');
+assert.match(indexHtml, /\.perps-config-toggle-row \{ display: flex !important/, 'mobile must keep Edit wallets toggle visible');
+assert.match(variationalHedgeJs, /Always attribute tracked funding to the hedge lifetime/, 'closed Var tracked funding must use hedge open, not full prior session');
+assert.match(variationalHedgeJs, /missingRateSample: true,\s*\n\s*rate,\s*\n\s*markPx,/, 'missing Var rate samples must stay unsettled');
+assert.match(variationalHedgeJs, /isUnsettled: true,\s*\n\s*pendingFreeze: true,\s*\n\s*missingRateSample: true/, 'missing Var rate samples must be marked unsettled');
 assert.doesNotMatch(indexHtml, /PERPS_AUTO_REFRESH_MS/, 'Perps dashboard must not poll on a short interval');
 assert.doesNotMatch(indexHtml, /function perpsRefreshLiveApr\(/, 'Perps dashboard must not run a separate live APR poll');
 assert.match(perpsJs, /function grvtFundingSinceOpen\(pos\) \{[\s\S]*?return raw;/, 'GRVT cumulative funding must keep the same account-credit sign as funding history');
@@ -6260,10 +6271,10 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
     : lateResult.newClosedPairs[0].longLeg;
   assert.ok(Math.abs(lateGrvt.realizedPnl - (-1785.68)) < 0.05, 'late-attach must use history PnL');
   assert.ok(Math.abs(lateGrvt.fees - 18.80) < 0.05, 'late-attach must use history fees');
-  assert.ok(Math.abs(lateGrvt.funding - 73.09) < 0.05, 'late-attach must use full-session history funding');
+  assert.ok(Math.abs(lateGrvt.funding - 73.09) < 0.05, 'late-attach closed leg still shows history funding cashflow');
   assert.equal(lateResult.newClosedPairs[0].closeLegEstimated, false);
 
-  // Mid-session + payment evidence must still freeze full-session history funding (not hedge-open window only).
+  // Mid-session + payment evidence: freeze tracked funding to the hedge lifetime (not the prior session).
   const latePayHedge = {
     ...lateHedge,
     id: 'hbar-late-pay',
@@ -6287,16 +6298,9 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
     },
   };
   const latePayResult = applyVariationalHedges(latePayData, [latePayHedge], { HBAR: listing });
-  const latePayGrvt = latePayResult.newClosedPairs[0].shortLeg?.venue === 'grvt'
-    ? latePayResult.newClosedPairs[0].shortLeg
-    : latePayResult.newClosedPairs[0].longLeg;
   assert.ok(
-    Math.abs(latePayGrvt.funding - 73.09) < 0.05,
-    'late-attach with payments must prefer full-session history funding, not post-attach payment window',
-  );
-  assert.ok(
-    Math.abs(Number(latePayResult.hedges[0].closedTrackedFundingUsd) - 73.09) < 0.05,
-    'frozen tracked funding must match history session',
+    Math.abs(Number(latePayResult.hedges[0].closedTrackedFundingUsd) - 33.09) < 0.05,
+    'frozen tracked funding must use hedge-open window, not full prior exchange session',
   );
 
   // History lag: EST finalize first, then upgrade once position_history arrives.

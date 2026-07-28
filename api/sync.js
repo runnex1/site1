@@ -244,7 +244,8 @@ function mergeVariationalSettlementMaps(existing, incoming, hedges = null) {
     if (!hedgeId || !Array.isArray(rows)) continue;
     out[hedgeId] = mergeVariationalSettlementArrays(out[hedgeId], rows);
   }
-  if (!Array.isArray(hedges)) return out;
+  // Only prune against a non-empty hedge list — empty KV hedges must not wipe settlements.
+  if (!Array.isArray(hedges) || !hedges.length) return out;
   try {
     const VH = require('../lib/variational-hedge');
     if (typeof VH.pruneVariationalSettlementsForHedges === 'function') {
@@ -252,6 +253,44 @@ function mergeVariationalSettlementMaps(existing, incoming, hedges = null) {
     }
   } catch {
     // fall through
+  }
+  return out;
+}
+
+/** Merge client equity snapshots into KV without allowing empty payloads to wipe cron history. */
+function mergePerpsEquitySnapshots(existing, incoming, maxEntries = 180) {
+  const out = { ...(existing && typeof existing === 'object' ? existing : {}) };
+  const inc = incoming && typeof incoming === 'object' ? incoming : {};
+  if (!Object.keys(inc).length) return out;
+  const varFields = [
+    'variationalEquityAdjust',
+    'variationalOpenEquityAdjust',
+    'variationalPendingCloseEquityAdjust',
+    'variationalClosedEquityAdjust',
+    'crossVenueSameMarkAdjust',
+  ];
+  for (const [key, snap] of Object.entries(inc)) {
+    if (!key || !snap || typeof snap !== 'object') continue;
+    const prev = out[key];
+    if (!prev) {
+      out[key] = snap;
+      continue;
+    }
+    const newerIsIncoming = (Number(snap.fetchedAt) || 0) >= (Number(prev.fetchedAt) || 0);
+    const merged = newerIsIncoming ? { ...prev, ...snap } : { ...snap, ...prev };
+    for (const field of varFields) {
+      if (Number.isFinite(Number(merged[field]))) continue;
+      if (Number.isFinite(Number(prev[field]))) merged[field] = Number(prev[field]);
+      else if (Number.isFinite(Number(snap[field]))) merged[field] = Number(snap[field]);
+    }
+    if (!Number.isFinite(Number(merged.totalEquity)) && Number.isFinite(Number(prev.totalEquity))) {
+      merged.totalEquity = Number(prev.totalEquity);
+    }
+    out[key] = merged;
+  }
+  const keys = Object.keys(out).sort();
+  while (keys.length > maxEntries) {
+    delete out[keys.shift()];
   }
   return out;
 }
@@ -1317,8 +1356,11 @@ module.exports = async function handler(req, res) {
       await kvSet('vault:perps_config', JSON.stringify(body.perpsConfig));
       saved.perpsConfig = true;
     }
-    if (body.perpsSnapshots) {
-      await kvSet('vault:perps_snapshots', JSON.stringify(body.perpsSnapshots));
+    if (body.perpsSnapshots && typeof body.perpsSnapshots === 'object'
+      && Object.keys(body.perpsSnapshots).length) {
+      const existing = parseJson(await kvGet('vault:perps_snapshots'), {});
+      const merged = mergePerpsEquitySnapshots(existing, body.perpsSnapshots);
+      await kvSet('vault:perps_snapshots', JSON.stringify(merged));
       saved.perpsSnapshots = true;
     }
     if (Array.isArray(body.perpsVariationalHedges) && body.perpsVariationalHedges.length) {

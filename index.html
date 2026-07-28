@@ -7716,7 +7716,14 @@ body[data-active-tab="loops"] .page-content,
   #perpsUnhedgedSection, #perpsVariationalPendingSection { order: 10; }
   #perpsConfigFoot, .perps-config-toggle-row { order: 11; }
   .perps-daily-funding-panel { display: none !important; }
-  .perps-config-toggle-row { display: none !important; }
+  .perps-config-toggle-row { display: flex !important; justify-content: center; padding: 0.35rem 0.75rem 0.15rem; }
+  .perps-equity-panel .perps-equity-mode-group {
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    max-width: 100%;
+  }
+  .perps-equity-panel .perps-equity-mode-btn { font-size: 0.55rem; padding: 0.14rem 0.35rem; }
   .perps-panel {
     margin: 14px 14px 0;
     border: 1px solid rgba(134, 159, 179, 0.16);
@@ -7750,7 +7757,6 @@ body[data-active-tab="loops"] .page-content,
     line-height: 1.35;
     border-bottom: 1px solid rgba(134, 159, 179, 0.16);
   }
-  .perps-equity-panel .perps-equity-mode-group,
   .perps-equity-panel #perpsEquityChartNote,
   .perps-positions-panel .perps-refresh-btn { display: none !important; }
   .perps-equity-panel .perps-panel-head { flex-direction: row; }
@@ -10957,6 +10963,7 @@ let _perpsPositionsTab = 'live';
 let _perpsLastData = null;
 let _perpsVenueEquity = null;
 let _perpsEquityChartState = null;
+let _perpsLastEquityAdjSig = '';
 let _perpsPositionChartInstance = null;
 let _perpsPositionChartPairIdx = null;
 let _perpsPositionChartShowFees = false;
@@ -32803,6 +32810,10 @@ function perpsApplyCloudConfig(serverConfig) {
             nado: server.nado || local.nado || '',
             grvtSubAccount: server.grvtSubAccount || local.grvtSubAccount || '4860249204328359',
             statRange: server.statRange || local.statRange || _perpsStatRange,
+            equityChartMode: server.equityChartMode || local.equityChartMode || _perpsEquityChartMode,
+            equityValueMode: server.equityValueMode || local.equityValueMode || _perpsEquityValueMode,
+            pnlStartMs: server.pnlStartMs ?? local.pnlStartMs,
+            pnlBaseline: server.pnlBaseline ?? local.pnlBaseline,
         }, { skipCloudSync: true });
     } else if (localValid) {
         // Never wipe locally saved wallets with an empty server payload
@@ -32899,8 +32910,8 @@ function perpsCountEquityBuckets() {
     }
 }
 
-function perpsShouldRenderEquityChart(snapshotAdded, cloudSnapshotsAdded) {
-    return Boolean(snapshotAdded || cloudSnapshotsAdded || !_perpsEquityChartState);
+function perpsShouldRenderEquityChart(snapshotAdded, cloudSnapshotsAdded, adjustChanged = false) {
+    return Boolean(snapshotAdded || cloudSnapshotsAdded || adjustChanged || !_perpsEquityChartState);
 }
 
 function perpsUpdateRefreshBar() {
@@ -33050,8 +33061,8 @@ function perpsVenueShortLabel(venue) {
 function perpsDemoteVariationalClosedPairToSolo(pair) {
     if (!pair?.manualVariationalClose) return pair;
     const tracked = [pair.longLeg, pair.shortLeg].find((l) => l && l.venue !== 'variational');
-    if (!tracked || !Number.isFinite(Number(tracked.realizedPnl))) return pair;
-    const realized = Number(tracked.realizedPnl);
+    if (!tracked) return pair;
+    const realized = Number.isFinite(Number(tracked.realizedPnl)) ? Number(tracked.realizedPnl) : 0;
     const funding = Number.isFinite(Number(tracked.funding))
         ? Number(tracked.funding)
         : (Number.isFinite(Number(pair.funding)) ? Number(pair.funding) : 0);
@@ -33060,7 +33071,8 @@ function perpsDemoteVariationalClosedPairToSolo(pair) {
             ? Number(tracked.fees)
             : (Number.isFinite(Number(pair.fees)) ? Number(pair.fees) : 0),
     );
-    const size = Math.abs(Number(pair.size || tracked.size || 0));
+    // Prefer tracked-leg size (exchange truth) over a wrong pair.size on hollow cards.
+    const size = Math.abs(Number(tracked.size || pair.size || 0));
     if (!(size > 0)) return pair;
     const side = tracked.side === 'short' ? 'short' : 'long';
     const soloLeg = { ...tracked, size, side };
@@ -33089,21 +33101,13 @@ function perpsDemoteVariationalClosedPairToSolo(pair) {
 
 /**
  * Only hollow EST / unhedged-until-end Var rows yield to a never-hedged exchange-only row.
- * Real delta-neutral Var hedges (HBAR, ADA, FIL, …) always win over SOLO reconstructions.
+ * Real delta-neutral Var hedges always win over SOLO reconstructions — do not yield just
+ * because tracked PnL matches solo closeSlippage (that is normal for a real hedge close).
  */
 function perpsClosedPairVarShouldYieldToExchangeOnly(varPair, soloPair) {
     if (!varPair?.manualVariationalClose) return false;
-    if (perpsClosedPairLooksLikeNeverHedgedSyntheticVar(varPair)) return true;
     if (!soloPair?.exchangeOnly) return false;
-    const tracked = [varPair.longLeg, varPair.shortLeg].find((l) => l && l.venue !== 'variational');
-    if (!tracked) return false;
-    if (tracked.fromExchangeHistory) return false;
-    const trackedPnl = Number(tracked.realizedPnl);
-    const soloPnl = Number(soloPair.closeSlippage);
-    if (Number.isFinite(trackedPnl) && Number.isFinite(soloPnl) && Math.abs(trackedPnl - soloPnl) <= 1e-4) {
-        return true;
-    }
-    return false;
+    return perpsClosedPairLooksLikeNeverHedgedSyntheticVar(varPair);
 }
 
 function perpsClosedPairBaseSymbol(pairOrSym) {
@@ -33701,6 +33705,14 @@ function perpsApplyVariationalHedgesToData(data) {
         ...(data.variationalListings || {}),
     };
     data._variationalListingBySymbol = { ...(data._variationalListingBySymbol || {}), ...variationalBySymbol };
+    // Attach frozen Var settlements so close-path funding prefers samples over live rates.
+    try {
+        data._variationalSettlementsByHedge = typeof perpsLoadVariationalSettlementsRaw === 'function'
+            ? perpsLoadVariationalSettlementsRaw()
+            : (data._variationalSettlementsByHedge || {});
+    } catch (_) {
+        data._variationalSettlementsByHedge = data._variationalSettlementsByHedge || {};
+    }
     // Seed API closedPairs with local/cloud cache so closedPairAlreadyCached + equity adjust see Var closes.
     const cachedClosed = perpsLoadCachedClosedPairs();
     if (cachedClosed.length || (data.closedPairs || []).length) {
@@ -33777,7 +33789,7 @@ function perpsCollectVariationalFundingEvents(data) {
         if (!time) return;
         const usdc = Number(ev.usdc);
         if (!Number.isFinite(usdc)) return;
-        const key = `${time}|${usdc.toFixed(6)}|${String(ev.symbol || '').toUpperCase()}`;
+        const key = `${String(ev.symbol || '').toUpperCase()}|${time}`;
         if (seen.has(key)) return;
         seen.add(key);
         events.push({
@@ -33797,8 +33809,8 @@ function perpsCollectVariationalFundingEvents(data) {
         }
     };
 
-    // Open pairs: keep live ~est. (including unsettled previews).
-    fromPairSeries(data.paired, true);
+    // Open pairs: settled ~est. only (exclude unsettled next-interval previews from "collected").
+    fromPairSeries(data.paired, false);
 
     // Closed Var pairs: keep already-accrued ~est. in the daily chart (must not vanish on close).
     fromPairSeries(
@@ -34602,8 +34614,37 @@ function perpsSaveSnapshot(data) {
         };
         if (store[bucket]) {
             const existing = store[bucket];
-            if (Number.isFinite(Number(existing.variationalEquityAdjust))) return false;
-            store[bucket] = { ...existing, ...variationalFields, fetchedAt: Math.max(Number(existing.fetchedAt) || 0, fetchedAt) };
+            const prevAdj = Number(existing.variationalEquityAdjust);
+            const nextAdj = Number(variationalFields.variationalEquityAdjust);
+            const adjPartsChanged = [
+                'variationalOpenEquityAdjust',
+                'variationalClosedEquityAdjust',
+                'variationalPendingCloseEquityAdjust',
+                'crossVenueSameMarkAdjust',
+            ].some((k) => {
+                const a = Number(existing[k]);
+                const b = Number(variationalFields[k]);
+                if (!Number.isFinite(a) && !Number.isFinite(b)) return false;
+                if (!Number.isFinite(a) || !Number.isFinite(b)) return true;
+                return Math.abs(a - b) > 0.01;
+            });
+            const totalAdjChanged = Number.isFinite(prevAdj) && Number.isFinite(nextAdj)
+                ? Math.abs(prevAdj - nextAdj) > 0.01
+                : Number.isFinite(nextAdj);
+            // Keep first adjust only when composition is unchanged; update on open→close transitions.
+            if (Number.isFinite(prevAdj) && !adjPartsChanged && !totalAdjChanged) return false;
+            store[bucket] = {
+                ...existing,
+                ...variationalFields,
+                hlAccountValue,
+                nadoAccountValue,
+                grvtAccountValue,
+                extendedAccountValue,
+                totalEquity,
+                adjustedEquity: s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalEquity - combinedNetDeposits,
+                cumulativeNetDeposits: combinedNetDeposits,
+                fetchedAt: Math.max(Number(existing.fetchedAt) || 0, fetchedAt),
+            };
             const keys = Object.keys(store).sort((a, b) => perpsParseBucketTime(a) - perpsParseBucketTime(b));
             const pruned = {};
             keys.slice(-180).forEach(k => { pruned[k] = store[k]; });
@@ -35042,7 +35083,7 @@ function perpsBuildEquitySeries(data) {
             : (cumulativeNetDeposits != null
                 ? snap.totalEquity - cumulativeNetDeposits
                 : snap.totalEquity);
-        const variationalEquityAdjust = perpsSnapshotVariationalAdjust(snap, closedAdj);
+        const variationalEquityAdjust = perpsSnapshotVariationalAdjust(snap, 0);
         const variationalNeutralEquity = VE?.variationalNeutralEquity?.(snap.totalEquity, variationalEquityAdjust)
             ?? (snap.totalEquity + variationalEquityAdjust);
         const row = {
@@ -38119,9 +38160,12 @@ function perpsRenderDashboard(data, opts = {}) {
         const snapshotAdded = perpsSaveSnapshot(data);
         data._equitySeriesRaw = { ...perpsBuildEquitySeries(data), fetchedAt: data.fetchedAt };
         data._equitySeries = data._equitySeriesRaw;
+        const adjSig = `${Number(data._equitySeriesRaw?.variationalEquityAdjustNow ?? '')}|${(data.closedPairs || []).length}|${(data.variationalPendingClose || []).length}`;
+        const adjustChanged = adjSig !== (_perpsLastEquityAdjSig || '');
+        _perpsLastEquityAdjSig = adjSig;
         if (data.rateSpread) perpsApplyLiveRates(data.rateSpread, data.fetchedAt);
         perpsRenderStatsBar(data);
-        if (perpsShouldRenderEquityChart(snapshotAdded, opts.cloudSnapshotsAdded)) {
+        if (perpsShouldRenderEquityChart(snapshotAdded, opts.cloudSnapshotsAdded, adjustChanged)) {
             perpsRenderEquityChart(data);
         }
         perpsRenderFundingForTimeWindow(data);
