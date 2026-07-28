@@ -10925,7 +10925,7 @@ const PERPS_DAILY_FUND_CACHE_KEY = 'vault-perps-daily-fund-cache';
 const PERPS_GRVT_STATE_CACHE_KEY = 'vault-grvt-state-cache';
 const TICKER_VISIBLE_TABS = new Set(['overview', 'etf', 'terminal', 'history']);
 const PM_WALLETS_BACKUP_KEY = 'vault-polymarket-wallets-backup';
-const PERPS_CROSS_VENUE_WINDOW_MS = 7 * 86400000;
+const PERPS_CROSS_VENUE_WINDOW_MS = 24 * 3600000;
 let _perpsSaveDataTimer = null;
 /** Coalesce cloud sync so snapshot/hedge writes during refresh do not freeze the tab. */
 function perpsScheduleCloudSave(delayMs = 1500) {
@@ -10948,6 +10948,7 @@ let _perpsDailyFundShowFees = true;
 let _perpsDailyFundChartState = null;
 let _perpsScheduledRefreshTimer = null;
 let _perpsRefreshInFlight = false;
+let _perpsRefreshPending = null;
 let _perpsBootPromise = null;
 let _marketTickerTimer = null;
 let _eventLogRefreshTimer = null;
@@ -38213,6 +38214,7 @@ function perpsDashboardLoadWarnings(payload) {
 
 async function perpsFetchDashboardPayload(params, silent = false) {
     let lastError = null;
+    let lastGood = null;
     for (let attempt = 0; attempt <= PERPS_REFRESH_RETRIES; attempt++) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), PERPS_FETCH_TIMEOUT_MS);
@@ -38222,6 +38224,7 @@ async function perpsFetchDashboardPayload(params, silent = false) {
             if (!res.ok) throw new Error(payload.error || res.statusText);
             const warnings = perpsDashboardLoadWarnings(payload);
             if (warnings.length && !payload.cached && attempt < PERPS_REFRESH_RETRIES) {
+                lastGood = { payload, warnings };
                 if (!silent || document.body.dataset.activeTab === 'perps') {
                     perpsSetStatus(`NADO data warning; retrying (${attempt + 1}/${PERPS_REFRESH_RETRIES})...`);
                 }
@@ -38237,15 +38240,20 @@ async function perpsFetchDashboardPayload(params, silent = false) {
                 }
                 continue;
             }
+            if (lastGood) return lastGood;
             throw lastError;
         } finally {
             clearTimeout(timeoutId);
         }
     }
+    if (lastGood) return lastGood;
     throw lastError || new Error('Perps API failed');
 }
 async function perpsRefresh(silent = false) {
-    if (_perpsRefreshInFlight) return false;
+    if (_perpsRefreshInFlight) {
+        _perpsRefreshPending = { silent: silent && (_perpsRefreshPending?.silent !== false) };
+        return false;
+    }
     _perpsRefreshInFlight = true;
     perpsImportConfigFromPortfolio();
     perpsRepairSavedConfig();
@@ -38306,6 +38314,11 @@ async function perpsRefresh(silent = false) {
         return false;
     } finally {
         _perpsRefreshInFlight = false;
+        if (_perpsRefreshPending) {
+            const next = _perpsRefreshPending;
+            _perpsRefreshPending = null;
+            void perpsRefresh(next.silent);
+        }
     }
 }
 

@@ -215,6 +215,24 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 {
   const monthAgo = now - 35 * 86400000;
   const oneDayAgo = now - 86400000;
+  // Continuous multi-leg build: bridging activity on intervening days keeps one session.
+  const bridgeFunding = [];
+  for (let d = 34; d >= 2; d -= 1) {
+    bridgeFunding.push({ symbol: 'ONDO', time: now - d * 86400000, usdc: 0.01 });
+  }
+  const openMs = pairOpenedAtMs('ONDO', 'hyperliquid', 'nado', {
+    hyperliquid: [{ symbol: 'ONDO', time: oneDayAgo, fee: 1 }],
+    nado: [{ symbol: 'ONDO', time: monthAgo, fee: 1 }],
+  }, {
+    hyperliquid: [],
+    nado: [{ symbol: 'ONDO', time: monthAgo, usdc: 0.5 }, ...bridgeFunding],
+  });
+  assert.equal(openMs, monthAgo, 'position performance must start when the first leg opened, not when the hedge completed');
+}
+
+{
+  const monthAgo = now - 35 * 86400000;
+  const oneDayAgo = now - 86400000;
   const openMs = pairOpenedAtMs('ONDO', 'hyperliquid', 'nado', {
     hyperliquid: [{ symbol: 'ONDO', time: oneDayAgo, fee: 1 }],
     nado: [{ symbol: 'ONDO', time: monthAgo, fee: 1 }],
@@ -222,7 +240,14 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     hyperliquid: [],
     nado: [{ symbol: 'ONDO', time: monthAgo, usdc: 0.5 }],
   });
-  assert.equal(openMs, monthAgo, 'position performance must start when the first leg opened, not when the hedge completed');
+  assert.equal(openMs, oneDayAgo, 'blank calendar day after a prior round must start a fresh pairOpenedAt session');
+}
+
+{
+  const fiveDaysAgo = now - 5 * 86400000;
+  const result = combined([payment(100, fiveDaysAgo)], [payment(100, now)]);
+  assert.equal(result.rawCombinedNetDeposits, 200);
+  assert.equal(result.combinedNetDeposits, 200, 'same-sign deposits days apart must not be treated as cross-venue transfers');
 }
 
 {
@@ -1194,7 +1219,7 @@ assert.match(indexHtml, /perpsFmtUsd\(pnl\)/, 'Closed Exchange PnL must format e
 assert.match(indexHtml, /perpsTrimDailyRowToCutoff\(r, cutoff\)/, 'daily rows must be trimmed to the exact cutoff');
 assert.match(indexHtml, /function perpsDailyRowEventsAreComplete\(/, 'range trim must detect incomplete fundingEvents after payload slim');
 assert.match(indexHtml, /Do NOT invent empty fundingEvents\/feeEvents/, 'daily funding base must not invent empty event arrays');
-assert.match(perpsJs, /recentDailyEventCutoffMs = now - 2 \* 86400000/, 'slim must keep ~2d of daily funding events for 1D boundary splits');
+assert.match(perpsJs, /recentDailyEventCutoffMs = now - 7 \* 86400000/, 'slim must keep ~7d of daily funding events for 1D/7D boundary splits');
 assert.match(indexHtml, /dayStart < cutoff\) return null;/, 'summary-only boundary rows must not count as full last-24h PnL');
 assert.match(indexHtml, /return perpsRecomputeDailySeriesCumulative\(trimmed\);/, 'trimmed daily rows must rebuild cumulative totals from the selected window');
 assert.match(indexHtml, /perpsTrimDailySeriesToLatestSession\(rows\)/, 'All-time daily funding chart must start after the last empty bucket');
@@ -3265,11 +3290,19 @@ assert.match(perpsJs, /transfer_history/, 'GRVT capital flows must read transfer
 assert.match(perpsJs, /source: 'transfer_history'/, 'GRVT subaccount capital payments must be tagged from transfer_history');
 assert.match(perpsJs, /PERPS_GRVT_HISTORY_TIMEOUT_MS, 'GRVT capital flows'/, 'GRVT capital flows must use the longer GRVT history timeout');
 assert.match(perpsJs, /function slimPerpsDashboardForClient\(/, 'perps API must slim heavy history before sending to the browser');
-assert.match(perpsJs, /clientFillWindowDays: 45/, 'client fill history must be windowed to limit UI freezes');
+assert.match(perpsJs, /clientFillWindowDays: 90/, 'client fill history must be windowed to limit UI freezes');
 assert.match(perpsJs, /clientPaymentWindowDays: 90/, 'client funding payments must be windowed');
 assert.match(perpsJs, /fundingSinceOpen: undefined/, 'Extended fundingSinceOpen duplicate must be stripped from client payload');
 assert.match(perpsJs, /clientPayloadSlim: true/, 'slimmed payload must be marked for verification');
 assert.match(perpsJs, /slimPairDaily/, 'pair dailyPerformanceSeries events must be stripped');
+assert.match(perpsJs, /CROSS_VENUE_WINDOW_MS = 24 \* 3600000/, 'cross-venue deposit transfer window must stay short to avoid false offsets');
+assert.match(perpsJs, /latestPairActivitySessionStartMs/, 'pairOpenedAtMs must use latest blank-day activity session');
+assert.match(indexHtml, /PERPS_CROSS_VENUE_WINDOW_MS = 24 \* 3600000/, 'client capital-flow transfer window must match server');
+assert.match(indexHtml, /_perpsRefreshPending/, 'in-flight perps refresh must queue the next Save & connect');
+assert.match(indexHtml, /lastGood/, 'warning retries must keep the last good perps payload');
+assert.match(variationalHedgeJs, /shouldReopenPendingVariationalHedge/, 'pending_close reopen must require same-round identity');
+assert.match(variationalHedgeJs, /PENDING_CLOSE_FORCE_MS/, 'stuck pending_close hedges must age out');
+assert.match(variationalHedgeJs, /h\.status === 'open' && !h\.supersededByLiveCross/, 'pending_close must not suppress Unhedged residuals');
 assert.match(variationalHedgeJs, /VARIATIONAL_RATE_SAMPLE_LIMIT = 96/, 'rate sample retention must stay small to avoid UI freezes');
 assert.match(variationalHedgeJs, /function pruneVariationalRateSamples\(/, 'rate samples must be prunable to active symbols');
 assert.match(variationalHedgeJs, /function variationalRateSampleKeepSymbols\(/, 'rate-sample keep set must be derived from Variational hedges only');
@@ -3404,7 +3437,7 @@ assert.match(indexHtml, /if \(!opts\.preserveFeeMode\) _perpsPositionChartShowFe
 assert.match(indexHtml, /perpsRenderPositionPerformanceChart\(canvas, series, _perpsPositionChartShowFees\)/, 'position performance chart must use the fee toggle state');
 assert.match(indexHtml, /showFees \? \(r\.dailyNet \|\| 0\) : \(r\.dailyFunding \|\| 0\)/, 'position performance bars must exclude fees unless toggled on');
 assert.match(indexHtml, /perpsTogglePositionChartFees/, 'position performance must expose a trading-fee toggle');
-assert.match(perpsJs, /Math\.min\(\.\.\.candidates\)/, 'position open time must use earliest fill or funding on either leg');
+assert.match(perpsJs, /latestPairActivitySessionStartMs/, 'position open time must use latest blank-day activity session start');
 assert.match(perpsJs, /const perfDays = Math\.min\(PERPS_MAX_FILL_HISTORY_DAYS, Math\.max\(fillHistoryDays, openDays\)\)/, 'per-pair performance series must span from pair open through fill history');
 assert.match(perpsJs, /buildPairDailyPerformanceSeries\(dailySeriesInputs, p\.symbol, perfDays\)/, 'per-pair performance series must use computed performance window');
 assert.match(perpsJs, /peakPair\.peakMetricsApplied[\s\S]*dailyPerformanceSeries: sessionSeries/s, 'closed pairs must attach full latest-session dailyPerformanceSeries for funding');
