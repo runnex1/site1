@@ -11,6 +11,7 @@ const {
   buildEquitySnapshotFromDashboard,
   repairEquitySnapshotDeposits,
   reconstructGrvtSymbolSession,
+  isSolanaAddress,
 } = require('../lib/perps');
 const {
   mergeVariationalRateSamples,
@@ -217,6 +218,7 @@ async function handlePerpsCronSnapshot(req, res) {
   const grvtSubAccount = String(
     config.grvtSubAccount || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
   ).trim();
+  const phoenixWallet = String(config.phoenix || config.phoenixWallet || '').trim();
   const days = Math.min(365, Math.max(1, parseInt(config.days || '30', 10) || 30));
 
   if (!isWallet(wallet)) {
@@ -228,6 +230,7 @@ async function handlePerpsCronSnapshot(req, res) {
       hyperliquid: wallet,
       nado: nadoWallet,
       grvtSubAccount,
+      ...(isSolanaAddress(phoenixWallet) ? { phoenix: phoenixWallet } : {}),
       configured: true,
     }));
   }
@@ -243,6 +246,7 @@ async function handlePerpsCronSnapshot(req, res) {
       hyperliquid: wallet,
       nado: nadoWallet,
       grvtSubAccount,
+      phoenix: isSolanaAddress(phoenixWallet) ? phoenixWallet : '',
       // Fallback only if capital-flow refresh fails; live flows override inside the fetcher.
       cumulativeNetDeposits: Number(previousSnapshot?.cumulativeNetDeposits) || 0,
     }, { hedges, closedPairs, refreshCapitalFlows: true });
@@ -299,6 +303,8 @@ async function handlePerps(req, res) {
   const grvtSubAccount = String(
     req.query.grvtSubAccount || req.query.grvt || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
   ).trim();
+  const phoenixWalletRaw = String(req.query.phoenixWallet || req.query.phoenix || '').trim();
+  const phoenixWallet = isSolanaAddress(phoenixWalletRaw) ? phoenixWalletRaw : '';
 
   if (req.query.live === '1') {
     try {
@@ -361,6 +367,7 @@ async function handlePerps(req, res) {
     hyperliquid: wallet,
     nado: nadoWallet,
     grvtSubAccount,
+    phoenix: phoenixWallet,
     days,
     knownClosedKeys,
     grvtPositionsOverride: req.query.grvtPositions || null,
@@ -370,7 +377,7 @@ async function handlePerps(req, res) {
     const data = knownClosedKeys.length
       ? await fetchPerpsDashboard(dashboardOpts)
       : await cachedJson(
-        `perps:dashboard:${wallet.toLowerCase()}:${nadoWallet.toLowerCase()}:${grvtSubAccount}:${days}`,
+        `perps:dashboard:${wallet.toLowerCase()}:${nadoWallet.toLowerCase()}:${grvtSubAccount}:${phoenixWallet}:${days}`,
         PERPS_DASHBOARD_CACHE_MS,
         'Perps dashboard',
         () => fetchPerpsDashboard(dashboardOpts),

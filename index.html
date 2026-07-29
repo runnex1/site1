@@ -9465,7 +9465,7 @@ body[data-active-tab="loops"] .page-content,
                 <div class="perps-stat-value" id="perpsStatEquity">—</div>
                 <div class="perps-stat-tip" id="perpsStatEquityTip"></div>
               </div>
-              <div class="perps-stat-sub" id="perpsStatEquitySub">HL · Nado · GRVT · Ext</div>
+              <div class="perps-stat-sub" id="perpsStatEquitySub">HL · Nado · GRVT · Ext · Phoenix</div>
             </div>
             <div class="perps-stat-card"><div class="perps-stat-label" id="perpsStatPnlLabel"><span class="perps-mv3-only" id="perpsMv3PnlLabel">PnL · 7D</span><span class="perps-desktop-only">Total PnL</span></div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">selected window · funding − fees</div></div>
             <div class="perps-stat-card perps-stat-funding-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
@@ -9526,7 +9526,7 @@ body[data-active-tab="loops"] .page-content,
               </div>
             </div>
             <div class="perps-panel-fund-head">
-              <div class="perps-pnl-note" id="perpsDailyFundNote" style="margin-top:0;font-size:0.68rem;">7D gross funding · HL, Nado, GRVT, Extended + ~Variational est.</div>
+              <div class="perps-pnl-note" id="perpsDailyFundNote" style="margin-top:0;font-size:0.68rem;">7D gross funding · HL, Nado, GRVT, Extended, Phoenix + ~Variational est.</div>
               <div class="perps-pnl-total" id="perpsDailyFundTotal">—</div>
             </div>
             <div class="perps-panel-body perps-panel-body--chart">
@@ -9556,7 +9556,7 @@ body[data-active-tab="loops"] .page-content,
                 <span class="perps-pill" id="perpsPairsBadge">0 pairs</span>
               </div>
             </div>
-            <p class="perps-mv3-section-sub perps-mv3-only" id="perpsMv3PositionsSub">Hedged pairs across HL, GRVT, Extended + Variational</p>
+            <p class="perps-mv3-section-sub perps-mv3-only" id="perpsMv3PositionsSub">Hedged pairs across HL, GRVT, Extended, Phoenix + Variational</p>
             <div class="perps-position-tabs" role="tablist" aria-label="Position status">
               <button type="button" class="perps-position-tab active" data-perps-positions-tab="live" onclick="perpsSetPositionsTab('live', this)">Live</button>
               <button type="button" class="perps-position-tab" data-perps-positions-tab="closed" onclick="perpsSetPositionsTab('closed', this)">Closed</button>
@@ -9650,6 +9650,10 @@ body[data-active-tab="loops"] .page-content,
               <div>
                 <label for="perpsGrvtSubAccount">GRVT sub-account ID</label>
                 <input type="text" id="perpsGrvtSubAccount" placeholder="4860249204328359" autocomplete="off">
+              </div>
+              <div>
+                <label for="perpsPhoenixWallet">Phoenix wallet (Solana)</label>
+                <input type="text" id="perpsPhoenixWallet" placeholder="Solana pubkey…" autocomplete="off">
               </div>
               <button type="button" class="perps-btn" onclick="perpsSaveConfigAndRefresh()">Save &amp; connect</button>
             </div>
@@ -17572,7 +17576,7 @@ function dashboardPerpsEquityValue() {
     const live = _perpsLastData || _perpsCache;
     if (live?.summary) {
         const s = live.summary;
-        return Number(s.hlAccountValue || 0) + Number(s.nadoAccountValue || 0) + Number(s.grvtAccountValue || 0) + Number(s.extendedAccountValue || 0);
+        return Number(s.hlAccountValue || 0) + Number(s.nadoAccountValue || 0) + Number(s.grvtAccountValue || 0) + Number(s.extendedAccountValue || 0) + Number(s.phoenixAccountValue || 0);
     }
     if (live?.equityNow?.total != null) return Number(live.equityNow.total) || 0;
     const pts = perpsEquitySnapshotPoints();
@@ -31588,6 +31592,12 @@ function perpsIsValidEthAddress(addr) {
     return /^0x[a-fA-F0-9]{40}$/.test(String(addr || '').trim());
 }
 
+function perpsIsValidSolanaAddress(addr) {
+    const s = String(addr || '').trim();
+    if (!s || s.startsWith('0x')) return false;
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s);
+}
+
 function perpsResolveHlWallet() {
     const saved = perpsGetSavedConfig();
     if (perpsIsValidEthAddress(saved.hyperliquid)) return saved.hyperliquid.trim();
@@ -31607,6 +31617,7 @@ function perpsApplyArbToDataObject() {
         hyperliquid: cfg.hyperliquid.trim(),
         nado: cfg.nado || '',
         grvtSubAccount: cfg.grvtSubAccount || '4860249204328359',
+        phoenix: cfg.phoenix || '',
         statRange: cfg.statRange || _perpsStatRange,
     };
 }
@@ -31634,6 +31645,7 @@ function perpsRestoreWalletSnapshot(snapshot) {
             hyperliquid: snapshot.hyperliquid,
             nado: snapshot.nado || '',
             grvtSubAccount: snapshot.grvtSubAccount || '4860249204328359',
+            phoenix: snapshot.phoenix || '',
             statRange: snapshot.statRange || _perpsStatRange,
         };
     }
@@ -31663,6 +31675,7 @@ function perpsApplyWalletMasks() {
         ['perpsHlWallet', 'hyperliquid'],
         ['perpsNadoWallet', 'nado'],
         ['perpsGrvtSubAccount', 'grvtSubAccount'],
+        ['perpsPhoenixWallet', 'phoenix'],
     ];
     for (const [id, key] of fields) {
         const el = document.getElementById(id);
@@ -31675,7 +31688,7 @@ function perpsApplyWalletMasks() {
 }
 
 function perpsUnmaskWalletInputs() {
-    ['perpsHlWallet', 'perpsNadoWallet', 'perpsGrvtSubAccount'].forEach(id => {
+    ['perpsHlWallet', 'perpsNadoWallet', 'perpsGrvtSubAccount', 'perpsPhoenixWallet'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         if (el.dataset.perpsReal) el.value = el.dataset.perpsReal;
@@ -31775,8 +31788,10 @@ function perpsRepairSavedConfig() {
     if (!perpsIsValidEthAddress(hl)) return;
     const nado = saved.nado || perpsReadConfigField('perpsNadoWallet', 'nado') || '';
     const grvtSubAccount = saved.grvtSubAccount || perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || '4860249204328359';
+    const phoenixRaw = saved.phoenix || perpsReadConfigField('perpsPhoenixWallet', 'phoenix') || '';
+    const phoenix = perpsIsValidSolanaAddress(phoenixRaw) ? phoenixRaw.trim() : '';
     if (hl === saved.hyperliquid && saved.configured) return;
-    perpsPersistConfig({ ...saved, hyperliquid: hl, nado, grvtSubAccount });
+    perpsPersistConfig({ ...saved, hyperliquid: hl, nado, grvtSubAccount, phoenix });
 }
 
 function perpsRenderFundingForTimeWindow(data) {
@@ -32005,6 +32020,7 @@ function perpsRenderEquityBreakdownTip(container, breakdown) {
         ['Nado', breakdown.nado],
         ['GRVT', breakdown.grvt],
         ['Extended', breakdown.extended],
+        ['Phoenix', breakdown.phoenix],
     ];
     container.innerHTML = rows.map(([label, val]) =>
         `<div class="perps-stat-tip-row"><span>${dashEsc(label)}</span><strong>${perpsFmtUsd(val)}</strong></div>`
@@ -32029,6 +32045,10 @@ function perpsNormalizeStoredConfig(raw) {
     if (hl && !perpsIsValidEthAddress(hl)) delete cfg.hyperliquid;
     const nado = String(cfg.nado || '').trim();
     if (nado && !perpsIsValidEthAddress(nado)) delete cfg.nado;
+    const phoenix = String(cfg.phoenix || cfg.phoenixWallet || '').trim();
+    if (phoenix && perpsIsValidSolanaAddress(phoenix)) cfg.phoenix = phoenix;
+    else delete cfg.phoenix;
+    delete cfg.phoenixWallet;
     return cfg;
 }
 
@@ -32039,6 +32059,7 @@ function perpsConfigPayload(cfg) {
         hyperliquid: norm.hyperliquid.trim(),
         nado: norm.nado || '',
         grvtSubAccount: norm.grvtSubAccount || '4860249204328359',
+        phoenix: norm.phoenix || '',
         statRange: norm.statRange || _perpsStatRange,
         equityChartMode: norm.equityChartMode === 'all' ? 'all' : 'session',
         equityValueMode: norm.equityValueMode === 'raw'
@@ -32814,6 +32835,7 @@ function perpsApplyCloudConfig(serverConfig) {
             hyperliquid: serverHl,
             nado: server.nado || local.nado || '',
             grvtSubAccount: server.grvtSubAccount || local.grvtSubAccount || '4860249204328359',
+            phoenix: server.phoenix || local.phoenix || '',
             statRange: server.statRange || local.statRange || _perpsStatRange,
             equityChartMode: server.equityChartMode || local.equityChartMode || _perpsEquityChartMode,
             equityValueMode: server.equityValueMode || local.equityValueMode || _perpsEquityValueMode,
@@ -32953,6 +32975,7 @@ async function perpsSaveConfigAndRefresh() {
     const hlEl = document.getElementById('perpsHlWallet');
     const nadoEl = document.getElementById('perpsNadoWallet');
     const grvtEl = document.getElementById('perpsGrvtSubAccount');
+    const phoenixEl = document.getElementById('perpsPhoenixWallet');
     if (hlEl) {
         const raw = hlEl.value.trim();
         if (raw && !/^\*+$/.test(raw)) hlEl.dataset.perpsReal = raw;
@@ -32965,6 +32988,10 @@ async function perpsSaveConfigAndRefresh() {
         const raw = grvtEl.value.trim();
         if (raw && !/^\*+$/.test(raw)) grvtEl.dataset.perpsReal = raw;
     }
+    if (phoenixEl) {
+        const raw = phoenixEl.value.trim();
+        if (raw && !/^\*+$/.test(raw)) phoenixEl.dataset.perpsReal = raw;
+    }
     perpsSaveConfig();
     if (typeof saveData === 'function') await saveData();
     const saved = perpsGetSavedConfig();
@@ -32972,6 +32999,7 @@ async function perpsSaveConfigAndRefresh() {
         perpsHlWallet: 'hyperliquid',
         perpsNadoWallet: 'nado',
         perpsGrvtSubAccount: 'grvtSubAccount',
+        perpsPhoenixWallet: 'phoenix',
     };
     for (const [id, key] of Object.entries(fieldKeys)) {
         const el = document.getElementById(id);
@@ -33058,6 +33086,7 @@ function perpsVenueShortLabel(venue) {
     if (v === 'grvt') return 'GRVT';
     if (v === 'extended') return 'Ext';
     if (v === 'nado') return 'Nado';
+    if (v === 'phoenix') return 'Phx';
     if (v === 'variational') return 'Var';
     return venue || 'Exchange';
 }
@@ -34513,7 +34542,7 @@ function perpsLoadConfig() {
 }
 
 function perpsBindConfigInputs() {
-    ['perpsHlWallet', 'perpsNadoWallet', 'perpsGrvtSubAccount'].forEach(id => {
+    ['perpsHlWallet', 'perpsNadoWallet', 'perpsGrvtSubAccount', 'perpsPhoenixWallet'].forEach(id => {
         const el = document.getElementById(id);
         if (!el || el.dataset.perpsBound) return;
         el.dataset.perpsBound = '1';
@@ -34561,7 +34590,17 @@ function perpsSaveConfig(opts = {}) {
 
     const nado = perpsReadConfigField('perpsNadoWallet', 'nado');
     const grvtSubAccount = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || prev.grvtSubAccount || '4860249204328359';
-    perpsPersistConfig({ hyperliquid: hl, nado, grvtSubAccount, statRange: _perpsStatRange, equityChartMode: _perpsEquityChartMode, equityValueMode: _perpsEquityValueMode });
+    const phoenixRaw = perpsReadConfigField('perpsPhoenixWallet', 'phoenix') || prev.phoenix || '';
+    const phoenix = perpsIsValidSolanaAddress(phoenixRaw) ? phoenixRaw.trim() : '';
+    perpsPersistConfig({
+        hyperliquid: hl,
+        nado,
+        grvtSubAccount,
+        phoenix,
+        statRange: _perpsStatRange,
+        equityChartMode: _perpsEquityChartMode,
+        equityValueMode: _perpsEquityValueMode,
+    });
     perpsUpdateConfigVisibility();
 }
 
@@ -34625,7 +34664,8 @@ function perpsSaveSnapshot(data) {
         const nadoAccountValue = s.nadoAccountValue ?? data.equityNow?.nado ?? 0;
         const grvtAccountValue = s.grvtAccountValue ?? data.equityNow?.grvt ?? 0;
         const extendedAccountValue = s.extendedAccountValue ?? data.equityNow?.extended ?? 0;
-        const totalEquity = hlAccountValue + nadoAccountValue + grvtAccountValue + extendedAccountValue;
+        const phoenixAccountValue = s.phoenixAccountValue ?? data.equityNow?.phoenix ?? 0;
+        const totalEquity = hlAccountValue + nadoAccountValue + grvtAccountValue + extendedAccountValue + phoenixAccountValue;
         const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
         const variationalAdj = perpsComputeVariationalEquityAdjustments(data);
         const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
@@ -34665,6 +34705,7 @@ function perpsSaveSnapshot(data) {
                 nadoAccountValue,
                 grvtAccountValue,
                 extendedAccountValue,
+                phoenixAccountValue,
                 totalEquity,
                 adjustedEquity: s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalEquity - combinedNetDeposits,
                 cumulativeNetDeposits: combinedNetDeposits,
@@ -34684,6 +34725,7 @@ function perpsSaveSnapshot(data) {
             nadoAccountValue,
             grvtAccountValue,
             extendedAccountValue,
+            phoenixAccountValue,
             totalEquity,
             adjustedEquity: s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalEquity - combinedNetDeposits,
             cumulativeNetDeposits: combinedNetDeposits,
@@ -34710,6 +34752,7 @@ function perpsIsEquitySnapshotEligible(data) {
     ];
     if (s.grvtConfigured) values.push(s.grvtAccountValue ?? data?.equityNow?.grvt);
     if (s.extendedConfigured) values.push(s.extendedAccountValue ?? data?.equityNow?.extended);
+    if (s.phoenixConfigured) values.push(s.phoenixAccountValue ?? data?.equityNow?.phoenix);
     return values.every(Number.isFinite);
 }
 
@@ -35130,7 +35173,8 @@ function perpsBuildEquitySeries(data) {
     const nadoNow = s.nadoAccountValue ?? data.equityNow?.nado ?? 0;
     const grvtNow = s.grvtAccountValue ?? data.equityNow?.grvt ?? 0;
     const extendedNow = s.extendedAccountValue ?? data.equityNow?.extended ?? 0;
-    const totalNow = hlNow + nadoNow + grvtNow + extendedNow;
+    const phoenixNow = s.phoenixAccountValue ?? data.equityNow?.phoenix ?? 0;
+    const totalNow = hlNow + nadoNow + grvtNow + extendedNow + phoenixNow;
     const fetchedAt = data.fetchedAt || Date.now();
     const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
     const pnlNetDepositsNow = perpsResolvePointPnlNetDeposits(
@@ -35319,7 +35363,7 @@ function perpsRenderEquityChart(data) {
     const noteEl = document.getElementById('perpsEquityChartNote');
     if (noteEl) {
         noteEl.textContent = _perpsEquityValueMode === 'raw'
-            ? 'Exchange equity · raw HL + Nado + GRVT + Extended account values'
+            ? 'Exchange equity · raw HL + Nado + GRVT + Extended + Phoenix account values'
             : (_perpsEquityValueMode === 'pnl'
                 ? 'PnL · since Jul 22 2026 · ignores deposit/withdraw resets'
                 : 'Hedge-neutral · Var uPnL = −exchange + 0.12% slip (matched size; funding remains)');
@@ -35532,8 +35576,8 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
     }
     if (noteEl) {
         noteEl.textContent = _perpsDailyFundShowFees
-            ? `${label} net funding minus fees · HL, Nado, GRVT, Extended + ~Variational est.`
-            : `${label} gross funding · HL, Nado, GRVT, Extended + ~Variational est.`;
+            ? `${label} net funding minus fees · HL, Nado, GRVT, Extended, Phoenix + ~Variational est.`
+            : `${label} gross funding · HL, Nado, GRVT, Extended, Phoenix + ~Variational est.`;
     }
     if (badge) badge.textContent = label;
     if (statsEl) {
@@ -35698,6 +35742,11 @@ function perpsRenderAlerts(paired, unhedged, summary) {
     } else if (summary?.extendedConfigured && !(summary.extendedPositionCount > 0) && (summary.extendedAccountValue ?? 0) <= 0) {
         pills.push('Extended: connected but no open positions');
     }
+    if (summary?.phoenixError) {
+        pills.push(`Phoenix: ${summary.phoenixError}`);
+    } else if (summary?.phoenixConfigured && !(summary.phoenixPositionCount > 0) && (summary.phoenixAccountValue ?? 0) <= 0) {
+        pills.push('Phoenix: connected but no open positions');
+    }
     for (const p of paired) {
         if (perpsPairHasSizeMismatch(p)) pills.push(`${p.symbol}: hedged size mismatch (${perpsPairSizeMismatchText(p)})`);
         if (p.alerts?.includes('basis_drift')) pills.push(`${p.symbol}: basis drift ${perpsFmtUsd(p.combinedUpnl)}`);
@@ -35715,7 +35764,7 @@ function perpsRenderAlerts(paired, unhedged, summary) {
         return;
     }
     bar.style.display = 'flex';
-    bar.className = 'perps-alert-bar' + ((summary?.nadoError || summary?.grvtError || summary?.grvtStale || summary?.extendedError || hasSizeMismatch) ? ' warn' : '');
+    bar.className = 'perps-alert-bar' + ((summary?.nadoError || summary?.grvtError || summary?.grvtStale || summary?.extendedError || summary?.phoenixError || hasSizeMismatch) ? ' warn' : '');
     bar.innerHTML = pills.map(t => `<span class="perps-alert-pill">${dashEsc(t)}</span>`).join('');
 }
 
@@ -35725,6 +35774,7 @@ function perpsVenueLabel(venue) {
         nado: 'NADO',
         grvt: 'GRVT',
         extended: 'Extended',
+        phoenix: 'Phoenix',
         variational: 'Variational',
     }[venue] || venue;
 }
@@ -35869,7 +35919,7 @@ function perpsPairLiveApyFromNativeLegs(p) {
 
 function perpsVenueRate8hFromSpread(spread, venue) {
     if (!spread || !venue) return null;
-    const key = { hyperliquid: 'hyperliquid8h', nado: 'nado8h', grvt: 'grvt8h', extended: 'extended8h', variational: 'variational8h' }[venue];
+    const key = { hyperliquid: 'hyperliquid8h', nado: 'nado8h', grvt: 'grvt8h', extended: 'extended8h', phoenix: 'phoenix8h', variational: 'variational8h' }[venue];
     const val = key ? spread[key] : null;
     return val != null && Number.isFinite(val) ? val : null;
 }
@@ -36055,6 +36105,10 @@ function perpsVenueNativeFundingRate(venue, row) {
     }
     if (venue === 'extended') {
         const hourly = row.extendedHourly ?? (row.extended8h != null ? row.extended8h / 8 : null);
+        return { rateDecimal: hourly, intervalHours: 1 };
+    }
+    if (venue === 'phoenix') {
+        const hourly = row.phoenixHourly ?? (row.phoenix8h != null ? row.phoenix8h / 8 : null);
         return { rateDecimal: hourly, intervalHours: 1 };
     }
     if (venue === 'variational') {
@@ -36766,8 +36820,9 @@ function perpsComputePortfolioStats(data) {
     const nadoEquity = s.nadoAccountValue ?? data.equityNow?.nado ?? 0;
     const grvtEquity = s.grvtAccountValue ?? data.equityNow?.grvt ?? 0;
     const extendedEquity = s.extendedAccountValue ?? data.equityNow?.extended ?? 0;
-    const totalEquity = hlEquity + nadoEquity + grvtEquity + extendedEquity;
-    const venueEquity = { hl: hlEquity, nado: nadoEquity, grvt: grvtEquity, extended: extendedEquity, total: totalEquity };
+    const phoenixEquity = s.phoenixAccountValue ?? data.equityNow?.phoenix ?? 0;
+    const totalEquity = hlEquity + nadoEquity + grvtEquity + extendedEquity + phoenixEquity;
+    const venueEquity = { hl: hlEquity, nado: nadoEquity, grvt: grvtEquity, extended: extendedEquity, phoenix: phoenixEquity, total: totalEquity };
 
     let fundingAccrualTotal = 0;
     for (const p of paired) {
@@ -38078,7 +38133,8 @@ function perpsRenderFundingHistory(hlPayments, nadoPayments, grvtPayments, exten
     const nadoInView = merged.filter(p => p.venue === 'nado').length;
     const grvtInView = merged.filter(p => p.venue === 'grvt').length;
     const extendedInView = merged.filter(p => p.venue === 'extended').length;
-    el.innerHTML = `<div class="perps-status" style="margin:0 0.5rem 0.35rem;">Showing ${merged.length} recent rows (${hlInView} HL · ${nadoInView} Nado · ${grvtInView} GRVT · ${extendedInView} Extended).</div>
+    const phoenixInView = merged.filter(p => p.venue === 'phoenix').length;
+    el.innerHTML = `<div class="perps-status" style="margin:0 0.5rem 0.35rem;">Showing ${merged.length} recent rows (${hlInView} HL · ${nadoInView} Nado · ${grvtInView} GRVT · ${extendedInView} Extended · ${phoenixInView} Phoenix).</div>
     <table class="perps-table"><thead><tr>
         <th>Time</th><th>Venue</th><th>Market</th><th>Size</th><th>Payment</th>
     </tr></thead><tbody>${merged.map(p => {
@@ -38099,6 +38155,7 @@ function perpsVenueStateForLeverage(data, venue) {
     if (venue === 'nado') return data?.nado?.state || {};
     if (venue === 'grvt') return data?.grvt?.state || {};
     if (venue === 'extended') return data?.extended?.state || {};
+    if (venue === 'phoenix') return data?.phoenix?.state || {};
     return {};
 }
 
@@ -38108,6 +38165,7 @@ function perpsVenueEquityForLeverage(data, venue) {
     if (venue === 'nado') return s.nadoAccountValue ?? data?.equityNow?.nado ?? null;
     if (venue === 'grvt') return s.grvtAccountValue ?? data?.equityNow?.grvt ?? null;
     if (venue === 'extended') return s.extendedAccountValue ?? data?.equityNow?.extended ?? null;
+    if (venue === 'phoenix') return s.phoenixAccountValue ?? data?.equityNow?.phoenix ?? null;
     return null;
 }
 
@@ -38119,6 +38177,7 @@ function perpsRenderCrossMarginLeverage(data) {
         ['nado', 'NADO'],
         ['grvt', 'GRVT'],
         ['extended', 'Extended'],
+        ['phoenix', 'Phoenix'],
     ];
     el.innerHTML = venues.map(([venue, label]) => {
         const state = perpsVenueStateForLeverage(data, venue);
@@ -38216,10 +38275,11 @@ function perpsRenderDashboard(data, opts = {}) {
 
 function perpsFormatConnectedStatus(payload) {
     const s = payload?.summary || {};
-    let status = `Connected · ${payload?.paired?.length || 0} pairs · equity ${perpsFmtUsd((s.hlAccountValue ?? 0) + (s.nadoAccountValue ?? 0) + (s.grvtAccountValue ?? 0) + (s.extendedAccountValue ?? 0))}`;
+    let status = `Connected · ${payload?.paired?.length || 0} pairs · equity ${perpsFmtUsd((s.hlAccountValue ?? 0) + (s.nadoAccountValue ?? 0) + (s.grvtAccountValue ?? 0) + (s.extendedAccountValue ?? 0) + (s.phoenixAccountValue ?? 0))}`;
     if (s.nadoError) status += ` · NADO: ${s.nadoError}`;
     if (s.grvtError) status += ` · GRVT: ${s.grvtError}`;
     if (s.extendedError) status += ` · Extended: ${s.extendedError}`;
+    if (s.phoenixError) status += ` · Phoenix: ${s.phoenixError}`;
     return status;
 }
 
@@ -38232,6 +38292,7 @@ function perpsDashboardLoadWarnings(payload) {
     if (s.nadoError) warnings.push(`NADO: ${s.nadoError}`);
     if (s.grvtError) warnings.push(`GRVT: ${s.grvtError}`);
     if (s.extendedError) warnings.push(`Extended: ${s.extendedError}`);
+    if (s.phoenixError) warnings.push(`Phoenix: ${s.phoenixError}`);
     if (payload?.nado?.state?.error) warnings.push(`NADO state: ${payload.nado.state.error}`);
     if (payload?.nado?.funding?.error) warnings.push(`NADO funding: ${payload.nado.funding.error}`);
     if (payload?.nado?.matches?.error) warnings.push(`NADO matches: ${payload.nado.matches.error}`);
@@ -38308,6 +38369,8 @@ async function perpsRefresh(silent = false) {
         if (nadoRaw && /^0x[a-fA-F0-9]{40}$/.test(nadoRaw)) params.set('nadoWallet', nadoRaw);
         const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
         if (grvtSub) params.set('grvtSubAccount', grvtSub);
+        const phoenixRaw = perpsReadConfigField('perpsPhoenixWallet', 'phoenix');
+        if (phoenixRaw && perpsIsValidSolanaAddress(phoenixRaw)) params.set('phoenixWallet', phoenixRaw.trim());
         const grvtCache = perpsLoadGrvtStateCache();
         if (grvtCache?.positions?.length) {
             const grvtJson = JSON.stringify(grvtCache.positions);
