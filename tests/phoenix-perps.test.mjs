@@ -10,6 +10,7 @@ const {
   isSolanaAddress,
   phoenixHourlyRateFromPoint,
   phoenixQuoteLotsToUsd,
+  phoenixPositionUnrealizedPnl,
 } = require('../lib/phoenix-perps.js');
 const {
   buildPairedAnalysis,
@@ -42,7 +43,17 @@ function pass(name) {
   const fromPct = phoenixHourlyRateFromPoint({ fundingRatePercentage: '-0.000137' });
   assert.ok(Math.abs(fromPct - (-0.000137 / 100)) < 1e-15);
   assert.equal(phoenixQuoteLotsToUsd(25000000000), 25000);
-  pass('phoenix rate + quote lots helpers');
+  // virtualQuote + size*mark (not size*(mark-entry) which drifts with rounded entry)
+  const upnl = phoenixPositionUnrealizedPnl({
+    virtualQuoteLots: 52050407400,
+    size: -714.24,
+    markPx: 73.66,
+    entryPx: 72.87,
+  });
+  assert.ok(Math.abs(upnl - (-560.511)) < 0.001);
+  const naive = -714.24 * (73.66 - 72.87);
+  assert.ok(Math.abs(naive - upnl) > 1, 'naive mark-entry must differ from Phoenix formula');
+  pass('phoenix rate + quote lots + uPNL formula');
 }
 
 {
@@ -125,18 +136,27 @@ function pass(name) {
   assert.equal(missing.configured, true);
   assert.equal(missing.exists, false);
 
-  // Live trader smoke (public API)
+  // Live trader smoke (public API) — compare state mapping to TraderView in lockstep.
   const auth = '3ctHNWw9NtU2Vwnx2fAhLpcgHHqjEV4nY9BQvxSrtuFr';
-  const [state, rates, funding, fills, capital] = await Promise.all([
+  const traderKey = 'AgjgbWKZBFau9zEAS4udhMvgEjVBHjGMkZj3TFaKfESD';
+  const [state, rates, funding, fills, capital, view] = await Promise.all([
     fetchPhoenixState(auth),
     fetchPhoenixRates(['SOL', 'BTC']),
     fetchPhoenixFunding(auth, 7),
     fetchPhoenixFills(auth, 7),
     fetchPhoenixCapitalFlows(auth),
+    fetch(`https://perp-api.phoenix.trade/v1/view/trader/${traderKey}`).then((r) => r.json()),
   ]);
   assert.equal(state.configured, true);
   assert.ok(Number.isFinite(state.accountValue));
   assert.ok(state.positions.some((p) => p.symbol === 'SOL'));
+  const sol = state.positions.find((p) => p.symbol === 'SOL');
+  assert.ok(sol && Number.isFinite(sol.unrealizedPnl));
+  const viewUpnl = Number(view.positions?.[0]?.unrealizedPnl?.ui);
+  const viewPortfolio = Number(view.portfolioValue?.ui);
+  assert.ok(Number.isFinite(viewUpnl));
+  assert.ok(Math.abs(sol.unrealizedPnl - viewUpnl) < 1.5, `uPNL ${sol.unrealizedPnl} vs view ${viewUpnl}`);
+  assert.ok(Math.abs(state.accountValue - viewPortfolio) < 2, `equity ${state.accountValue} vs view ${viewPortfolio}`);
   assert.ok(rates.some((r) => r.symbol === 'SOL' && Number.isFinite(r.fundingRate8h)));
   assert.ok(Array.isArray(funding.payments));
   assert.ok(Array.isArray(fills.fills));
