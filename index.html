@@ -34563,6 +34563,31 @@ function perpsMergeEquitySnapshotRecord(localSnap = {}, serverSnap = {}) {
         merged.variationalClosedEquityAdjust = pickVar('variationalClosedEquityAdjust');
         merged.crossVenueSameMarkAdjust = pickVar('crossVenueSameMarkAdjust');
     }
+    // Prefer real venue equity over cron zeros so Phoenix deposits stay aligned with totals.
+    const pickVenueEquity = (field) => {
+        const a = Number(localSnap[field]);
+        const b = Number(serverSnap[field]);
+        if (Number.isFinite(a) && a > 0 && !(Number.isFinite(b) && b > 0)) return a;
+        if (Number.isFinite(b) && b > 0 && !(Number.isFinite(a) && a > 0)) return b;
+        if (newerIsServer && Number.isFinite(b)) return b;
+        if (Number.isFinite(a)) return a;
+        if (Number.isFinite(b)) return b;
+        return undefined;
+    };
+    for (const field of ['hlAccountValue', 'nadoAccountValue', 'grvtAccountValue', 'extendedAccountValue', 'phoenixAccountValue']) {
+        const v = pickVenueEquity(field);
+        if (v !== undefined) merged[field] = v;
+    }
+    const parts = [
+        merged.hlAccountValue,
+        merged.nadoAccountValue,
+        merged.grvtAccountValue,
+        merged.extendedAccountValue,
+        merged.phoenixAccountValue,
+    ].map(Number).filter(Number.isFinite);
+    if (parts.length) {
+        merged.totalEquity = parts.reduce((s, n) => s + n, 0);
+    }
     return merged;
 }
 
@@ -35135,19 +35160,54 @@ function perpsPnlNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayment
     );
 }
 
+/** True when this equity point's total actually includes Phoenix collateral.
+ *  Cron/cloud snaps often store phoenixAccountValue: 0 while the live ledger
+ *  still has Phoenix deposits — subtracting those deposits creates downward V-spikes. */
+function perpsSnapIncludesPhoenixEquity(snap) {
+    return Number(snap?.phoenixAccountValue) > 0;
+}
+
+function perpsBuildVenuePnlCapitalPrefix(data, venueKey) {
+    const cf = data?.capitalFlows;
+    if (!cf) return null;
+    const cacheKey = `_pnlCapitalPrefix_${venueKey}`;
+    if (data[cacheKey]?.fetchedAt === data.fetchedAt) return data[cacheKey];
+    const payments = [...(cf[venueKey]?.payments || [])]
+        .filter(perpsIsPnlCapitalPayment)
+        .sort((a, b) => a.time - b.time);
+    let run = 0;
+    const times = [];
+    const prefix = [];
+    for (const p of payments) {
+        run += p.usdc;
+        times.push(p.time);
+        prefix.push(run);
+    }
+    data[cacheKey] = { fetchedAt: data.fetchedAt, times, prefix, mode: 'pnl', venue: venueKey };
+    return data[cacheKey];
+}
+
 function perpsResolvePointPnlNetDeposits(snap, time, data) {
     if (data?.capitalFlows) {
         try {
+            const includePhoenix = perpsSnapIncludesPhoenixEquity(snap);
             const prefix = perpsBuildCapitalNetPrefix(data, 'pnl');
-            const fromPrefix = perpsCapitalNetAtTimeFromPrefix(prefix, time);
-            if (fromPrefix != null) return fromPrefix;
+            let fromPrefix = perpsCapitalNetAtTimeFromPrefix(prefix, time);
+            if (fromPrefix != null) {
+                if (!includePhoenix) {
+                    const phxPrefix = perpsBuildVenuePnlCapitalPrefix(data, 'phoenix');
+                    const phxDep = perpsCapitalNetAtTimeFromPrefix(phxPrefix, time);
+                    if (Number.isFinite(phxDep)) fromPrefix -= phxDep;
+                }
+                return fromPrefix;
+            }
             return perpsPnlNetDepositsAtTime(
                 data.capitalFlows.hl?.payments,
                 data.capitalFlows.nado?.payments,
                 time,
                 data.capitalFlows.grvt?.payments || null,
                 data.capitalFlows.extended?.payments || null,
-                data.capitalFlows.phoenix?.payments || null,
+                includePhoenix ? (data.capitalFlows.phoenix?.payments || null) : null,
             );
         } catch (e) { /* fall through */ }
     }
@@ -35387,7 +35447,7 @@ function perpsBuildEquitySeries(data) {
     const fetchedAt = data.fetchedAt || Date.now();
     const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
     const pnlNetDepositsNow = perpsResolvePointPnlNetDeposits(
-        { cumulativeNetDeposits: combinedNetDeposits },
+        { cumulativeNetDeposits: combinedNetDeposits, phoenixAccountValue: phoenixNow },
         fetchedAt,
         data,
     ) ?? combinedNetDeposits;

@@ -3956,6 +3956,17 @@ assert.match(indexHtml, /p\.kind \|\| p\.type \|\| p\.eventType/, 'PnL capital f
     ${extractBalancedFunction(indexHtml, 'perpsIsPnlCapitalPayment')}
     ${extractBalancedFunction(indexHtml, 'perpsIsEquityCapitalPayment')}
     ${extractBalancedFunction(indexHtml, 'perpsComputePnlNetDeposits')}
+    ${extractBalancedFunction(indexHtml, 'perpsPnlNetDepositsAtTime')}
+    ${extractBalancedFunction(indexHtml, 'perpsSnapIncludesPhoenixEquity')}
+    ${extractBalancedFunction(indexHtml, 'perpsBuildVenuePnlCapitalPrefix')}
+    ${extractBalancedFunction(indexHtml, 'perpsBuildCapitalNetPrefix')}
+    ${extractBalancedFunction(indexHtml, 'perpsCapitalNetAtTimeFromPrefix')}
+    ${extractBalancedFunction(indexHtml, 'perpsResolvePointPnlNetDeposits')}
+    function perpsResolvePointNetDeposits() { return null; }
+    function perpsHlStrategyPayments(payments) {
+      return (payments || []).filter(p => p.kind === 'deposit' || p.kind === 'withdraw');
+    }
+    function perpsNetDepositsAtTime() { return 0; }
   `, ctx);
   assert.equal(ctx.perpsIsPnlCapitalPayment({ time: 1, usdc: 100, type: 'deposit' }), true, 'legacy Phoenix type=deposit must count');
   assert.equal(ctx.perpsIsPnlCapitalPayment({ time: 1, usdc: -50, type: 'withdrawal' }), true, 'legacy Phoenix type=withdrawal must count');
@@ -3966,6 +3977,36 @@ assert.match(indexHtml, /p\.kind \|\| p\.type \|\| p\.eventType/, 'PnL capital f
     15000,
     'PnL net deposits must include Phoenix type-only ledger rows',
   );
+
+  assert.equal(ctx.perpsSnapIncludesPhoenixEquity({ phoenixAccountValue: 22800 }), true);
+  assert.equal(ctx.perpsSnapIncludesPhoenixEquity({ phoenixAccountValue: 0 }), false, 'cron zero must not count as Phoenix-in-equity');
+  assert.equal(ctx.perpsSnapIncludesPhoenixEquity({}), false);
+  assert.equal(ctx.perpsSnapIncludesPhoenixEquity(null), false);
+
+  const gateData = {
+    fetchedAt: 3,
+    capitalFlows: {
+      hl: { payments: [{ time: 1, usdc: 50000, kind: 'deposit' }] },
+      nado: { payments: [] },
+      grvt: { payments: [] },
+      extended: { payments: [] },
+      phoenix: { payments: [{ time: 2, usdc: 25000, type: 'deposit' }] },
+    },
+  };
+  assert.equal(
+    ctx.perpsResolvePointPnlNetDeposits({ phoenixAccountValue: 0 }, 3, gateData),
+    50000,
+    'PnL deposits must omit Phoenix when snapshot equity excludes Phoenix',
+  );
+  assert.equal(
+    ctx.perpsResolvePointPnlNetDeposits({ phoenixAccountValue: 22000 }, 3, gateData),
+    75000,
+    'PnL deposits must include Phoenix when snapshot equity includes Phoenix',
+  );
+  // Bug shape: subtracting Phoenix deposits from a phx:0 snap creates a ~$25k downward V.
+  const withPhx = ctx.perpsResolvePointPnlNetDeposits({ phoenixAccountValue: 22000 }, 3, gateData);
+  const withoutPhxEq = ctx.perpsResolvePointPnlNetDeposits({ phoenixAccountValue: 0 }, 3, gateData);
+  assert.equal(withPhx - withoutPhxEq, 25000, 'gating delta equals Phoenix deposit (the downward spike size)');
 }
 
 {
