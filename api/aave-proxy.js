@@ -90,6 +90,11 @@ async function persistVariationalRateSamplesFromDashboard(data, hedges = null) {
     symbols: keep,
   });
   const merged = mergeVariationalRateSamples(existing, sampled);
+  // Never kvSet {} over a populated store when hedges have not hydrated yet.
+  if (!keep.size && Object.keys(existing || {}).length) {
+    await kvSet('vault:perps_variational_rate_samples', JSON.stringify(merged));
+    return true;
+  }
   const pruned = pruneVariationalRateSamples(merged, keep);
   await kvSet('vault:perps_variational_rate_samples', JSON.stringify(pruned));
   return true;

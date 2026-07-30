@@ -9670,7 +9670,7 @@ body[data-active-tab="loops"] .page-content,
           <section class="perps-panel" id="perpsVariationalPendingSection" style="display:none">
             <div class="perps-panel-head">
               <div class="perps-panel-title">Variational — pending close</div>
-              <span class="perps-pill" style="border-color:rgba(255,179,71,0.35);color:#ffb347;background:rgba(255,179,71,0.08);">exit price needed</span>
+              <span class="perps-pill" style="border-color:rgba(255,179,71,0.35);color:#ffb347;background:rgba(255,179,71,0.08);">finalizing AUTO close</span>
             </div>
             <div class="perps-table-wrap" id="perpsVariationalPendingTable"></div>
           </section>
@@ -32522,6 +32522,8 @@ function perpsRecordVariationalRateSamplesFromData(data, opts = {}) {
 function perpsPruneVariationalRateSamplesStore(data = null) {
     const VH = window.VariationalHedge;
     const keep = perpsActiveVariationalSampleSymbols(data || _perpsLastData || {});
+    // Empty keep-set means hedges are not loaded yet — do not wipe samples.
+    if (!(keep instanceof Set ? keep.size : (keep?.size || keep?.length || 0))) return perpsLoadVariationalRateSamplesRaw();
     const prev = perpsLoadVariationalRateSamplesRaw();
     const next = VH?.pruneVariationalRateSamples
         ? VH.pruneVariationalRateSamples(prev, keep)
@@ -32529,7 +32531,7 @@ function perpsPruneVariationalRateSamplesStore(data = null) {
     const prevKeys = Object.keys(prev || {}).sort().join(',');
     const nextKeys = Object.keys(next || {}).sort().join(',');
     if (prevKeys === nextKeys) return prev;
-    return perpsPersistVariationalRateSamples(next, { skipCloudSync: false });
+    return perpsPersistVariationalRateSamples(next, { skipCloudSync: true });
 }
 
 /** Fresh Variational mark/rate from public stats API (CORS-enabled). Bybit is clock-only. */
@@ -32559,6 +32561,10 @@ function perpsMergeVariationalSettlementsFromServer(serverMap) {
         merged[hedgeId] = perpsMergeVariationalSettlementArrays(merged[hedgeId], rows);
     }
     const hedges = perpsLoadVariationalHedgesRaw();
+    // Mirror server: empty local hedges must not wipe cloud settlements.
+    if (!Array.isArray(hedges) || !hedges.length) {
+        return perpsPersistVariationalSettlements(merged, { skipCloudSync: true });
+    }
     const pruned = VH?.pruneVariationalSettlementsForHedges
         ? VH.pruneVariationalSettlementsForHedges(merged, hedges)
         : merged;
@@ -32902,7 +32908,7 @@ async function perpsHydratePerpsAuxFromCloud() {
 }
 
 async function perpsHydrateConfigFromCloud() {
-    if (perpsHasValidWallet() || location.protocol === 'file:') return perpsHasValidWallet();
+    if (location.protocol === 'file:') return perpsHasValidWallet();
     const cloudCfg = await perpsFetchCloudPerpsConfig();
     if (cloudCfg) {
         perpsApplyCloudConfig(cloudCfg);
@@ -32915,15 +32921,8 @@ async function perpsBootstrapWallet() {
     perpsImportConfigFromPortfolio();
     perpsRepairSavedConfig();
     if (location.protocol !== 'file:') {
-        await perpsHydratePerpsAuxFromCloud();
-    }
-    if (perpsHasValidWallet()) {
-        if (location.protocol !== 'file:') await perpsEnsurePhoenixSyncedToCloud();
-        return true;
-    }
-    if (location.protocol === 'file:') return false;
-    await perpsHydrateConfigFromCloud();
-    if (location.protocol !== 'file:') {
+        // Always pull cloud wallets (Phoenix / PnL lock) even when local HL already exists.
+        await perpsHydrateConfigFromCloud();
         await perpsHydratePerpsAuxFromCloud();
         await perpsEnsurePhoenixSyncedToCloud();
     }
@@ -34158,6 +34157,7 @@ function perpsFundingPaymentsForVenue(data, venue) {
         nado: data?.nado?.funding?.payments,
         grvt: data?.grvt?.funding?.payments,
         extended: data?.extended?.funding?.payments,
+        phoenix: data?.phoenix?.funding?.payments,
     };
     return sources[venue] || [];
 }
@@ -34168,6 +34168,7 @@ function perpsFillItemsForVenue(data, venue) {
         nado: data?.nado?.matches?.matches,
         grvt: data?.grvt?.fills?.fills,
         extended: data?.extended?.fills?.fills,
+        phoenix: data?.phoenix?.fills?.fills,
     };
     return sources[venue] || [];
 }
@@ -34589,16 +34590,22 @@ function perpsHlStrategyPayments(payments) {
     return (payments || []).filter(p => p.kind === 'deposit' || p.kind === 'withdraw');
 }
 
-function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, grvtPayments = null, extendedPayments = null, windowMs = PERPS_CROSS_VENUE_WINDOW_MS) {
+function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, grvtPayments = null, extendedPayments = null, phoenixPayments = null, windowMs = PERPS_CROSS_VENUE_WINDOW_MS) {
+    if (typeof phoenixPayments === 'number') {
+        windowMs = phoenixPayments;
+        phoenixPayments = null;
+    }
     const hlP = perpsHlStrategyPayments(hlPayments);
     const nadoP = [...(nadoPayments || [])];
     const grvtP = [...(grvtPayments || [])];
     const extendedP = [...(extendedPayments || [])];
+    const phoenixP = [...(phoenixPayments || [])];
     const hlNetDeposits = hlP.reduce((s, p) => s + p.usdc, 0);
     const nadoNetDeposits = nadoP.reduce((s, p) => s + p.usdc, 0);
     const grvtNetDeposits = grvtP.reduce((s, p) => s + p.usdc, 0);
     const extendedNetDeposits = extendedP.reduce((s, p) => s + p.usdc, 0);
-    const rawCombinedNetDeposits = hlNetDeposits + nadoNetDeposits + grvtNetDeposits + extendedNetDeposits;
+    const phoenixNetDeposits = phoenixP.reduce((s, p) => s + p.usdc, 0);
+    const rawCombinedNetDeposits = hlNetDeposits + nadoNetDeposits + grvtNetDeposits + extendedNetDeposits + phoenixNetDeposits;
 
     function crossOffset(paymentGroups) {
         const events = paymentGroups.flatMap((payments, venue) =>
@@ -34632,6 +34639,7 @@ function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, grvtPayments 
     const paymentGroups = [hlP, nadoP];
     if (grvtPayments) paymentGroups.push(grvtP);
     if (extendedPayments) paymentGroups.push(extendedP);
+    if (phoenixPayments) paymentGroups.push(phoenixP);
     const crossVenueOffset = crossOffset(paymentGroups);
 
     return {
@@ -34641,12 +34649,13 @@ function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, grvtPayments 
     };
 }
 
-function perpsNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = null, extendedPayments = null) {
+function perpsNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = null, extendedPayments = null, phoenixPayments = null) {
     const hlP = perpsHlStrategyPayments(hlPayments).filter(p => p.time <= timeMs);
     const nadoP = (nadoPayments || []).filter(p => p.time <= timeMs);
     const grvtP = grvtPayments ? (grvtPayments || []).filter(p => p.time <= timeMs) : null;
     const extendedP = extendedPayments ? (extendedPayments || []).filter(p => p.time <= timeMs) : null;
-    return perpsComputeCombinedNetDeposits(hlP, nadoP, grvtP, extendedP).combinedNetDeposits;
+    const phoenixP = phoenixPayments ? (phoenixPayments || []).filter(p => p.time <= timeMs) : null;
+    return perpsComputeCombinedNetDeposits(hlP, nadoP, grvtP, extendedP, phoenixP).combinedNetDeposits;
 }
 
 function perpsLoadConfig() {
@@ -34939,6 +34948,7 @@ function perpsCollectCapitalPayments(data) {
         cf.nado?.payments,
         cf.grvt?.payments,
         cf.extended?.payments,
+        cf.phoenix?.payments,
     ];
     return groups
         .flatMap(rows => (rows || []).filter(perpsIsEquityCapitalPayment))
@@ -35080,23 +35090,25 @@ function perpsIsPnlCapitalPayment(p) {
 
 /** Sum of equity-moving capital flows. No same-sign cross-venue offset (that can
  *  cancel independent withdraws across venues and break PnL neutralization). */
-function perpsComputePnlNetDeposits(hlPayments, nadoPayments, grvtPayments = null, extendedPayments = null) {
+function perpsComputePnlNetDeposits(hlPayments, nadoPayments, grvtPayments = null, extendedPayments = null, phoenixPayments = null) {
     const rows = [
         ...(hlPayments || []),
         ...(nadoPayments || []),
         ...(grvtPayments || []),
         ...(extendedPayments || []),
+        ...(phoenixPayments || []),
     ].filter(perpsIsPnlCapitalPayment);
     return rows.reduce((sum, p) => sum + p.usdc, 0);
 }
 
-function perpsPnlNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = null, extendedPayments = null) {
+function perpsPnlNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = null, extendedPayments = null, phoenixPayments = null) {
     const cut = (rows) => (rows || []).filter((p) => p.time <= timeMs);
     return perpsComputePnlNetDeposits(
         cut(hlPayments),
         cut(nadoPayments),
         grvtPayments ? cut(grvtPayments) : null,
         extendedPayments ? cut(extendedPayments) : null,
+        phoenixPayments ? cut(phoenixPayments) : null,
     );
 }
 
@@ -35112,6 +35124,7 @@ function perpsResolvePointPnlNetDeposits(snap, time, data) {
                 time,
                 data.capitalFlows.grvt?.payments || null,
                 data.capitalFlows.extended?.payments || null,
+                data.capitalFlows.phoenix?.payments || null,
             );
         } catch (e) { /* fall through */ }
     }
@@ -35234,6 +35247,7 @@ function perpsBuildCapitalNetPrefix(data, mode = 'strategy') {
             ...(cf.nado?.payments || []),
             ...(cf.grvt?.payments || []),
             ...(cf.extended?.payments || []),
+            ...(cf.phoenix?.payments || []),
         ].filter(perpsIsPnlCapitalPayment).sort((a, b) => a.time - b.time);
         let run = 0;
         const times = [];
@@ -35252,13 +35266,15 @@ function perpsBuildCapitalNetPrefix(data, mode = 'strategy') {
     const nado = cf.nado?.payments || [];
     const grvt = cf.grvt?.payments || [];
     const ext = cf.extended?.payments || [];
+    const phx = cf.phoenix?.payments || [];
     const timesSet = new Set();
     for (const p of perpsHlStrategyPayments(hl)) if (Number.isFinite(p.time)) timesSet.add(p.time);
     for (const p of nado) if (Number.isFinite(p.time)) timesSet.add(p.time);
     for (const p of grvt) if (Number.isFinite(p.time)) timesSet.add(p.time);
     for (const p of ext) if (Number.isFinite(p.time)) timesSet.add(p.time);
+    for (const p of phx) if (Number.isFinite(p.time)) timesSet.add(p.time);
     const times = [...timesSet].sort((a, b) => a - b);
-    const prefix = times.map((t) => perpsNetDepositsAtTime(hl, nado, t, grvt, ext));
+    const prefix = times.map((t) => perpsNetDepositsAtTime(hl, nado, t, grvt, ext, phx));
     data[cacheKey] = { fetchedAt: data.fetchedAt, times, prefix, mode };
     return data[cacheKey];
 }
@@ -35297,6 +35313,7 @@ function perpsResolvePointNetDeposits(snap, time, data) {
                 time,
                 data.capitalFlows.grvt?.payments || null,
                 data.capitalFlows.extended?.payments || null,
+                data.capitalFlows.phoenix?.payments || null,
             );
         } catch (e) { /* fall through */ }
     }
@@ -36045,7 +36062,7 @@ function perpsRenderAlerts(paired, unhedged, summary) {
         if (p.alerts?.includes('spread_below_breakeven')) pills.push(`${p.symbol}: spread below break-even`);
     }
     for (const h of _perpsLastData?.variationalPendingClose || []) {
-        pills.push(`${h.symbol}: Variational hedge needs exit price (${perpsVenueShort(h.trackedVenue)} leg closed)`);
+        pills.push(`${h.symbol}: Variational close finalizing (AUTO — ${perpsVenueShort(h.trackedVenue)} leg closed)`);
     }
     for (const u of unhedged) pills.push(`${u.symbol}: unhedged on ${u.venue}`);
     const hasSizeMismatch = (paired || []).some(perpsPairHasSizeMismatch);
@@ -38628,6 +38645,7 @@ async function perpsRefresh(silent = false) {
         return false;
     }
     _perpsRefreshInFlight = true;
+    if (_perpsBootPromise) await _perpsBootPromise.catch(() => {});
     perpsImportConfigFromPortfolio();
     perpsRepairSavedConfig();
     const hl = perpsResolveHlWallet();
@@ -38649,6 +38667,8 @@ async function perpsRefresh(silent = false) {
 
     try {
         const bucketsBefore = perpsCountEquityBuckets();
+        // Hydrate hedges/closed keys before dashboard so knownClosedKeys + Phoenix are current.
+        await perpsHydratePerpsAuxFromCloud().catch(() => false);
         const knownClosedKeys = perpsLoadCachedClosedPairs().map(perpsClosedPairKey).filter(Boolean);
         const params = new URLSearchParams({ wallet: hl, days: String(perpsStatRangeToApiDays(_perpsStatRange)) });
         if (knownClosedKeys.length) params.set('knownClosedKeys', knownClosedKeys.join(','));
@@ -38662,10 +38682,7 @@ async function perpsRefresh(silent = false) {
             const grvtJson = JSON.stringify(grvtCache.positions);
             if (grvtJson.length <= 1500) params.set('grvtPositions', grvtJson);
         }
-        const [, fetchResult] = await Promise.all([
-            perpsHydratePerpsAuxFromCloud().catch(() => false),
-            perpsFetchDashboardPayload(params, silent),
-        ]);
+        const fetchResult = await perpsFetchDashboardPayload(params, silent);
         const cloudSnapshotsAdded = perpsCountEquityBuckets() > bucketsBefore;
         const { payload, warnings } = fetchResult;
         perpsRenderDashboard(payload, { cloudSnapshotsAdded });

@@ -3415,6 +3415,11 @@ assert.doesNotMatch(aaveProxyJs, /data\?\.paired \|\| \[\]\)\.map/, 'server must
     HBAR: [{ atMs: 1, markPx: 1, rate: 0.1 }],
   }, keep);
   assert.deepEqual(Object.keys(prunedSamples).sort(), ['ATOM', 'POL'], 'drop live-cross-only and stale closed symbols');
+  const emptyKeepPreserves = pruneVariationalRateSamples({
+    POL: [{ atMs: 1, markPx: 1, rate: 0.1 }],
+    HBAR: [{ atMs: 1, markPx: 1, rate: 0.1 }],
+  }, new Set());
+  assert.deepEqual(Object.keys(emptyKeepPreserves).sort(), ['HBAR', 'POL'], 'empty keep-set must not wipe rate samples');
   const aged = pruneVariationalHedgesByClosedAge(hedges, { now, maxAgeMs: 7 * 86400000 });
   assert.deepEqual(aged.map((h) => h.id), ['open-pol', 'recent-atom'], 'drop closed hedges older than retention');
   assert.deepEqual(
@@ -3887,7 +3892,35 @@ assert.match(perpsJs, /grvtEgressRegion/, 'perps summary must expose GRVT egress
 assert.match(vercelJson, /"api\/aave-proxy\.js"[\s\S]*?"regions":\s*\[\s*"fra1"\s*\]/, 'perps handler must run in fra1 (Germany)');
 assert.match(perpsJs, /resolveGrvtStateWithFallback/, 'GRVT must resolve positions from cache when live API fails');
 assert.match(perpsJs, /vault:grvt_state:/, 'GRVT positions must persist in KV for geo-block fallback');
+assert.match(perpsJs, /Only fall back on hard failures/, 'GRVT flat account must not resurrect cached positions');
+assert.match(perpsJs, /clearGrvtStateCache/, 'GRVT live flat must clear stale server cache');
+{
+  const { grvtStateNeedsFallback, toBaseSymbol } = require('../lib/perps.js');
+  assert.equal(grvtStateNeedsFallback({ error: null, positions: [] }), false, 'empty live GRVT positions is success/flat');
+  assert.equal(grvtStateNeedsFallback({ error: 'timeout', positions: [] }), true, 'GRVT error still needs fallback');
+  assert.equal(toBaseSymbol('btc-perp'), 'BTC');
+  assert.equal(toBaseSymbol('VIRTUALUSDT'), 'VIRTUAL');
+  assert.equal(toBaseSymbol('eth'), 'ETH');
+}
 assert.match(aaveProxyJs, /grvtPositionsOverride/, 'perps API must accept browser GRVT position cache');
+assert.match(aaveProxyJs, /Never kvSet \{\} over a populated store/, 'server rate-sample persist must not wipe store on empty keep-set');
+assert.match(syncJs, /Preserve PnL chart lock/, 'config sync must preserve pnlStartMs\/pnlBaseline across devices');
+assert.match(indexHtml, /Always pull cloud wallets/, 'bootstrap must hydrate cloud config even when local HL exists');
+assert.match(indexHtml, /finalizing AUTO close/, 'pending Var close pill must not say exit price needed');
+assert.match(indexHtml, /cf\.phoenix\?\.payments/, 'client capital flows must include Phoenix deposits');
+assert.match(variationalHedgeJs, /LIVE_CROSS_VENUES = \['hyperliquid', 'nado', 'grvt', 'extended', 'phoenix'\]/, 'Var live-cross must include Phoenix');
+assert.match(variationalHedgeJs, /Keep signed size/, 'snapshot grace must preserve short side');
+{
+  const { trackedLegFromSnapshot } = require('../lib/variational-hedge.js');
+  const shortLeg = trackedLegFromSnapshot({
+    trackedVenue: 'hyperliquid',
+    symbol: 'SOL',
+    trackedLastSnapshot: { size: 2.5, side: 'short', entryPx: 100, markPx: 101, unrealizedPnl: -2.5 },
+  });
+  assert.ok(shortLeg);
+  assert.equal(shortLeg.side, 'short');
+  assert.ok(shortLeg.size < 0, 'short snapshot leg must stay negative');
+}
 assert.match(syncJs, /grvtStateCache/, 'sync API must accept GRVT state cache uploads');
 assert.match(indexHtml, /PERPS_GRVT_STATE_CACHE_KEY/, 'browser must cache last-known GRVT positions');
 assert.match(indexHtml, /grvtPositions/, 'perps refresh must send cached GRVT positions to the server');

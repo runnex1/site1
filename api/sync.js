@@ -1395,6 +1395,17 @@ module.exports = async function handler(req, res) {
         delete incoming.phoenix;
       }
       delete incoming.phoenixWallet;
+      // Preserve PnL chart lock — wallet/stat-range saves must not wipe another device's baseline.
+      const existingStart = Number(existingPerpsConfig.pnlStartMs);
+      const existingBaseline = Number(existingPerpsConfig.pnlBaseline);
+      const incomingStart = Number(incoming.pnlStartMs);
+      const incomingBaseline = Number(incoming.pnlBaseline);
+      if (!(Number.isFinite(incomingStart) && incomingStart > 0 && Number.isFinite(incomingBaseline))
+        && Number.isFinite(existingStart) && existingStart > 0 && Number.isFinite(existingBaseline)) {
+        incoming.pnlStartMs = existingStart;
+        incoming.pnlBaseline = existingBaseline;
+        incoming.pnlTrackVer = existingPerpsConfig.pnlTrackVer || 3;
+      }
       await kvSet('vault:perps_config', JSON.stringify(incoming));
       saved.perpsConfig = true;
     }

@@ -53,6 +53,17 @@ function pass(name) {
   assert.ok(Math.abs(upnl - (-560.511)) < 0.001);
   const naive = -714.24 * (73.66 - 72.87);
   assert.ok(Math.abs(naive - upnl) > 1, 'naive mark-entry must differ from Phoenix formula');
+  // Missing quote lots must fall back to mark−entry (not treat lots as 0 → ±notional).
+  const fallback = phoenixPositionUnrealizedPnl({
+    virtualQuoteLots: null,
+    size: -714.24,
+    markPx: 73.66,
+    entryPx: 72.87,
+  });
+  assert.ok(Math.abs(fallback - naive) < 1e-9, 'missing quote lots uses mark-entry fallback');
+  const zeroLotsTrap = phoenixQuoteLotsToUsd(null) + (-714.24) * 73.66;
+  assert.ok(Math.abs(zeroLotsTrap) > 1000, 'sanity: treating missing lots as 0 would yield large bogus uPNL');
+  assert.ok(Math.abs(fallback) < 1000, 'fallback must not look like ±notional');
   pass('phoenix rate + quote lots + uPNL formula');
 }
 
