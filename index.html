@@ -32809,6 +32809,23 @@ function perpsGetSavedConfig() {
     } catch (e) { return {}; }
 }
 
+async function perpsPushPerpsConfigToCloud(config) {
+    if (location.protocol === 'file:') return false;
+    const payload = perpsConfigPayload(config);
+    if (!payload) return false;
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ perpsConfig: payload }),
+            keepalive: true,
+        });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
+}
+
 function perpsPersistConfig(config, opts = {}) {
     const payload = perpsConfigPayload(config);
     if (!payload) return false;
@@ -32818,7 +32835,11 @@ function perpsPersistConfig(config, opts = {}) {
         localStorage.setItem(PERPS_CONFIG_BACKUP_KEY, json);
         sessionStorage.setItem(PERPS_SESSION_KEY, json);
         perpsSyncConfigToPortfolio(payload);
-        if (!opts.skipCloudSync && typeof saveData === 'function') saveData();
+        if (!opts.skipCloudSync) {
+            // Dedicated perpsConfig POST first so Phoenix survives even if full saveData is skipped/racy.
+            void perpsPushPerpsConfigToCloud(payload);
+            if (typeof saveData === 'function') saveData();
+        }
         return true;
     } catch (e) { return false; }
 }
@@ -32995,20 +33016,39 @@ function perpsApplyCloudConfig(serverConfig) {
     return perpsHasValidWallet();
 }
 
-/** If this device has a Phoenix wallet but cloud config does not, push it so mobile sees HL+Phoenix pairs. */
+/** Resolve Phoenix pubkey from saved config, form field, or masked input dataset. */
+function perpsResolveLocalPhoenixWallet() {
+    const local = perpsGetSavedConfig();
+    if (perpsIsValidSolanaAddress(local.phoenix)) return local.phoenix.trim();
+    const fromField = perpsReadConfigField('perpsPhoenixWallet', 'phoenix');
+    if (perpsIsValidSolanaAddress(fromField)) return String(fromField).trim();
+    try {
+        const port = JSON.parse(localStorage.getItem('portfolio-data-pro') || '{}');
+        const fromArb = port?.perpsArb?.phoenix || port?._perpsConfig?.phoenix;
+        if (perpsIsValidSolanaAddress(fromArb)) return String(fromArb).trim();
+    } catch (e) {}
+    return '';
+}
+
+/** If this device has a Phoenix wallet but cloud config does not, push it so cron + mobile see HL+Phoenix. */
 async function perpsEnsurePhoenixSyncedToCloud() {
     if (location.protocol === 'file:') return false;
     const local = perpsGetSavedConfig();
-    if (!perpsIsValidSolanaAddress(local.phoenix) || !perpsIsValidEthAddress(local.hyperliquid)) return false;
+    const phoenix = perpsResolveLocalPhoenixWallet();
+    if (!perpsIsValidSolanaAddress(phoenix) || !perpsIsValidEthAddress(local.hyperliquid)) return false;
     try {
         const cloud = await perpsFetchCloudPerpsConfig();
         if (perpsIsValidSolanaAddress(cloud?.phoenix || cloud?.phoenixWallet)) return false;
-        perpsPersistConfig({
+        const next = {
             ...local,
-            phoenix: local.phoenix.trim(),
+            phoenix,
             configured: true,
-        });
-        return true;
+        };
+        // Write local first without recursive cloud fan-out, then await a dedicated POST.
+        perpsPersistConfig(next, { skipCloudSync: true });
+        const pushed = await perpsPushPerpsConfigToCloud(next);
+        if (typeof saveData === 'function') await saveData();
+        return pushed;
     } catch (e) {
         return false;
     }
