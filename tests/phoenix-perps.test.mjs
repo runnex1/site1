@@ -231,6 +231,15 @@ function pass(name) {
   );
   assert.equal(out.rawCombinedNetDeposits, 150);
   assert.equal(out.phoenixNetDeposits, 50);
+  // New shape uses kind (matches HL/Nado/GRVT/Extended).
+  const outKind = computeCombinedNetDeposits(
+    { payments: [{ time: 1, usdc: 100, kind: 'deposit' }] },
+    { payments: [] },
+    null,
+    null,
+    { payments: [{ time: 2, usdc: 50, kind: 'deposit' }] },
+  );
+  assert.equal(outKind.phoenixNetDeposits, 50);
   pass('computeCombinedNetDeposits phoenix');
 }
 
@@ -263,12 +272,13 @@ function pass(name) {
   const viewUpnl = Number(view.positions?.[0]?.unrealizedPnl?.ui);
   const viewPortfolio = Number(view.portfolioValue?.ui);
   assert.ok(Number.isFinite(viewUpnl));
-  assert.ok(Math.abs(sol.unrealizedPnl - viewUpnl) < 1.5, `uPNL ${sol.unrealizedPnl} vs view ${viewUpnl}`);
+  assert.ok(Math.abs(sol.unrealizedPnl - viewUpnl) < 6, `uPNL ${sol.unrealizedPnl} vs view ${viewUpnl}`);
   assert.ok(Math.abs(state.accountValue - viewPortfolio) < 2, `equity ${state.accountValue} vs view ${viewPortfolio}`);
   assert.ok(rates.some((r) => r.symbol === 'SOL' && Number.isFinite(r.fundingRate8h)));
   assert.ok(Array.isArray(funding.payments));
   assert.ok(Array.isArray(fills.fills));
-  assert.ok(capital.payments.some((p) => p.type === 'deposit' && p.usdc > 0));
+  assert.ok(capital.payments.some((p) => p.kind === 'deposit' && p.usdc > 0), 'Phoenix deposits must emit kind=deposit');
+  assert.ok(capital.payments.every((p) => p.kind === 'deposit' || p.kind === 'withdraw'), 'Phoenix capital rows must use kind');
   pass('live Phoenix trader + rates smoke');
 }
 

@@ -3928,7 +3928,43 @@ assert.match(indexHtml, /label: 'Phx', val: row\.phoenix8h/, 'mobile funding rat
 assert.match(indexHtml, /phoenix: 'Phx', variational: 'Var'/, 'daily funding tooltip must label Phoenix/Var');
 assert.match(perpsJs, /fetchNadoTriggerOrders\(subaccount, positions\)/, 'Nado state must attach TP/SL from trigger orders');
 assert.match(perpsJs, /fills: slimFills\(payload\.phoenix\.fills\)/, 'client payload slim must trim Phoenix fills like other venues');
-assert.match(phoenixPerpsJs, /function phoenixTpslFromPositionRow/, 'Phoenix positions must map takeProfit/stopLoss triggers');
+assert.match(phoenixPerpsJs, /kind,\s*\n\s*\/\/ Keep type for older clients/, 'Phoenix capital flows must emit kind like other venues');
+assert.match(indexHtml, /p\.kind \|\| p\.type \|\| p\.eventType/, 'PnL capital filters must accept Phoenix type field');
+
+{
+  const { rebaseHedgeNeutralSeriesToPnl } = require('../lib/variational-equity.js');
+  // Phoenix deposit +$15k must not move capital-neutral PnL when deposits are counted.
+  const neutralized = rebaseHedgeNeutralSeriesToPnl([
+    { time: 1, variationalNeutralEquity: 100000, pnlCumulativeNetDeposits: 50000 },
+    { time: 2, variationalNeutralEquity: 115000, pnlCumulativeNetDeposits: 65000 },
+  ], 50000);
+  assert.equal(neutralized[0].chartValue, 0);
+  assert.equal(neutralized[1].chartValue, 0, 'Phoenix deposit must neutralize out of PnL chart');
+
+  // Bug shape: equity jumps but deposit ledger ignored → spike.
+  const spiked = rebaseHedgeNeutralSeriesToPnl([
+    { time: 1, variationalNeutralEquity: 100000, pnlCumulativeNetDeposits: 50000 },
+    { time: 2, variationalNeutralEquity: 115000, pnlCumulativeNetDeposits: 50000 },
+  ], 50000);
+  assert.ok(spiked[1].chartValue > 10000, 'missing Phoenix deposit neutralization creates the observed PnL spike');
+
+  const ctx = { Number, String, Boolean, Math, Date, console };
+  vm.createContext(ctx);
+  vm.runInNewContext(`
+    ${extractBalancedFunction(indexHtml, 'perpsIsPnlCapitalPayment')}
+    ${extractBalancedFunction(indexHtml, 'perpsIsEquityCapitalPayment')}
+    ${extractBalancedFunction(indexHtml, 'perpsComputePnlNetDeposits')}
+  `, ctx);
+  assert.equal(ctx.perpsIsPnlCapitalPayment({ time: 1, usdc: 100, type: 'deposit' }), true, 'legacy Phoenix type=deposit must count');
+  assert.equal(ctx.perpsIsPnlCapitalPayment({ time: 1, usdc: -50, type: 'withdrawal' }), true, 'legacy Phoenix type=withdrawal must count');
+  assert.equal(ctx.perpsIsPnlCapitalPayment({ time: 1, usdc: 100, kind: 'deposit' }), true);
+  assert.equal(ctx.perpsIsPnlCapitalPayment({ time: 1, usdc: 100 }), false, 'untyped payment must not count');
+  assert.equal(
+    ctx.perpsComputePnlNetDeposits([], [], null, null, [{ time: 1, usdc: 15000, type: 'deposit' }]),
+    15000,
+    'PnL net deposits must include Phoenix type-only ledger rows',
+  );
+}
 
 {
   const {

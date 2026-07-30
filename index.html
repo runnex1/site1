@@ -34958,7 +34958,8 @@ function perpsIsEquitySnapshotEligible(data) {
 
 function perpsIsEquityCapitalPayment(p) {
     if (!p || !Number.isFinite(p.time) || !Number.isFinite(p.usdc) || p.usdc === 0) return false;
-    const kind = String(p.kind || '').toLowerCase();
+    // Phoenix historically used `type`; other venues use `kind`. Accept both.
+    const kind = String(p.kind || p.type || p.eventType || '').toLowerCase();
     return kind.includes('deposit') || kind.includes('withdraw') || kind.includes('transfer');
 }
 
@@ -35103,7 +35104,8 @@ function perpsEnsurePnlTracking(liveCapitalNeutralLevel, epochBaselineLevel = nu
 
 function perpsIsPnlCapitalPayment(p) {
     if (!p || !Number.isFinite(p.time) || !Number.isFinite(p.usdc) || p.usdc === 0) return false;
-    const kind = String(p.kind || '').toLowerCase();
+    // Phoenix historically used `type`; other venues use `kind`. Accept both.
+    const kind = String(p.kind || p.type || p.eventType || '').toLowerCase();
     // Include peer/spot transfers: they move exchange equity but are excluded from
     // strategy combinedNetDeposits (deposit|withdraw only).
     return kind.includes('deposit') || kind.includes('withdraw') || kind.includes('transfer');
