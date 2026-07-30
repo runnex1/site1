@@ -3374,6 +3374,9 @@ assert.match(perpsJs, /CROSS_VENUE_WINDOW_MS = 24 \* 3600000/, 'cross-venue depo
 assert.match(perpsJs, /latestPairActivitySessionStartMs/, 'pairOpenedAtMs must use latest blank-day activity session');
 assert.match(indexHtml, /PERPS_CROSS_VENUE_WINDOW_MS = 24 \* 3600000/, 'client capital-flow transfer window must match server');
 assert.match(indexHtml, /_perpsRefreshPending/, 'in-flight perps refresh must queue the next Save & connect');
+assert.match(indexHtml, /Never drop a click/, 'Positions refresh must queue behind in-flight work instead of no-op');
+assert.match(indexHtml, /function perpsWaitForRefreshIdle\(/, 'manual refresh must wait for queued follow-up to finish');
+assert.doesNotMatch(indexHtml, /async function perpsManualRefresh\(\) \{\s*if \(_perpsRefreshInFlight\) return;/, 'manual refresh must not early-return while another refresh is in flight');
 assert.match(indexHtml, /lastGood/, 'warning retries must keep the last good perps payload');
 assert.match(variationalHedgeJs, /shouldReopenPendingVariationalHedge/, 'pending_close reopen must require same-round identity');
 assert.match(variationalHedgeJs, /PENDING_CLOSE_FORCE_MS/, 'stuck pending_close hedges must age out');

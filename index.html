@@ -790,7 +790,9 @@ body[data-active-tab="perps"] .topbar,
   border-radius:6px; cursor:pointer; flex-shrink:0;
 }
 .perps-refresh-btn:hover:not(:disabled) { border-color:rgba(89,240,200,0.35); color:#59f0c8; background:rgba(89,240,200,0.08); }
-.perps-refresh-btn:disabled { opacity:0.55; cursor:wait; }
+.perps-refresh-btn:disabled, .perps-refresh-btn.is-busy { opacity:0.55; cursor:wait; }
+.perps-refresh-btn.is-busy svg { animation: perps-refresh-spin 0.8s linear infinite; }
+@keyframes perps-refresh-spin { to { transform: rotate(360deg); } }
 .perps-refresh-btn svg { width:12px; height:12px; }
 .perps-pill { font-family:var(--ff-mono); font-size:0.65rem; font-weight:800; padding:0.2rem 0.55rem; border-radius:999px; border:1px solid rgba(89,240,200,0.3); color:#59f0c8; background:rgba(89,240,200,0.08); }
 .perps-pill.blue { border-color:rgba(99,183,255,0.35); color:#63b7ff; background:rgba(99,183,255,0.08); }
@@ -33081,14 +33083,33 @@ function perpsStopAutoRefresh() {
     }
 }
 
-async function perpsManualRefresh() {
-    if (_perpsRefreshInFlight) return;
+function perpsSetManualRefreshBusy(busy) {
     const btn = document.getElementById('perpsManualRefreshBtn');
-    if (btn) btn.disabled = true;
+    if (!btn) return;
+    // Keep the control clickable: a click during boot/silent refresh must queue a follow-up.
+    btn.classList.toggle('is-busy', Boolean(busy));
+    btn.title = busy ? 'Refreshing…' : 'Refresh perps data';
+    btn.setAttribute('aria-busy', busy ? 'true' : 'false');
+}
+
+async function perpsWaitForRefreshIdle() {
+    // Let a just-queued follow-up set the in-flight flag synchronously.
+    await Promise.resolve();
+    while (_perpsRefreshInFlight || _perpsRefreshPending) {
+        await new Promise((r) => setTimeout(r, 40));
+    }
+}
+
+async function perpsManualRefresh() {
+    // Never drop a click: if a silent/boot refresh is running, queue a non-silent follow-up.
+    perpsSetManualRefreshBusy(true);
     try {
         await perpsRefresh(false);
+        await perpsWaitForRefreshIdle();
     } finally {
-        if (btn) btn.disabled = false;
+        if (!_perpsRefreshInFlight && !_perpsRefreshPending) {
+            perpsSetManualRefreshBusy(false);
+        }
     }
 }
 
@@ -38641,31 +38662,31 @@ async function perpsFetchDashboardPayload(params, silent = false) {
 }
 async function perpsRefresh(silent = false) {
     if (_perpsRefreshInFlight) {
+        // Preserve an already-queued non-silent (manual) refresh over silent follow-ups.
         _perpsRefreshPending = { silent: silent && (_perpsRefreshPending?.silent !== false) };
         return false;
     }
     _perpsRefreshInFlight = true;
-    if (_perpsBootPromise) await _perpsBootPromise.catch(() => {});
-    perpsImportConfigFromPortfolio();
-    perpsRepairSavedConfig();
-    const hl = perpsResolveHlWallet();
-    const nadoRaw = perpsReadConfigField('perpsNadoWallet', 'nado');
-    if (!hl) {
-        _perpsRefreshInFlight = false;
-        if (!silent) perpsSetStatus('Enter a valid Hyperliquid wallet and click Save & connect.');
-        return false;
-    }
-    if (!silent) perpsSetStatus('Fetching exchange data…');
-
-    if (location.protocol === 'file:') {
-        _perpsRefreshError = 'Requires deployed site or local server';
-        perpsUpdateRefreshBar();
-        _perpsRefreshInFlight = false;
-        if (!silent) perpsSetStatus('Perps dashboard requires the local server or live site — file:// cannot call /api/perps.');
-        return false;
-    }
-
+    perpsSetManualRefreshBusy(true);
     try {
+        if (_perpsBootPromise) await _perpsBootPromise.catch(() => {});
+        perpsImportConfigFromPortfolio();
+        perpsRepairSavedConfig();
+        const hl = perpsResolveHlWallet();
+        const nadoRaw = perpsReadConfigField('perpsNadoWallet', 'nado');
+        if (!hl) {
+            if (!silent) perpsSetStatus('Enter a valid Hyperliquid wallet and click Save & connect.');
+            return false;
+        }
+        if (!silent) perpsSetStatus('Fetching exchange data…');
+
+        if (location.protocol === 'file:') {
+            _perpsRefreshError = 'Requires deployed site or local server';
+            perpsUpdateRefreshBar();
+            if (!silent) perpsSetStatus('Perps dashboard requires the local server or live site — file:// cannot call /api/perps.');
+            return false;
+        }
+
         const bucketsBefore = perpsCountEquityBuckets();
         // Hydrate hedges/closed keys before dashboard so knownClosedKeys + Phoenix are current.
         await perpsHydratePerpsAuxFromCloud().catch(() => false);
@@ -38711,6 +38732,8 @@ async function perpsRefresh(silent = false) {
             const next = _perpsRefreshPending;
             _perpsRefreshPending = null;
             void perpsRefresh(next.silent);
+        } else {
+            perpsSetManualRefreshBusy(false);
         }
     }
 }
