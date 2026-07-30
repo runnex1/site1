@@ -1051,13 +1051,14 @@ module.exports = async function handler(req, res) {
         const grvtSubAccount = String(
           savedConfig.grvtSubAccount || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
         ).trim();
-        const [perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw, perpsVariationalRateSamplesRaw, grvtStateRaw] = await Promise.all([
+        const [perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw, perpsVariationalRateSamplesRaw, grvtStateRaw, perpsDailyFundRaw] = await Promise.all([
           kvGet('vault:perps_snapshots'),
           kvGet('vault:perps_variational_hedges'),
           kvGet('vault:perps_closed_pairs'),
           kvGet('vault:perps_variational_settlements'),
           kvGet('vault:perps_variational_rate_samples'),
           grvtSubAccount ? kvGet(`vault:grvt_state:${grvtSubAccount}`) : null,
+          kvGet('vault:perps_daily_fund_cache'),
         ]);
         const perpsClosedPairs = await persistPrunedClosedPairsIfNeeded(parseJson(perpsClosedPairsRaw, []), kvSet);
         return res.status(200).json({
@@ -1068,6 +1069,7 @@ module.exports = async function handler(req, res) {
           perpsVariationalSettlements: parseJson(perpsVariationalSettlementsRaw, {}),
           perpsVariationalRateSamples: parseJson(perpsVariationalRateSamplesRaw, {}),
           grvtStateCache: parseJson(grvtStateRaw, null),
+          perpsDailyFundCache: parseJson(perpsDailyFundRaw, null),
         });
       }
       if (req.query?.loopSnapshots === '1') {
@@ -1104,7 +1106,7 @@ module.exports = async function handler(req, res) {
         const grvtSubAccount = String(
           savedConfig.grvtSubAccount || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
         ).trim();
-        const [snapshotsRaw, perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw, perpsVariationalRateSamplesRaw, grvtStateRaw, logoCacheRaw, eventHistoryRaw] = await Promise.all([
+        const [snapshotsRaw, perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw, perpsVariationalRateSamplesRaw, grvtStateRaw, perpsDailyFundRaw, logoCacheRaw, eventHistoryRaw] = await Promise.all([
           kvGet('vault:snapshots'),
           kvGet('vault:perps_snapshots'),
           kvGet('vault:perps_variational_hedges'),
@@ -1112,6 +1114,7 @@ module.exports = async function handler(req, res) {
           kvGet('vault:perps_variational_settlements'),
           kvGet('vault:perps_variational_rate_samples'),
           grvtSubAccount ? kvGet(`vault:grvt_state:${grvtSubAccount}`) : null,
+          kvGet('vault:perps_daily_fund_cache'),
           kvGet('vault:logo_cache'),
           kvGet('vault:event_history'),
         ]);
@@ -1123,6 +1126,7 @@ module.exports = async function handler(req, res) {
           _perpsVariationalSettlements: parse(perpsVariationalSettlementsRaw, {}),
           _perpsVariationalRateSamples: parse(perpsVariationalRateSamplesRaw, {}),
           _grvtStateCache: parse(grvtStateRaw, null),
+          _perpsDailyFundCache: parse(perpsDailyFundRaw, null),
           _logoCache:      sanitizeLogoCacheForStorage(parse(logoCacheRaw, {})),
           _eventHistory:   parse(eventHistoryRaw, []),
         };
@@ -1453,6 +1457,40 @@ module.exports = async function handler(req, res) {
         positions: body.grvtStateCache.positions,
       }));
       saved.grvtStateCache = true;
+    }
+    if (body.perpsDailyFundCache && Array.isArray(body.perpsDailyFundCache.series)
+      && body.perpsDailyFundCache.series.length) {
+      const existing = parseJson(await kvGet('vault:perps_daily_fund_cache'), null);
+      const incomingAt = Number(body.perpsDailyFundCache.fetchedAt || 0);
+      const existingAt = Number(existing?.fetchedAt || 0);
+      const slimSeries = (body.perpsDailyFundCache.series || []).map((r) => {
+        if (!r || typeof r !== 'object') return r;
+        const { fundingEvents, feeEvents, ...rest } = r;
+        return rest;
+      });
+      let next = {
+        series: slimSeries,
+        fetchedAt: incomingAt || Date.now(),
+      };
+      if (existing?.series?.length && existingAt > incomingAt) {
+        next = existing;
+      } else if (existing?.series?.length && Math.abs(existingAt - incomingAt) < 60 * 60 * 1000) {
+        const byDay = new Map();
+        for (const row of existing.series) {
+          if (row?.day) byDay.set(String(row.day), row);
+        }
+        for (const row of slimSeries) {
+          if (!row?.day) continue;
+          const prev = byDay.get(String(row.day));
+          byDay.set(String(row.day), prev ? { ...prev, ...row } : row);
+        }
+        next = {
+          series: [...byDay.values()].sort((a, b) => String(a.day).localeCompare(String(b.day))),
+          fetchedAt: Math.max(existingAt, incomingAt) || Date.now(),
+        };
+      }
+      await kvSet('vault:perps_daily_fund_cache', JSON.stringify(next));
+      saved.perpsDailyFundCache = true;
     }
 
     if (body.loopSnapshots && typeof body.loopSnapshots === 'object') {

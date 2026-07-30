@@ -11481,6 +11481,11 @@ function applyCloudPortfolioAux(parsed) {
         perpsMergeGrvtStateCacheFromServer(parsed._grvtStateCache);
         delete parsed._grvtStateCache;
     });
+    apply('perpsDailyFundCache', () => {
+        if (!parsed._perpsDailyFundCache || !Array.isArray(parsed._perpsDailyFundCache.series)) return;
+        perpsMergeDailyFundCacheFromServer(parsed._perpsDailyFundCache);
+        delete parsed._perpsDailyFundCache;
+    });
     apply('newsFeed', () => {
         if (!parsed._newsFeed || typeof parsed._newsFeed !== 'object') return;
         newsFeedMergeFromCloud(parsed._newsFeed);
@@ -11772,6 +11777,14 @@ async function saveData(syncOpts = {}) {
                 try {
                     const cache = typeof perpsLoadGrvtStateCache === 'function' ? perpsLoadGrvtStateCache() : null;
                     return cache?.positions?.length ? cache : undefined;
+                } catch (e) { return undefined; }
+            })(),
+            perpsDailyFundCache: (() => {
+                try {
+                    const cache = typeof perpsLoadDailyFundCache === 'function'
+                        ? perpsLoadDailyFundCache()
+                        : JSON.parse(localStorage.getItem(PERPS_DAILY_FUND_CACHE_KEY) || 'null');
+                    return cache?.series?.length ? cache : undefined;
                 } catch (e) { return undefined; }
             })(),
             // Dismissed opportunities (market IDs)
@@ -23064,8 +23077,10 @@ function dashboardPerpsFundingSeries() {
     const live = _perpsLastData || _perpsCache;
     if (live?.dailyFundingSeries?.length) return live.dailyFundingSeries;
     try {
-        const cached = JSON.parse(localStorage.getItem(PERPS_DAILY_FUND_CACHE_KEY) || '{}');
-        return Array.isArray(cached.series) ? cached.series : [];
+        const cached = typeof perpsLoadDailyFundCache === 'function'
+            ? perpsLoadDailyFundCache()
+            : JSON.parse(localStorage.getItem(PERPS_DAILY_FUND_CACHE_KEY) || '{}');
+        return Array.isArray(cached?.series) ? cached.series : [];
     } catch(e) {
         return [];
     }
@@ -32873,6 +32888,13 @@ async function perpsHydratePerpsAuxFromCloud() {
             const localGrvt = perpsLoadGrvtStateCache();
             if (localGrvt?.positions?.length) await perpsPushGrvtStateCacheToServer(localGrvt);
         }
+        if (body?.perpsDailyFundCache && Array.isArray(body.perpsDailyFundCache.series) && body.perpsDailyFundCache.series.length) {
+            perpsMergeDailyFundCacheFromServer(body.perpsDailyFundCache);
+            changed = true;
+        } else {
+            const localFund = perpsLoadDailyFundCache();
+            if (localFund?.series?.length) await perpsPushDailyFundCacheToServer(localFund);
+        }
         return changed;
     } catch (e) {
         return false;
@@ -32954,6 +32976,17 @@ function perpsApplyCloudConfig(serverConfig) {
             pnlStartMs: server.pnlStartMs ?? local.pnlStartMs,
             pnlBaseline: server.pnlBaseline ?? local.pnlBaseline,
         }, { skipCloudSync: true });
+        // Mirror PnL lock into dedicated LS keys so every device shares the same chart baseline.
+        const startMs = Number(server.pnlStartMs ?? local.pnlStartMs);
+        const baseline = Number(server.pnlBaseline ?? local.pnlBaseline);
+        if (Number.isFinite(startMs) && startMs > 0 && Number.isFinite(baseline)) {
+            _perpsPnlTrackMemory = { startMs, baseline };
+            try {
+                localStorage.setItem('vault-perps-pnl-chart-start-ms', String(startMs));
+                localStorage.setItem('vault-perps-pnl-baseline-level', String(baseline));
+                localStorage.setItem('vault-perps-pnl-track-v4', '1');
+            } catch (e) {}
+        }
     } else if (localValid) {
         // Never wipe locally saved wallets with an empty server payload
         if (!local.configured) perpsPersistConfig(local, { skipCloudSync: true });
@@ -35867,6 +35900,93 @@ function perpsSaveGrvtStateCache(state) {
     void perpsPushGrvtStateCacheToServer(cache);
 }
 
+function perpsSlimDailyFundSeries(series) {
+    return (Array.isArray(series) ? series : []).map((r) => {
+        if (!r || typeof r !== 'object') return r;
+        const { fundingEvents, feeEvents, ...rest } = r;
+        return rest;
+    });
+}
+
+function perpsLoadDailyFundCache() {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(PERPS_DAILY_FUND_CACHE_KEY) || 'null');
+        if (!parsed || !Array.isArray(parsed.series) || !parsed.series.length) return null;
+        return {
+            series: perpsSlimDailyFundSeries(parsed.series),
+            fetchedAt: Number(parsed.fetchedAt) || 0,
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
+function perpsMergeDailyFundCacheFromServer(serverCache) {
+    if (!serverCache || !Array.isArray(serverCache.series) || !serverCache.series.length) return null;
+    const local = perpsLoadDailyFundCache();
+    const localAt = Number(local?.fetchedAt || 0);
+    const serverAt = Number(serverCache.fetchedAt || 0);
+    // Prefer the newer full series; day-merge when timestamps are close.
+    let series = perpsSlimDailyFundSeries(serverCache.series);
+    let fetchedAt = serverAt || Date.now();
+    if (local?.series?.length && localAt > serverAt) {
+        series = local.series;
+        fetchedAt = localAt;
+    } else if (local?.series?.length && Math.abs(localAt - serverAt) < 60 * 60 * 1000) {
+        const byDay = new Map();
+        for (const row of local.series) {
+            if (row?.day) byDay.set(String(row.day), row);
+        }
+        for (const row of series) {
+            if (!row?.day) continue;
+            const prev = byDay.get(String(row.day));
+            byDay.set(String(row.day), prev ? { ...prev, ...row } : row);
+        }
+        series = [...byDay.values()].sort((a, b) => String(a.day).localeCompare(String(b.day)));
+        fetchedAt = Math.max(localAt, serverAt) || Date.now();
+    }
+    const next = { series, fetchedAt };
+    try {
+        localStorage.setItem(PERPS_DAILY_FUND_CACHE_KEY, JSON.stringify(next));
+    } catch (e) {}
+    return next;
+}
+
+async function perpsPushDailyFundCacheToServer(cache) {
+    const payload = cache?.series?.length ? cache : perpsLoadDailyFundCache();
+    if (!payload?.series?.length || location.protocol === 'file:') return false;
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                perpsDailyFundCache: {
+                    series: perpsSlimDailyFundSeries(payload.series),
+                    fetchedAt: Number(payload.fetchedAt) || Date.now(),
+                },
+            }),
+            keepalive: true,
+        });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+function perpsSaveDailyFundCache(series, fetchedAt) {
+    const slim = perpsSlimDailyFundSeries(series);
+    if (!slim.length) return null;
+    const cache = {
+        series: slim,
+        fetchedAt: Number(fetchedAt) || Date.now(),
+    };
+    try {
+        localStorage.setItem(PERPS_DAILY_FUND_CACHE_KEY, JSON.stringify(cache));
+    } catch (e) {}
+    void perpsPushDailyFundCacheToServer(cache);
+    return cache;
+}
+
 function perpsPairHasSizeMismatch(p) {
     const VH = window.VariationalHedge;
     if (p?.crossLegA && p?.crossLegB && VH?.variationalPairHasSizeMismatch) {
@@ -38396,14 +38516,8 @@ function perpsRenderDashboard(data, opts = {}) {
         perpsSafeApplyVariationalHedgesToData(data);
         try {
             // Cache aggregates only — event arrays can be multi‑MB and freeze setItem.
-            localStorage.setItem(PERPS_DAILY_FUND_CACHE_KEY, JSON.stringify({
-                series: (data.dailyFundingSeries || []).map((r) => {
-                    if (!r || typeof r !== 'object') return r;
-                    const { fundingEvents, feeEvents, ...rest } = r;
-                    return rest;
-                }),
-                fetchedAt: data.fetchedAt || Date.now(),
-            }));
+            // Also sync to cloud so overview PnL matches on mobile without a fresh /api/perps paint.
+            perpsSaveDailyFundCache(data.dailyFundingSeries || [], data.fetchedAt || Date.now());
         } catch (e) {}
         if (data?.grvt?.state?.positions?.length && !data.grvt.state.error) {
             perpsSaveGrvtStateCache(data.grvt.state);

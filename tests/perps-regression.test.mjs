@@ -3618,6 +3618,12 @@ assert.match(indexHtml, /perpsVariationalRateSamples:/, 'saveData must upload Va
 assert.match(indexHtml, /grvtStateCache:/, 'saveData must upload GRVT state cache');
 assert.match(indexHtml, /async function perpsPushGrvtStateCacheToServer\(/, 'GRVT cache must sync to cloud after live fetch');
 assert.match(indexHtml, /perpsMergeGrvtStateCacheFromServer/, 'mobile must hydrate GRVT cache from cloud');
+assert.match(indexHtml, /function perpsSaveDailyFundCache\(/, 'daily funding cache must sync to cloud');
+assert.match(indexHtml, /perpsDailyFundCache:/, 'saveData must upload daily funding cache');
+assert.match(indexHtml, /perpsMergeDailyFundCacheFromServer/, 'mobile must hydrate daily funding cache from cloud');
+assert.match(syncJs, /vault:perps_daily_fund_cache/, 'sync must persist daily funding cache in KV');
+assert.match(syncJs, /perpsDailyFundCache:/, 'perpsAux must return daily funding cache');
+assert.match(syncJs, /_perpsDailyFundCache:/, 'auxHeavy must include daily funding cache');
 assert.match(perpsJs, /OPEN_PAIR_MAX_SIZE_MISMATCH_PCT/, 'open pairing must reject huge size mismatches');
 assert.match(indexHtml, /equityChartMode: server\.equityChartMode \|\| local\.equityChartMode/, 'cloud config apply must preserve equity chart modes');
 assert.match(indexHtml, /\.perps-config-toggle-row \{ display: flex !important/, 'mobile must keep Edit wallets toggle visible');
