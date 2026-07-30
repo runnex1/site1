@@ -3603,8 +3603,9 @@ assert.match(perpsJs, /function enrichGrvtStateWithTpsl\(/, 'GRVT fallback state
 assert.match(perpsJs, /tpPx: tpslPxFrom\(p\.tpTriggerPrice\)/, 'Extended positions must map API tpTriggerPrice');
 assert.match(perpsJs, /slPx: tpslPxFrom\(p\.slTriggerPrice\)/, 'Extended positions must map API slTriggerPrice');
 assert.match(perpsJs, /fetchNadoTriggerOrders\(subaccount, positions\)/, 'NADO state must attach TP/SL from trigger orders');
-assert.match(perpsJs, /tpslError: tpsl\.error \|\| null/, 'NADO TP/SL failures must stay soft (tpslError), not state.error');
+assert.match(perpsJs, /Keep best-effort TP\/SL when it works/, 'NADO TP/SL failures must stay silent');
 assert.doesNotMatch(perpsJs, /NADO TP\/SL unavailable/, 'NADO TP/SL signature failures must not surface as NADO outages');
+assert.doesNotMatch(perpsJs, /tpslError:/, 'NADO TP/SL errors must not leak into the client payload');
 assert.match(perpsJs, /hyperliquidMarkPx: hl\?\.markPx \?\? null/, 'rate spread rows must expose Hyperliquid mark price for position rows');
 assert.match(indexHtml, /perpsRateSpreadRow\(p\.symbol\)/, 'Current APR must fall back to the latest rate-spread row');
 assert.match(indexHtml, /rateA \?\? p\.fundingRate8hA/, 'live APR polling must preserve previous leg rates when a response is partial');
