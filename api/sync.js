@@ -225,13 +225,9 @@ function mergeVariationalRateSampleMaps(existing, incoming) {
   try {
     const VH = require('../lib/variational-hedge');
     if (typeof VH.mergeVariationalRateSamples === 'function') {
-      const merged = VH.mergeVariationalRateSamples(existing, incoming);
-      // Client posts pruned active-symbol maps. Prefer that keep-set so KV cannot grow forever.
-      const keep = new Set(Object.keys(incoming || {}).map((s) => String(s || '').toUpperCase()).filter(Boolean));
-      if (keep.size && typeof VH.pruneVariationalRateSamples === 'function') {
-        return VH.pruneVariationalRateSamples(merged, keep);
-      }
-      return merged;
+      // Union merge — do NOT prune to incoming-only keep-set.
+      // A thin client upload must not wipe another device's active-symbol samples.
+      return VH.mergeVariationalRateSamples(existing, incoming);
     }
   } catch {
     // fall through
@@ -246,13 +242,6 @@ function mergeVariationalRateSampleMaps(existing, incoming) {
       byAt.set(atMs, row);
     }
     out[symbol] = [...byAt.values()].sort((a, b) => Number(b.atMs) - Number(a.atMs)).slice(0, 96);
-  }
-  // Drop symbols absent from this client upload.
-  const keep = new Set(Object.keys(incoming || {}));
-  if (keep.size) {
-    for (const key of Object.keys(out)) {
-      if (!keep.has(key)) delete out[key];
-    }
   }
   return out;
 }
@@ -1058,12 +1047,17 @@ module.exports = async function handler(req, res) {
         return res.status(200).json({ ok: true, perpsSnapshots });
       }
       if (req.query?.perpsAux === '1') {
-        const [perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw, perpsVariationalRateSamplesRaw] = await Promise.all([
+        const savedConfig = parseJson(await kvGet('vault:perps_config'), {});
+        const grvtSubAccount = String(
+          savedConfig.grvtSubAccount || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
+        ).trim();
+        const [perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw, perpsVariationalRateSamplesRaw, grvtStateRaw] = await Promise.all([
           kvGet('vault:perps_snapshots'),
           kvGet('vault:perps_variational_hedges'),
           kvGet('vault:perps_closed_pairs'),
           kvGet('vault:perps_variational_settlements'),
           kvGet('vault:perps_variational_rate_samples'),
+          grvtSubAccount ? kvGet(`vault:grvt_state:${grvtSubAccount}`) : null,
         ]);
         const perpsClosedPairs = await persistPrunedClosedPairsIfNeeded(parseJson(perpsClosedPairsRaw, []), kvSet);
         return res.status(200).json({
@@ -1073,6 +1067,7 @@ module.exports = async function handler(req, res) {
           perpsClosedPairs,
           perpsVariationalSettlements: parseJson(perpsVariationalSettlementsRaw, {}),
           perpsVariationalRateSamples: parseJson(perpsVariationalRateSamplesRaw, {}),
+          grvtStateCache: parseJson(grvtStateRaw, null),
         });
       }
       if (req.query?.loopSnapshots === '1') {
@@ -1105,12 +1100,18 @@ module.exports = async function handler(req, res) {
       // Heavy aux only (~500KB): snapshots, logos, perps history, event log cache.
       // Fetched in background after portfolio-first paint.
       if (req.query?.auxHeavy === '1') {
-        const [snapshotsRaw, perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw, logoCacheRaw, eventHistoryRaw] = await Promise.all([
+        const savedConfig = parseJson(await kvGet('vault:perps_config'), {});
+        const grvtSubAccount = String(
+          savedConfig.grvtSubAccount || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
+        ).trim();
+        const [snapshotsRaw, perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsClosedPairsRaw, perpsVariationalSettlementsRaw, perpsVariationalRateSamplesRaw, grvtStateRaw, logoCacheRaw, eventHistoryRaw] = await Promise.all([
           kvGet('vault:snapshots'),
           kvGet('vault:perps_snapshots'),
           kvGet('vault:perps_variational_hedges'),
           kvGet('vault:perps_closed_pairs'),
           kvGet('vault:perps_variational_settlements'),
+          kvGet('vault:perps_variational_rate_samples'),
+          grvtSubAccount ? kvGet(`vault:grvt_state:${grvtSubAccount}`) : null,
           kvGet('vault:logo_cache'),
           kvGet('vault:event_history'),
         ]);
@@ -1120,6 +1121,8 @@ module.exports = async function handler(req, res) {
           _perpsVariationalHedges: parse(perpsVariationalHedgesRaw, []),
           _perpsClosedPairs: await persistPrunedClosedPairsIfNeeded(parse(perpsClosedPairsRaw, []), kvSet),
           _perpsVariationalSettlements: parse(perpsVariationalSettlementsRaw, {}),
+          _perpsVariationalRateSamples: parse(perpsVariationalRateSamplesRaw, {}),
+          _grvtStateCache: parse(grvtStateRaw, null),
           _logoCache:      sanitizeLogoCacheForStorage(parse(logoCacheRaw, {})),
           _eventHistory:   parse(eventHistoryRaw, []),
         };
@@ -1419,7 +1422,7 @@ module.exports = async function handler(req, res) {
       await kvSet('vault:perps_variational_rate_samples', JSON.stringify(merged));
       saved.perpsVariationalRateSamples = true;
     }
-    if (Array.isArray(body.perpsClosedPairs)) {
+    if (Array.isArray(body.perpsClosedPairs) && body.perpsClosedPairs.length) {
       const existing = parseJson(await kvGet('vault:perps_closed_pairs'), []);
       const byKey = new Map((existing || []).map((p) => {
         const symbol = String(p?.symbol || '').trim().toUpperCase();

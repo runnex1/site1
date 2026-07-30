@@ -11470,6 +11470,17 @@ function applyCloudPortfolioAux(parsed) {
         perpsMergeVariationalSettlementsFromServer(parsed._perpsVariationalSettlements);
         delete parsed._perpsVariationalSettlements;
     });
+    apply('perpsVariationalRateSamples', () => {
+        if (!parsed._perpsVariationalRateSamples || typeof parsed._perpsVariationalRateSamples !== 'object') return;
+        if (!Object.keys(parsed._perpsVariationalRateSamples).length) return;
+        perpsMergeVariationalRateSamplesFromServer(parsed._perpsVariationalRateSamples);
+        delete parsed._perpsVariationalRateSamples;
+    });
+    apply('grvtStateCache', () => {
+        if (!parsed._grvtStateCache || !Array.isArray(parsed._grvtStateCache.positions)) return;
+        perpsMergeGrvtStateCacheFromServer(parsed._grvtStateCache);
+        delete parsed._grvtStateCache;
+    });
     apply('newsFeed', () => {
         if (!parsed._newsFeed || typeof parsed._newsFeed !== 'object') return;
         newsFeedMergeFromCloud(parsed._newsFeed);
@@ -11723,7 +11734,8 @@ async function saveData(syncOpts = {}) {
             // Perps arb exchange wallets + equity snapshots
             perpsConfig:    (() => {
                 const cfg = perpsNormalizeStoredConfig(_ls(PERPS_CONFIG_KEY, '{}'));
-                return perpsIsValidEthAddress(cfg.hyperliquid) ? cfg : undefined;
+                if (!perpsIsValidEthAddress(cfg.hyperliquid)) return undefined;
+                return typeof perpsConfigPayload === 'function' ? perpsConfigPayload(cfg) : cfg;
             })(),
             perpsSnapshots: _ls(PERPS_SNAPSHOTS_KEY, '{}'),
             perpsClosedPairs: (() => {
@@ -11746,6 +11758,20 @@ async function saveData(syncOpts = {}) {
                         ? perpsLoadVariationalSettlementsRaw()
                         : JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_SETTLEMENTS_KEY) || '{}');
                     return map && typeof map === 'object' && Object.keys(map).length ? map : undefined;
+                } catch (e) { return undefined; }
+            })(),
+            perpsVariationalRateSamples: (() => {
+                try {
+                    const map = typeof perpsLoadVariationalRateSamplesRaw === 'function'
+                        ? perpsLoadVariationalRateSamplesRaw()
+                        : JSON.parse(localStorage.getItem(PERPS_VARIATIONAL_RATE_SAMPLES_KEY) || '{}');
+                    return map && typeof map === 'object' && Object.keys(map).length ? map : undefined;
+                } catch (e) { return undefined; }
+            })(),
+            grvtStateCache: (() => {
+                try {
+                    const cache = typeof perpsLoadGrvtStateCache === 'function' ? perpsLoadGrvtStateCache() : null;
+                    return cache?.positions?.length ? cache : undefined;
                 } catch (e) { return undefined; }
             })(),
             // Dismissed opportunities (market IDs)
@@ -31655,13 +31681,27 @@ function perpsApplyArbToDataObject() {
     const cfg = perpsGetSavedConfig();
     if (!perpsIsValidEthAddress(cfg.hyperliquid)) return;
     // Hedges live in vault-perps-variational-hedges / dedicated sync key — not portfolio blob.
-    data.perpsArb = {
+    // Mirror full wallet + chart prefs so portfolio fallback matches vault:perps_config.
+    const arb = {
         hyperliquid: cfg.hyperliquid.trim(),
         nado: cfg.nado || '',
         grvtSubAccount: cfg.grvtSubAccount || '4860249204328359',
-        phoenix: cfg.phoenix || '',
         statRange: cfg.statRange || _perpsStatRange,
+        equityChartMode: cfg.equityChartMode === 'all' ? 'all' : 'session',
+        equityValueMode: cfg.equityValueMode === 'raw'
+            ? 'raw'
+            : (cfg.equityValueMode === 'pnl' ? 'pnl' : 'neutral'),
+        configured: true,
     };
+    if (perpsIsValidSolanaAddress(cfg.phoenix)) arb.phoenix = cfg.phoenix.trim();
+    const startMs = Number(cfg.pnlStartMs);
+    const baseline = Number(cfg.pnlBaseline);
+    if (Number.isFinite(startMs) && startMs > 0 && Number.isFinite(baseline)) {
+        arb.pnlStartMs = startMs;
+        arb.pnlBaseline = baseline;
+        arb.pnlTrackVer = 3;
+    }
+    data.perpsArb = arb;
 }
 
 function perpsWritePortfolioLocal() {
@@ -31683,13 +31723,26 @@ function perpsRestoreWalletSnapshot(snapshot) {
     if (!snapshot) return;
     perpsPersistConfig(snapshot, { skipCloudSync: true });
     if (typeof data === 'object' && data) {
-        data.perpsArb = {
+        const arb = {
             hyperliquid: snapshot.hyperliquid,
             nado: snapshot.nado || '',
             grvtSubAccount: snapshot.grvtSubAccount || '4860249204328359',
-            phoenix: snapshot.phoenix || '',
             statRange: snapshot.statRange || _perpsStatRange,
+            equityChartMode: snapshot.equityChartMode === 'all' ? 'all' : 'session',
+            equityValueMode: snapshot.equityValueMode === 'raw'
+                ? 'raw'
+                : (snapshot.equityValueMode === 'pnl' ? 'pnl' : 'neutral'),
+            configured: true,
         };
+        if (perpsIsValidSolanaAddress(snapshot.phoenix)) arb.phoenix = snapshot.phoenix.trim();
+        const startMs = Number(snapshot.pnlStartMs);
+        const baseline = Number(snapshot.pnlBaseline);
+        if (Number.isFinite(startMs) && startMs > 0 && Number.isFinite(baseline)) {
+            arb.pnlStartMs = startMs;
+            arb.pnlBaseline = baseline;
+            arb.pnlTrackVer = 3;
+        }
+        data.perpsArb = arb;
     }
 }
 
@@ -32101,7 +32154,6 @@ function perpsConfigPayload(cfg) {
         hyperliquid: norm.hyperliquid.trim(),
         nado: norm.nado || '',
         grvtSubAccount: norm.grvtSubAccount || '4860249204328359',
-        phoenix: norm.phoenix || '',
         statRange: norm.statRange || _perpsStatRange,
         equityChartMode: norm.equityChartMode === 'all' ? 'all' : 'session',
         equityValueMode: norm.equityValueMode === 'raw'
@@ -32109,6 +32161,8 @@ function perpsConfigPayload(cfg) {
             : (norm.equityValueMode === 'pnl' ? 'pnl' : 'neutral'),
         configured: true,
     };
+    // Omit empty Phoenix — never upload phoenix:'' (would fight cloud preserve + wipe portfolio mirror).
+    if (perpsIsValidSolanaAddress(norm.phoenix)) payload.phoenix = norm.phoenix.trim();
     // Compact PnL lock — survives localStorage eviction (loop snapshots can push quota).
     // Always preserve an existing lock even when callers omit pnl* fields (wallet save).
     let startMs = Number(norm.pnlStartMs);
@@ -32811,6 +32865,13 @@ async function perpsHydratePerpsAuxFromCloud() {
         if (Array.isArray(body?.perpsClosedPairs) && body.perpsClosedPairs.length) {
             perpsMergeClosedPairsFromServer(body.perpsClosedPairs);
             changed = true;
+        }
+        if (body?.grvtStateCache && Array.isArray(body.grvtStateCache.positions) && body.grvtStateCache.positions.length) {
+            perpsMergeGrvtStateCacheFromServer(body.grvtStateCache);
+            changed = true;
+        } else {
+            const localGrvt = perpsLoadGrvtStateCache();
+            if (localGrvt?.positions?.length) await perpsPushGrvtStateCacheToServer(localGrvt);
         }
         return changed;
     } catch (e) {
@@ -35758,16 +35819,52 @@ function perpsLoadGrvtStateCache() {
         return parsed;
     } catch(e) { return null; }
 }
-function perpsSaveGrvtStateCache(state) {
-    if (!state || state.error || !Array.isArray(state.positions) || !state.positions.length) return;
+function perpsMergeGrvtStateCacheFromServer(serverCache) {
+    if (!serverCache || !Array.isArray(serverCache.positions) || !serverCache.positions.length) return null;
+    const local = (() => {
+        try { return JSON.parse(localStorage.getItem(PERPS_GRVT_STATE_CACHE_KEY) || 'null'); }
+        catch (e) { return null; }
+    })();
+    const localAt = Number(local?.fetchedAt || 0);
+    const serverAt = Number(serverCache.fetchedAt || 0);
+    if (local?.positions?.length && localAt >= serverAt) return local;
     try {
         localStorage.setItem(PERPS_GRVT_STATE_CACHE_KEY, JSON.stringify({
-            subAccountId: state.subAccountId || perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || '4860249204328359',
-            fetchedAt: Number(state.fetchedAt) || Date.now(),
-            accountValue: Number(state.accountValue) || 0,
-            positions: state.positions,
+            subAccountId: String(serverCache.subAccountId || perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || '4860249204328359'),
+            fetchedAt: serverAt || Date.now(),
+            accountValue: Number(serverCache.accountValue) || 0,
+            positions: serverCache.positions,
         }));
+    } catch (e) {}
+    return serverCache;
+}
+async function perpsPushGrvtStateCacheToServer(cache) {
+    const payload = cache && cache.positions?.length ? cache : perpsLoadGrvtStateCache();
+    if (!payload?.positions?.length || location.protocol === 'file:') return false;
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ grvtStateCache: payload }),
+            keepalive: true,
+        });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
+}
+function perpsSaveGrvtStateCache(state) {
+    if (!state || state.error || !Array.isArray(state.positions) || !state.positions.length) return;
+    const cache = {
+        subAccountId: state.subAccountId || perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || '4860249204328359',
+        fetchedAt: Number(state.fetchedAt) || Date.now(),
+        accountValue: Number(state.accountValue) || 0,
+        positions: state.positions,
+    };
+    try {
+        localStorage.setItem(PERPS_GRVT_STATE_CACHE_KEY, JSON.stringify(cache));
     } catch(e) {}
+    void perpsPushGrvtStateCacheToServer(cache);
 }
 
 function perpsPairHasSizeMismatch(p) {
