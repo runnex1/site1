@@ -7710,13 +7710,54 @@ body[data-active-tab="loops"] .page-content,
     color: #718391;
   }
   .perps-equity-panel { order: 6; }
-  .perps-positions-panel { order: 7; scroll-margin-top: 72px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
-  .perps-leverage-panel { order: 8; scroll-margin-top: 72px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
-  .perps-mv3-rates-panel { order: 9; scroll-margin-top: 72px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
-  #perpsUnhedgedSection, #perpsVariationalPendingSection { order: 10; }
-  #perpsConfigFoot, .perps-config-toggle-row { order: 11; }
-  .perps-daily-funding-panel { display: none !important; }
+  .perps-daily-funding-panel { order: 7; scroll-margin-top: 72px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
+  .perps-positions-panel { order: 8; scroll-margin-top: 72px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
+  .perps-leverage-panel { order: 9; scroll-margin-top: 72px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
+  .perps-mv3-rates-panel { order: 10; scroll-margin-top: 72px; scroll-margin-bottom: calc(var(--mobile-nav-h) + 16px); }
+  #perpsUnhedgedSection, #perpsVariationalPendingSection { order: 11; }
+  #perpsConfigFoot, .perps-config-toggle-row { order: 12; }
   .perps-config-toggle-row { display: flex !important; justify-content: center; padding: 0.35rem 0.75rem 0.15rem; }
+  .perps-daily-funding-panel .perps-panel-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .perps-daily-funding-panel .perps-panel-title {
+    font-size: 11px;
+    letter-spacing: 0.06em;
+  }
+  .perps-daily-funding-panel .perps-fund-controls {
+    margin-left: auto;
+  }
+  .perps-daily-funding-panel .perps-fund-toggle {
+    min-height: 32px;
+    font-size: 0.58rem;
+    padding: 0.2rem 0.5rem;
+  }
+  .perps-daily-funding-panel .perps-panel-fund-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.55rem 0.85rem 0.25rem;
+  }
+  .perps-daily-funding-panel #perpsDailyFundNote {
+    font-size: 0.62rem !important;
+    line-height: 1.35;
+  }
+  .perps-daily-funding-panel .perps-pnl-total {
+    font-size: 1.05rem;
+  }
+  .perps-daily-funding-panel .perps-pnl-chart.tall,
+  .perps-daily-funding-panel .perps-panel-body--chart .perps-pnl-chart.tall {
+    min-height: 160px !important;
+    height: 160px;
+  }
+  .perps-daily-funding-panel .perps-panel-body--chart {
+    padding: 4px 8px 12px;
+  }
+  .perps-daily-funding-panel .perps-fund-tooltip {
+    font-size: 0.62rem;
+    max-width: min(78vw, 240px);
+  }
   .perps-equity-panel .perps-equity-mode-group {
     display: flex !important;
     flex-wrap: wrap;
@@ -9483,11 +9524,12 @@ body[data-active-tab="loops"] .page-content,
             <span class="perps-mv3-live-pill perps-mv3-only" id="perpsMv3LivePill">0 live</span>
           </div>
           <nav class="perps-mobile-jumps perps-mv3-jumps perps-mv3-only" aria-label="Perps sections">
+            <a class="perps-mobile-jump" href="#perpsDailyFundingPanel">Funding</a>
             <a class="perps-mobile-jump" href="#perpsPositionsPanel">Positions</a>
             <a class="perps-mobile-jump" href="#perpsLeveragePanel">Cross margin</a>
             <a class="perps-mobile-jump" href="#perpsRatesPanel">Funding rates</a>
           </nav>
-          <p class="perps-mv3-scroll-hint perps-mv3-only">Scroll for live positions, cross-margin leverage, and venue funding rates</p>
+          <p class="perps-mv3-scroll-hint perps-mv3-only">Scroll for daily funding, live positions, cross-margin leverage, and venue rates</p>
 
           <section class="perps-panel perps-equity-panel" id="perpsEquityPanel">
             <div class="perps-panel-head">
