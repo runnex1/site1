@@ -31680,7 +31680,10 @@ function perpsIsValidEthAddress(addr) {
 function perpsIsValidSolanaAddress(addr) {
     const s = String(addr || '').trim();
     if (!s || s.startsWith('0x')) return false;
-    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s);
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s)) return false;
+    // Block Phoenix public demo / docs sample authority (not a user wallet).
+    if (s === '3ctHNWw9NtU2Vwnx2fAhLpcgHHqjEV4nY9BQvxSrtuFr') return false;
+    return true;
 }
 
 function perpsResolveHlWallet() {

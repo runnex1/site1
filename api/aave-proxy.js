@@ -12,6 +12,7 @@ const {
   repairEquitySnapshotDeposits,
   reconstructGrvtSymbolSession,
   isSolanaAddress,
+  isUsablePhoenixWallet,
 } = require('../lib/perps');
 const {
   mergeVariationalRateSamples,
@@ -235,7 +236,7 @@ async function handlePerpsCronSnapshot(req, res) {
       hyperliquid: wallet,
       nado: nadoWallet,
       grvtSubAccount,
-      ...(isSolanaAddress(phoenixWallet) ? { phoenix: phoenixWallet } : {}),
+      ...(isUsablePhoenixWallet(phoenixWallet) ? { phoenix: phoenixWallet } : {}),
       configured: true,
     }));
   }
@@ -251,7 +252,7 @@ async function handlePerpsCronSnapshot(req, res) {
       hyperliquid: wallet,
       nado: nadoWallet,
       grvtSubAccount,
-      phoenix: isSolanaAddress(phoenixWallet) ? phoenixWallet : '',
+      phoenix: isUsablePhoenixWallet(phoenixWallet) ? phoenixWallet : '',
       // Fallback only if capital-flow refresh fails; live flows override inside the fetcher.
       cumulativeNetDeposits: Number(previousSnapshot?.cumulativeNetDeposits) || 0,
     }, { hedges, closedPairs, refreshCapitalFlows: true });
@@ -309,7 +310,7 @@ async function handlePerps(req, res) {
     req.query.grvtSubAccount || req.query.grvt || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
   ).trim();
   const phoenixWalletRaw = String(req.query.phoenixWallet || req.query.phoenix || '').trim();
-  const phoenixWallet = isSolanaAddress(phoenixWalletRaw) ? phoenixWalletRaw : '';
+  const phoenixWallet = isUsablePhoenixWallet(phoenixWalletRaw) ? phoenixWalletRaw : '';
 
   if (req.query.live === '1') {
     try {

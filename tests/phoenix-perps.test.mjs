@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const {
   isSolanaAddress,
+  isUsablePhoenixWallet,
   phoenixHourlyRateFromPoint,
   phoenixQuoteLotsToUsd,
   phoenixPositionUnrealizedPnl,
@@ -29,6 +30,7 @@ function pass(name) {
 
 {
   assert.equal(isSolanaAddress('3ctHNWw9NtU2Vwnx2fAhLpcgHHqjEV4nY9BQvxSrtuFr'), true);
+  assert.equal(isUsablePhoenixWallet('3ctHNWw9NtU2Vwnx2fAhLpcgHHqjEV4nY9BQvxSrtuFr'), false, 'demo authority must not be usable as user wallet');
   assert.equal(isSolanaAddress('0x1111111111111111111111111111111111111111'), false);
   assert.equal(isSolanaAddress(''), false);
   pass('isSolanaAddress');

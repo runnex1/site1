@@ -1385,11 +1385,14 @@ module.exports = async function handler(req, res) {
       const incomingPhoenix = String(incoming.phoenix || incoming.phoenixWallet || '').trim();
       const existingPhoenix = String(existingPerpsConfig.phoenix || existingPerpsConfig.phoenixWallet || '').trim();
       const isSolana = (v) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(v || '').trim()) && !String(v || '').startsWith('0x');
+      // Block Phoenix public demo / docs sample authority — never persist as a user wallet.
+      const isBlockedPhoenix = (v) => String(v || '').trim() === '3ctHNWw9NtU2Vwnx2fAhLpcgHHqjEV4nY9BQvxSrtuFr';
+      const usablePhoenix = (v) => isSolana(v) && !isBlockedPhoenix(v);
       // Never blank out a stored Phoenix Solana wallet with an empty client payload
       // (desktop localStorage often has it while a later saveData from another path omits it).
-      if (!isSolana(incomingPhoenix) && isSolana(existingPhoenix)) {
+      if (!usablePhoenix(incomingPhoenix) && usablePhoenix(existingPhoenix)) {
         incoming.phoenix = existingPhoenix;
-      } else if (isSolana(incomingPhoenix)) {
+      } else if (usablePhoenix(incomingPhoenix)) {
         incoming.phoenix = incomingPhoenix;
       } else {
         delete incoming.phoenix;
