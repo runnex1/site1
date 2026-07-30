@@ -3603,6 +3603,10 @@ assert.match(indexHtml, /perpsSnapshotVariationalAdjust\(snap, 0\)/, 'historical
 assert.match(indexHtml, /Open pairs: settled ~est\. only/, 'daily funding chart must exclude unsettled Var previews');
 assert.match(syncJs, /mergePerpsEquitySnapshots/, 'sync must merge equity snapshots instead of blind overwrite');
 assert.match(syncJs, /without allowing empty payloads to wipe cron history/, 'empty perpsSnapshots POST must not wipe KV');
+assert.match(syncJs, /Never blank out a stored Phoenix Solana wallet/, 'sync must preserve Phoenix wallet when client omits it');
+assert.match(indexHtml, /phoenixEl && perpsIsValidSolanaAddress\(saved\.phoenix\)/, 'perpsLoadConfig must restore Phoenix wallet into the form');
+assert.match(indexHtml, /async function perpsEnsurePhoenixSyncedToCloud\(/, 'desktop must push local Phoenix wallet to cloud for mobile');
+assert.match(indexHtml, /void perpsEnsurePhoenixSyncedToCloud\(\)/, 'perps refresh must attempt Phoenix cloud sync');
 assert.match(perpsJs, /OPEN_PAIR_MAX_SIZE_MISMATCH_PCT/, 'open pairing must reject huge size mismatches');
 assert.match(indexHtml, /equityChartMode: server\.equityChartMode \|\| local\.equityChartMode/, 'cloud config apply must preserve equity chart modes');
 assert.match(indexHtml, /\.perps-config-toggle-row \{ display: flex !important/, 'mobile must keep Edit wallets toggle visible');

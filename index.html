@@ -32834,11 +32834,15 @@ async function perpsBootstrapWallet() {
     if (location.protocol !== 'file:') {
         await perpsHydratePerpsAuxFromCloud();
     }
-    if (perpsHasValidWallet()) return true;
+    if (perpsHasValidWallet()) {
+        if (location.protocol !== 'file:') await perpsEnsurePhoenixSyncedToCloud();
+        return true;
+    }
     if (location.protocol === 'file:') return false;
     await perpsHydrateConfigFromCloud();
     if (location.protocol !== 'file:') {
         await perpsHydratePerpsAuxFromCloud();
+        await perpsEnsurePhoenixSyncedToCloud();
     }
     perpsImportConfigFromPortfolio();
     perpsRepairSavedConfig();
@@ -32871,13 +32875,18 @@ function perpsApplyCloudConfig(serverConfig) {
     const localHl = String(local.hyperliquid || '').trim();
     const serverValid = /^0x[a-fA-F0-9]{40}$/.test(serverHl);
     const localValid = /^0x[a-fA-F0-9]{40}$/.test(localHl);
+    const serverPhoenix = String(server.phoenix || server.phoenixWallet || '').trim();
+    const localPhoenix = String(local.phoenix || '').trim();
+    const phoenix = perpsIsValidSolanaAddress(serverPhoenix)
+        ? serverPhoenix
+        : (perpsIsValidSolanaAddress(localPhoenix) ? localPhoenix : '');
 
     if (serverValid) {
         perpsPersistConfig({
             hyperliquid: serverHl,
             nado: server.nado || local.nado || '',
             grvtSubAccount: server.grvtSubAccount || local.grvtSubAccount || '4860249204328359',
-            phoenix: server.phoenix || local.phoenix || '',
+            phoenix,
             statRange: server.statRange || local.statRange || _perpsStatRange,
             equityChartMode: server.equityChartMode || local.equityChartMode || _perpsEquityChartMode,
             equityValueMode: server.equityValueMode || local.equityValueMode || _perpsEquityValueMode,
@@ -32889,6 +32898,25 @@ function perpsApplyCloudConfig(serverConfig) {
         if (!local.configured) perpsPersistConfig(local, { skipCloudSync: true });
     }
     return perpsHasValidWallet();
+}
+
+/** If this device has a Phoenix wallet but cloud config does not, push it so mobile sees HL+Phoenix pairs. */
+async function perpsEnsurePhoenixSyncedToCloud() {
+    if (location.protocol === 'file:') return false;
+    const local = perpsGetSavedConfig();
+    if (!perpsIsValidSolanaAddress(local.phoenix) || !perpsIsValidEthAddress(local.hyperliquid)) return false;
+    try {
+        const cloud = await perpsFetchCloudPerpsConfig();
+        if (perpsIsValidSolanaAddress(cloud?.phoenix || cloud?.phoenixWallet)) return false;
+        perpsPersistConfig({
+            ...local,
+            phoenix: local.phoenix.trim(),
+            configured: true,
+        });
+        return true;
+    } catch (e) {
+        return false;
+    }
 }
 
 function perpsIsConfigComplete() {
@@ -34533,6 +34561,7 @@ function perpsLoadConfig() {
     const hlEl = document.getElementById('perpsHlWallet');
     const nadoEl = document.getElementById('perpsNadoWallet');
     const grvtEl = document.getElementById('perpsGrvtSubAccount');
+    const phoenixEl = document.getElementById('perpsPhoenixWallet');
     if (!hlEl) return;
     try {
         const saved = perpsGetSavedConfig();
@@ -34548,6 +34577,10 @@ function perpsLoadConfig() {
             const grvt = saved.grvtSubAccount || '4860249204328359';
             grvtEl.dataset.perpsReal = grvt;
             grvtEl.value = grvt;
+        }
+        if (phoenixEl && perpsIsValidSolanaAddress(saved.phoenix)) {
+            phoenixEl.dataset.perpsReal = saved.phoenix;
+            phoenixEl.value = saved.phoenix;
         }
         if (saved.statRange) _perpsStatRange = saved.statRange;
         if (saved.equityChartMode === 'all' || saved.equityChartMode === 'session') {
@@ -38425,6 +38458,7 @@ async function perpsRefresh(silent = false) {
         const cloudSnapshotsAdded = perpsCountEquityBuckets() > bucketsBefore;
         const { payload, warnings } = fetchResult;
         perpsRenderDashboard(payload, { cloudSnapshotsAdded });
+        void perpsEnsurePhoenixSyncedToCloud();
         if (warnings.length) {
             _perpsRefreshError = warnings.join(' · ');
             perpsUpdateRefreshBar();

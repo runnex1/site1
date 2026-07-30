@@ -1373,7 +1373,22 @@ module.exports = async function handler(req, res) {
 
     // Perps arb wallets + equity snapshots (ignore empty payloads that would erase saved wallets)
     if (body.perpsConfig && /^0x[a-fA-F0-9]{40}$/.test(String(body.perpsConfig.hyperliquid || ''))) {
-      await kvSet('vault:perps_config', JSON.stringify(body.perpsConfig));
+      const existingPerpsConfig = parseJson(await kvGet('vault:perps_config'), {});
+      const incoming = { ...body.perpsConfig };
+      const incomingPhoenix = String(incoming.phoenix || incoming.phoenixWallet || '').trim();
+      const existingPhoenix = String(existingPerpsConfig.phoenix || existingPerpsConfig.phoenixWallet || '').trim();
+      const isSolana = (v) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(v || '').trim()) && !String(v || '').startsWith('0x');
+      // Never blank out a stored Phoenix Solana wallet with an empty client payload
+      // (desktop localStorage often has it while a later saveData from another path omits it).
+      if (!isSolana(incomingPhoenix) && isSolana(existingPhoenix)) {
+        incoming.phoenix = existingPhoenix;
+      } else if (isSolana(incomingPhoenix)) {
+        incoming.phoenix = incomingPhoenix;
+      } else {
+        delete incoming.phoenix;
+      }
+      delete incoming.phoenixWallet;
+      await kvSet('vault:perps_config', JSON.stringify(incoming));
       saved.perpsConfig = true;
     }
     if (body.perpsSnapshots && typeof body.perpsSnapshots === 'object'
