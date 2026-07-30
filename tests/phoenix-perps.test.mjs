@@ -68,6 +68,31 @@ function pass(name) {
 }
 
 {
+  const {
+    phoenixTicksToUsd,
+    phoenixTpslFromPositionRow,
+  } = require('../lib/phoenix-perps.js');
+  assert.equal(phoenixTicksToUsd(7488, 100), 74.88);
+  const tpsl = phoenixTpslFromPositionRow({
+    entryPriceTicks: '7000',
+    entryPriceUsd: '70',
+    takeProfitTriggers: [{ status: 'active', trigger: { triggerPriceTicks: '8000' } }],
+    stopLossTriggers: [{ status: 'active', trigger: { triggerPriceTicks: '6000' } }],
+  }, 100);
+  assert.equal(tpsl.tpPx, 80);
+  assert.equal(tpsl.slPx, 60);
+  // Fallback from entry ticks when market tickSize missing.
+  const fallback = phoenixTpslFromPositionRow({
+    entryPriceTicks: '7000',
+    entryPriceUsd: '70',
+    takeProfitTriggers: [{ status: 'active', trigger: { triggerPriceTicks: '7700' } }],
+    stopLossTriggers: [],
+  }, null);
+  assert.equal(fallback.tpPx, 77);
+  pass('phoenix TP/SL tick conversion');
+}
+
+{
   const rows = buildRateSpreadRows(
     ['SOL'],
     {},

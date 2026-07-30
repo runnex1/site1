@@ -35814,7 +35814,7 @@ function perpsRenderDailyFundingChart(series, rangeLabel) {
             if (tipVal) {
                 const cls = hit.val >= 0 ? 'pos' : 'neg';
                 const label = _perpsDailyFundShowFees ? 'Net' : 'Funding';
-                const venueLabels = { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext' };
+                const venueLabels = { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext', phoenix: 'Phx', variational: 'Var' };
                 const detailRows = [];
                 if (_perpsDailyFundShowFees) {
                     detailRows.push(`Funding ${perpsFmtUsd(hit.funding)}`);
@@ -37233,12 +37233,17 @@ const PERPS_MV3_SPREAD_SPECS = [
     { key: 'spreadGrvtVariational8h', label: 'GRVT−Var' },
     { key: 'spreadExtendedVariational8h', label: 'Ext−Var' },
     { key: 'spreadNadoVariational8h', label: 'Nado−Var' },
+    { key: 'spreadPhoenixVariational8h', label: 'Phx−Var' },
     { key: 'spread8h', label: 'HL−Nado' },
     { key: 'spreadHlGrvt8h', label: 'HL−GRVT' },
     { key: 'spreadHlExtended8h', label: 'HL−Ext' },
+    { key: 'spreadHlPhoenix8h', label: 'HL−Phx' },
     { key: 'spreadNadoExtended8h', label: 'Nado−Ext' },
     { key: 'spreadNadoGrvt8h', label: 'Nado−GRVT' },
+    { key: 'spreadNadoPhoenix8h', label: 'Nado−Phx' },
     { key: 'spreadGrvtExtended8h', label: 'GRVT−Ext' },
+    { key: 'spreadGrvtPhoenix8h', label: 'GRVT−Phx' },
+    { key: 'spreadExtendedPhoenix8h', label: 'Ext−Phx' },
 ];
 
 function perpsMv3FmtSpreadPct(rate) {
@@ -37269,7 +37274,7 @@ function perpsMv3SyncChrome(data) {
     if (posSub) {
         posSub.textContent = _perpsPositionsTab === 'closed'
             ? 'Fully closed hedged rounds from fill history'
-            : 'Hedged pairs across HL, GRVT, Extended + Variational';
+            : 'Hedged pairs across HL, Nado, GRVT, Extended, Phoenix + Variational';
     }
 }
 
@@ -37401,6 +37406,7 @@ function perpsRenderMobileFundingRates(data) {
             { label: 'GRVT', val: row.grvt8h },
             { label: 'Ext', val: row.extended8h },
             { label: 'Nado', val: row.nado8h },
+            { label: 'Phx', val: row.phoenix8h },
             { label: 'Var', val: row.variational8h },
         ].filter(v => v.val != null && Number.isFinite(v.val));
         const minRate = venueRates.length ? Math.min(...venueRates.map(v => v.val)) : null;
@@ -37965,7 +37971,7 @@ function perpsRenderClosedPositions(closedPairs) {
 }
 
 function perpsVenueShort(venue) {
-    return { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext', variational: 'Var' }[venue] || venue;
+    return { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext', phoenix: 'Phx', variational: 'Var' }[venue] || venue;
 }
 
 function perpsPairLegs(p) {
@@ -38018,7 +38024,7 @@ function perpsLegCurrentPx(symbol, venue, leg) {
     const direct = perpsNumOrNull(leg?.markPx);
     if (direct != null) return direct;
     const row = perpsRateSpreadRow(symbol);
-    const key = { hyperliquid: 'hyperliquidMarkPx', nado: 'nadoMarkPx', grvt: 'grvtMarkPx', extended: 'extendedMarkPx', variational: 'variationalMarkPx' }[venue];
+    const key = { hyperliquid: 'hyperliquidMarkPx', nado: 'nadoMarkPx', grvt: 'grvtMarkPx', extended: 'extendedMarkPx', phoenix: 'phoenixMarkPx', variational: 'variationalMarkPx' }[venue];
     return key ? perpsNumOrNull(row?.[key]) : null;
 }
 
@@ -38424,36 +38430,47 @@ function perpsRenderSpread(rows) {
         return;
     }
     el.innerHTML = `<table class="perps-table"><thead><tr>
-        <th>Asset</th><th>HL 8h</th><th>Nado 8h</th><th>GRVT 8h</th><th>Ext 8h</th><th>Var 8h</th>
-        <th>HL−Nado</th><th>HL−GRVT</th><th>HL−Ext</th><th>Nado−Ext</th><th>Nado−GRVT</th><th>GRVT−Ext</th>
+        <th>Asset</th><th>HL 8h</th><th>Nado 8h</th><th>GRVT 8h</th><th>Ext 8h</th><th>Phx 8h</th><th>Var 8h</th>
+        <th>HL−Nado</th><th>HL−GRVT</th><th>HL−Ext</th><th>HL−Phx</th><th>Nado−Ext</th><th>Nado−GRVT</th><th>Nado−Phx</th><th>GRVT−Ext</th><th>GRVT−Phx</th><th>Ext−Phx</th>
     </tr></thead><tbody>${rows.map(r => `<tr>
         <td>${dashEsc(r.symbol)}</td>
         <td>${perpsFmtRate(r.hyperliquid8h)}</td>
         <td>${perpsFmtRate(r.nado8h)}</td>
         <td>${perpsFmtRate(r.grvt8h)}</td>
         <td>${perpsFmtRate(r.extended8h)}</td>
+        <td>${perpsFmtRate(r.phoenix8h)}</td>
         <td>${perpsFmtRate(r.variational8h)}</td>
         <td>${perpsFmtRate(r.spread8h)}</td>
         <td>${perpsFmtRate(r.spreadHlGrvt8h)}</td>
         <td>${perpsFmtRate(r.spreadHlExtended8h)}</td>
+        <td>${perpsFmtRate(r.spreadHlPhoenix8h)}</td>
         <td>${perpsFmtRate(r.spreadNadoExtended8h)}</td>
         <td>${perpsFmtRate(r.spreadNadoGrvt8h)}</td>
+        <td>${perpsFmtRate(r.spreadNadoPhoenix8h)}</td>
         <td>${perpsFmtRate(r.spreadGrvtExtended8h)}</td>
+        <td>${perpsFmtRate(r.spreadGrvtPhoenix8h)}</td>
+        <td>${perpsFmtRate(r.spreadExtendedPhoenix8h)}</td>
     </tr>`).join('')}</tbody></table>`;
 }
 
-function perpsRenderFundingHistory(hlPayments, nadoPayments, grvtPayments, extendedPayments, days = 30) {
+function perpsRenderFundingHistory(hlPayments, nadoPayments, grvtPayments, extendedPayments, phoenixPayments = null, days = 30) {
     const el = document.getElementById('perpsFundingHistory');
     if (!el) return;
+    if (typeof phoenixPayments === 'number') {
+        days = phoenixPayments;
+        phoenixPayments = null;
+    }
     const hlSorted = [...(hlPayments || [])].sort((a, b) => b.time - a.time);
     const nadoSorted = [...(nadoPayments || [])].sort((a, b) => b.time - a.time);
     const grvtSorted = [...(grvtPayments || [])].sort((a, b) => b.time - a.time);
     const extendedSorted = [...(extendedPayments || [])].sort((a, b) => b.time - a.time);
+    const phoenixSorted = [...(phoenixPayments || [])].sort((a, b) => b.time - a.time);
     const merged = [
         ...hlSorted.slice(0, 12),
         ...nadoSorted.slice(0, 12),
         ...grvtSorted.slice(0, 12),
         ...extendedSorted.slice(0, 12),
+        ...phoenixSorted.slice(0, 12),
     ].sort((a, b) => b.time - a.time);
     if (!merged.length) {
         el.innerHTML = `<div class="perps-empty">No funding payments in the last ${days} days.</div>`;

@@ -51,6 +51,7 @@ const aaveProxyHandler = require('../api/aave-proxy.js');
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const indexHtml = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const perpsJs = readFileSync(join(ROOT, 'lib', 'perps.js'), 'utf8');
+const phoenixPerpsJs = readFileSync(join(ROOT, 'lib', 'phoenix-perps.js'), 'utf8');
 const loopSnapshotsJs = readFileSync(join(ROOT, 'lib', 'loop-snapshots.js'), 'utf8');
 const aaveProxyJs = readFileSync(join(ROOT, 'api', 'aave-proxy.js'), 'utf8');
 const syncJs = readFileSync(join(ROOT, 'api', 'sync.js'), 'utf8');
@@ -605,11 +606,15 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
     ['hyperliquid', 'nado', 'CMBHLNADO'],
     ['hyperliquid', 'grvt', 'CMBHLGRVT'],
     ['hyperliquid', 'extended', 'CMBHLEXT'],
+    ['hyperliquid', 'phoenix', 'CMBHLPHX'],
     ['nado', 'grvt', 'CMBNADOGRVT'],
     ['nado', 'extended', 'CMBNADOEXT'],
+    ['nado', 'phoenix', 'CMBNADOPHX'],
     ['grvt', 'extended', 'CMBGRVTEXT'],
+    ['grvt', 'phoenix', 'CMBGRVTPHX'],
+    ['extended', 'phoenix', 'CMBEXTPHX'],
   ];
-  const sources = { hyperliquid: [], nado: [], grvt: [], extended: [] };
+  const sources = { hyperliquid: [], nado: [], grvt: [], extended: [], phoenix: [] };
   const round = (venue, symbol, side, openTime, closeTime, pnl) => {
     const openSide = side === 'long' ? 'buy' : 'sell';
     const closeSide = side === 'long' ? 'sell' : 'buy';
@@ -3597,7 +3602,8 @@ assert.match(perpsJs, /metadata\.trigger \?\? metadata\.t/, 'GRVT TP/SL parser m
 assert.match(perpsJs, /function enrichGrvtStateWithTpsl\(/, 'GRVT fallback state must still attach TP/SL from open_orders');
 assert.match(perpsJs, /tpPx: tpslPxFrom\(p\.tpTriggerPrice\)/, 'Extended positions must map API tpTriggerPrice');
 assert.match(perpsJs, /slPx: tpslPxFrom\(p\.slTriggerPrice\)/, 'Extended positions must map API slTriggerPrice');
-assert.doesNotMatch(perpsJs, /NADO TP\/SL unavailable/, 'NADO TP/SL lookup is skipped silently');
+assert.match(perpsJs, /fetchNadoTriggerOrders\(subaccount, positions\)/, 'NADO state must attach TP/SL from trigger orders');
+assert.match(perpsJs, /NADO TP\/SL unavailable/, 'NADO TP/SL fetch failures must surface without blocking positions');
 assert.match(perpsJs, /hyperliquidMarkPx: hl\?\.markPx \?\? null/, 'rate spread rows must expose Hyperliquid mark price for position rows');
 assert.match(indexHtml, /perpsRateSpreadRow\(p\.symbol\)/, 'Current APR must fall back to the latest rate-spread row');
 assert.match(indexHtml, /rateA \?\? p\.fundingRate8hA/, 'live APR polling must preserve previous leg rates when a response is partial');
@@ -3913,8 +3919,69 @@ assert.match(indexHtml, /Always pull cloud wallets/, 'bootstrap must hydrate clo
 assert.match(indexHtml, /finalizing AUTO close/, 'pending Var close pill must not say exit price needed');
 assert.match(indexHtml, /cf\.phoenix\?\.payments/, 'client capital flows must include Phoenix deposits');
 assert.match(variationalHedgeJs, /LIVE_CROSS_VENUES = \['hyperliquid', 'nado', 'grvt', 'extended', 'phoenix'\]/, 'Var live-cross must include Phoenix');
-assert.match(variationalHedgeJs, /Keep signed size/, 'snapshot grace must preserve short side');
+assert.match(variationalHedgeJs, /phoenix: 'phoenix'/, 'Var venue state key must include Phoenix for close detection');
+assert.match(variationalHedgeJs, /phoenix: 'phoenix8h'/, 'Var venueRate8hFromSpread must include Phoenix');
+assert.match(indexHtml, /phoenix: 'phoenixMarkPx'/, 'perpsLegCurrentPx must fall back to phoenixMarkPx');
+assert.match(indexHtml, /phoenix: 'Phx'/, 'perpsVenueShort must label Phoenix');
+assert.match(indexHtml, /spreadHlPhoenix8h/, 'mobile funding rates must include HL−Phx spreads');
+assert.match(indexHtml, /label: 'Phx', val: row\.phoenix8h/, 'mobile funding rates must show Phoenix venue rate');
+assert.match(indexHtml, /phoenix: 'Phx', variational: 'Var'/, 'daily funding tooltip must label Phoenix/Var');
+assert.match(perpsJs, /fetchNadoTriggerOrders\(subaccount, positions\)/, 'Nado state must attach TP/SL from trigger orders');
+assert.match(perpsJs, /fills: slimFills\(payload\.phoenix\.fills\)/, 'client payload slim must trim Phoenix fills like other venues');
+assert.match(phoenixPerpsJs, /function phoenixTpslFromPositionRow/, 'Phoenix positions must map takeProfit/stopLoss triggers');
+
 {
+  const {
+    venueTrackedLegFetchUncertain,
+    venueRate8hFromSpread,
+    applyVariationalHedges,
+    createHedgeFromUnhedged,
+  } = require('../lib/variational-hedge.js');
+  assert.equal(
+    venueTrackedLegFetchUncertain({ phoenix: { state: { positions: [] } } }, 'phoenix'),
+    false,
+    'healthy empty Phoenix state is certain (flat), not uncertain',
+  );
+  assert.equal(
+    venueTrackedLegFetchUncertain({}, 'phoenix'),
+    true,
+    'missing Phoenix state remains uncertain',
+  );
+  assert.equal(venueRate8hFromSpread({ phoenix8h: 0.0002 }, 'phoenix'), 0.0002);
+  const hedge = createHedgeFromUnhedged({
+    symbol: 'SOL',
+    venue: 'phoenix',
+    size: -5,
+    side: 'short',
+    entryPx: 70,
+    markPx: 72,
+    notional: 360,
+    unrealizedPnl: -10,
+  }, 70);
+  const data = {
+    paired: [],
+    unhedged: [],
+    rateSpread: [{ symbol: 'SOL', phoenix8h: 0.0001, variational8h: -0.00005, variationalMarkPx: 72 }],
+    hyperliquid: { state: { positions: [] } },
+    nado: { state: { positions: [] } },
+    grvt: { state: { positions: [] } },
+    extended: { state: { positions: [] } },
+    phoenix: {
+      state: {
+        positions: [{
+          venue: 'phoenix', symbol: 'SOL', size: -5, side: 'short',
+          entryPx: 70, markPx: 72, notional: 360, unrealizedPnl: -10, fundingSinceOpen: 1,
+        }],
+      },
+    },
+    closedPairs: [],
+    closedPairRefreshes: [],
+  };
+  const result = applyVariationalHedges(data, [hedge], {
+    SOL: { symbol: 'SOL', markPx: 72, fundingRateInterval: -0.00005, fundingIntervalS: 28800, fundingRate8h: -0.00005, fundingRateAnnual: -0.00005 * 1095 },
+  });
+  assert.equal(result.paired.length, 1, 'Phoenix tracked Var hedge must open');
+  assert.equal(result.paired[0].fundingRate8hA, 0.0001, 'Phoenix+Var pair must use phoenix8h from spread');
   const { trackedLegFromSnapshot } = require('../lib/variational-hedge.js');
   const shortLeg = trackedLegFromSnapshot({
     trackedVenue: 'hyperliquid',
