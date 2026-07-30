@@ -37306,7 +37306,7 @@ function perpsRenderPortfolioPositionsV3(paired) {
         const sizeMismatch = perpsPairHasSizeMismatch(p);
         const meta = `${perpsFmtSize(legs.a.size)} · ${dashEsc(p.pairLabel || 'HL + Nado')}`;
         const warnHtml = sizeMismatch
-            ? `<div class="perps-mv3-warnline">⚠ Size mismatch: ${dashEsc(perpsPairSizeMismatchText(p))}</div>`
+            ? `<div class="perps-mv3-warnline">⚠ Size mismatch (not fully hedged): ${dashEsc(perpsPairSizeMismatchText(p))}</div>`
             : '';
         return `<article class="perps-mv3-card${sizeMismatch ? ' warn' : ''}">
             <div class="perps-mv3-head">
@@ -37534,7 +37534,7 @@ function perpsRenderPortfolioPositions(paired) {
         const midPx = perpsPositionMidPx(p, displayLegs);
         const sizeMismatch = perpsPairHasSizeMismatch(p);
         const sizeWarnHtml = sizeMismatch
-            ? `<div class="perps-pos-size-warn" title="Hedged legs should match exactly">⚠ Size mismatch: ${dashEsc(perpsPairSizeMismatchText(p))}</div>`
+            ? `<div class="perps-pos-size-warn" title="Not fully hedged — leg sizes differ">⚠ Size mismatch (not fully hedged): ${dashEsc(perpsPairSizeMismatchText(p))}</div>`
             : '';
         return `<div class="perps-pos-card${sizeMismatch ? ' size-mismatch' : ''}"><div class="perps-pos-row">
             <div class="perps-pos-token">

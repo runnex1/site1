@@ -125,6 +125,78 @@ function pass(name) {
 }
 
 {
+  // Ext 30 long + Phoenix 45 short (~33% mismatch) must pair as partial hedge, not two unhedged rows.
+  const arb = buildPairedAnalysis({
+    hlState: { positions: [] },
+    nadoState: { positions: [] },
+    extendedState: {
+      positions: [{
+        venue: 'extended', symbol: 'BNB', size: 30, side: 'long',
+        entryPx: 580, markPx: 592.67, notional: 17780.27, unrealizedPnl: 212.43,
+      }],
+    },
+    phoenixState: {
+      positions: [{
+        venue: 'phoenix', symbol: 'BNB', size: -45, side: 'short',
+        entryPx: 590, markPx: 595.81, notional: 26811.45, unrealizedPnl: -331.67,
+        fundingSinceOpen: 1.7,
+      }],
+    },
+    hlFunding: { payments: [], totalFunding: 0 },
+    nadoFunding: { payments: [], totalFunding: 0 },
+    extendedFunding: { payments: [], totalFunding: 0 },
+    phoenixFunding: { payments: [], totalFunding: 1.7 },
+    hlFills: { fills: [], totalFees: 0, totalRealized: 0 },
+    nadoMatches: { matches: [], totalFees: 0, totalRealized: 0 },
+    extendedFills: { fills: [], totalFees: 0, totalRealized: 0 },
+    phoenixFills: { fills: [], totalFees: 0, totalRealized: 0 },
+    spreadRows: [{
+      symbol: 'BNB',
+      extended8h: 0.0001,
+      phoenix8h: -0.00005,
+      spreadExtendedPhoenix8h: 0.00015,
+    }],
+    days: 30,
+  });
+  assert.equal(arb.paired.length, 1, 'partial Ext+Phoenix must pair');
+  assert.equal(arb.paired[0].pairType, 'extended_phoenix');
+  assert.ok(arb.paired[0].alerts.includes('size_mismatch'), 'partial hedge must warn size mismatch');
+  assert.ok(arb.paired[0].sizeMismatchPct > 25 && arb.paired[0].sizeMismatchPct <= 50);
+  assert.equal(arb.unhedged.length, 0);
+  pass('buildPairedAnalysis Extended + Phoenix partial hedge');
+}
+
+{
+  // Tiny opposite leg must stay unhedged (not steal a fake hedge).
+  const arb = buildPairedAnalysis({
+    hlState: {
+      positions: [{
+        venue: 'hyperliquid', symbol: 'ETH', size: 10, side: 'long',
+        entryPx: 3000, markPx: 3010, notional: 30100, unrealizedPnl: 100,
+      }],
+    },
+    nadoState: { positions: [] },
+    extendedState: {
+      positions: [{
+        venue: 'extended', symbol: 'ETH', size: -0.2, side: 'short',
+        entryPx: 3000, markPx: 3010, notional: 602, unrealizedPnl: -2,
+      }],
+    },
+    hlFunding: { payments: [], totalFunding: 0 },
+    nadoFunding: { payments: [], totalFunding: 0 },
+    extendedFunding: { payments: [], totalFunding: 0 },
+    hlFills: { fills: [], totalFees: 0, totalRealized: 0 },
+    nadoMatches: { matches: [], totalFees: 0, totalRealized: 0 },
+    extendedFills: { fills: [], totalFees: 0, totalRealized: 0 },
+    spreadRows: [{ symbol: 'ETH', hl8h: 0.0001, extended8h: -0.00005, spreadHlExtended8h: 0.00015 }],
+    days: 30,
+  });
+  assert.equal(arb.paired.length, 0, '98% mismatch must not pair');
+  assert.equal(arb.unhedged.length, 2);
+  pass('buildPairedAnalysis rejects tiny opposite leg');
+}
+
+{
   const out = computeCombinedNetDeposits(
     { payments: [{ time: 1, usdc: 100, kind: 'deposit' }] },
     { payments: [] },
