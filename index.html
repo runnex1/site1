@@ -28991,7 +28991,7 @@ function xHandleAdd() {
         feedSettings.telegram = [...(feedSettings.telegram || []), { handle, category: 'crypto', enabled: true }];
         newsFeedSaveSettings(feedSettings);
     }
-    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5', 'vault_news_cache_v6'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
+    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5', 'vault_news_cache_v6', 'vault_news_cache_v7', 'vault_news_cache_v8'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
     fetchDailyNews();
 }
 function xHandleRemove(handle) {
@@ -29002,7 +29002,7 @@ function xHandleRemove(handle) {
     const feedSettings = newsFeedLoadSettings();
     feedSettings.telegram = (feedSettings.telegram || []).filter(t => t.handle !== norm);
     newsFeedSaveSettings(feedSettings);
-    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5', 'vault_news_cache_v6'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
+    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5', 'vault_news_cache_v6', 'vault_news_cache_v7', 'vault_news_cache_v8'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
     fetchDailyNews();
 }
 // Allow pressing Enter in the X handle input
@@ -29724,6 +29724,8 @@ function newsFeedIsWebsiteArticle(item, settings) {
     if (String(item.type || '').toLowerCase() === 'kobeissi') return false;
     if (newsFeedIsTelegramItem(item, settings)) return false;
     if (newsFeedIsNewsletterItem(item, settings)) return false;
+    const url = String(item.url || item.link || '').toLowerCase();
+    if (/\/\/(?:t|telegram)\.me\//.test(url)) return false;
     return true;
 }
 
@@ -31021,7 +31023,7 @@ async function fetchDailyNews(force = false) {
     const briefPortfolioEl = document.getElementById('briefPortfolioGrid');
     if (!briefGrid && !feedGrid) return;
 
-    const CACHE_KEY  = 'vault_news_cache_v8';
+    const CACHE_KEY  = 'vault_news_cache_v9';
     const CACHE_TTL  = 60 * 60 * 1000; // 1 hour
     const feedSettings = newsFeedLoadSettings();
     const timeWindowHours = feedSettings.timeWindowHours || 24;
@@ -31218,7 +31220,7 @@ async function fetchDailyNews(force = false) {
         { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', type: 'crypto', label: 'CoinDesk'      },
         { url: 'https://cointelegraph.com/rss',                   type: 'crypto', label: 'CoinTelegraph' },
         { url: 'https://thedefiant.io/api/feed',                  type: 'defi',   label: 'The Defiant', urlIncludes: '/news/defi/' },
-        { url: 'https://news.google.com/rss/search?q=site:theblock.co+DeFi&hl=en-US&gl=US&ceid=US:en', type: 'defi', label: 'The Block' },
+        { url: 'https://www.theblock.co/rss.xml',                 type: 'defi',   label: 'The Block', categoryIncludes: 'DeFi' },
         { url: 'https://protos.com/tag/defi/feed/',               type: 'defi',   label: 'Protos'       },
         { url: 'https://www.bankless.com/feed',                   type: 'defi',   label: 'Bankless'     },
         { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',  type: 'macro',  label: 'BBC Business' },
@@ -31258,11 +31260,16 @@ async function fetchDailyNews(force = false) {
             let link = t(item.querySelector('link')) || item.querySelector('guid')?.textContent?.trim() || '#';
             link = link.replace(/^https?:\/\/nitter\.[^/]+\//, 'https://x.com/');
             const pubDate = t(item.querySelector('pubDate')) || t(item.querySelector('dc\\:date')) || t(item.querySelector('published')) || t(item.querySelector('updated'));
-            return { title: t(item.querySelector('title')), url: link, type: src.type, source: src.label, pubDate, publishedAt: pubDate ? new Date(pubDate).toISOString() : '' };
+            const categories = Array.from(item.querySelectorAll('category')).map(el => t(el)).filter(Boolean);
+            return { title: t(item.querySelector('title')), url: link, type: src.type, source: src.label, pubDate, publishedAt: pubDate ? new Date(pubDate).toISOString() : '', categories };
         });
         if (src.urlIncludes) {
             const needle = String(src.urlIncludes).toLowerCase();
             rows = rows.filter((row) => String(row.url || '').toLowerCase().includes(needle));
+        }
+        if (src.categoryIncludes) {
+            const needle = String(src.categoryIncludes).toLowerCase();
+            rows = rows.filter((row) => (row.categories || []).some((c) => String(c || '').toLowerCase().includes(needle)));
         }
         return rows.slice(0, 3);
     }

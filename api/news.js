@@ -8,8 +8,8 @@ const SOURCES_WITH_TYPE = [
   { url: 'https://cryptopanic.com/news/rss/',                       label: 'CryptoPanic',      type: 'crypto' },
   // Defiant has a /news/defi/ section but no separate RSS — fetch full feed, keep DeFi paths only.
   { url: 'https://thedefiant.io/api/feed',                          label: 'The Defiant',      type: 'defi', urlIncludes: '/news/defi/', maxItems: 100 },
-  // Direct Block category RSS is Cloudflare-blocked; Google News DeFi site query works.
-  { url: 'https://news.google.com/rss/search?q=site:theblock.co+DeFi&hl=en-US&gl=US&ceid=US:en', label: 'The Block', type: 'defi' },
+  // Prefer native RSS + DeFi category tag (Google News DeFi query was too fuzzy).
+  { url: 'https://www.theblock.co/rss.xml', label: 'The Block', type: 'defi', categoryIncludes: 'DeFi', maxItems: 40 },
   { url: 'https://protos.com/tag/defi/feed/',                       label: 'Protos',           type: 'defi' },
   { url: 'https://www.bankless.com/feed',                           label: 'Bankless',         type: 'defi' },
   { url: 'https://news.google.com/rss/search?q=site:coindesk.com+DeFi&hl=en-US&gl=US&ceid=US:en', label: 'CoinDesk · DeFi', type: 'defi' },
@@ -96,7 +96,10 @@ function parseRSS(xml, maxItems = 30) {
     const desc = get('description');
     const link = get('link') || get('guid') || '#';
     const pubDate = get('pubDate') || get('dc:date') || get('updated') || get('published');
-    if (title) items.push({ title, desc: desc.slice(0, 240), link, pubDate });
+    const categories = [...block.matchAll(/<category\b[^>]*>([\s\S]*?)<\/category>/gi)]
+      .map((m) => cleanText(m[1]))
+      .filter(Boolean);
+    if (title) items.push({ title, desc: desc.slice(0, 240), link, pubDate, categories });
     if (items.length >= maxItems) break;
   }
   return items;
@@ -117,7 +120,10 @@ function parseAtom(xml, maxItems = 30) {
     const desc = get('summary') || get('content');
     const link = cleanText(linkMatch?.[1] || get('link') || get('id') || '#');
     const pubDate = get('published') || get('updated');
-    if (title) items.push({ title, desc: desc.slice(0, 240), link, pubDate });
+    const categories = [...block.matchAll(/<category\b[^>]*>([\s\S]*?)<\/category>/gi)]
+      .map((m) => cleanText(m[1] || m[0]?.match(/term=["']([^"']+)["']/i)?.[1] || ''))
+      .filter(Boolean);
+    if (title) items.push({ title, desc: desc.slice(0, 240), link, pubDate, categories });
     if (items.length >= maxItems) break;
   }
   return items;
@@ -266,6 +272,12 @@ async function fetchSourceItems(src) {
     const needle = String(src.urlIncludes).toLowerCase();
     items = items.filter((i) => String(i.link || i.url || '').toLowerCase().includes(needle));
   }
+  if (src.categoryIncludes) {
+    const needle = String(src.categoryIncludes).toLowerCase();
+    items = items.filter((i) =>
+      (i.categories || []).some((c) => String(c || '').toLowerCase().includes(needle))
+    );
+  }
   if (src.label === 'The Defiant') {
     items = await enrichDefiantDatesFromSanity(items);
   }
@@ -319,8 +331,9 @@ async function enrichDefiantDatesFromSanity(items) {
     if (!bySlug.size) return list;
     return list.map((item) => {
       const row = bySlug.get(defiantSlugFromUrl(item.link || item.url));
-      if (!row) return item;
-      const iso = row.publishedAt || row._updatedAt || row._createdAt;
+      // Only override with Sanity publishedAt. Falling back to _createdAt/_updatedAt
+      // hides freshly re-surfaced posts that lack publishedAt (e.g. SummerFi).
+      const iso = row?.publishedAt;
       const ts = Date.parse(iso || '');
       if (!Number.isFinite(ts)) return item;
       return {
