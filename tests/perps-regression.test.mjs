@@ -4109,10 +4109,17 @@ assert.match(indexHtml, /PERPS_GRVT_STATE_CACHE_KEY/, 'browser must cache last-k
 assert.match(indexHtml, /grvtPositions/, 'perps refresh must send cached GRVT positions to the server');
 
 assert.equal(perpHedgedSizesExactMatch(-44000, 44000), true, 'opposite-side legs with equal abs size must match');
-assert.equal(perpHedgedSizesExactMatch(44000, 43999), false, 'any hedged size difference must fail exact match');
+assert.equal(perpHedgedSizesExactMatch(44000, 43999), true, 'sub-0.1% size noise must not count as a mismatch');
+assert.equal(perpHedgedSizesExactMatch(1000, 999.05), true, '0.095% gap stays under the 0.1% warn floor');
+assert.equal(perpHedgedSizesExactMatch(1000, 998.9), false, '0.11% gap must still warn as size mismatch');
+assert.equal(perpHedgedSizesExactMatch(44000, 40000), false, 'material hedged size difference must fail match');
+assert.match(perpsJs, /SIZE_MISMATCH_WARN_MIN_FRAC = 0\.001/, 'open-pair size mismatch warn floor must be 0.1%');
 assert.match(perpsJs, /!perpHedgedSizesExactMatch/, 'paired hedges must alert on non-exact sizes');
 assert.match(indexHtml, /perpsPairHasSizeMismatch/, 'perps UI must detect hedged size mismatch');
+assert.match(indexHtml, /Math\.abs\(a - b\) \/ Math\.max\(a, b\) >= 0\.001/, 'UI size mismatch must use the 0.1% floor');
+assert.match(indexHtml, /pct >= 0\.1/, 'stale size_mismatch alerts below 0.1% must stay hidden');
 assert.match(indexHtml, /variationalPairHasSizeMismatch/, 'size mismatch must compare live variational vs exchange legs');
+assert.match(variationalHedgeJs, /\/ Math\.max\(sizeA, sizeB\) >= 0\.001/, 'Variational size mismatch must use the 0.1% floor');
 assert.match(variationalHedgeJs, /resolveVariationalSizesOnEntryEdit/, 'entry edit helpers must still resolve variational size from live exchange leg');
 assert.match(indexHtml, /perpsVariationalSizeInput/, 'variational modal markup may still expose size input for legacy exit flows');
 assert.match(indexHtml, /function perpsMergeVariationalHedgeRecord\(/, 'variational hedge merge must prefer newer local fill sizes');

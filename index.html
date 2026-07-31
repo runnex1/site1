@@ -36142,11 +36142,14 @@ function perpsPairHasSizeMismatch(p) {
         const a = Math.abs(Number(p.crossLegA.size || 0));
         const b = Math.abs(Number(p.crossLegB.size || 0));
         if (a > 0 && b > 0) {
-            const maxSize = Math.max(a, b, 1);
-            if (Math.abs(a - b) / maxSize > 0.0001) return true;
+            // Hide sub-0.1% noise (same rule as server open-pair alerts).
+            if (Math.abs(a - b) / Math.max(a, b) >= 0.001) return true;
         }
     }
-    return Boolean(p?.alerts?.includes('size_mismatch'));
+    if (!p?.alerts?.includes('size_mismatch')) return false;
+    const pct = Number(p.sizeMismatchPct);
+    if (Number.isFinite(pct)) return pct >= 0.1;
+    return true;
 }
 
 function perpsPairSizeMismatchText(p) {
