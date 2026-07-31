@@ -1729,6 +1729,10 @@ assert.match(indexHtml, /news-feed-quick-links-empty/, 'quick links must show he
 assert.match(newsJs, /function parseWindowHours\(/, 'news API must accept window hours query param');
 assert.match(newsJs, /feedItems/, 'news API must return full feed pool for news feed tab');
 assert.match(newsJs, /i\.type === 'defi' \|\| !isPricePrediction\(i\)/, 'defi headlines must bypass price-prediction filter');
+assert.match(indexHtml, /function newsFeedManualRefresh\(/, 'News Feed must expose a manual refresh action');
+assert.match(indexHtml, /id="newsFeedRefreshBtn"/, 'News Feed header must include a refresh button');
+assert.match(indexHtml, /onclick="newsFeedManualRefresh\(\)"/, 'News Feed refresh button must force-fetch news');
+assert.match(indexHtml, /fetchDailyNews\(true\)/, 'News Feed refresh must bypass the local news cache');
 assert.match(newsJs, /label: 'The Defiant',\s+type: 'defi'/, 'defi must include The Defiant RSS source');
 assert.match(newsJs, /urlIncludes: '\/news\/defi\/'/, 'The Defiant defi feed must keep only /news/defi/ section articles');
 assert.match(newsJs, /function enrichDefiantDatesFromSanity\(/, 'The Defiant RSS dates must be repaired from Sanity publishedAt');

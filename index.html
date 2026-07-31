@@ -5317,7 +5317,21 @@ body {
   display:flex; align-items:center; justify-content:space-between; gap:18px;
 }
 .news-feed-center-head-main { flex:1; min-width:0; }
-.news-feed-center-head h1 { margin:0 0 6px; font-size:23px; font-weight:900; letter-spacing:-.02em; color:var(--t1); }
+.news-feed-center-title-row {
+  display:flex; align-items:center; gap:10px; margin:0 0 6px;
+}
+.news-feed-center-head h1 { margin:0; font-size:23px; font-weight:900; letter-spacing:-.02em; color:var(--t1); }
+.news-feed-refresh-btn {
+  flex-shrink:0; width:30px; height:30px; border-radius:8px;
+  border:1px solid var(--border-mid); background:var(--surf-2); color:var(--t3);
+  display:inline-flex; align-items:center; justify-content:center;
+  cursor:pointer; padding:0;
+}
+.news-feed-refresh-btn svg { width:14px; height:14px; display:block; }
+.news-feed-refresh-btn:hover { border-color:rgba(0,212,170,0.35); color:var(--teal); background:var(--teal-10); }
+.news-feed-refresh-btn:disabled { opacity:0.55; cursor:wait; }
+.news-feed-refresh-btn.is-refreshing svg { animation: news-feed-refresh-spin 0.8s linear infinite; }
+@keyframes news-feed-refresh-spin { to { transform: rotate(360deg); } }
 .news-feed-center-head p { margin:0; font-size:12px; color:var(--t3); line-height:1.5; }
 .news-feed-lens { margin-top:14px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .news-feed-lens-chip {
@@ -9274,7 +9288,12 @@ body[data-active-tab="loops"] .page-content,
             <section class="news-feed-panel news-feed-center" id="newsFeedCenterPanel">
               <div class="news-feed-center-head">
                 <div class="news-feed-center-head-main">
-                  <h1>News Feed</h1>
+                  <div class="news-feed-center-title-row">
+                    <h1>News Feed</h1>
+                    <button type="button" class="news-feed-refresh-btn" id="newsFeedRefreshBtn" onclick="newsFeedManualRefresh()" title="Refresh news feed" aria-label="Refresh news feed">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+                    </button>
+                  </div>
                   <p>Ranked headlines filtered by your category, sources, and keywords</p>
                   <div class="news-feed-lens" id="newsFeedLens"></div>
                 </div>
@@ -30921,6 +30940,35 @@ document.addEventListener('keydown', e => {
 // =============================================================================
 // DAILY BRIEF — NEWS FEED (RSS fetch → Groq/Llama ranking)
 // =============================================================================
+let _newsFeedRefreshInFlight = null;
+
+async function newsFeedManualRefresh() {
+    const btn = document.getElementById('newsFeedRefreshBtn');
+    if (_newsFeedRefreshInFlight) return _newsFeedRefreshInFlight;
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('is-refreshing');
+    }
+    const feedGrid = document.getElementById('newsFeedGrid');
+    if (feedGrid) feedGrid.innerHTML = '<div class="news-feed-loading">Refreshing news…</div>';
+    _newsFeedRefreshInFlight = Promise.resolve()
+        .then(() => (typeof fetchDailyNews === 'function' ? fetchDailyNews(true) : null))
+        .catch((e) => {
+            console.warn('[News] manual refresh failed:', e?.message || e);
+            if (feedGrid && /Refreshing news/.test(feedGrid.innerHTML || '')) {
+                feedGrid.innerHTML = '<div class="news-feed-loading">Refresh failed — try again.</div>';
+            }
+        })
+        .finally(() => {
+            _newsFeedRefreshInFlight = null;
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('is-refreshing');
+            }
+        });
+    return _newsFeedRefreshInFlight;
+}
+
 async function fetchDailyNews(force = false) {
     const briefGrid = document.getElementById('briefNewsGrid');
     const feedGrid = document.getElementById('newsFeedGrid');
