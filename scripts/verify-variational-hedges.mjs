@@ -38,14 +38,16 @@ check('portfolioOnly returns hedges', hedges.length >= 3, `count=${hedges.length
 const open = hedges.filter((h) => h.status === 'open' && !h.supersededByLiveCross);
 check('has open non-superseded Var hedges', open.length >= 1, `found=${open.map((h) => h.symbol).join(',')}`);
 
-const zombieFlat = open.filter((h) => ['HBAR'].includes(h.symbol) && h.trackedVenue === 'grvt');
-check('no HBAR GRVT open zombie after deploy', zombieFlat.length === 0, `zombies=${zombieFlat.map((h) => h.id).join(',')}`);
-
 let perps;
 try {
   perps = JSON.parse(readFileSync(join(ROOT, '..', '_live-perps.json'), 'utf8'));
 } catch {
   perps = await fetchJson(`${PROD}/api/perps?wallet=${WALLET}&days=30`);
+}
+
+const aux = await fetchJson(`${PROD}/api/sync?perpsAux=1`).catch(() => null);
+if (aux?.perpsClosedPairs?.length) {
+  perps.closedPairs = [...(aux.perpsClosedPairs || []), ...(perps.closedPairs || [])];
 }
 
 const { createRequire } = await import('module');
@@ -58,6 +60,9 @@ const leaked = result.unhedged
   .filter((u) => stillOpen.some((h) => h.symbol === u.symbol && h.trackedVenue === u.venue))
   .map((u) => `${u.symbol}@${u.venue}`)
   .sort();
+const hbarAfter = (result.hedges || []).find((h) => h.symbol === 'HBAR' && h.trackedVenue === 'grvt');
+check('apply closes flat HBAR GRVT zombie', !hbarAfter || hbarAfter.status === 'closed', `status=${hbarAfter?.status || 'absent'}`);
+check('apply does not mint estimated HBAR duplicate', !(result.newClosedPairs || []).some((p) => p.symbol === 'HBAR'));
 
 check('apply builds at least one HL/GRVT+Var pair', paired.length >= 1, `paired=${paired.join(',')}`);
 check('apply hides hedged legs from unhedged', leaked.length === 0, `leaked=${leaked.join(',')}`);
