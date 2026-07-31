@@ -36969,7 +36969,6 @@ function perpsRecentFundingRows(p) {
     const venueKey = venue => String(venue || '').toLowerCase();
     const venueByName = new Map(entries.map(entry => [venueKey(entry.venue), entry]));
     const rowsByVenue = {};
-    let latestEventTime = 0;
     const rawEvents = Array.isArray(p.recentFundingEvents) && p.recentFundingEvents.length
         ? p.recentFundingEvents
         : series.flatMap(row => row.fundingEvents || []);
@@ -36978,11 +36977,9 @@ function perpsRecentFundingRows(p) {
         if (!venueByName.has(key)) continue;
         if (!rowsByVenue[key]) rowsByVenue[key] = [];
         rowsByVenue[key].push({ ...ev, entry: venueByName.get(key) });
-        latestEventTime = Math.max(latestEventTime, ev.time || 0);
     }
 
-    const anchorTime = latestEventTime || Date.now();
-    const windowStart = anchorTime - PERPS_RECENT_FUNDING_LOOKBACK_HOURS * 3600000;
+    const windowStart = Date.now() - PERPS_RECENT_FUNDING_LOOKBACK_HOURS * 3600000;
     const selected = [];
     for (const entry of entries) {
         const key = venueKey(entry.venue);

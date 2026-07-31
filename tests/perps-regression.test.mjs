@@ -3511,6 +3511,39 @@ assert.doesNotMatch(indexHtml, /type: 'venue'/, 'recent funding must not use sep
 assert.match(indexHtml, /touch-action:pan-x/, 'recent funding strip must allow horizontal touch scrolling');
 assert.match(perpsJs, /pair\.recentFundingEvents = fundingEventsForPair\(base, venueA, venueB, paymentSources, sinceMs\);/, 'position modal must receive raw per-pair funding events for slow venues like NADO');
 assert.match(indexHtml, /p\.recentFundingEvents/, 'position modal must prefer raw per-pair funding events over daily chart rows');
+assert.match(perpsJs, /\.sort\(\(a, b\) => \(Number\(b\?\.time\) \|\| 0\) - \(Number\(a\?\.time\) \|\| 0\)\)\s*\n\s*\.slice\(0, 64\)/, 'slimRecentEvents must keep the newest 64 payments, not the oldest');
+assert.doesNotMatch(perpsJs, /recentEventCutoffMs\)\s*\n\s*\.slice\(-64\)/, 'slimRecentEvents must not slice(-64) on newest-first funding arrays');
+assert.match(indexHtml, /const windowStart = Date\.now\(\) - PERPS_RECENT_FUNDING_LOOKBACK_HOURS/, 'recent funding window must anchor to now, not a stale latest event');
+
+{
+  const { slimPerpsDashboardForClient } = require('../lib/perps.js');
+  const now = Date.now();
+  const events = [];
+  for (let i = 0; i < 120; i++) {
+    // Newest first, spanning ~5 days of hourly payments.
+    events.push({ venue: 'hyperliquid', time: now - i * 3600000, usdc: 1, symbol: 'MEGA' });
+  }
+  const slimmed = slimPerpsDashboardForClient({
+    paired: [{
+      symbol: 'MEGA',
+      venueA: 'hyperliquid',
+      venueB: 'nado',
+      recentFundingEvents: events,
+    }],
+    unhedged: [],
+    closedPairs: [],
+    dailyFundingSeries: [],
+    hyperliquid: { funding: { payments: [] }, fills: { fills: [] } },
+    nado: { funding: { payments: [] }, matches: { matches: [] } },
+  });
+  const kept = slimmed.paired[0].recentFundingEvents || [];
+  assert.equal(kept.length, 64, 'slim keeps at most 64 recent funding events');
+  assert.equal(kept[0].time, now, 'first kept event must be the newest payment');
+  assert.ok(kept.every((e, idx) => idx === 0 || e.time <= kept[idx - 1].time), 'kept events stay newest-first');
+  const oldestKeptAgeH = (now - kept[kept.length - 1].time) / 3600000;
+  assert.ok(oldestKeptAgeH <= 64, 'oldest kept event must be within the newest 64 hours, not a week-old tail');
+}
+
 assert.match(indexHtml, /perps-pos-funding-strip/, 'recent funding payments must render as a horizontal card strip');
 assert.match(perpsJs, /const d = row\.delta \|\| row;/, 'Hyperliquid funding parser must support top-level funding rows as well as delta rows');
 assert.match(perpsJs, /d\.usdc \?\? row\.usdc/, 'Hyperliquid funding parser must keep the signed USDC payment from the response');
