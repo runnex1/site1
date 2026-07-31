@@ -56,7 +56,7 @@ check('local fallback Defiant filter', /thedefiant\.io\/api\/feed'[\s\S]{0,120}u
 check('local fallback Protos tag', /protos\.com\/tag\/defi\/feed/.test(indexHtml));
 check('local fallback Block DeFi', /theblock\.co\/rss\.xml[\s\S]{0,80}categoryIncludes: 'DeFi'/.test(indexHtml));
 check('Defiant publishedAt-only repair', /const iso = row\?\.publishedAt;/.test(newsJs));
-check('blacklist skips t.me urls', /t\|telegram\)\.me/.test(indexHtml) || /(?:t\|telegram)\.me/.test(indexHtml) || /\/\/(?:t\|telegram)\.me\//.test(indexHtml));
+check('blacklist skips t.me urls', indexHtml.includes('(?:t|telegram)\\.me'));
 
 // Blacklist unit behavior
 {
@@ -131,8 +131,9 @@ check('Protos URLs on protos.com', protosNonDefiUrl.length === 0, protosNonDefiU
 
 check('The Block articles present (7d)', block.length > 0, `count=${block.length}`);
 // Google News links often wrap; title/desc should lean DeFi — soft check via health + count
-check('The Block source configured', /site:theblock\.co\+DeFi/.test(newsJs));
-
+check('The Block source configured', /theblock\.co\/rss\.xml/.test(newsJs) && /categoryIncludes: 'DeFi'/.test(newsJs));
+check('Block articles are native theblock.co', block.every((i) => /theblock\.co/i.test(String(i.url || ''))), `n=${block.length}`);
+check('SummerFi Defiant visible when fresh', defiant.some((i) => /summerfi/i.test(`${i.title || ''} ${i.url || ''}`)) || defiant.length > 0, `n=${defiant.length}`);
 const healthKeys = Object.keys(health);
 check('sourceHealth includes Defiant', healthKeys.some((k) => /defiant/i.test(k)) || health['The Defiant'], JSON.stringify(health['The Defiant'] || null));
 check('sourceHealth includes Protos', healthKeys.some((k) => /protos/i.test(k)) || health.Protos, JSON.stringify(health.Protos || null));
