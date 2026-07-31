@@ -38075,10 +38075,16 @@ function perpsSanitizeVariationalClosedPairs(data) {
     let hedgesChanged = false;
     let mintedClosed = false;
 
-    const pairCoversHedge = (hedge) => (data.closedPairs || []).some((p) => (
-        p?.variationalHedgeId === hedge.id
-        || VH.variationalClosedPairCoversHedgeSession?.(p, hedge, data)
-    ));
+    const pairCoversHedge = (hedge) => (data.closedPairs || []).some((p) => {
+        // Bare hedge-id match is wrong after reopen: an older Closed Var row would
+        // block reminting the latest session (ZRO Jul→Aug under one hedge id).
+        if (p?.variationalHedgeId === hedge.id) {
+            const hc = Number(hedge.closedAt || hedge.pendingCloseAt || 0);
+            const pc = Number(p.closeTime || 0);
+            if (hc && pc && Math.abs(pc - hc) <= 2 * 86400000) return true;
+        }
+        return Boolean(VH.variationalClosedPairCoversHedgeSession?.(p, hedge, data));
+    });
 
     // Already-closed hedges must always have a Closed Var pair (equity + Closed tab).
     for (const hedge of hedges) {

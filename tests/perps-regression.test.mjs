@@ -5605,6 +5605,7 @@ const {
 }
 
 assert.match(indexHtml, /ensureVariationalClosedPairForHedge/, 'client must remint Closed Var pairs for closed hedges');
+assert.match(indexHtml, /Bare hedge-id match is wrong after reopen/, 'client must not treat older same-id Var closes as covering later sessions');
 assert.match(indexHtml, /perpsPushClosedPairsToServer/, 'Closed Var pairs must push to cloud like hedges');
 assert.match(indexHtml, /Seed API closedPairs with local\/cloud cache/, 'apply must seed closedPairs from cache before hedge apply');
 assert.match(
@@ -6331,6 +6332,122 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
   assert.ok(pair.funding > 15, 'closed variational pair must include full-session HL funding');
   assert.ok(Math.abs(pair.netPnl - (pair.closeSlippage + pair.funding - pair.fees)) < 0.05, 'ZRO net must not inflate beyond displayed components');
   assert.equal(hedge.closedFundingUsd, pair.funding, 'hedge must freeze total funding at close');
+}
+
+{
+  // Same hedge id across reopen: an older Closed Var row must not block reminting
+  // the later close (live ZRO Jul pair + Aug close under var-1783203813510-b3m7mm).
+  const {
+    variationalClosedPairCoversHedgeSession,
+    applyVariationalHedges,
+    clearStaleClosedFundingFromPriorHedgeSession,
+    ensureVariationalClosedPairForHedge,
+  } = require('../lib/variational-hedge.js');
+  const hedgeId = 'zro-reuse-id';
+  const openedAt = Date.parse('2026-07-01T00:00:00.000Z');
+  const firstClose = Date.parse('2026-07-08T23:05:00.000Z');
+  const secondClose = Date.parse('2026-08-01T00:04:00.000Z');
+  const oldPair = {
+    symbol: 'ZRO',
+    pairType: 'hyperliquid_variational',
+    manualVariationalClose: true,
+    variationalHedgeId: hedgeId,
+    openTime: firstClose - 86400000,
+    closeTime: firstClose,
+    size: 34000,
+    funding: 42.17,
+    fees: 13.63,
+    closeSlippage: 10,
+    netPnl: 38,
+    closeLegEstimated: false,
+    longLeg: {
+      venue: 'variational',
+      side: 'long',
+      size: 34000,
+      realizedPnl: -40,
+      avgClosePx: 0.94,
+    },
+    shortLeg: {
+      venue: 'hyperliquid',
+      side: 'short',
+      size: 34000,
+      realizedPnl: 270,
+      fees: 13.63,
+      funding: 80,
+      avgClosePx: 0.937,
+      fromExchangeHistory: true,
+      fromExchangeClosingFills: true,
+    },
+  };
+  const hedge = {
+    id: hedgeId,
+    symbol: 'ZRO',
+    trackedVenue: 'hyperliquid',
+    trackedSize: -21000,
+    variationalSize: 21000,
+    variationalEntryPx: 0.8384,
+    variationalExitPx: 0.7423,
+    openedAt,
+    status: 'closed',
+    closedAt: secondClose,
+    closedFundingUsd: 42.17,
+    closedTrackedFundingUsd: 80.62,
+    closedVariationalFundingUsd: -38.45,
+    trackedLastSnapshot: {
+      side: 'short',
+      size: -21000,
+      entryPx: 0.84,
+      markPx: 0.73,
+      unrealizedPnl: 2294,
+      funding: 581.56,
+      fees: 0,
+    },
+  };
+  assert.equal(
+    variationalClosedPairCoversHedgeSession(oldPair, hedge, { closedPairs: [oldPair] }),
+    false,
+    'older same-id Closed Var must not cover a later hedge close session',
+  );
+  assert.equal(
+    clearStaleClosedFundingFromPriorHedgeSession(hedge, { closedPairs: [oldPair] }),
+    true,
+    'stale freeze matching prior session funding must clear before remint',
+  );
+  assert.equal(hedge.closedFundingUsd, null);
+
+  const data = {
+    paired: [],
+    unhedged: [],
+    rateSpread: [],
+    closedPairs: [oldPair],
+    closedPairRefreshes: [],
+    hyperliquid: {
+      state: { positions: [] },
+      fills: { fills: [] },
+      funding: { payments: [] },
+    },
+    nado: { state: { positions: [] } },
+    grvt: { state: { positions: [] } },
+    extended: { state: { positions: [] } },
+  };
+  const listing = { symbol: 'ZRO', markPx: 0.73, fundingRateInterval: 0.0001, fundingIntervalS: 28800 };
+  const reminted = ensureVariationalClosedPairForHedge({ ...hedge, closedFundingUsd: 42.17 }, data, listing);
+  assert.ok(reminted?.manualVariationalClose, 'ensure must remint Closed Var for later session');
+  assert.ok(
+    Math.abs(Number(reminted.closeTime) - secondClose) < 60000,
+    'reminted pair must use the later close time',
+  );
+  assert.ok(
+    Math.abs(Number(reminted.size) - 21000) < 1,
+    'reminted pair must use latest hedge size, not the prior session size',
+  );
+
+  const applied = applyVariationalHedges(data, [{ ...hedge, closedFundingUsd: 42.17 }], { ZRO: listing });
+  assert.ok(
+    applied.newClosedPairs.some((p) => p.variationalHedgeId === hedgeId && Math.abs(Number(p.closeTime) - secondClose) < 60000),
+    'applyVariationalHedges must mint a new Closed Var when only an older same-id row exists',
+  );
+  assert.equal(applied.newClosedPairs.length, 1, 'must not duplicate the older July session row');
 }
 
 {
