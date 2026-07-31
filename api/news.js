@@ -93,13 +93,20 @@ function parseRSS(xml, maxItems = 30) {
       return cleanText((block.match(re) || [])[1] || '');
     };
     const title = get('title');
-    const desc = get('description');
+    const descRaw = (block.match(/<description[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/description>/i) ||
+      block.match(/<description[^>]*>([\s\S]*?)<\/description>/i) || [])[1] || '';
+    const contentEncoded = (block.match(/<content:encoded[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/content:encoded>/i) ||
+      block.match(/<content:encoded[^>]*>([\s\S]*?)<\/content:encoded>/i) ||
+      block.match(/<content[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/content>/i) ||
+      block.match(/<content[^>]*>([\s\S]*?)<\/content>/i) || [])[1] || '';
+    const body = cleanText(contentEncoded || descRaw).slice(0, 15000);
+    const desc = cleanText(descRaw || contentEncoded).slice(0, 240);
     const link = get('link') || get('guid') || '#';
     const pubDate = get('pubDate') || get('dc:date') || get('updated') || get('published');
     const categories = [...block.matchAll(/<category\b[^>]*>([\s\S]*?)<\/category>/gi)]
       .map((m) => cleanText(m[1]))
       .filter(Boolean);
-    if (title) items.push({ title, desc: desc.slice(0, 240), link, pubDate, categories });
+    if (title) items.push({ title, desc, body, link, pubDate, categories });
     if (items.length >= maxItems) break;
   }
   return items;
@@ -117,13 +124,18 @@ function parseAtom(xml, maxItems = 30) {
     };
     const linkMatch = block.match(/<link[^>]+href=["']([^"']+)["'][^>]*>/i);
     const title = get('title');
-    const desc = get('summary') || get('content');
+    const summaryRaw = (block.match(/<summary[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/summary>/i) ||
+      block.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i) || [])[1] || '';
+    const contentRaw = (block.match(/<content[^>]*><!\[CDATA\[([\s\S]*?)\]\]><\/content>/i) ||
+      block.match(/<content[^>]*>([\s\S]*?)<\/content>/i) || [])[1] || '';
+    const body = cleanText(contentRaw || summaryRaw).slice(0, 15000);
+    const desc = cleanText(summaryRaw || contentRaw).slice(0, 240);
     const link = cleanText(linkMatch?.[1] || get('link') || get('id') || '#');
     const pubDate = get('published') || get('updated');
     const categories = [...block.matchAll(/<category\b[^>]*>([\s\S]*?)<\/category>/gi)]
       .map((m) => cleanText(m[1] || m[0]?.match(/term=["']([^"']+)["']/i)?.[1] || ''))
       .filter(Boolean);
-    if (title) items.push({ title, desc: desc.slice(0, 240), link, pubDate, categories });
+    if (title) items.push({ title, desc, body, link, pubDate, categories });
     if (items.length >= maxItems) break;
   }
   return items;
@@ -244,8 +256,9 @@ async function fetchTelegramChannelPosts(channel, maxPosts = 12) {
       if (!pubDate || !Number.isFinite(Date.parse(pubDate))) return acc;
       const parts = rawText.split(/\n+/).filter(Boolean);
       const title = (parts[0] || rawText).slice(0, 220);
+      const body = rawText.slice(0, 15000);
       const desc = rawText.slice(title.length).trim().slice(0, 240);
-      acc.push({ title, desc, link: postUrl, pubDate });
+      acc.push({ title, desc, body, link: postUrl, pubDate });
       return acc;
     }, []);
     return posts;
@@ -260,6 +273,7 @@ async function fetchSourceItems(src) {
     return items.map(i => ({
       title: i.title,
       desc: i.desc,
+      body: i.body || i.desc || '',
       url: i.link || '#',
       type: src.type,
       source: src.label,
@@ -284,6 +298,7 @@ async function fetchSourceItems(src) {
   return items.map(i => ({
     title: i.title,
     desc: i.desc,
+    body: i.body || i.desc || '',
     url: i.link || '#',
     type: src.type,
     source: src.label,

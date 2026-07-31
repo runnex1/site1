@@ -50,7 +50,10 @@ check('Defiant urlIncludes', /urlIncludes: '\/news\/defi\/'/.test(newsJs));
 check('Protos DeFi tag feed', /protos\.com\/tag\/defi\/feed/.test(newsJs));
 check('Block Google DeFi query', /theblock\.co\/rss\.xml/.test(newsJs) && /categoryIncludes: 'DeFi'/.test(newsJs));
 check('no fuzzy Block Google query', !/site:theblock\.co\+DeFi/.test(newsJs));
-check('cache key v9', /vault_news_cache_v9/.test(indexHtml));
+check('cache key v10', /vault_news_cache_v10/.test(indexHtml));
+check('source filter modal', /id="newsFeedSourceFilterModal"/.test(indexHtml) && /newsFeedPassesSourceFilter/.test(indexHtml));
+check('source edit button', /news-feed-source-edit/.test(indexHtml));
+check('API returns body field', /body: i\.body \|\| i\.desc \|\| ''/.test(newsJs) && /content:encoded/.test(newsJs));
 check('lib/news Defiant filter', /urlIncludes: '\/news\/defi\/'/.test(libNews));
 check('local fallback Defiant filter', /thedefiant\.io\/api\/feed'[\s\S]{0,120}urlIncludes: '\/news\/defi\/'/.test(indexHtml));
 check('local fallback Protos tag', /protos\.com\/tag\/defi\/feed/.test(indexHtml));
@@ -96,7 +99,9 @@ check('prod title blacklist UI', /Keyword title blacklist/.test(prodHtml) && /ne
 check('prod Defiant filter in client fallback', /urlIncludes: '\/news\/defi\/'/.test(prodHtml));
 check('prod Block DeFi category in client', /theblock\.co\/rss\.xml/.test(prodHtml) && /categoryIncludes: 'DeFi'/.test(prodHtml));
 check('prod Protos tag feed in client', /protos\.com\/tag\/defi\/feed/.test(prodHtml));
-check('prod cache v9', /vault_news_cache_v9/.test(prodHtml));
+check('prod cache v10', /vault_news_cache_v10/.test(prodHtml));
+check('prod source filter UI', /id="newsFeedSourceFilterModal"/.test(prodHtml) && /news-feed-source-edit/.test(prodHtml));
+check('prod source filter wired', /newsFeedPassesSourceFilter\(item, s\)/.test(prodHtml));
 check('prod blacklist filter wired', /newsFeedPassesTitleBlacklist\(item, s\)/.test(prodHtml));
 check('prod Defiant publishedAt-only', /const iso = row\?\.publishedAt;/.test(prodHtml) || /const iso = row\?\.publishedAt;/.test(newsJs));
 

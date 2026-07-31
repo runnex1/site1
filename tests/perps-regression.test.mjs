@@ -1740,12 +1740,20 @@ assert.match(newsJs, /const iso = row\?\.publishedAt;/, 'Defiant date repair mus
 assert.doesNotMatch(newsJs, /row\.publishedAt \|\| row\._updatedAt \|\| row\._createdAt/, 'Defiant date repair must not fall back to _createdAt/_updatedAt');
 assert.match(newsJs, /6oftkxoa\.api\.sanity\.io/, 'Defiant date repair must query The Defiant Sanity dataset');
 assert.match(indexHtml, /const at = Date\.parse\(a\.publishedAt \|\| a\.pubDate/, 'news feed must sort primarily by posting date');
-assert.match(indexHtml, /vault_news_cache_v9/, 'news cache key must bump when DeFi section feed filters change');
+assert.match(indexHtml, /vault_news_cache_v10/, 'news cache key must bump when DeFi section feed filters change');
 assert.match(newsJs, /label: 'The Block', type: 'defi'/, 'The Block must be a defi source');
 assert.match(newsJs, /theblock\.co\/rss\.xml/, 'The Block must use native RSS with DeFi category filter');
 assert.match(newsJs, /categoryIncludes: 'DeFi'/, 'The Block must keep only RSS items tagged DeFi');
 assert.doesNotMatch(newsJs, /site:theblock\.co\+DeFi|site:theblock\.co&hl=en-US/, 'The Block must not use fuzzy Google News DeFi queries');
 assert.doesNotMatch(newsJs, /Reuters Business|Reuters Politics|feeds\.a\.dj\.com/, 'stale Reuters/WSJ feeds must be removed');
+assert.match(newsJs, /content:encoded/, 'news API must extract full RSS content:encoded bodies');
+assert.match(newsJs, /body: i\.body \|\| i\.desc \|\| ''/, 'news API must return body text for source filters');
+assert.match(indexHtml, /function newsFeedOpenSourceFilterModal\(/, 'feed settings must open per-source keyword filter modal');
+assert.match(indexHtml, /function newsFeedPassesSourceFilter\(/, 'news feed must filter items by per-source keyword');
+assert.match(indexHtml, /function newsFeedItemFullText\(/, 'source body filters must search full article/post text');
+assert.match(indexHtml, /id="newsFeedSourceFilterModal"/, 'source filter modal markup must exist');
+assert.match(indexHtml, /news-feed-source-edit/, 'each feed source row must have an edit/filter button');
+assert.match(indexHtml, /sourceFilters/, 'feed settings must persist per-source filters');
 assert.match(newsJs, /feeds\.content\.dowjones\.io\/public\/rss\/RSSMarketsMain/, 'WSJ Markets must use live Dow Jones feed URL');
 assert.match(newsJs, /label: 'Protos',\s+type: 'defi'/, 'defi must include Protos RSS source');
 assert.match(newsJs, /protos\.com\/tag\/defi\/feed/, 'Protos defi feed must use the DeFi tag RSS');
@@ -1988,6 +1996,45 @@ assert.match(indexHtml, /newsFeedPassesTitleBlacklist\(item, s\)/, 'apply filter
   assert.equal(blCtx.newsFeedPassesTitleBlacklist(tgHit, settings), true, 'Telegram must ignore title blacklist');
   assert.equal(blCtx.newsFeedPassesTitleBlacklist(nlHit, settings), true, 'newsletter must ignore title blacklist');
   assert.equal(blCtx.newsFeedPassesTitleBlacklist(kobeissiHit, settings), true, 'Kobeissi must ignore title blacklist');
+}
+{
+  const sfCtx = vm.createContext({ String, Array, Boolean, Object });
+  vm.runInNewContext(`
+    const NEWS_FEED_CATEGORY_TYPES = ['crypto', 'defi', 'macro'];
+    function decodeHtmlEntities(text) { return String(text || ''); }
+    function newsFeedLoadSettings() { return { telegram: [], newsletters: [], sourceFilters: {} }; }
+    function xHandleLoad() { return []; }
+    ${extractBalancedFunction(indexHtml, 'newsFeedNormalizeTelegramHandle')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedNormalizeTelegramEntry')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedMigrateLegacyTelegram')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedNewsletterEntry')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedTelegramEntry')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedNormalizeSourceFilter')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedGetSourceFilter')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedSourceFilterIdForItem')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedItemFullText')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedPassesSourceFilter')}
+  `, sfCtx);
+  const titleOnly = {
+    sourceFilters: { Decrypt: { keyword: 'aave', field: 'title' } },
+    telegram: [],
+    newsletters: [],
+  };
+  const bodyOnly = {
+    sourceFilters: { Decrypt: { keyword: 'liquidation', field: 'body' } },
+    telegram: [],
+    newsletters: [],
+  };
+  const itemTitleHit = { title: 'Aave launches market', source: 'Decrypt', body: 'unrelated summary', type: 'crypto' };
+  const itemBodyHit = { title: 'Market update', source: 'Decrypt', body: 'cascade liquidation across perps', desc: 'short', type: 'crypto' };
+  const itemMiss = { title: 'Bitcoin ETF flows', source: 'Decrypt', body: 'no match here', type: 'crypto' };
+  const otherSource = { title: 'Aave launches market', source: 'CoinDesk', body: 'liquidation', type: 'crypto' };
+  assert.equal(sfCtx.newsFeedPassesSourceFilter(itemTitleHit, titleOnly), true, 'title filter must keep matching titles');
+  assert.equal(sfCtx.newsFeedPassesSourceFilter(itemMiss, titleOnly), false, 'title filter must drop non-matching titles');
+  assert.equal(sfCtx.newsFeedPassesSourceFilter(itemBodyHit, titleOnly), false, 'title filter must ignore body-only matches');
+  assert.equal(sfCtx.newsFeedPassesSourceFilter(itemBodyHit, bodyOnly), true, 'body filter must search full body text');
+  assert.equal(sfCtx.newsFeedPassesSourceFilter(itemMiss, bodyOnly), false, 'body filter must drop when keyword is absent from full text');
+  assert.equal(sfCtx.newsFeedPassesSourceFilter(otherSource, titleOnly), true, 'source filter must not affect other sources');
 }
 assert.match(indexHtml, /async function persistWatcherWalletsCloud\(/, 'watcher wallets must persist via dedicated cloud POST');
 assert.match(indexHtml, /const fromLs = syncLsJson\('vault-watcher-wallets', '\[\]'\)/, 'cloud hydrate must merge watcher wallets from localStorage');

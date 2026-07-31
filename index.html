@@ -5491,8 +5491,32 @@ button.news-feed-lens-chip { cursor:pointer; }
 }
 .news-feed-source-pin.on { opacity:1; filter:none; }
 .news-feed-source-pin:hover { opacity:0.85; }
+.news-feed-source-edit {
+  border:none; background:transparent; cursor:pointer; font-size:10px; line-height:1;
+  padding:0 1px; opacity:0.32; color:var(--t3);
+}
+.news-feed-source-edit.on { opacity:1; color:var(--teal); }
+.news-feed-source-edit:hover { opacity:0.9; color:var(--teal); }
+.news-feed-source-filter-badge {
+  font-family:var(--ff-mono); font-size:9px; color:var(--teal);
+  background:var(--teal-10); border:1px solid rgba(0,212,170,0.28);
+  border-radius:999px; padding:1px 6px; max-width:88px; overflow:hidden;
+  text-overflow:ellipsis; white-space:nowrap;
+}
 .news-feed-source-actions {
   margin-left:auto; display:inline-flex; align-items:center; gap:5px; flex-shrink:0;
+}
+.news-feed-source-filter-field-row {
+  display:flex; gap:8px; margin:0 0 10px;
+}
+.news-feed-source-filter-field {
+  flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
+  font-size:11px; color:var(--t2); padding:8px 10px; border-radius:8px;
+  border:1px solid var(--border-mid); background:rgba(255,255,255,0.02); cursor:pointer;
+}
+.news-feed-source-filter-field input { accent-color:var(--teal); }
+.news-feed-source-filter-field.on {
+  border-color:rgba(0,212,170,0.35); background:var(--teal-10); color:var(--teal);
 }
 .news-feed-boost-badge {
   align-self:flex-start; font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
@@ -9354,6 +9378,31 @@ body[data-active-tab="loops"] .page-content,
                   <div class="news-feed-tg-modal-actions">
                     <button type="button" class="news-feed-tg-modal-btn" onclick="newsFeedCloseRemoveSourceModal()">Cancel</button>
                     <button type="button" class="news-feed-tg-modal-btn danger" onclick="newsFeedSubmitRemoveSourceModal()">Remove source</button>
+                  </div>
+                </div>
+              </div>
+              <div class="news-feed-tg-modal" id="newsFeedSourceFilterModal" aria-hidden="true" onclick="if(event.target===this) newsFeedCloseSourceFilterModal()">
+                <div class="news-feed-tg-modal-card" role="dialog" aria-labelledby="newsFeedSourceFilterTitle">
+                  <div class="news-feed-tg-modal-head">
+                    <h4 id="newsFeedSourceFilterTitle">Filter source</h4>
+                    <button type="button" class="news-feed-icon-btn" onclick="newsFeedCloseSourceFilterModal()" title="Close">✕</button>
+                  </div>
+                  <p class="news-feed-tg-modal-hint">Show only articles from <strong id="newsFeedSourceFilterName"></strong> that include this word. Body search uses the full article/post text from the feed.</p>
+                  <input class="news-feed-tg-modal-input" id="newsFeedSourceFilterKeyword" type="text" placeholder="e.g. aave, funding, etf" onkeydown="if(event.key==='Enter'){event.preventDefault();newsFeedSubmitSourceFilterModal();}">
+                  <div class="news-feed-source-filter-field-row">
+                    <label class="news-feed-source-filter-field" id="newsFeedSourceFilterFieldTitle">
+                      <input type="radio" name="newsFeedSourceFilterField" value="title" checked onchange="newsFeedSyncSourceFilterFieldUi()">
+                      Title only
+                    </label>
+                    <label class="news-feed-source-filter-field" id="newsFeedSourceFilterFieldBody">
+                      <input type="radio" name="newsFeedSourceFilterField" value="body" onchange="newsFeedSyncSourceFilterFieldUi()">
+                      Full body
+                    </label>
+                  </div>
+                  <div class="news-feed-tg-modal-actions">
+                    <button type="button" class="news-feed-tg-modal-btn" onclick="newsFeedClearSourceFilterModal()">Clear</button>
+                    <button type="button" class="news-feed-tg-modal-btn" onclick="newsFeedCloseSourceFilterModal()">Cancel</button>
+                    <button type="button" class="news-feed-tg-modal-btn primary" onclick="newsFeedSubmitSourceFilterModal()">Save filter</button>
                   </div>
                 </div>
               </div>
@@ -28991,7 +29040,7 @@ function xHandleAdd() {
         feedSettings.telegram = [...(feedSettings.telegram || []), { handle, category: 'crypto', enabled: true }];
         newsFeedSaveSettings(feedSettings);
     }
-    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5', 'vault_news_cache_v6', 'vault_news_cache_v7', 'vault_news_cache_v8'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
+    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5', 'vault_news_cache_v6', 'vault_news_cache_v7', 'vault_news_cache_v8', 'vault_news_cache_v9'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
     fetchDailyNews();
 }
 function xHandleRemove(handle) {
@@ -29002,7 +29051,7 @@ function xHandleRemove(handle) {
     const feedSettings = newsFeedLoadSettings();
     feedSettings.telegram = (feedSettings.telegram || []).filter(t => t.handle !== norm);
     newsFeedSaveSettings(feedSettings);
-    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5', 'vault_news_cache_v6', 'vault_news_cache_v7', 'vault_news_cache_v8'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
+    try { ['vault_news_cache', 'vault_news_cache_v3', 'vault_news_cache_v4', 'vault_news_cache_v5', 'vault_news_cache_v6', 'vault_news_cache_v7', 'vault_news_cache_v8', 'vault_news_cache_v9'].forEach(k => localStorage.removeItem(k)); } catch(e) {}
     fetchDailyNews();
 }
 // Allow pressing Enter in the X handle input
@@ -29089,6 +29138,7 @@ let _newsFeedQuickLinksCache = null;
 let _newsFeedTelegramModalCategory = null;
 let _newsFeedNewsletterModalCategory = null;
 let _newsFeedRemoveSourcePending = null;
+let _newsFeedSourceFilterPending = null;
 let _newsFeedKobeissiActiveKey = null;
 let _newsFeedKobeissiExpiryTimer = null;
 let _newsFeedCloudSyncTimer = null;
@@ -29561,6 +29611,7 @@ function newsFeedDefaultSettings() {
         sources,
         keywords: [],
         titleBlacklist: [],
+        sourceFilters: {},
         searchBody: false,
         timeWindowHours: 24,
         telegram: [],
@@ -29752,6 +29803,63 @@ function newsFeedSanitizeTitleBlacklist(words) {
     return newsFeedSanitizeKeywords(words).slice(0, 40);
 }
 
+function newsFeedNormalizeSourceFilter(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    const keyword = String(entry.keyword || '').trim().toLowerCase().slice(0, 80);
+    if (!keyword) return null;
+    const field = String(entry.field || '').toLowerCase() === 'body' ? 'body' : 'title';
+    return { keyword, field };
+}
+
+function newsFeedSanitizeSourceFilters(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    for (const [id, entry] of Object.entries(raw)) {
+        const key = String(id || '').trim();
+        if (!key) continue;
+        const norm = newsFeedNormalizeSourceFilter(entry);
+        if (norm) out[key] = norm;
+    }
+    return out;
+}
+
+function newsFeedSourceFilterIdForItem(item, settings) {
+    const s = settings || newsFeedLoadSettings();
+    const nl = newsFeedNewsletterEntry(s, item?.source);
+    if (nl) return nl.id || nl.label;
+    const tg = newsFeedTelegramEntry(s, item?.source);
+    if (tg) return tg.handle;
+    return String(item?.source || '').trim();
+}
+
+function newsFeedGetSourceFilter(settings, id) {
+    const key = String(id || '').trim();
+    if (!key) return null;
+    return newsFeedNormalizeSourceFilter((settings?.sourceFilters || {})[key]);
+}
+
+function newsFeedItemFullText(item) {
+    return decodeHtmlEntities([
+        item?.title || '',
+        item?.body || '',
+        item?.content || '',
+        item?.text || '',
+        item?.desc || '',
+        item?.description || '',
+    ].join('\n')).toLowerCase();
+}
+
+function newsFeedPassesSourceFilter(item, settings) {
+    const s = settings || newsFeedLoadSettings();
+    const id = newsFeedSourceFilterIdForItem(item, s);
+    const filter = newsFeedGetSourceFilter(s, id);
+    if (!filter) return true;
+    const kw = filter.keyword;
+    if (!kw) return true;
+    if (filter.field === 'body') return newsFeedItemFullText(item).includes(kw);
+    return decodeHtmlEntities(item?.title || '').toLowerCase().includes(kw);
+}
+
 function newsFeedLoadSettings() {
     try {
         const raw = localStorage.getItem(NEWS_FEED_SETTINGS_KEY);
@@ -29763,6 +29871,7 @@ function newsFeedLoadSettings() {
             sources: { ...base.sources, ...(parsed.sources || {}) },
             keywords: newsFeedSanitizeKeywords(parsed.keywords),
             titleBlacklist: newsFeedSanitizeTitleBlacklist(parsed.titleBlacklist),
+            sourceFilters: newsFeedSanitizeSourceFilters(parsed.sourceFilters),
             searchBody: Boolean(parsed.searchBody),
             timeWindowHours: NEWS_FEED_TIME_WINDOWS.some(w => w.hours === Number(parsed.timeWindowHours))
                 ? Number(parsed.timeWindowHours)
@@ -30237,7 +30346,7 @@ function newsFeedItemSearchText(item, settings) {
     const s = settings || newsFeedLoadSettings();
     const title = decodeHtmlEntities(item.title || '').toLowerCase();
     if (!s.searchBody) return title;
-    return decodeHtmlEntities(`${item.title || ''} ${item.desc || item.description || item.text || ''}`).toLowerCase();
+    return newsFeedItemFullText(item);
 }
 
 function newsFeedNormalizeKey(text) {
@@ -30298,6 +30407,7 @@ function newsFeedApplyFilters(items, settings) {
             }
         }
         if (!newsFeedPassesKeywordFilter(item, s)) return false;
+        if (!newsFeedPassesSourceFilter(item, s)) return false;
         if (!newsFeedPassesTitleBlacklist(item, s)) return false;
         return true;
     }).sort(newsFeedCompareItems);
@@ -30621,10 +30731,23 @@ function newsFeedBuildSettingsForm() {
         const on = newsFeedIsSourcePinned(id, s);
         return `<button type="button" class="news-feed-source-pin${on ? ' on' : ''}" onclick="event.preventDefault(); newsFeedTogglePinnedSource('${dashUri(id)}')" title="${on ? 'Unpin source' : 'Pin to top until seen'}">📌</button>`;
     };
+    const sourceEditBtn = (kind, id, label) => {
+        const filter = newsFeedGetSourceFilter(s, id);
+        const on = Boolean(filter);
+        const tip = on
+            ? `Filter: "${filter.keyword}" in ${filter.field === 'body' ? 'full body' : 'title'}`
+            : 'Filter articles from this source';
+        return `<button type="button" class="news-feed-source-edit${on ? ' on' : ''}" onclick="event.preventDefault(); newsFeedOpenSourceFilterModal('${kind}', '${dashUri(id)}', '${dashUri(label || id)}')" title="${dashEsc(tip)}">✎</button>`;
+    };
     const sourceRemoveBtn = (kind, id) =>
         `<button type="button" class="news-feed-source-remove" onclick="event.preventDefault(); newsFeedOpenRemoveSourceModal('${kind}', '${dashUri(id)}')" title="Remove source">✕</button>`;
-    const sourceActionBtns = (kind, id) =>
-        `<span class="news-feed-source-actions">${sourcePinBtn(id)}${sourceRemoveBtn(kind, id)}</span>`;
+    const sourceFilterBadge = (id) => {
+        const filter = newsFeedGetSourceFilter(s, id);
+        if (!filter) return '';
+        return `<span class="news-feed-source-filter-badge" title="Only ${filter.field === 'body' ? 'full body' : 'title'} matching &quot;${dashEsc(filter.keyword)}&quot;">${dashEsc(filter.keyword)}</span>`;
+    };
+    const sourceActionBtns = (kind, id, label) =>
+        `<span class="news-feed-source-actions">${sourceFilterBadge(id)}${sourceEditBtn(kind, id, label || id)}${sourcePinBtn(id)}${sourceRemoveBtn(kind, id)}</span>`;
     const sourceSection = type => {
         const labels = newsFeedVisibleRssSources(type, s);
         const topic = newsFeedCategoryTitle(type);
@@ -30637,7 +30760,7 @@ function newsFeedBuildSettingsForm() {
             return `<label class="news-feed-source-item">
                 <input type="checkbox" ${t.enabled !== false ? 'checked' : ''} onchange="newsFeedToggleTelegramChannel('${dashEsc(t.handle)}', this.checked)">
                 <a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">✈ ${dashEsc(t.handle)}</a>${warn}
-                ${sourceActionBtns('telegram', t.handle)}
+                ${sourceActionBtns('telegram', t.handle, t.handle)}
             </label>`;
         }).join('');
         const newsletterRows = newsFeedNewslettersForCategory(s, type).map(n => {
@@ -30649,7 +30772,7 @@ function newsFeedBuildSettingsForm() {
             return `<label class="news-feed-source-item">
                 <input type="checkbox" ${n.enabled !== false ? 'checked' : ''} onchange="newsFeedToggleNewsletter('${dashUri(n.id)}', this.checked)">
                 <a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">✉ ${dashEsc(n.label)}</a>${warn}
-                ${sourceActionBtns('newsletter', n.id)}
+                ${sourceActionBtns('newsletter', n.id, n.label)}
             </label>`;
         }).join('');
         const rssRows = labels.map(label => {
@@ -30658,7 +30781,7 @@ function newsFeedBuildSettingsForm() {
             const warn = health && !health.ok
                 ? `<span class="news-feed-source-warn" title="No articles from this source in the past 7 days${health.note ? ` (${health.note})` : ''}">?</span>`
                 : '';
-            return `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)"><a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${dashEsc(label)}</a>${warn}${sourceActionBtns('rss', label)}</label>`;
+            return `<label class="news-feed-source-item"><input type="checkbox" data-source="${dashEsc(label)}" ${s.sources?.[label] !== false ? 'checked' : ''} onchange="newsFeedToggleSource(this.dataset.source, this.checked)"><a href="${dashEsc(href)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${dashEsc(label)}</a>${warn}${sourceActionBtns('rss', label, label)}</label>`;
         }).join('');
         return `<div class="news-feed-set-section">
             <div class="news-feed-set-label-row">
@@ -30708,6 +30831,7 @@ function newsFeedCloseSettings() {
     newsFeedCloseTelegramModal();
     newsFeedCloseNewsletterModal();
     newsFeedCloseRemoveSourceModal();
+    newsFeedCloseSourceFilterModal();
     if (_newsFeedSettingsDraft) {
         newsFeedSyncKeywordsFromInput();
         newsFeedSyncTitleBlacklistFromInput();
@@ -30769,10 +30893,93 @@ function newsFeedSubmitRemoveSourceModal() {
         _newsFeedSettingsDraft.sources = _newsFeedSettingsDraft.sources || {};
         _newsFeedSettingsDraft.sources[pending.id] = false;
     }
+    if (_newsFeedSettingsDraft.sourceFilters) {
+        delete _newsFeedSettingsDraft.sourceFilters[pending.id];
+    }
     newsFeedSaveSettings(_newsFeedSettingsDraft);
     newsFeedCloseRemoveSourceModal();
     newsFeedBuildSettingsForm();
     if (typeof fetchDailyNews === 'function') fetchDailyNews(true);
+}
+
+function newsFeedSyncSourceFilterFieldUi() {
+    const field = document.querySelector('input[name="newsFeedSourceFilterField"]:checked')?.value === 'body' ? 'body' : 'title';
+    const titleLbl = document.getElementById('newsFeedSourceFilterFieldTitle');
+    const bodyLbl = document.getElementById('newsFeedSourceFilterFieldBody');
+    if (titleLbl) titleLbl.classList.toggle('on', field === 'title');
+    if (bodyLbl) bodyLbl.classList.toggle('on', field === 'body');
+}
+
+function newsFeedOpenSourceFilterModal(kind, encodedId, encodedLabel) {
+    const id = decodeURIComponent(String(encodedId || ''));
+    const label = decodeURIComponent(String(encodedLabel || id || ''));
+    if (!id) return;
+    const catKind = String(kind || '').toLowerCase();
+    if (catKind !== 'rss' && catKind !== 'telegram' && catKind !== 'newsletter') return;
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = JSON.parse(JSON.stringify(newsFeedLoadSettings()));
+    _newsFeedSourceFilterPending = { kind: catKind, id, label: label || id };
+    const existing = newsFeedGetSourceFilter(_newsFeedSettingsDraft, id);
+    const nameEl = document.getElementById('newsFeedSourceFilterName');
+    const titleEl = document.getElementById('newsFeedSourceFilterTitle');
+    const input = document.getElementById('newsFeedSourceFilterKeyword');
+    const titleRadio = document.querySelector('input[name="newsFeedSourceFilterField"][value="title"]');
+    const bodyRadio = document.querySelector('input[name="newsFeedSourceFilterField"][value="body"]');
+    if (nameEl) nameEl.textContent = label || id;
+    if (titleEl) titleEl.textContent = `Filter · ${label || id}`;
+    if (input) {
+        input.value = existing?.keyword || '';
+        setTimeout(() => input.focus(), 0);
+    }
+    if (titleRadio && bodyRadio) {
+        if (existing?.field === 'body') bodyRadio.checked = true;
+        else titleRadio.checked = true;
+    }
+    newsFeedSyncSourceFilterFieldUi();
+    const modal = document.getElementById('newsFeedSourceFilterModal');
+    if (modal) {
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+    }
+}
+
+function newsFeedCloseSourceFilterModal() {
+    _newsFeedSourceFilterPending = null;
+    const modal = document.getElementById('newsFeedSourceFilterModal');
+    if (modal) {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+    }
+}
+
+function newsFeedClearSourceFilterModal() {
+    const pending = _newsFeedSourceFilterPending;
+    if (!pending) return;
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    _newsFeedSettingsDraft.sourceFilters = { ...(_newsFeedSettingsDraft.sourceFilters || {}) };
+    delete _newsFeedSettingsDraft.sourceFilters[pending.id];
+    newsFeedSaveSettings(_newsFeedSettingsDraft);
+    newsFeedCloseSourceFilterModal();
+    newsFeedBuildSettingsForm();
+    newsFeedPersistSettingsDraft({ refreshFeed: true, rebuildForm: false, refetch: false });
+}
+
+function newsFeedSubmitSourceFilterModal() {
+    const pending = _newsFeedSourceFilterPending;
+    if (!pending) return;
+    if (!_newsFeedSettingsDraft) _newsFeedSettingsDraft = newsFeedLoadSettings();
+    const keyword = String(document.getElementById('newsFeedSourceFilterKeyword')?.value || '').trim().toLowerCase().slice(0, 80);
+    const field = document.querySelector('input[name="newsFeedSourceFilterField"]:checked')?.value === 'body' ? 'body' : 'title';
+    _newsFeedSettingsDraft.sourceFilters = { ...(_newsFeedSettingsDraft.sourceFilters || {}) };
+    if (!keyword) {
+        delete _newsFeedSettingsDraft.sourceFilters[pending.id];
+    } else {
+        _newsFeedSettingsDraft.sourceFilters[pending.id] = { keyword, field };
+    }
+    newsFeedSaveSettings(_newsFeedSettingsDraft);
+    newsFeedCloseSourceFilterModal();
+    newsFeedBuildSettingsForm();
+    // Refetch so full body text is available when filtering by body.
+    newsFeedPersistSettingsDraft({ refreshFeed: true, rebuildForm: false, refetch: true });
 }
 
 function newsFeedOpenTelegramModal(category) {
@@ -30972,6 +31179,11 @@ document.addEventListener('keydown', e => {
         newsFeedCloseRemoveSourceModal();
         return;
     }
+    const filterModal = document.getElementById('newsFeedSourceFilterModal');
+    if (filterModal?.classList.contains('open')) {
+        newsFeedCloseSourceFilterModal();
+        return;
+    }
     const nlModal = document.getElementById('newsFeedNewsletterModal');
     if (nlModal?.classList.contains('open')) {
         newsFeedCloseNewsletterModal();
@@ -31023,7 +31235,7 @@ async function fetchDailyNews(force = false) {
     const briefPortfolioEl = document.getElementById('briefPortfolioGrid');
     if (!briefGrid && !feedGrid) return;
 
-    const CACHE_KEY  = 'vault_news_cache_v9';
+    const CACHE_KEY  = 'vault_news_cache_v10';
     const CACHE_TTL  = 60 * 60 * 1000; // 1 hour
     const feedSettings = newsFeedLoadSettings();
     const timeWindowHours = feedSettings.timeWindowHours || 24;
@@ -31261,7 +31473,14 @@ async function fetchDailyNews(force = false) {
             link = link.replace(/^https?:\/\/nitter\.[^/]+\//, 'https://x.com/');
             const pubDate = t(item.querySelector('pubDate')) || t(item.querySelector('dc\\:date')) || t(item.querySelector('published')) || t(item.querySelector('updated'));
             const categories = Array.from(item.querySelectorAll('category')).map(el => t(el)).filter(Boolean);
-            return { title: t(item.querySelector('title')), url: link, type: src.type, source: src.label, pubDate, publishedAt: pubDate ? new Date(pubDate).toISOString() : '', categories };
+            const contentNode = item.getElementsByTagName('content:encoded')[0]
+                || item.querySelector('content\\:encoded')
+                || item.querySelector('encoded')
+                || item.querySelector('content');
+            const descNode = item.querySelector('description') || item.querySelector('summary');
+            const body = decodeHtmlEntities(t(contentNode) || t(descNode) || '').slice(0, 15000);
+            const desc = decodeHtmlEntities(t(descNode) || body).slice(0, 240);
+            return { title: t(item.querySelector('title')), url: link, type: src.type, source: src.label, pubDate, publishedAt: pubDate ? new Date(pubDate).toISOString() : '', categories, desc, body };
         });
         if (src.urlIncludes) {
             const needle = String(src.urlIncludes).toLowerCase();
