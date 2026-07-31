@@ -5545,6 +5545,9 @@ button.news-feed-lens-chip { cursor:pointer; }
 }
 .news-feed-kw-chips { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:8px; }
 .news-feed-kw-chip { font-family:var(--ff-mono); font-size:10px; padding:3px 8px; border-radius:999px; background:var(--surf-3); border:1px solid var(--border-mid); color:var(--t1); }
+.news-feed-kw-chip.blacklist { color:#fb7185; border-color:rgba(244,63,94,0.28); background:rgba(244,63,94,0.08); }
+.news-feed-set-sublabel { font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--t3); margin:12px 0 6px; opacity:0.9; }
+.news-feed-set-hint { font-size:10px; color:var(--t3); line-height:1.45; margin:0 0 7px; }
 .news-feed-toggle-row { display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--t3); margin-top:7px; }
 .news-feed-toggle {
   width:34px; height:18px; border-radius:999px; background:rgba(255,255,255,0.08);
@@ -29277,6 +29280,14 @@ function newsFeedSyncKeywordsFromInput() {
     _newsFeedSettingsDraft.keywords = [...new Set(raw)].slice(0, 30);
 }
 
+function newsFeedSyncTitleBlacklistFromInput() {
+    if (!_newsFeedSettingsDraft) return;
+    const input = document.getElementById('newsFeedTitleBlacklistInput');
+    if (!input) return;
+    const raw = String(input?.value || '').split(/[,;\n]+/).map(s => s.trim().toLowerCase()).filter(Boolean);
+    _newsFeedSettingsDraft.titleBlacklist = [...new Set(raw)].slice(0, 40);
+}
+
 function newsFeedEnsureSettingsDraft() {
     if (!_newsFeedSettingsDraft) {
         _newsFeedSettingsDraft = JSON.parse(JSON.stringify(newsFeedLoadSettings()));
@@ -29288,6 +29299,7 @@ function newsFeedPersistSettingsDraft(options = {}) {
     const { refreshFeed = true, rebuildForm = false, refetch = false } = options;
     if (!_newsFeedSettingsDraft) return;
     newsFeedSyncKeywordsFromInput();
+    newsFeedSyncTitleBlacklistFromInput();
     newsFeedSaveSettings(_newsFeedSettingsDraft);
     if (rebuildForm) newsFeedBuildSettingsForm();
     if (refreshFeed) {
@@ -29548,6 +29560,7 @@ function newsFeedDefaultSettings() {
         categories: { crypto: true, defi: true, macro: true },
         sources,
         keywords: [],
+        titleBlacklist: [],
         searchBody: false,
         timeWindowHours: 24,
         telegram: [],
@@ -29705,10 +29718,36 @@ function newsFeedIsNewsletterItem(item, settings) {
     return Boolean(newsFeedNewsletterEntry(settings, item.source));
 }
 
+/** Website RSS/Google News cards only — skip Telegram, newsletters, and Kobeissi. */
+function newsFeedIsWebsiteArticle(item, settings) {
+    if (!item) return false;
+    if (String(item.type || '').toLowerCase() === 'kobeissi') return false;
+    if (newsFeedIsTelegramItem(item, settings)) return false;
+    if (newsFeedIsNewsletterItem(item, settings)) return false;
+    return true;
+}
+
+function newsFeedTitleBlacklistHits(item, settings) {
+    const s = settings || newsFeedLoadSettings();
+    const list = s.titleBlacklist || [];
+    if (!list.length || !newsFeedIsWebsiteArticle(item, s)) return [];
+    const title = decodeHtmlEntities(item.title || '').toLowerCase();
+    if (!title) return [];
+    return list.filter((word) => word && title.includes(word));
+}
+
+function newsFeedPassesTitleBlacklist(item, settings) {
+    return newsFeedTitleBlacklistHits(item, settings).length === 0;
+}
+
 function newsFeedSanitizeKeywords(keywords) {
     return (keywords || [])
         .map((k) => String(k).trim().toLowerCase())
         .filter((k) => k && k !== 'test-sync');
+}
+
+function newsFeedSanitizeTitleBlacklist(words) {
+    return newsFeedSanitizeKeywords(words).slice(0, 40);
 }
 
 function newsFeedLoadSettings() {
@@ -29721,6 +29760,7 @@ function newsFeedLoadSettings() {
             categories: { ...base.categories, ...(parsed.categories || {}) },
             sources: { ...base.sources, ...(parsed.sources || {}) },
             keywords: newsFeedSanitizeKeywords(parsed.keywords),
+            titleBlacklist: newsFeedSanitizeTitleBlacklist(parsed.titleBlacklist),
             searchBody: Boolean(parsed.searchBody),
             timeWindowHours: NEWS_FEED_TIME_WINDOWS.some(w => w.hours === Number(parsed.timeWindowHours))
                 ? Number(parsed.timeWindowHours)
@@ -30256,6 +30296,7 @@ function newsFeedApplyFilters(items, settings) {
             }
         }
         if (!newsFeedPassesKeywordFilter(item, s)) return false;
+        if (!newsFeedPassesTitleBlacklist(item, s)) return false;
         return true;
     }).sort(newsFeedCompareItems);
 }
@@ -30646,6 +30687,10 @@ function newsFeedBuildSettingsForm() {
                 <span title="When on, keyword filters also search article summaries/body text">Search title + body</span>
                 <div class="news-feed-toggle${s.searchBody ? ' on' : ''}" id="newsFeedToggleBody" onclick="newsFeedToggleSetting('searchBody')"></div>
             </div>
+            <div class="news-feed-set-sublabel">Keyword title blacklist</div>
+            <p class="news-feed-set-hint">Hide website headlines that contain these words. Does not apply to Telegram or newsletters.</p>
+            <input class="news-feed-kw-input" id="newsFeedTitleBlacklistInput" type="text" placeholder="airdrop, giveaway, listing" value="${dashEsc((s.titleBlacklist || []).join(', '))}" oninput="newsFeedSyncTitleBlacklistFromInput(); newsFeedPersistSettingsDraft({ refreshFeed: true, rebuildForm: false })">
+            <div class="news-feed-kw-chips" id="newsFeedTitleBlacklistChips">${(s.titleBlacklist || []).map(k => `<span class="news-feed-kw-chip blacklist">${dashEsc(k)}</span>`).join('')}</div>
         </div>
         <button type="button" class="news-feed-apply-btn" onclick="newsFeedApplySettings()">Apply filters</button>`;
 }
@@ -30663,6 +30708,7 @@ function newsFeedCloseSettings() {
     newsFeedCloseRemoveSourceModal();
     if (_newsFeedSettingsDraft) {
         newsFeedSyncKeywordsFromInput();
+        newsFeedSyncTitleBlacklistFromInput();
         newsFeedSaveSettings(_newsFeedSettingsDraft);
         newsFeedRenderCenterFeed();
     }

@@ -1948,6 +1948,44 @@ assert.match(indexHtml, /newsFeedKwInput[\s\S]{0,120}oninput="newsFeedSyncKeywor
   assert.equal(kwCtx.newsFeedPassesKeywordFilter(item, { keywords: ['test-sync'], searchBody: false }), false, 'test-sync keyword must zero non-matching headlines');
   assert.equal(kwCtx.newsFeedPassesKeywordFilter({ ...item, title: 'test-sync headline update' }, { keywords: ['test-sync'], searchBody: false }), true, 'test-sync keyword must match headlines containing keyword');
 }
+assert.match(indexHtml, /Keyword title blacklist/, 'News Feed settings must expose Keyword title blacklist');
+assert.match(indexHtml, /id="newsFeedTitleBlacklistInput"/, 'title blacklist must have settings input');
+assert.match(indexHtml, /function newsFeedPassesTitleBlacklist\(/, 'title blacklist filter helper must exist');
+assert.match(indexHtml, /newsFeedPassesTitleBlacklist\(item, s\)/, 'apply filters must honor title blacklist');
+{
+  const blCtx = vm.createContext({ String, Array, Boolean });
+  vm.runInNewContext(`
+    const NEWS_FEED_CATEGORY_TYPES = ['crypto', 'defi', 'macro'];
+    function decodeHtmlEntities(text) { return String(text || ''); }
+    function newsFeedLoadSettings() { return { telegram: [], newsletters: [], titleBlacklist: [] }; }
+    function xHandleLoad() { return []; }
+    ${extractBalancedFunction(indexHtml, 'newsFeedNormalizeTelegramHandle')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedNormalizeTelegramEntry')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedMigrateLegacyTelegram')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedNewsletterEntry')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedTelegramEntry')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedIsTelegramItem')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedIsNewsletterItem')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedIsWebsiteArticle')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedTitleBlacklistHits')}
+    ${extractBalancedFunction(indexHtml, 'newsFeedPassesTitleBlacklist')}
+  `, blCtx);
+  const settings = {
+    titleBlacklist: ['airdrop', 'giveaway'],
+    telegram: [{ handle: 'defi_alerts', enabled: true, category: 'defi' }],
+    newsletters: [{ id: 'defi-daily', label: 'DeFi Daily', enabled: true, category: 'defi', feedUrl: 'https://example.com/feed' }],
+  };
+  const siteHit = { title: 'Huge Airdrop announced today', source: 'Decrypt', type: 'crypto' };
+  const siteOk = { title: 'Aave launches new market', source: 'Decrypt', type: 'crypto' };
+  const tgHit = { title: 'Huge Airdrop announced today', source: 'defi_alerts', type: 'telegram' };
+  const nlHit = { title: 'Huge Airdrop announced today', source: 'DeFi Daily', type: 'newsletter' };
+  const kobeissiHit = { title: 'Huge Airdrop announced today', source: 'Kobeissi Letter', type: 'kobeissi' };
+  assert.equal(blCtx.newsFeedPassesTitleBlacklist(siteHit, settings), false, 'website title with blacklist word must be filtered');
+  assert.equal(blCtx.newsFeedPassesTitleBlacklist(siteOk, settings), true, 'website title without blacklist word must pass');
+  assert.equal(blCtx.newsFeedPassesTitleBlacklist(tgHit, settings), true, 'Telegram must ignore title blacklist');
+  assert.equal(blCtx.newsFeedPassesTitleBlacklist(nlHit, settings), true, 'newsletter must ignore title blacklist');
+  assert.equal(blCtx.newsFeedPassesTitleBlacklist(kobeissiHit, settings), true, 'Kobeissi must ignore title blacklist');
+}
 assert.match(indexHtml, /async function persistWatcherWalletsCloud\(/, 'watcher wallets must persist via dedicated cloud POST');
 assert.match(indexHtml, /const fromLs = syncLsJson\('vault-watcher-wallets', '\[\]'\)/, 'cloud hydrate must merge watcher wallets from localStorage');
 assert.match(indexHtml, /mergeWatcherWalletsByKey\(fromLs, fromMem\)/, 'cloud hydrate must union localStorage and in-memory watcher wallets');
