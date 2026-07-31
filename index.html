@@ -30927,7 +30927,7 @@ async function fetchDailyNews(force = false) {
     const briefPortfolioEl = document.getElementById('briefPortfolioGrid');
     if (!briefGrid && !feedGrid) return;
 
-    const CACHE_KEY  = 'vault_news_cache_v7';
+    const CACHE_KEY  = 'vault_news_cache_v8';
     const CACHE_TTL  = 60 * 60 * 1000; // 1 hour
     const feedSettings = newsFeedLoadSettings();
     const timeWindowHours = feedSettings.timeWindowHours || 24;
@@ -31123,9 +31123,9 @@ async function fetchDailyNews(force = false) {
     const SOURCES = [
         { url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', type: 'crypto', label: 'CoinDesk'      },
         { url: 'https://cointelegraph.com/rss',                   type: 'crypto', label: 'CoinTelegraph' },
-        { url: 'https://thedefiant.io/api/feed',                  type: 'defi',   label: 'The Defiant'  },
-        { url: 'https://news.google.com/rss/search?q=site:theblock.co&hl=en-US&gl=US&ceid=US:en', type: 'defi', label: 'The Block' },
-        { url: 'https://protos.com/feed/',                        type: 'defi',   label: 'Protos'       },
+        { url: 'https://thedefiant.io/api/feed',                  type: 'defi',   label: 'The Defiant', urlIncludes: '/news/defi/' },
+        { url: 'https://news.google.com/rss/search?q=site:theblock.co+DeFi&hl=en-US&gl=US&ceid=US:en', type: 'defi', label: 'The Block' },
+        { url: 'https://protos.com/tag/defi/feed/',               type: 'defi',   label: 'Protos'       },
         { url: 'https://www.bankless.com/feed',                   type: 'defi',   label: 'Bankless'     },
         { url: 'https://feeds.bbci.co.uk/news/business/rss.xml',  type: 'macro',  label: 'BBC Business' },
         { url: 'https://www.investing.com/rss/news_25.rss',       type: 'macro',  label: 'Investing.com'},
@@ -31159,13 +31159,18 @@ async function fetchDailyNews(force = false) {
         }
         if (!text) throw new Error('all proxies failed');
         const doc = new DOMParser().parseFromString(text, 'text/xml');
-        return Array.from(doc.querySelectorAll('item')).slice(0, 3).map(item => {
+        let rows = Array.from(doc.querySelectorAll('item')).map(item => {
             const t = s => (s?.textContent || '').replace(/<!\[CDATA\[|\]\]>/g,'').trim();
             let link = t(item.querySelector('link')) || item.querySelector('guid')?.textContent?.trim() || '#';
             link = link.replace(/^https?:\/\/nitter\.[^/]+\//, 'https://x.com/');
             const pubDate = t(item.querySelector('pubDate')) || t(item.querySelector('dc\\:date')) || t(item.querySelector('published')) || t(item.querySelector('updated'));
             return { title: t(item.querySelector('title')), url: link, type: src.type, source: src.label, pubDate, publishedAt: pubDate ? new Date(pubDate).toISOString() : '' };
         });
+        if (src.urlIncludes) {
+            const needle = String(src.urlIncludes).toLowerCase();
+            rows = rows.filter((row) => String(row.url || '').toLowerCase().includes(needle));
+        }
+        return rows.slice(0, 3);
     }
 
     function localNewsScore(item) {
