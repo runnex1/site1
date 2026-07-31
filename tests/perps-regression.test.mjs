@@ -6342,6 +6342,8 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
     applyVariationalHedges,
     clearStaleClosedFundingFromPriorHedgeSession,
     ensureVariationalClosedPairForHedge,
+    dedupeVariationalClosedPairsByExchangeSession,
+    variationalClosedSessionsOverlap,
   } = require('../lib/variational-hedge.js');
   const hedgeId = 'zro-reuse-id';
   const openedAt = Date.parse('2026-07-01T00:00:00.000Z');
@@ -6448,6 +6450,15 @@ assert.match(closedLegReconstructJs, /root\.ClosedLegReconstruct = api/, 'closed
     'applyVariationalHedges must mint a new Closed Var when only an older same-id row exists',
   );
   assert.equal(applied.newClosedPairs.length, 1, 'must not duplicate the older July session row');
+
+  // Dedupe must keep BOTH sessions — spanning openedAt must not collapse Aug into July.
+  assert.equal(
+    variationalClosedSessionsOverlap(oldPair, reminted),
+    false,
+    'July and Aug closes under one hedge id must not count as the same session',
+  );
+  const kept = dedupeVariationalClosedPairsByExchangeSession([oldPair, reminted], data);
+  assert.equal(kept.length, 2, 'dedupe must retain both July and Aug Closed Var rows');
 }
 
 {
