@@ -143,9 +143,13 @@ function mergeVariationalHedgeRecord(prev, hedge) {
     return newer?.[field] ?? older?.[field] ?? null;
   };
   let status = newer?.status ?? older?.status;
-  if (mergeVariationalHedgeIsCleanReopen(newer)) {
+  const eitherClosed = prev?.status === 'closed' || hedge?.status === 'closed';
+  const newerCleanReopen = mergeVariationalHedgeIsCleanReopen(newer);
+  // Clean reopen wins only when it is strictly newer. Equal timestamps must not
+  // resurrect a closed hedge from a stale never-updated open copy on the server.
+  if (newerCleanReopen && (!eitherClosed || (!preferPrev && incTs > prevTs))) {
     status = 'open';
-  } else if (prev?.status === 'closed' || hedge?.status === 'closed') {
+  } else if (eitherClosed) {
     status = 'closed';
   } else if (prev?.status === 'pending_close' || hedge?.status === 'pending_close') {
     status = 'pending_close';

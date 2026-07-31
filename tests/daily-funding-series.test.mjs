@@ -50,9 +50,9 @@ function sumPaymentsOnDays(payments, daySet) {
   }, 0);
 }
 
-function filterDailySeries(series, rangeMs) {
+function filterDailySeries(series, rangeMs, nowMs = Date.now()) {
   if (!rangeMs) return series;
-  const cutoff = Date.now() - rangeMs;
+  const cutoff = Number(nowMs) - rangeMs;
   const eventsComplete = (row) => {
     const hasF = Array.isArray(row?.fundingEvents);
     const hasFee = Array.isArray(row?.feeEvents);
@@ -161,6 +161,7 @@ if (existsSync(dataPath)) {
     grvtFills: data.grvt?.fills?.fills || [],
     extendedFills: data.extended?.fills?.fills || [],
     days,
+    endMs: Number(data.fetchedAt) || Date.now(),
   };
 
   const allWallet = buildDailyFundingSeries(inputs);
@@ -203,11 +204,11 @@ if (existsSync(dataPath)) {
       'API pairedDailyFundingSeries must match rebuild');
   }
 
-  const cutoff7d = Date.now() - 7 * 86400000;
+  const cutoff7d = Number(data.fetchedAt || Date.now()) - 7 * 86400000;
   const raw7d = [...inputs.hlPayments, ...inputs.nadoPayments, ...inputs.grvtPayments, ...inputs.extendedPayments]
-    .filter(p => Number(p.time) >= cutoff7d)
+    .filter(p => Number(p.time) >= cutoff7d && Number(p.time) <= (Number(data.fetchedAt) || Date.now()))
     .reduce((s, p) => s + (p.usdc || 0), 0);
-  const filtered7d = filterDailySeries(server, 7 * 86400000);
+  const filtered7d = filterDailySeries(server, 7 * 86400000, Number(data.fetchedAt) || Date.now());
   assert.ok(Math.abs(sumSeries(filtered7d).funding - raw7d) < eps,
     `7D chart ${sumSeries(filtered7d).funding} vs raw ${raw7d}`);
 

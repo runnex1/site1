@@ -896,6 +896,61 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 {
+  // Solo / exchange-only closed rows must not pull same-symbol funding from other venues.
+  const closeTime = Date.parse('2026-07-18T12:00:00.000Z');
+  const sessionOpen = closeTime - 2 * 86400000;
+  const closed = [{
+    symbol: 'ADA',
+    pairType: 'exchange_only',
+    exchangeOnly: true,
+    pairLabel: 'HL',
+    closeTime,
+    openTime: sessionOpen,
+    size: 109000,
+    closeSlippage: 100,
+    funding: 0,
+    fees: 8,
+    longLeg: {
+      venue: 'hyperliquid',
+      side: 'long',
+      size: 109000,
+      openTime: sessionOpen,
+      openTimeKnown: true,
+      realizedPnl: 100,
+      fees: 8,
+      funding: -3,
+    },
+    shortLeg: null,
+  }];
+  const enriched = enrichClosedPairsSessionPnl(closed, {
+    hlPayments: [
+      { symbol: 'ADA', time: sessionOpen + 3600000, usdc: -1 },
+      { symbol: 'ADA', time: sessionOpen + 86400000 + 3600000, usdc: -2 },
+      { symbol: 'ADA', time: closeTime - 3600000, usdc: 0.5 },
+    ],
+    grvtPayments: [
+      { symbol: 'ADA', time: sessionOpen + 3600000, usdc: 20 },
+      { symbol: 'ADA', time: sessionOpen + 86400000 + 3600000, usdc: 1.5 },
+      { symbol: 'ADA', time: closeTime - 3600000, usdc: 9 },
+    ],
+    hlFills: [
+      { symbol: 'ADA', time: sessionOpen, fee: 4 },
+      { symbol: 'ADA', time: closeTime, fee: 4 },
+    ],
+    grvtFills: [
+      { symbol: 'ADA', time: sessionOpen + 1000, fee: 50 },
+    ],
+  }, 30)[0];
+  assert.ok(Math.abs(enriched.funding - (-2.5)) < 1e-9, `solo HL ADA must exclude GRVT funding, got ${enriched.funding}`);
+  assert.ok(Math.abs(enriched.fees - 8) < 1e-9, `solo HL ADA must exclude GRVT fees, got ${enriched.fees}`);
+  const venues = new Set();
+  for (const row of enriched.dailyPerformanceSeries || []) {
+    for (const v of Object.keys(row.byVenue || {})) venues.add(v);
+  }
+  assert.deepEqual([...venues].sort(), ['hyperliquid'], 'solo performance series must only include HL venue');
+}
+
+{
   // Later same-day / later-round funding must not attach to an older closed pair.
   const closeTime = Date.parse('2026-07-10T12:00:00.000Z');
   const sessionOpen = closeTime - 2 * 86400000;
@@ -3469,6 +3524,10 @@ assert.match(indexHtml, /function perpsNormalizeClosedPairForDisplay\(pair\)/, '
 assert.match(positionPeakWindowJs, /applyPeakToCloseMetrics/, 'peak window helper must attribute closed stats from peak to close');
 assert.match(positionPeakWindowJs, /lookbackStartMs/, 'peak window must accept activity-session lookback start');
 assert.match(positionPeakWindowJs, /resolveFundingFeesWindowStart/, 'peak metrics must expand funding window when fill history is sparse');
+assert.match(variationalHedgeJs, /hedge\.updatedAt = Date\.now\(\);\s*\n\s*freezeVariationalClosedFunding/, 'finalize close must bump updatedAt so cloud merge keeps closed');
+assert.match(syncJs, /newerCleanReopen && \(!eitherClosed \|\| \(!preferPrev && incTs > prevTs\)\)/, 'sync merge must not resurrect closed hedges on equal updatedAt');
+assert.match(indexHtml, /newerCleanReopen && \(!eitherClosed \|\| \(!preferPrev && incTs > prevTs\)\)/, 'client hedge merge must match sync closed-vs-reopen rules');
+assert.match(variationalHedgeJs, /hedgeOpen >= pairOpen - 86400000/, 'history-backed Closed rows must cover zombies after exchange history ages out');
 assert.match(variationalHedgeJs, /applyVariationalPeakToClosePair/, 'variational closed pairs must apply peak-to-close metrics');
 assert.match(variationalHedgeJs, /computeVariationalClosedLegPnl/, 'variational closed leg PnL must offset tracked exchange realized');
 assert.match(variationalHedgeJs, /computeVariationalClosedPairFunding/, 'variational closed pairs must accrue funding from hedge open through close');
@@ -3560,7 +3619,10 @@ assert.match(indexHtml, /showFees \? \(r\.dailyNet \|\| 0\) : \(r\.dailyFunding 
 assert.match(indexHtml, /perpsTogglePositionChartFees/, 'position performance must expose a trading-fee toggle');
 assert.match(perpsJs, /latestPairActivitySessionStartMs/, 'position open time must use latest blank-day activity session start');
 assert.match(perpsJs, /const perfDays = Math\.min\(PERPS_MAX_FILL_HISTORY_DAYS, Math\.max\(fillHistoryDays, openDays\)\)/, 'per-pair performance series must span from pair open through fill history');
-assert.match(perpsJs, /buildPairDailyPerformanceSeries\(dailySeriesInputs, p\.symbol, perfDays\)/, 'per-pair performance series must use computed performance window');
+assert.match(perpsJs, /buildPairDailyPerformanceSeries\(\s*dailySeriesInputs,\s*p\.symbol,\s*perfDays/, 'per-pair performance series must use computed performance window');
+assert.match(perpsJs, /venuesForPairPerformance\(p\)/, 'open pair performance series must scope funding to pair venues');
+assert.match(perpsJs, /venuesForPairPerformance\(pair\)/, 'closed pair session funding must scope to pair venues');
+assert.match(perpsJs, /function filterDailySeriesInputsByVenues/, 'pair performance must be able to drop other-venue same-symbol payments');
 assert.match(perpsJs, /peakPair\.peakMetricsApplied[\s\S]*dailyPerformanceSeries: sessionSeries/s, 'closed pairs must attach full latest-session dailyPerformanceSeries for funding');
 assert.ok(indexHtml.includes('function perpsSyncTotalPnlForRange(data, range)'), 'Total PnL must follow the selected stat time window');
 assert.ok(indexHtml.includes('perpsSyncTotalPnlForRange(data, _perpsStatRange)'), 'stats bar must sync Total PnL from the active stat range');
@@ -5156,6 +5218,11 @@ assert.match(
   const merged = mergeVariationalHedgeRecord(closed, openZombie);
   assert.equal(merged.status, 'closed', 'merge must not resurrect closed Variational hedges');
   assert.equal(merged.closedFundingUsd, 50);
+  const equalTsZombie = mergeVariationalHedgeRecord(
+    { id: 'h1', symbol: 'ADA', status: 'open', closedAt: null, updatedAt: 100, openedAt: 1 },
+    { id: 'h1', symbol: 'ADA', status: 'closed', closedAt: 200, closedFundingUsd: 50, variationalExitPx: 1.2, updatedAt: 100, openedAt: 1 },
+  );
+  assert.equal(equalTsZombie.status, 'closed', 'equal updatedAt must not resurrect closed over open');
   const reopen = mergeVariationalHedgeRecord(closed, {
     id: 'h1', symbol: 'ADA', status: 'open', closedAt: null, closedFundingUsd: null, variationalExitPx: null, updatedAt: 300, openedAt: 1,
   });
@@ -5189,9 +5256,11 @@ function mergeVariationalHedgeRecord(prev, hedge) {
     return newer?.[field] ?? older?.[field] ?? null;
   };
   let status = newer?.status ?? older?.status;
-  if (mergeVariationalHedgeIsCleanReopen(newer)) {
+  const eitherClosed = prev?.status === 'closed' || hedge?.status === 'closed';
+  const newerCleanReopen = mergeVariationalHedgeIsCleanReopen(newer);
+  if (newerCleanReopen && (!eitherClosed || (!preferPrev && incTs > prevTs))) {
     status = 'open';
-  } else if (prev?.status === 'closed' || hedge?.status === 'closed') {
+  } else if (eitherClosed) {
     status = 'closed';
   } else if (prev?.status === 'pending_close' || hedge?.status === 'pending_close') {
     status = 'pending_close';

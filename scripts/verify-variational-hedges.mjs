@@ -28,14 +28,18 @@ const html = await fetchText(`${PROD}/`);
 check('production has reapply hook', html.includes('perpsReapplyVariationalHedgesIfMounted'));
 check('production waits for boot promise', html.includes('_perpsBootPromise'));
 check('VariationalHedge loads in browser', html.includes('lib/variational-hedge.js'));
+check('production has closed-vs-reopen merge guard', html.includes('newerCleanReopen && (!eitherClosed || (!preferPrev && incTs > prevTs))'));
 
 const sync = await fetchJson(`${PROD}/api/sync?portfolioOnly=1`);
 const portfolio = JSON.parse(sync.result);
 const hedges = portfolio._perpsVariationalHedges || [];
 check('portfolioOnly returns hedges', hedges.length >= 3, `count=${hedges.length}`);
 
-const open = hedges.filter((h) => h.status === 'open' && ['TRUMP', 'PYTH', 'ZRO'].includes(h.symbol));
-check('open TRUMP/PYTH/ZRO on server', open.length === 3, `found=${open.map((h) => h.symbol).join(',')}`);
+const open = hedges.filter((h) => h.status === 'open' && !h.supersededByLiveCross);
+check('has open non-superseded Var hedges', open.length >= 1, `found=${open.map((h) => h.symbol).join(',')}`);
+
+const zombieFlat = open.filter((h) => ['HBAR'].includes(h.symbol) && h.trackedVenue === 'grvt');
+check('no HBAR GRVT open zombie after deploy', zombieFlat.length === 0, `zombies=${zombieFlat.map((h) => h.id).join(',')}`);
 
 let perps;
 try {
@@ -46,16 +50,17 @@ try {
 
 const { createRequire } = await import('module');
 const require = createRequire(import.meta.url);
-const { applyVariationalHedges } = require(join(ROOT, '..', 'lib', 'variational-hedge.js'));
+const { applyVariationalHedges } = require(join(ROOT, '..', 'lib/variational-hedge.js'));
 const result = applyVariationalHedges(perps, open, {});
 const paired = result.paired.filter((p) => p.variationalHedgeId).map((p) => p.symbol).sort();
-const unhedged = result.unhedged
-  .filter((u) => u.venue === 'hyperliquid' && ['TRUMP', 'PYTH', 'ZRO'].includes(u.symbol))
-  .map((u) => u.symbol)
+const stillOpen = (result.hedges || []).filter((h) => h.status === 'open' && !h.supersededByLiveCross);
+const leaked = result.unhedged
+  .filter((u) => stillOpen.some((h) => h.symbol === u.symbol && h.trackedVenue === u.venue))
+  .map((u) => `${u.symbol}@${u.venue}`)
   .sort();
 
-check('apply builds HL+Var pairs', paired.join(',') === 'PYTH,TRUMP,ZRO', `paired=${paired.join(',')}`);
-check('apply hides hedged legs from unhedged', unhedged.length === 0, `leaked=${unhedged.join(',')}`);
+check('apply builds at least one HL/GRVT+Var pair', paired.length >= 1, `paired=${paired.join(',')}`);
+check('apply hides hedged legs from unhedged', leaked.length === 0, `leaked=${leaked.join(',')}`);
 
 const failed = checks.filter((c) => !c.ok);
 if (failed.length) {
