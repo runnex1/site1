@@ -1270,6 +1270,114 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   assert.ok(Math.abs(pair.closeSlippage - closeNotionalSlip) < 0.5, 'pair close slippage must net to slip only');
 }
 
+// ─── Delta-neutral leg PnL reconciliation (cumulative venue closedPnl) ────────
+{
+  const { buildClosedLegsForVenue, closedPairCloseSlippage, reconcileLegRealizedPnl } = require('../lib/closed-leg-reconstruct.js');
+
+  // 1) Losing delta-neutral ATOM-like round: HL reports cumulative -9715.28.
+  //    GRVT prices chosen so its short round-trip equals the reported +57.85:
+  //    short PnL = qty * (entry - exit) → exit = entry - 57.85/qty.
+  const grvtExit = 1.51 - 57.85 / 32419.64;
+  const hlFills = [
+    { venue: 'hyperliquid', symbol: 'ATOM', time: 1700000000000, side: 'B', px: 1.529, sz: 32419.64, fee: 1, closedPnl: 0 },
+    { venue: 'hyperliquid', symbol: 'ATOM', time: 1700003600000, side: 'A', px: 1.4843, sz: 32419.64, fee: 1, closedPnl: -9715.28 },
+  ];
+  const grvtFills = [
+    { venue: 'grvt', symbol: 'ATOM', time: 1700000100000, side: 'sell', px: 1.51, sz: 32419.64, fee: 1, closedPnl: 0 },
+    { venue: 'grvt', symbol: 'ATOM', time: 1700003700000, side: 'buy', px: grvtExit, sz: 32419.64, fee: 1, closedPnl: 57.85 },
+  ];
+  const hlLeg = buildClosedLegsForVenue('hyperliquid', hlFills, {})[0];
+  const grvtLeg = buildClosedLegsForVenue('grvt', grvtFills, {})[0];
+  const hlExpected = 32419.64 * (1.4843 - 1.529);
+  assert.ok(Math.abs(hlLeg.realizedPnl - hlExpected) < 0.01,
+    `cumulative HL closedPnl must be replaced by price-based PnL, got ${hlLeg.realizedPnl}`);
+  assert.ok(Math.abs(hlLeg.realizedPnl - (-9715.28)) > 8000,
+    'cumulative HL closedPnl must NOT be displayed as leg Exchange PnL');
+  // GRVT +57.85 is a genuine small round-trip and must be preserved.
+  assert.ok(Math.abs(grvtLeg.realizedPnl - 57.85) < 1e-6,
+    `GRVT true round-trip PnL must be preserved, got ${grvtLeg.realizedPnl}`);
+  const slip = closedPairCloseSlippage({ size: 32419.64, longLeg: hlLeg, shortLeg: grvtLeg });
+  assert.ok(Math.abs(slip - (hlExpected + 57.85)) < 0.01,
+    `hedged slippage must equal price-based long + GRVT short, got ${slip}`);
+  const netPnl = slip + 576.78 - 40.64;
+  assert.ok(Math.abs(netPnl - (slip + 576.78 - 40.64)) < 1e-9,
+    'ATOM net PnL must reconcile to slippage + funding - fees');
+  assert.ok(Math.abs((hlLeg.realizedPnl + grvtLeg.realizedPnl) - slip) < 0.01,
+    'Exchange PnL legs must sum to Close Slippage after reconciliation');
+
+  // 2) Profitable delta-neutral round: both legs price-consistent with venue.
+  const profHl = buildClosedLegsForVenue('hyperliquid', [
+    { venue: 'hyperliquid', symbol: 'BTC', time: 1700000000000, side: 'B', px: 60000, sz: 1, fee: 1, closedPnl: 0 },
+    { venue: 'hyperliquid', symbol: 'BTC', time: 1700003600000, side: 'A', px: 61000, sz: 1, fee: 1, closedPnl: 1000 },
+  ], {})[0];
+  assert.ok(Math.abs(profHl.realizedPnl - 1000) < 1e-6,
+    'venue PnL matching price-based PnL must be kept as-is');
+
+  // 3) Partial-fill close: two close fills with cumulative closedPnl must not double count.
+  const partial = buildClosedLegsForVenue('hyperliquid', [
+    { venue: 'hyperliquid', symbol: 'SOL', time: 1700000000000, side: 'B', px: 100, sz: 10, fee: 0.5, closedPnl: 0 },
+    { venue: 'hyperliquid', symbol: 'SOL', time: 1700003600000, side: 'A', px: 105, sz: 4, fee: 0.3, closedPnl: 50 },
+    { venue: 'hyperliquid', symbol: 'SOL', time: 1700003700000, side: 'A', px: 106, sz: 6, fee: 0.4, closedPnl: 55 },
+  ], {})[0];
+  const partialExpected = 4 * 5 + 6 * 6;
+  assert.ok(Math.abs(partial.realizedPnl - partialExpected) < 1e-6,
+    `partial-fill cumulative closedPnl must not double count, got ${partial.realizedPnl} vs ${partialExpected}`);
+
+  // 4) Large slippage: same cumulative closedPnl on every close fill.
+  const largeSlip = buildClosedLegsForVenue('hyperliquid', [
+    { venue: 'hyperliquid', symbol: 'ARB', time: 1700000000000, side: 'B', px: 1.0, sz: 5000, fee: 1, closedPnl: 0 },
+    { venue: 'hyperliquid', symbol: 'ARB', time: 1700003600000, side: 'A', px: 0.9, sz: 2500, fee: 1, closedPnl: -250 },
+    { venue: 'hyperliquid', symbol: 'ARB', time: 1700003700000, side: 'A', px: 0.89, sz: 2500, fee: 1, closedPnl: -275 },
+  ], {})[0];
+  const largeExpected = 2500 * -0.1 + 2500 * -0.11;
+  assert.ok(Math.abs(largeSlip.realizedPnl - largeExpected) < 1e-6,
+    `large cumulative slippage must use price-based increments, got ${largeSlip.realizedPnl} vs ${largeExpected}`);
+  assert.ok(Math.abs(largeSlip.realizedPnl - (-525)) < 1e-6, 'large slippage must be -525 (not -250-275 or -250*2)');
+
+  // 5) Multiple fills opening a position: weighted average entry must be correct.
+  const multi = buildClosedLegsForVenue('hyperliquid', [
+    { venue: 'hyperliquid', symbol: 'ETH', time: 1700000000000, side: 'B', px: 3000, sz: 1, fee: 0.5, closedPnl: 0 },
+    { venue: 'hyperliquid', symbol: 'ETH', time: 1700001000000, side: 'B', px: 3100, sz: 1, fee: 0.5, closedPnl: 0 },
+    { venue: 'hyperliquid', symbol: 'ETH', time: 1700003600000, side: 'A', px: 3200, sz: 2, fee: 0.6, closedPnl: 220 },
+  ], {})[0];
+  const multiExpected = 2 * (3200 - 3050);
+  assert.ok(Math.abs(multi.realizedPnl - multiExpected) < 1e-6,
+    `multi-fill open must use weighted entry, got ${multi.realizedPnl} vs ${multiExpected}`);
+
+  // 6) Funding-only profit: flat prices (zero price PnL) + funding > fees → net positive.
+  const flatLegs = buildClosedLegsForVenue('hyperliquid', [
+    { venue: 'hyperliquid', symbol: 'SUI', time: 1700000000000, side: 'B', px: 2.0, sz: 1000, fee: 0.5, closedPnl: 0 },
+    { venue: 'hyperliquid', symbol: 'SUI', time: 1700003600000, side: 'A', px: 2.0, sz: 1000, fee: 0.5, closedPnl: 10 },
+  ], {
+    hyperliquid: [{ venue: 'hyperliquid', symbol: 'SUI', time: 1700001800000, usdc: 50 }],
+  });
+  assert.ok(Math.abs(flatLegs[0].realizedPnl - 10) < 1e-6,
+    'flat-price leg must keep venue-reported PnL (price evidence degenerate)');
+  assert.ok(Math.abs(flatLegs[0].funding - 50) < 1e-6, 'flat leg must accrue funding payments');
+  const flatNet = flatLegs[0].realizedPnl + flatLegs[0].funding - flatLegs[0].fees;
+  assert.ok(Math.abs(flatNet - (10 + 50 - 1)) < 1e-6, 'funding-only profit must net positive');
+
+  // 7) Zero slippage: exact same entry/exit price → price PnL = 0.
+  const zero = buildClosedLegsForVenue('hyperliquid', [
+    { venue: 'hyperliquid', symbol: 'DOT', time: 1700000000000, side: 'B', px: 8.0, sz: 100, fee: 0.2, closedPnl: 0 },
+    { venue: 'hyperliquid', symbol: 'DOT', time: 1700003600000, side: 'A', px: 8.0, sz: 100, fee: 0.2, closedPnl: 0 },
+  ], {})[0];
+  assert.equal(zero.realizedPnl, 0, 'zero-slippage round must have zero leg PnL');
+  assert.equal(closedPairCloseSlippage({ size: 100, longLeg: zero, shortLeg: { ...zero, side: 'short', realizedPnl: 0 } }), 0,
+    'zero-slippage pair must have zero close slippage');
+
+  // 8) reconcileLegRealizedPnl direct: price-based override only when divergent.
+  const leg = { side: 'long', size: 100, avgEntryPx: 10, avgClosePx: 9, realizedPnl: -500 };
+  assert.ok(Math.abs(reconcileLegRealizedPnl(leg) - (-100)) < 1e-6,
+    'reconcile must override cumulative -500 with price-based -100');
+  const okLeg = { side: 'long', size: 100, avgEntryPx: 10, avgClosePx: 9, realizedPnl: -100 };
+  assert.ok(Math.abs(reconcileLegRealizedPnl(okLeg) - (-100)) < 1e-6,
+    'reconcile must keep venue PnL when it matches price-based');
+  const noPrice = { side: 'long', size: 100, realizedPnl: -500 };
+  assert.ok(Math.abs(reconcileLegRealizedPnl(noPrice) - (-500)) < 1e-6,
+    'reconcile must keep venue PnL when prices are missing');
+}
+
 assert.match(indexHtml, /function perpsClosedPairAvgNotional\(/, 'Closed tab must recompute margin from leg prices and live marks');
 assert.match(indexHtml, /function perpsClosedLegHtml\(leg, pair\)/, 'Closed tab must render per-leg Exchange PnL');
 assert.doesNotMatch(indexHtml, /Gross leg PnL is hedged/, 'Closed Exchange PnL must not be blanked for hedged exchange pairs');
