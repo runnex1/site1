@@ -373,11 +373,12 @@ async function handlePerps(req, res) {
   };
 
   try {
+    const hedges = parseJson(await kvGet('vault:perps_variational_hedges'), []);
     const data = await cachedJson(
       `perps:dashboard:${wallet.toLowerCase()}:${nadoWallet.toLowerCase()}:${grvtSubAccount}:${phoenixWallet}:${days}`,
       PERPS_DASHBOARD_CACHE_MS,
       'Perps dashboard',
-      () => fetchPerpsDashboard(dashboardOpts),
+      () => fetchPerpsDashboard(dashboardOpts, { hedges }),
     );
     // Active symbols are derived from the dashboard payload; no separate KV list needed.
     try {

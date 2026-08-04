@@ -38162,7 +38162,7 @@ function perpsClosedLegHtml(leg, pair) {
     const signedSize = leg.side === 'short' ? -Math.abs(leg.size || 0) : Math.abs(leg.size || 0);
     const venueHtml = perpsVenueWithSideHtml(leg.venue, signedSize);
     const exchangeOnly = Boolean(pair?.exchangeOnly) || !(pair?.longLeg && pair?.shortLeg);
-    if (!Number.isFinite(Number(leg.realizedPnl))) {
+    if (leg.realizedPnl == null || !Number.isFinite(Number(leg.realizedPnl))) {
         return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val muted" title="${exchangeOnly ? 'Exchange PnL unavailable' : (leg.venue === 'variational' ? 'Variational exit price missing or estimated' : 'Exchange realized PnL unavailable for this leg')}">—</span></div>`;
     }
     const pnl = Number(leg.realizedPnl);
