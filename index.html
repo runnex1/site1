@@ -35505,7 +35505,7 @@ const PERPS_PNL_CHART_START_KEY = 'vault-perps-pnl-chart-start-ms';
 const PERPS_PNL_BASELINE_KEY = 'vault-perps-pnl-baseline-level';
 const PERPS_PNL_TRACK_VER_KEY = 'vault-perps-pnl-track-v4';
 /** PnL chart only — window starts here (UTC). Other equity modes keep full history. */
-const PERPS_PNL_CHART_EPOCH_MS = Date.parse('2026-07-22T00:00:00.000Z');
+const PERPS_PNL_CHART_EPOCH_MS = Date.parse('2026-08-04T00:00:00.000Z');
 let _perpsPnlTrackMemory = null;
 
 function perpsEquityPointTimeMs(point) {
@@ -35766,7 +35766,7 @@ function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityV
             pnlBaselineLevel: baseline,
             pointCount: points.length,
             ignoresCapitalSessionReset: true,
-            note: 'PnL — since Jul 22 2026 (ignores deposit/withdraw resets)',
+            note: 'PnL — since Aug 4 2026 (ignores deposit/withdraw resets)',
         };
     }
 
@@ -36137,7 +36137,7 @@ function perpsRenderEquityChart(data) {
         noteEl.textContent = _perpsEquityValueMode === 'raw'
             ? 'Exchange equity · raw HL + Nado + GRVT + Extended + Phoenix account values'
             : (_perpsEquityValueMode === 'pnl'
-                ? 'PnL · since Jul 22 2026 · ignores deposit/withdraw resets'
+                ? 'PnL · since Aug 4 2026 · ignores deposit/withdraw resets'
                 : 'Hedge-neutral · + Var uPnL, partial-close realized, closed-pair slip+funding');
     }
     if (lineEl) lineEl.setAttribute('d', chart.line);
