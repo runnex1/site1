@@ -34801,43 +34801,27 @@ function perpsDeleteClosedPair(key) {
 // Per-venue realized PnL (excl. fees/funding) accumulated in each pair's latest
 // activity session. Recomputed on every refresh from the raw payload so it stays
 // fresh even when the /api/perps response is served from the server cache.
-// HL: price-based incremental (realizes only on size decreases — never on
-//     increases). Extended: exchange-reported realisedPnl — the live open
-//     position carries the accumulated partial-close realized; history rows add
-//     fully-closed sessions.
+// HL + Extended: price-based incremental from fills (realizes only on size
+//     decreases — never on increases), so fees and funding are excluded.
 function perpsAttachRealizedPnlByVenue(data) {
     if (!data || typeof data !== 'object') return;
     const CR = window.ClosedLegReconstruct;
     if (!CR?.computeFillRealizedPnl) return;
     const baseOf = (sym) => String(sym || '').trim().toUpperCase().replace(/-PERP$/i, '').replace(/USDT$/i, '').replace(/USD$/i, '');
-    const extendedOpenByBase = {};
-    for (const pos of data?.extended?.state?.positions || []) {
-        const base = baseOf(pos.symbol || pos.market);
-        if (!base) continue;
-        extendedOpenByBase[base] = Number(pos.realisedPnl || pos.realizedPnl || 0) || 0;
-    }
     const hlFills = data?.hyperliquid?.fills?.fills || [];
-    const extHistory = data?.extended?.positionHistory || [];
+    const extFills = data?.extended?.fills?.fills || [];
     for (const pair of data?.paired || []) {
         if (!pair || pair.pairType !== 'hl_extended') continue;
         const base = baseOf(pair.symbol);
         if (!base) continue;
         const sinceMs = Number(pair.pairOpenedAtMs) || 0;
-        const rpv = {};
-        rpv.hyperliquid = CR.computeFillRealizedPnl(
-            hlFills
-                .filter(f => baseOf(f.symbol) === base && (!sinceMs || Number(f.time || 0) >= sinceMs))
-                .sort((a, b) => Number(a.time || 0) - Number(b.time || 0)),
-        );
-        let ext = extendedOpenByBase[base] || 0;
-        for (const leg of extHistory) {
-            if (baseOf(leg.symbol) !== base) continue;
-            const ct = Number(leg.closeTime || 0);
-            if (ct && sinceMs && ct < sinceMs) continue;
-            ext += Number(leg.realizedPnl || 0) || 0;
-        }
-        rpv.extended = ext;
-        pair.realizedPnlByVenue = rpv;
+        const inWindow = (fills) => fills
+            .filter(f => baseOf(f.symbol) === base && (!sinceMs || Number(f.time || 0) >= sinceMs))
+            .sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
+        pair.realizedPnlByVenue = {
+            hyperliquid: CR.computeFillRealizedPnl(inWindow(hlFills)),
+            extended: CR.computeFillRealizedPnl(inWindow(extFills)),
+        };
     }
 }
 
@@ -34854,6 +34838,7 @@ function perpsSeedHlExtendedClosedPairsFromExchange(data) {
     };
     const hlLegs = CR.buildClosedLegsForVenue('hyperliquid', data?.hyperliquid?.fills?.fills || [], paymentSources);
     const extLegs = data?.extended?.positionHistory || [];
+    const extFills = data?.extended?.fills?.fills || [];
     if (!hlLegs.length || !extLegs.length) return [];
     const extBySymbol = {};
     for (const leg of extLegs) {
@@ -34861,6 +34846,22 @@ function perpsSeedHlExtendedClosedPairsFromExchange(data) {
         if (!sym) continue;
         (extBySymbol[sym] = extBySymbol[sym] || []).push(leg);
     }
+    // Strict per-leg realized for an Extended closed leg: price-based from its
+    // fills in [openTime, closeTime] (excl. fees/funding). Fall back to the
+    // exchange-reported realisedPnl when fills are missing/cut by the window.
+    const extRealizedFromFills = (leg) => {
+        const sym = CR.toBaseSymbol(leg.symbol);
+        const open = Number(leg.openTime || 0);
+        const close = Number(leg.closeTime || 0);
+        if (!open || !close) return null;
+        const legFills = extFills
+            .filter(f => CR.toBaseSymbol(f.symbol) === sym && Number(f.time || 0) >= open && Number(f.time || 0) <= close)
+            .sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
+        if (!legFills.length) return null;
+        // Only trust when the leg's first fill is captured (window not cut mid-leg).
+        if (Math.abs(Number(legFills[0].time || 0) - open) > 86400000) return null;
+        return CR.computeFillRealizedPnl(legFills);
+    };
     const seeded = [];
     const PAIR_WINDOW_MS = 2 * 86400000;
     const closeOf = (leg) => Number(leg?.closeTime || 0);
@@ -34875,6 +34876,8 @@ function perpsSeedHlExtendedClosedPairsFromExchange(data) {
             const closeTime = Math.max(closeOf(ext), closeOf(hl)) || closeOf(ext) || closeOf(hl) || Date.now();
             const hlLeg = { venue: 'hyperliquid', ...hl };
             const extLeg = { venue: 'extended', ...ext };
+            const extRealized = extRealizedFromFills(ext);
+            if (Number.isFinite(extRealized)) extLeg.realizedPnl = extRealized;
             const longLeg = hl.side === 'long' ? hlLeg : extLeg;
             const shortLeg = hl.side === 'long' ? extLeg : hlLeg;
             const fees = Math.abs(Number(hlLeg.fees || 0)) + Math.abs(Number(extLeg.fees || 0));
