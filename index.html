@@ -32200,10 +32200,13 @@ function perpsSetEquityValueMode(mode, btn) {
 function perpsEquityPointChartValue(point, valueMode = _perpsEquityValueMode) {
     if (valueMode === 'raw') return point?.totalEquity ?? 0;
     if (valueMode === 'pnl') return point?.chartValue ?? 0;
-    // Hedge-neutral: include Variational partial-close realized PnL (not in the
-    // 5 exchange account values that make up totalEquity).
+    // Hedge-neutral: add the Variational leg components that are NOT in the 5
+    // exchange account values making up totalEquity: partial-close realized PnL,
+    // open-leg unrealized PnL, and closed-pair off-exchange equity (slip + funding).
     const partial = Number(point?.partialCloseRealizedPnl) || 0;
-    return (point?.adjustedEquity ?? point?.totalEquity ?? 0) + partial;
+    const openUpnl = Number(point?.variationalOpenUpnl) || 0;
+    const closedEquity = Number(point?.variationalClosedEquityPnl) || 0;
+    return (point?.adjustedEquity ?? point?.totalEquity ?? 0) + partial + openUpnl + closedEquity;
 }
 
 // Variational equity adjustment is disabled (remade separately). Returns zeros so
@@ -35292,10 +35295,58 @@ function perpsSetStatus(msg) {
 
 function perpsVariationalPartialCloseRealizedPnl() {
     try {
+        // Only OPEN hedges: a closed hedge's partial is carried by its Closed
+        // pair (variationalEquityPnl + partialCloseRealizedPnl), and a reopen
+        // resets the accumulator — counting it here would double-count.
         return perpsLoadVariationalHedges().reduce(
-            (sum, h) => sum + (Number(h?.partialCloseRealizedPnl) || 0),
+            (sum, h) => sum + (h?.status === 'open' ? (Number(h?.partialCloseRealizedPnl) || 0) : 0),
             0,
         );
+    } catch (e) {
+        return 0;
+    }
+}
+
+/** Sum of live Variational open-leg uPnL (open hedges) — the synthetic offset to
+ *  the exchange legs' unrealized PnL, which is already inside totalEquity. */
+function perpsVariationalOpenHedgeUpnl() {
+    try {
+        return perpsLoadVariationalHedges().reduce(
+            (sum, h) => sum + (h?.status === 'open' ? (Number(h?.variationalLastUpnl) || 0) : 0),
+            0,
+        );
+    } catch (e) {
+        return 0;
+    }
+}
+
+/** Sum of closed Variational pairs' full session Var-leg PnL: off-exchange equity
+ *  (slip + Var funding, final tranche) PLUS the partial-close realized PnL that was
+ *  accumulated while open. A reopen resets the hedge accumulator, so the pair must
+ *  carry the whole session. Closed pairs are in-memory only (they do not persist). */
+function perpsVariationalClosedEquityPnl(data) {
+    try {
+        return (data?.closedPairs || []).reduce((sum, p) => {
+            if (!p?.manualVariationalClose && !String(p?.pairType || '').includes('variational')) return sum;
+            const equity = Number(p?.variationalEquityPnl ?? 0);
+            const partial = Number(p?.partialCloseRealizedPnl) || 0;
+            return sum + equity + partial;
+        }, 0);
+    } catch (e) {
+        return 0;
+    }
+}
+
+/** Same as perpsVariationalClosedEquityPnl but only pairs closed at or before timeMs. */
+function perpsVariationalClosedEquityPnlAt(data, timeMs) {
+    try {
+        return (data?.closedPairs || []).reduce((sum, p) => {
+            if (!p?.manualVariationalClose && !String(p?.pairType || '').includes('variational')) return sum;
+            if (timeMs && Number(p?.closeTime || 0) > timeMs) return sum;
+            const equity = Number(p?.variationalEquityPnl ?? 0);
+            const partial = Number(p?.partialCloseRealizedPnl) || 0;
+            return sum + equity + partial;
+        }, 0);
     } catch (e) {
         return 0;
     }
@@ -35315,6 +35366,11 @@ function perpsSaveSnapshot(data) {
         const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
         const variationalAdj = perpsComputeVariationalEquityAdjustments(data);
         const partialCloseRealizedPnl = perpsVariationalPartialCloseRealizedPnl();
+        const variationalOpenUpnl = perpsVariationalOpenHedgeUpnl();
+        const fetchedAtMs = data.fetchedAt || Date.now();
+        // Closed Var pairs are in-memory only; count those closed before this
+        // snapshot's time so the component lands on the right historical point.
+        const variationalClosedEquityPnl = perpsVariationalClosedEquityPnlAt(data, fetchedAtMs);
         const store = JSON.parse(localStorage.getItem(PERPS_SNAPSHOTS_KEY) || '{}');
         const fetchedAt = data.fetchedAt || Date.now();
         const variationalFields = {
@@ -35344,11 +35400,18 @@ function perpsSaveSnapshot(data) {
                 ? Math.abs(prevAdj - nextAdj) > 0.01
                 : Number.isFinite(nextAdj);
             // Keep first adjust only when composition is unchanged; update on open→close transitions.
-            if (Number.isFinite(prevAdj) && !adjPartsChanged && !totalAdjChanged) return false;
+            const varComponentsChanged = [
+                ['partialCloseRealizedPnl', partialCloseRealizedPnl],
+                ['variationalOpenUpnl', variationalOpenUpnl],
+                ['variationalClosedEquityPnl', variationalClosedEquityPnl],
+            ].some(([k, v]) => Math.abs((Number(existing[k]) || 0) - (Number(v) || 0)) > 0.01);
+            if (Number.isFinite(prevAdj) && !adjPartsChanged && !totalAdjChanged && !varComponentsChanged) return false;
             store[bucket] = {
                 ...existing,
                 ...variationalFields,
                 partialCloseRealizedPnl,
+                variationalOpenUpnl,
+                variationalClosedEquityPnl,
                 hlAccountValue,
                 nadoAccountValue,
                 grvtAccountValue,
@@ -35378,6 +35441,8 @@ function perpsSaveSnapshot(data) {
             adjustedEquity: s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalEquity - combinedNetDeposits,
             cumulativeNetDeposits: combinedNetDeposits,
             partialCloseRealizedPnl,
+            variationalOpenUpnl,
+            variationalClosedEquityPnl,
             ...variationalFields,
             fetchedAt,
         };
@@ -35646,13 +35711,16 @@ function perpsMapEquityChartPoints(points, valueMode = _perpsEquityValueMode, fi
         if (!rows.length) return [];
         const levels = rows.map((p) => {
             const partial = Number(p?.partialCloseRealizedPnl) || 0;
+            const openUpnl = Number(p?.variationalOpenUpnl) || 0;
+            const closedEquity = Number(p?.variationalClosedEquityPnl) || 0;
+            const varPnl = partial + openUpnl + closedEquity;
             const dep = Number(p?.pnlCumulativeNetDeposits);
-            if (Number.isFinite(dep)) return (Number(p?.totalEquity) || 0) - dep + partial;
+            if (Number.isFinite(dep)) return (Number(p?.totalEquity) || 0) - dep + varPnl;
             const stratDep = Number(p?.cumulativeNetDeposits);
-            if (Number.isFinite(stratDep)) return (Number(p?.totalEquity) || 0) - stratDep + partial;
+            if (Number.isFinite(stratDep)) return (Number(p?.totalEquity) || 0) - stratDep + varPnl;
             const adj = Number(p?.adjustedEquity);
-            if (Number.isFinite(adj)) return adj + partial;
-            return (Number(p?.totalEquity) || 0) + partial;
+            if (Number.isFinite(adj)) return adj + varPnl;
+            return (Number(p?.totalEquity) || 0) + varPnl;
         });
         const locked = Number(fixedPnlBaseline);
         const baseline = Number.isFinite(locked) ? locked : (levels[0] || 0);
@@ -35848,6 +35916,8 @@ function perpsBuildEquitySeries(data) {
             variationalEquityAdjust,
             variationalNeutralEquity,
             partialCloseRealizedPnl: Number(snap.partialCloseRealizedPnl) || 0,
+            variationalOpenUpnl: Number(snap.variationalOpenUpnl) || 0,
+            variationalClosedEquityPnl: Number(snap.variationalClosedEquityPnl) || 0,
             source: 'snapshot',
         };
         if (!byBucket[bucket] || row.time >= byBucket[bucket].time) byBucket[bucket] = row;
@@ -35871,6 +35941,8 @@ function perpsBuildEquitySeries(data) {
     const liveBucket = perpsEquityBucketKey(fetchedAt);
     const liveVariationalAdjust = liveTotalAdj;
     const livePartialCloseRealizedPnl = perpsVariationalPartialCloseRealizedPnl();
+    const liveVariationalOpenUpnl = perpsVariationalOpenHedgeUpnl();
+    const liveVariationalClosedEquityPnl = perpsVariationalClosedEquityPnl(data);
     const liveNeutral = VE?.variationalNeutralEquity?.(totalNow, liveVariationalAdjust)
         ?? (totalNow + liveVariationalAdjust);
     if (!byBucket[liveBucket] && perpsIsEquitySnapshotEligible(data)) {
@@ -35884,6 +35956,8 @@ function perpsBuildEquitySeries(data) {
             variationalEquityAdjust: liveVariationalAdjust,
             variationalNeutralEquity: liveNeutral,
             partialCloseRealizedPnl: livePartialCloseRealizedPnl,
+            variationalOpenUpnl: liveVariationalOpenUpnl,
+            variationalClosedEquityPnl: liveVariationalClosedEquityPnl,
             source: 'live',
         };
     } else if (byBucket[liveBucket]) {
@@ -35896,6 +35970,8 @@ function perpsBuildEquitySeries(data) {
             variationalEquityAdjust: liveVariationalAdjust,
             variationalNeutralEquity: liveNeutral,
             partialCloseRealizedPnl: livePartialCloseRealizedPnl,
+            variationalOpenUpnl: liveVariationalOpenUpnl,
+            variationalClosedEquityPnl: liveVariationalClosedEquityPnl,
             source: byBucket[liveBucket].source || 'live',
         };
     }
@@ -35917,6 +35993,8 @@ function perpsBuildEquitySeries(data) {
             variationalEquityAdjust: liveVariationalAdjust,
             variationalNeutralEquity: liveNeutral,
             partialCloseRealizedPnl: livePartialCloseRealizedPnl,
+            variationalOpenUpnl: liveVariationalOpenUpnl,
+            variationalClosedEquityPnl: liveVariationalClosedEquityPnl,
             source: 'live',
         }];
     }
@@ -36055,7 +36133,7 @@ function perpsRenderEquityChart(data) {
             ? 'Exchange equity · raw HL + Nado + GRVT + Extended + Phoenix account values'
             : (_perpsEquityValueMode === 'pnl'
                 ? 'PnL · since Jul 22 2026 · ignores deposit/withdraw resets'
-                : 'Hedge-neutral · Var uPnL = −exchange + 0.12% slip (matched size; funding remains)');
+                : 'Hedge-neutral · + Var uPnL, partial-close realized, closed-pair slip+funding');
     }
     if (lineEl) lineEl.setAttribute('d', chart.line);
     if (areaEl) areaEl.setAttribute('d', chart.area || '');
