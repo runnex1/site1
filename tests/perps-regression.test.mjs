@@ -319,18 +319,18 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
 }
 
 {
-  // Closing-fill fragments must not become solo Closed rows.
+  // A closing-fill fragment (no hedge partner) must still become a SOLO Closed row so
+  // the Closed tab always shows session-cumulated PnL regardless of hedge state.
   const close = now - 3600000;
   const fragments = buildClosedPairs({
     hyperliquid: [
       { venue: 'hyperliquid', symbol: 'ATOM', time: close, side: 'A', px: 4, sz: 1500, fee: 1, closedPnl: -30 },
     ],
   }, {});
-  assert.equal(
-    fragments.filter((p) => p.symbol === 'ATOM' && p.exchangeOnly).length,
-    0,
-    'reconstructed closing-fill fragments must not appear as never-hedged solos',
-  );
+  const atomSolo = fragments.filter((p) => p.symbol === 'ATOM' && p.exchangeOnly);
+  assert.equal(atomSolo.length, 1, 'unmatched closing-fill fragment must become a SOLO Closed row');
+  assert.equal(atomSolo[0].closeSlippage, -30, 'SOLO slippage must be the leg realized PnL');
+  assert.equal(atomSolo[0].fees, 1, 'SOLO fees must sum fill fees');
 }
 
 {
@@ -792,7 +792,10 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
       { venue: 'nado', symbol: 'TEST', time: close + 1000, side: 'buy', px: 1, size: 600, fee: 1, realizedPnl: -98 },
     ],
   }, {});
-  assert.equal(closed.filter((p) => !p.exchangeOnly).length, 0, 'large raw fill-vs-fill size mismatches must still be rejected as hedged pairs');
+  // Partially hedged (opposite-venue, time-compatible) legs pair into one row even with
+  // a large size mismatch — they must never show as SOLO rows.
+  const hedged = closed.filter((p) => !p.exchangeOnly);
+  assert.equal(hedged.length, 1, 'time-compatible size-mismatched legs must pair into one hedged row');
   assert.equal(closed.filter((p) => p.exchangeOnly).length, 0, 'size-mismatch leftovers must not become never-hedged SOLO rows');
 }
 
