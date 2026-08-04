@@ -32203,10 +32203,12 @@ function perpsEquityPointChartValue(point, valueMode = _perpsEquityValueMode) {
     // Hedge-neutral: add the Variational leg components that are NOT in the 5
     // exchange account values making up totalEquity: partial-close realized PnL,
     // open-leg unrealized PnL, and closed-pair off-exchange equity (slip + funding).
+    // Deposits/withdrawals are NOT subtracted here — only the PnL chart is
+    // deposit-neutralized (perpsMapEquityChartPoints 'pnl' mode).
     const partial = Number(point?.partialCloseRealizedPnl) || 0;
     const openUpnl = Number(point?.variationalOpenUpnl) || 0;
     const closedEquity = Number(point?.variationalClosedEquityPnl) || 0;
-    return (point?.adjustedEquity ?? point?.totalEquity ?? 0) + partial + openUpnl + closedEquity;
+    return (point?.totalEquity ?? 0) + partial + openUpnl + closedEquity;
 }
 
 // Variational equity adjustment is disabled (remade separately). Returns zeros so
