@@ -1376,6 +1376,51 @@ function combined(hlPayments, nadoPayments, grvtPayments = null) {
   const noPrice = { side: 'long', size: 100, realizedPnl: -500 };
   assert.ok(Math.abs(reconcileLegRealizedPnl(noPrice) - (-500)) < 1e-6,
     'reconcile must keep venue PnL when prices are missing');
+
+  // 9) Session-bounded peak must NOT clobber window fill sums with full-position
+  //    price PnL. A carry-in position (opened long before the latest activity
+  //    session) has leg entry/exit prices spanning the FULL lifetime, so price
+  //    reconciliation would replace the correct session-cumulated fill PnL with
+  //    a lifetime number. The session fill sums are the Closed-tab truth.
+  {
+    const { applyPeakToCloseMetrics } = require('../lib/position-peak-window.js');
+    const sessionStart = Date.parse('2026-08-02T00:00:00.000Z');
+    const closeTime = Date.parse('2026-08-03T00:26:23.000Z');
+    const pair = {
+      symbol: 'ATOM',
+      closeTime,
+      longLeg: {
+        venue: 'hyperliquid', side: 'long', size: 62222.04,
+        avgEntryPx: 1.5369, avgClosePx: 1.3794, realizedPnl: -9830.14,
+      },
+      shortLeg: {
+        venue: 'grvt', side: 'short', size: 19419.64,
+        realizedPnl: 4974.83,
+      },
+    };
+    // HL fills: 08-03 close cluster sums to -5193.24; full-lifetime price PnL is -9800.64.
+    // A pre-session open seeds the carry so the peak window starts at sessionStart.
+    const hlFills = [
+      { symbol: 'ATOM', time: sessionStart - 86400000, side: 'B', sz: 19419.14, px: 1.5369, fee: 10, closedPnl: 0 },
+      { symbol: 'ATOM', time: sessionStart + 600000, side: 'A', sz: 3000, px: 1.2623, fee: 1.1, closedPnl: -800 },
+      { symbol: 'ATOM', time: sessionStart + 1200000, side: 'A', sz: 5000, px: 1.2631, fee: 1.9, closedPnl: -1400 },
+      { symbol: 'ATOM', time: closeTime, side: 'A', sz: 11419.14, px: 1.2644, fee: 4.51, closedPnl: -2993.24 },
+    ];
+    const grvtFills = [
+      { symbol: 'ATOM', time: sessionStart + 3600000, side: 'buy', sz: 19419.64, px: 1.2652, fee: 9.02, closedPnl: 4974.83 },
+    ];
+    const peaked = applyPeakToCloseMetrics(pair, { hyperliquid: hlFills, grvt: grvtFills }, {}, {
+      lookbackStartMs: sessionStart,
+      lookbackMs: closeTime - sessionStart,
+      reconcileLegPnl: (leg, opts) => reconcileLegRealizedPnl(leg, opts),
+    });
+    // Session window sum must be preserved, NOT the full-position price PnL (-9800.64).
+    assert.ok(Math.abs(peaked.longLeg.realizedPnl - (-5193.24)) < 1,
+      `session mode must keep window fill sum, got ${peaked.longLeg.realizedPnl} vs -5193.24`);
+    assert.ok(Math.abs(peaked.shortLeg.realizedPnl - 4974.83) < 1,
+      `session mode must keep GRVT window fill sum, got ${peaked.shortLeg.realizedPnl}`);
+    assert.equal(peaked.sessionPeakApplied, true, 'session-bounded peak must flag sessionPeakApplied');
+  }
 }
 
 assert.match(indexHtml, /function perpsClosedPairAvgNotional\(/, 'Closed tab must recompute margin from leg prices and live marks');
