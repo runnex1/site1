@@ -35608,7 +35608,7 @@ function perpsEnsurePnlTracking(liveCapitalNeutralLevel, epochBaselineLevel = nu
         } catch (e) {}
         return { ...existing };
     }
-    // Lock at the Jul 22 2026 PnL epoch (or live level if epoch snapshot missing).
+    // Lock at the Aug 4 2026 PnL epoch (or live level if epoch snapshot missing).
     const epochBase = Number(epochBaselineLevel);
     const live = Number(liveCapitalNeutralLevel);
     const baseline = Number.isFinite(epochBase) ? epochBase : (Number.isFinite(live) ? live : 0);
@@ -35705,23 +35705,28 @@ function perpsResolvePointPnlNetDeposits(snap, time, data) {
     return perpsResolvePointNetDeposits(snap, time, data);
 }
 
+/** PnL-mode capital-neutral level for a point: exchange equity − net deposits +
+ *  the off-exchange Variational PnL (partials + open uPnL + closed Var-leg
+ *  realized PnL + Var funding). Same fallback chain perpsMapEquityChartPoints uses. */
+function perpsPnlLevelForPoint(p) {
+    const partial = Number(p?.partialCloseRealizedPnl) || 0;
+    const openUpnl = Number(p?.variationalOpenUpnl) || 0;
+    const closedEquity = Number(p?.variationalClosedEquityPnl) || 0;
+    const varPnl = partial + openUpnl + closedEquity;
+    const dep = Number(p?.pnlCumulativeNetDeposits);
+    if (Number.isFinite(dep)) return (Number(p?.totalEquity) || 0) - dep + varPnl;
+    const stratDep = Number(p?.cumulativeNetDeposits);
+    if (Number.isFinite(stratDep)) return (Number(p?.totalEquity) || 0) - stratDep + varPnl;
+    const adj = Number(p?.adjustedEquity);
+    if (Number.isFinite(adj)) return adj + varPnl;
+    return (Number(p?.totalEquity) || 0) + varPnl;
+}
+
 function perpsMapEquityChartPoints(points, valueMode = _perpsEquityValueMode, fixedPnlBaseline) {
     const rows = Array.isArray(points) ? points : [];
     if (valueMode === 'pnl') {
         if (!rows.length) return [];
-        const levels = rows.map((p) => {
-            const partial = Number(p?.partialCloseRealizedPnl) || 0;
-            const openUpnl = Number(p?.variationalOpenUpnl) || 0;
-            const closedEquity = Number(p?.variationalClosedEquityPnl) || 0;
-            const varPnl = partial + openUpnl + closedEquity;
-            const dep = Number(p?.pnlCumulativeNetDeposits);
-            if (Number.isFinite(dep)) return (Number(p?.totalEquity) || 0) - dep + varPnl;
-            const stratDep = Number(p?.cumulativeNetDeposits);
-            if (Number.isFinite(stratDep)) return (Number(p?.totalEquity) || 0) - stratDep + varPnl;
-            const adj = Number(p?.adjustedEquity);
-            if (Number.isFinite(adj)) return adj + varPnl;
-            return (Number(p?.totalEquity) || 0) + varPnl;
-        });
+        const levels = rows.map((p) => perpsPnlLevelForPoint(p));
         const locked = Number(fixedPnlBaseline);
         const baseline = Number.isFinite(locked) ? locked : (levels[0] || 0);
         return rows.map((p, i) => ({ ...p, chartValue: levels[i] - baseline, pnlBaseline: baseline }));
@@ -35745,10 +35750,13 @@ function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityV
         const pnlPoints = perpsFilterPnlPointsFromEpoch(allPoints);
         const firstPt = pnlPoints.length ? pnlPoints[0] : null;
         const lastPt = pnlPoints.length ? pnlPoints[pnlPoints.length - 1] : null;
-        const epochBaseline = Number(firstPt?.totalEquity) || 0;
-        const liveLevel = Number(lastPt?.totalEquity) || 0;
+        // Baseline = first point's capital-neutral level (equity − net deposits +
+        // Var PnL), so the chart pins $0 at the Aug 4 epoch open. Using raw
+        // totalEquity here would leak pre-epoch closed Var-leg PnL into the chart.
+        const epochBaseline = firstPt ? perpsPnlLevelForPoint(firstPt) : 0;
+        const liveLevel = lastPt ? perpsPnlLevelForPoint(lastPt) : 0;
         const { startMs: pnlStartMs, baseline: pnlBaseline } = perpsEnsurePnlTracking(liveLevel, epochBaseline);
-        // Prefer the live epoch snapshot baseline so $0 is Jul 22 open, not a stale lock.
+        // Prefer the live epoch snapshot baseline so $0 is Aug 4 open, not a stale lock.
         const baseline = Number.isFinite(epochBaseline) && epochBaseline !== 0
             ? epochBaseline
             : pnlBaseline;
