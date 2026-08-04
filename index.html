@@ -36044,7 +36044,12 @@ function perpsBuildEquityChart(equitySeries) {
         const x = padX + (i / Math.max(pts.length - 1, 1)) * chartW;
         const val = p.chartValue ?? p.totalEquity;
         const y = padY + ((max - val) / span) * chartH;
-        return { x, y, val, bucket: p.bucket, rawEquity: p.totalEquity, variationalAdjust: p.variationalEquityAdjust };
+        // Hedge-neutral adj = the Variational components layered on exchange equity
+        // (same terms perpsEquityPointChartValue adds; variationalEquityAdjust is stubbed 0).
+        const variationalAdjust = (Number(p.partialCloseRealizedPnl) || 0)
+            + (Number(p.variationalOpenUpnl) || 0)
+            + (Number(p.variationalClosedEquityPnl) || 0);
+        return { x, y, val, bucket: p.bucket, rawEquity: p.totalEquity, variationalAdjust };
     });
     const linePath = plot.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
     const areaPath = `M ${padX} ${height - padY} L ${linePath.slice(2)} L ${PERPS_CHART_WIDTH - 12} ${height - padY} Z`;
