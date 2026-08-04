@@ -34843,9 +34843,13 @@ function perpsDeleteClosedPair(key) {
 // fresh even when the /api/perps response is served from the server cache.
 // HL: price-based incremental from fills (realizes only on size decreases —
 //     never on increases), so fees and funding are excluded.
-// Extended: /user/trades only returns the most recent ~300 fills, so merge each
-//     fresh payload into the persistent cache to accumulate complete history
-//     (see perpsMergeExtFills), then compute price-based the same way as HL.
+// Extended: the exchange reports realisedPnl INCLUDING fees and funding, so
+//     pure price PnL = realisedPnl − session funding − session fees (verified
+//     exactly against Extended's realized_pnl.csv: realised = trade + funding
+//     + fees). Session funding is the complete funding-payments fetch
+//     (legBFundingSinceOpen); session fees come from the accumulated EXT fill
+//     cache (perpsMergeExtFills) so new sessions are exact — sessions whose
+//     entry fills predate the cache are best-effort.
 function perpsAttachRealizedPnlByVenue(data) {
     if (!data || typeof data !== 'object') return;
     const CR = window.ClosedLegReconstruct;
@@ -34861,9 +34865,28 @@ function perpsAttachRealizedPnlByVenue(data) {
         const inWindow = (fills) => fills
             .filter(f => baseOf(f.symbol) === base && (!sinceMs || Number(f.time || 0) >= sinceMs))
             .sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
+        // Extended: the exchange reports realisedPnl INCLUDING fees and funding, so
+        //     pure price PnL = realisedPnl − session funding + session fees (CSV
+        //     trading_fees are negative costs already inside realisedPnl, so the
+        //     magnitude is added back). Session funding is the complete
+        //     funding-payments fetch (legBFundingSinceOpen); session fees come
+        //     from the accumulated EXT fill cache (perpsMergeExtFills) so new
+        //     sessions are exact — sessions whose entry fills predate the cache
+        //     are best-effort.
+        const extLeg = pair.crossLegB?.venue === 'extended' ? pair.crossLegB
+            : pair.crossLegA?.venue === 'extended' ? pair.crossLegA : null;
+        const extWin = inWindow(extFills);
+        const realised = Number(extLeg?.realisedPnl ?? 0);
+        const extFunding = extLeg === pair.crossLegB
+            ? Number(pair.legBFundingSinceOpen ?? 0)
+            : Number(pair.legAFundingSinceOpen ?? 0);
+        const extFees = extWin.reduce((s, f) => s + Math.abs(Number(f.fee || 0)), 0);
+        const extRealized = Number.isFinite(realised)
+            ? realised - extFunding + extFees
+            : CR.computeFillRealizedPnl(extWin);
         pair.realizedPnlByVenue = {
             hyperliquid: CR.computeFillRealizedPnl(inWindow(hlFills)),
-            extended: CR.computeFillRealizedPnl(inWindow(extFills)),
+            extended: extRealized,
         };
     }
 }
@@ -34889,21 +34912,24 @@ function perpsSeedHlExtendedClosedPairsFromExchange(data) {
         if (!sym) continue;
         (extBySymbol[sym] = extBySymbol[sym] || []).push(leg);
     }
-    // Strict per-leg realized for an Extended closed leg: price-based from its
-    // fills in [openTime, closeTime] (excl. fees/funding). Fall back to the
-    // exchange-reported realisedPnl when fills are missing/cut by the window.
-    const extRealizedFromFills = (leg) => {
+    // Strict per-leg realized for an Extended closed leg: the exchange reports
+    // realisedPnl INCLUDING fees and funding, so pure price PnL = realisedPnl
+    // − leg funding + leg fees (CSV trading_fees are negative costs already
+    // inside realisedPnl). New sessions are exact; sessions whose fills
+    // predate the cache are best-effort.
+    const extRealizedFromExchange = (leg) => {
         const sym = CR.toBaseSymbol(leg.symbol);
         const open = Number(leg.openTime || 0);
         const close = Number(leg.closeTime || 0);
-        if (!open || !close) return null;
-        const legFills = extFills
+        const rp = Number(leg.realizedPnl ?? leg.realisedPnl ?? 0);
+        if (!Number.isFinite(rp)) return null;
+        const fund = paymentSources.extended
+            .filter(p => CR.toBaseSymbol(p.symbol) === sym && Number(p.time || 0) >= open && Number(p.time || 0) <= close)
+            .reduce((s, p) => s + (Number(p.usdc) || 0), 0);
+        const fees = extFills
             .filter(f => CR.toBaseSymbol(f.symbol) === sym && Number(f.time || 0) >= open && Number(f.time || 0) <= close)
-            .sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
-        if (!legFills.length) return null;
-        // Only trust when the leg's first fill is captured (window not cut mid-leg).
-        if (Math.abs(Number(legFills[0].time || 0) - open) > 86400000) return null;
-        return CR.computeFillRealizedPnl(legFills);
+            .reduce((s, f) => s + Math.abs(Number(f.fee || 0)), 0);
+        return rp - fund + fees;
     };
     const seeded = [];
     const PAIR_WINDOW_MS = 2 * 86400000;
@@ -34919,7 +34945,7 @@ function perpsSeedHlExtendedClosedPairsFromExchange(data) {
             const closeTime = Math.max(closeOf(ext), closeOf(hl)) || closeOf(ext) || closeOf(hl) || Date.now();
             const hlLeg = { venue: 'hyperliquid', ...hl };
             const extLeg = { venue: 'extended', ...ext };
-            const extRealized = extRealizedFromFills(ext);
+            const extRealized = extRealizedFromExchange(ext);
             if (Number.isFinite(extRealized)) extLeg.realizedPnl = extRealized;
             const longLeg = hl.side === 'long' ? hlLeg : extLeg;
             const shortLeg = hl.side === 'long' ? extLeg : hlLeg;
