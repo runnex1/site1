@@ -1086,6 +1086,11 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-chart-kpi-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:1.35rem; font-weight:800; }
 .perps-pos-chart-kpi-val.pos { color:#55d66f; }
 .perps-pos-chart-kpi-val.neg { color:#ff5c7a; }
+.perps-pos-chart-realized { display:flex; gap:0.9rem; flex-wrap:wrap; margin:0 0 0.75rem; padding:0.55rem 0.75rem; border:1px solid rgba(100,244,197,0.16); border-radius:12px; background:rgba(100,244,197,0.05); }
+.perps-pos-chart-realized-label { font-family:var(--ff-mono); font-size:0.58rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:#7f8f9f; }
+.perps-pos-chart-realized-val { margin-top:0.12rem; font-family:var(--ff-mono); font-size:0.95rem; font-weight:800; }
+.perps-pos-chart-realized-val.pos { color:#55d66f; }
+.perps-pos-chart-realized-val.neg { color:#ff5c7a; }
 .perps-pos-chart-canvas-wrap { height:280px; max-height:38vh; min-height:220px; position:relative; }
 .perps-pos-chart-empty { padding:2rem 1rem; text-align:center; color:#9dacbb; font-family:var(--ff-mono); font-size:0.72rem; }
 .perps-pos-funding-recent { margin-top:1rem; border:1px solid rgba(255,255,255,0.08); border-radius:16px; background:rgba(255,255,255,0.025); overflow:hidden; min-width:0; }
@@ -9712,6 +9717,7 @@ body[data-active-tab="loops"] .page-content,
                 <div><div class="perps-pos-chart-kpi-label">PnL</div><div class="perps-pos-chart-kpi-val" id="perpsPositionChartPnl">—</div></div>
                 <div><div class="perps-pos-chart-kpi-label">Execution</div><div class="perps-pos-chart-kpi-val" id="perpsPositionChartExec">—</div></div>
               </div>
+              <div class="perps-pos-chart-realized" id="perpsPositionChartRealized" style="display:none;"></div>
               <div class="perps-pos-chart-canvas-wrap" id="perpsPositionChartWrap">
                 <canvas id="perpsPositionChartCanvas" aria-label="Position performance chart"></canvas>
               </div>
@@ -34792,6 +34798,107 @@ function perpsDeleteClosedPair(key) {
     if (_perpsPositionsTab === 'closed') perpsRenderPositionsPanel(_perpsLastData);
 }
 
+// Per-venue realized PnL (excl. fees/funding) accumulated in each pair's latest
+// activity session. Recomputed on every refresh from the raw payload so it stays
+// fresh even when the /api/perps response is served from the server cache.
+// HL: price-based incremental (realizes only on size decreases — never on
+//     increases). Extended: exchange-reported realisedPnl — the live open
+//     position carries the accumulated partial-close realized; history rows add
+//     fully-closed sessions.
+function perpsAttachRealizedPnlByVenue(data) {
+    if (!data || typeof data !== 'object') return;
+    const CR = window.ClosedLegReconstruct;
+    if (!CR?.computeFillRealizedPnl) return;
+    const baseOf = (sym) => String(sym || '').trim().toUpperCase().replace(/-PERP$/i, '').replace(/USDT$/i, '').replace(/USD$/i, '');
+    const extendedOpenByBase = {};
+    for (const pos of data?.extended?.state?.positions || []) {
+        const base = baseOf(pos.symbol || pos.market);
+        if (!base) continue;
+        extendedOpenByBase[base] = Number(pos.realisedPnl || pos.realizedPnl || 0) || 0;
+    }
+    const hlFills = data?.hyperliquid?.fills?.fills || [];
+    const extHistory = data?.extended?.positionHistory || [];
+    for (const pair of data?.paired || []) {
+        if (!pair || pair.pairType !== 'hl_extended') continue;
+        const base = baseOf(pair.symbol);
+        if (!base) continue;
+        const sinceMs = Number(pair.pairOpenedAtMs) || 0;
+        const rpv = {};
+        rpv.hyperliquid = CR.computeFillRealizedPnl(
+            hlFills
+                .filter(f => baseOf(f.symbol) === base && (!sinceMs || Number(f.time || 0) >= sinceMs))
+                .sort((a, b) => Number(a.time || 0) - Number(b.time || 0)),
+        );
+        let ext = extendedOpenByBase[base] || 0;
+        for (const leg of extHistory) {
+            if (baseOf(leg.symbol) !== base) continue;
+            const ct = Number(leg.closeTime || 0);
+            if (ct && sinceMs && ct < sinceMs) continue;
+            ext += Number(leg.realizedPnl || 0) || 0;
+        }
+        rpv.extended = ext;
+        pair.realizedPnlByVenue = rpv;
+    }
+}
+
+// Seed Closed-tab rows for HL <-> Extended hedge sessions from raw exchange
+// data (fills + position history). Each row carries both legs so the "Exchange
+// PnL" column shows the strict per-leg accumulated realized PnL (excl.
+// fees/funding), and it is rebuilt fresh on every refresh.
+function perpsSeedHlExtendedClosedPairsFromExchange(data) {
+    const CR = window.ClosedLegReconstruct;
+    if (!CR?.buildClosedLegsForVenue) return [];
+    const paymentSources = {
+        hyperliquid: data?.hyperliquid?.funding?.payments || [],
+        extended: data?.extended?.funding?.payments || [],
+    };
+    const hlLegs = CR.buildClosedLegsForVenue('hyperliquid', data?.hyperliquid?.fills?.fills || [], paymentSources);
+    const extLegs = data?.extended?.positionHistory || [];
+    if (!hlLegs.length || !extLegs.length) return [];
+    const extBySymbol = {};
+    for (const leg of extLegs) {
+        const sym = CR.toBaseSymbol(leg.symbol);
+        if (!sym) continue;
+        (extBySymbol[sym] = extBySymbol[sym] || []).push(leg);
+    }
+    const seeded = [];
+    const PAIR_WINDOW_MS = 2 * 86400000;
+    const closeOf = (leg) => Number(leg?.closeTime || 0);
+    for (const hl of hlLegs) {
+        const sym = CR.toBaseSymbol(hl.symbol);
+        const extMatches = (extBySymbol[sym] || []).filter((e) => {
+            const d = closeOf(e) && closeOf(hl) ? Math.abs(closeOf(e) - closeOf(hl)) : 0;
+            return d <= PAIR_WINDOW_MS;
+        });
+        for (const ext of extMatches) {
+            if (ext.side === hl.side) continue; // only hedge sessions pair long vs short
+            const closeTime = Math.max(closeOf(ext), closeOf(hl)) || closeOf(ext) || closeOf(hl) || Date.now();
+            const hlLeg = { venue: 'hyperliquid', ...hl };
+            const extLeg = { venue: 'extended', ...ext };
+            const longLeg = hl.side === 'long' ? hlLeg : extLeg;
+            const shortLeg = hl.side === 'long' ? extLeg : hlLeg;
+            const fees = Math.abs(Number(hlLeg.fees || 0)) + Math.abs(Number(extLeg.fees || 0));
+            const funding = (Number(hlLeg.funding || 0) || 0) + (Number(extLeg.funding || 0) || 0);
+            const slip = (Number(longLeg.realizedPnl) || 0) + (Number(shortLeg.realizedPnl) || 0);
+            seeded.push({
+                symbol: sym,
+                pairType: 'hl_extended',
+                pairLabel: 'HL + Extended',
+                size: Math.min(Math.abs(Number(hl.size || 0)), Math.abs(Number(ext.size || 0))) || Math.abs(Number(hl.size || 0)),
+                openTime: Math.min(Number(hl.openTime || 0) || closeTime, Number(ext.openTime || 0) || closeTime),
+                closeTime,
+                longLeg,
+                shortLeg,
+                closeSlippage: slip,
+                funding,
+                fees,
+                netPnl: slip + funding - fees,
+            });
+        }
+    }
+    return seeded;
+}
+
 function perpsMergeEquitySnapshotRecord(localSnap = {}, serverSnap = {}) {
     const newerIsServer = (Number(serverSnap.fetchedAt) || 0) >= (Number(localSnap.fetchedAt) || 0);
     const merged = newerIsServer ? { ...localSnap, ...serverSnap } : { ...serverSnap, ...localSnap };
@@ -37283,6 +37390,25 @@ function perpsOpenPositionChart(pairIdx, opts = {}) {
         execEl.textContent = _perpsPositionChartShowFees ? perpsFmtUsd(-Math.abs(totals.fees)) : 'Excluded';
         execEl.className = 'perps-pos-chart-kpi-val ' + (_perpsPositionChartShowFees && Math.abs(totals.fees) > 0 ? 'neg' : '');
     }
+    const realizedEl = document.getElementById('perpsPositionChartRealized');
+    if (realizedEl) {
+        const rpv = p.realizedPnlByVenue || {};
+        const venueEntries = displayLegs
+            .map(entry => ({ venue: entry.venue, value: Number(rpv[entry.venue]) }))
+            .filter(entry => Number.isFinite(entry.value));
+        if (venueEntries.length) {
+            realizedEl.style.display = '';
+            realizedEl.innerHTML =
+                `<div><div class="perps-pos-chart-realized-label">Realized PnL · session</div><div style="display:flex;gap:0.9rem;flex-wrap:wrap;margin-top:0.25rem;">` +
+                venueEntries.map(entry =>
+                    `<div><span class="perps-pill">${perpsVenueShort(entry.venue)}</span> <span class="perps-pos-chart-realized-val ${perpsSignedCls(entry.value)}">${perpsFmtUsd(entry.value)}</span></div>`
+                ).join('') +
+                `</div></div>`;
+        } else {
+            realizedEl.style.display = 'none';
+            realizedEl.innerHTML = '';
+        }
+    }
     if (feesToggle) {
         feesToggle.textContent = _perpsPositionChartShowFees ? 'Hide fees' : 'Include fees';
         feesToggle.classList.toggle('active', _perpsPositionChartShowFees);
@@ -38872,6 +38998,9 @@ function perpsRenderDashboard(data, opts = {}) {
             renderDashboardPnlAttribution(true);
         }
         data.closedPairs = perpsCacheNewClosedPairs(data.closedPairs || []);
+        perpsAttachRealizedPnlByVenue(data);
+        const seeded = perpsSeedHlExtendedClosedPairsFromExchange(data);
+        if (seeded.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seeded]);
         const snapshotAdded = perpsSaveSnapshot(data);
         data._equitySeriesRaw = { ...perpsBuildEquitySeries(data), fetchedAt: data.fetchedAt };
         data._equitySeries = data._equitySeriesRaw;
@@ -38890,6 +39019,14 @@ function perpsRenderDashboard(data, opts = {}) {
         perpsRenderAlerts(data.paired || [], data.unhedged || [], data.summary || {});
         perpsRenderCrossMarginLeverage(data);
         perpsRenderMobileFundingRates(data);
+        // Keep an open Position Performance modal fresh — recompute its realized
+        // PnL display after every refresh (per-refresh updates from latest trades).
+        if (_perpsPositionChartPairIdx != null && _perpsLastData) {
+            const modal = document.getElementById('perpsPositionChartModal');
+            if (modal && modal.classList.contains('active')) {
+                perpsOpenPositionChart(_perpsPositionChartPairIdx, { preserveFeeMode: true });
+            }
+        }
         _perpsLastRefreshAt = data.fetchedAt || Date.now();
         _perpsLiveAprUpdatedAt = _perpsLastRefreshAt;
         _perpsRefreshError = null;
