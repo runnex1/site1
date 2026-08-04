@@ -247,7 +247,6 @@ async function handlePerpsCronSnapshot(req, res) {
       .sort((a, b) => (Number(a?.fetchedAt) || 0) - (Number(b?.fetchedAt) || 0))
       .at(-1);
     const hedges = parseJson(await kvGet('vault:perps_variational_hedges'), []);
-    const closedPairs = parseJson(await kvGet('vault:perps_closed_pairs'), []);
     const data = await fetchPerpsEquitySnapshotWithVariational({
       hyperliquid: wallet,
       nado: nadoWallet,
@@ -255,7 +254,7 @@ async function handlePerpsCronSnapshot(req, res) {
       phoenix: isUsablePhoenixWallet(phoenixWallet) ? phoenixWallet : '',
       // Fallback only if capital-flow refresh fails; live flows override inside the fetcher.
       cumulativeNetDeposits: Number(previousSnapshot?.cumulativeNetDeposits) || 0,
-    }, { hedges, closedPairs, refreshCapitalFlows: true });
+    }, { refreshCapitalFlows: true });
     let store = appendEquitySnapshotStore(savedSnapshots, data);
     let depositRepairChanged = 0;
     if (data.capitalFlows) {
@@ -276,7 +275,6 @@ async function handlePerpsCronSnapshot(req, res) {
       totalEquity: record.totalEquity,
       cumulativeNetDeposits: record.cumulativeNetDeposits,
       adjustedEquity: record.adjustedEquity,
-      variationalEquityAdjust: record.variationalEquityAdjust ?? null,
       fetchedAt: record.fetchedAt,
       equityCollectionSpanMs: record.equityCollectionSpanMs,
       equityFetchedAts: record.equityFetchedAts,
@@ -365,29 +363,22 @@ async function handlePerps(req, res) {
     return res.status(400).json({ error: 'Valid nado wallet required' });
   }
 
-  const knownClosedKeys = String(req.query.knownClosedKeys || '')
-    .split(',')
-    .map(s => s.trim())
-    .filter(Boolean);
   const dashboardOpts = {
     hyperliquid: wallet,
     nado: nadoWallet,
     grvtSubAccount,
     phoenix: phoenixWallet,
     days,
-    knownClosedKeys,
     grvtPositionsOverride: req.query.grvtPositions || null,
   };
 
   try {
-    const data = knownClosedKeys.length
-      ? await fetchPerpsDashboard(dashboardOpts)
-      : await cachedJson(
-        `perps:dashboard:${wallet.toLowerCase()}:${nadoWallet.toLowerCase()}:${grvtSubAccount}:${phoenixWallet}:${days}`,
-        PERPS_DASHBOARD_CACHE_MS,
-        'Perps dashboard',
-        () => fetchPerpsDashboard(dashboardOpts),
-      );
+    const data = await cachedJson(
+      `perps:dashboard:${wallet.toLowerCase()}:${nadoWallet.toLowerCase()}:${grvtSubAccount}:${phoenixWallet}:${days}`,
+      PERPS_DASHBOARD_CACHE_MS,
+      'Perps dashboard',
+      () => fetchPerpsDashboard(dashboardOpts),
+    );
     // Active symbols are derived from the dashboard payload; no separate KV list needed.
     try {
       await persistVariationalRateSamplesFromDashboard(data);

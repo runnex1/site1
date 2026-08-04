@@ -22,7 +22,6 @@
 <script src="lib/closed-leg-reconstruct.js"></script>
 <script src="lib/position-peak-window.js"></script>
 <script src="lib/variational-hedge.js"></script>
-<script src="lib/variational-equity.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://api.fontshare.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -965,18 +964,27 @@ body[data-active-tab="perps"] .topbar,
 }
 .perps-pos-row { min-width:0; }
 .perps-pos-row.closed {
-  grid-template-columns:minmax(132px,1.1fr) minmax(188px,1.35fr) repeat(6,minmax(84px,0.88fr)) minmax(104px,0.95fr);
+  grid-template-columns:minmax(132px,1.1fr) minmax(188px,1.35fr) repeat(6,minmax(84px,0.88fr)) minmax(104px,0.95fr) 28px;
   gap:0.45rem 0.7rem;
   align-items:center;
 }
 .perps-pos-head.closed {
-  grid-template-columns:minmax(132px,1.1fr) minmax(188px,1.35fr) repeat(6,minmax(84px,0.88fr)) minmax(104px,0.95fr);
+  grid-template-columns:minmax(132px,1.1fr) minmax(188px,1.35fr) repeat(6,minmax(84px,0.88fr)) minmax(104px,0.95fr) 28px;
   gap:0.45rem 0.7rem;
   align-items:end;
   padding-left:0.85rem;
   padding-right:0.85rem;
 }
 .perps-pos-head.closed > div:nth-child(n+3) { text-align:right; }
+.perps-pos-x-col { display:flex; justify-content:flex-end; align-items:center; }
+.perps-pos-x {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:22px; height:22px; padding:0; border-radius:6px;
+  border:1px solid rgba(134,159,179,0.22); background:rgba(255,255,255,0.03);
+  color:#9dacbb; font-size:0.8rem; line-height:1; cursor:pointer;
+  transition:color .15s ease, border-color .15s ease, background .15s ease;
+}
+.perps-pos-x:hover { color:#ff6b6b; border-color:rgba(255,107,107,0.5); background:rgba(255,107,107,0.12); }
   .perps-pos-row.closed .perps-pos-closed-cell {
     min-width: 0;
     text-align: left;
@@ -7885,6 +7893,14 @@ body[data-active-tab="loops"] .page-content,
   }
   .perps-mv3-card.warn { border-color: rgba(245, 158, 11, 0.28); }
   .perps-mv3-head { display: flex; gap: 10px; align-items: flex-start; }
+  .perps-mv3-x {
+    display:inline-flex; align-items:center; justify-content:center;
+    width:24px; height:24px; padding:0; margin-left:auto; border-radius:6px;
+    border:1px solid rgba(134,159,179,0.22); background:rgba(255,255,255,0.03);
+    color:#9dacbb; font-size:0.85rem; line-height:1; cursor:pointer;
+    transition:color .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .perps-mv3-x:hover { color:#ff6b6b; border-color:rgba(255,107,107,0.5); background:rgba(255,107,107,0.12); }
   .perps-mv3-icon {
     width: 36px;
     height: 36px;
@@ -11036,9 +11052,6 @@ const PERPS_CONFIG_KEY = 'vault-perps-config';
 const PERPS_CONFIG_BACKUP_KEY = 'vault-perps-config-backup';
 const PERPS_SESSION_KEY = 'vault-perps-wallets-session';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
-const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pairs';
-/** Closed tab shows / remembers only rounds closed within this window. */
-const PERPS_CLOSED_PAIRS_MAX_AGE_MS = 30 * 86400000;
 const PERPS_VARIATIONAL_HEDGES_KEY = 'vault-perps-variational-hedges';
 const PERPS_VARIATIONAL_SETTLEMENTS_KEY = 'vault-perps-variational-settlements';
 const PERPS_VARIATIONAL_RATE_SAMPLES_KEY = 'vault-perps-variational-rate-samples';
@@ -11528,11 +11541,6 @@ function applyCloudPortfolioAux(parsed) {
         perpsMergeSnapshotsFromServer(parsed._perpsSnapshots);
         delete parsed._perpsSnapshots;
     });
-    apply('perpsClosedPairs', () => {
-        if (!Array.isArray(parsed._perpsClosedPairs)) return;
-        perpsMergeClosedPairsFromServer(parsed._perpsClosedPairs);
-        delete parsed._perpsClosedPairs;
-    });
     apply('perpsVariationalHedges', () => {
         if (!Array.isArray(parsed._perpsVariationalHedges)) return;
         perpsMergeVariationalHedgesFromServer(parsed._perpsVariationalHedges);
@@ -11816,12 +11824,6 @@ async function saveData(syncOpts = {}) {
                 return typeof perpsConfigPayload === 'function' ? perpsConfigPayload(cfg) : cfg;
             })(),
             perpsSnapshots: _ls(PERPS_SNAPSHOTS_KEY, '{}'),
-            perpsClosedPairs: (() => {
-                try {
-                    const rows = JSON.parse(_ls(PERPS_CLOSED_PAIRS_KEY, '[]'));
-                    return Array.isArray(rows) && rows.length ? rows : undefined;
-                } catch (e) { return undefined; }
-            })(),
             perpsVariationalHedges: (() => {
                 try {
                     const rows = typeof perpsLoadVariationalHedgesRaw === 'function'
@@ -32190,28 +32192,15 @@ function perpsSetEquityValueMode(mode, btn) {
 }
 
 function perpsEquityPointChartValue(point, valueMode = _perpsEquityValueMode) {
-    const VE = window.VariationalEquity;
-    if (VE?.equityPointChartValue) return VE.equityPointChartValue(point, valueMode);
     if (valueMode === 'raw') return point?.totalEquity ?? 0;
     if (valueMode === 'pnl') return point?.chartValue ?? 0;
-    return point?.variationalNeutralEquity ?? point?.totalEquity ?? 0;
+    return point?.adjustedEquity ?? point?.totalEquity ?? 0;
 }
 
+// Variational equity adjustment is disabled (remade separately). Returns zeros so
+// existing callers keep working; the VE script is not loaded, so no adjust is applied.
 function perpsComputeVariationalEquityAdjustments(data) {
-    const VH = window.VariationalHedge;
-    const VE = window.VariationalEquity;
-    const isVar = (p) => VH?.isVariationalPair?.(p) ?? String(p?.pairType || '').endsWith('_variational');
-    const closedAdj = VE?.variationalClosedEquityAdjust?.(data?.closedPairs) ?? 0;
-    const openAdj = VE?.variationalOpenEquityAdjust?.(data?.paired, isVar) ?? 0;
-    const pendingAdj = VE?.variationalPendingCloseEquityAdjust?.(data?.variationalPendingClose) ?? 0;
-    const crossVenueAdj = VE?.crossVenueSameMarkAdjust?.(data?.paired) ?? 0;
-    return {
-        closedAdj,
-        openAdj,
-        pendingAdj,
-        crossVenueAdj,
-        totalAdj: closedAdj + openAdj + pendingAdj + crossVenueAdj,
-    };
+    return { closedAdj: 0, openAdj: 0, pendingAdj: 0, crossVenueAdj: 0, totalAdj: 0 };
 }
 
 function perpsHasValidWallet() {
@@ -33234,10 +33223,6 @@ async function perpsHydratePerpsAuxFromCloud() {
         }
         // Always prune — server/local samples historically grew to hundreds of symbols / multi‑MB.
         perpsPruneVariationalRateSamplesStore();
-        if (Array.isArray(body?.perpsClosedPairs) && body.perpsClosedPairs.length) {
-            perpsMergeClosedPairsFromServer(body.perpsClosedPairs);
-            changed = true;
-        }
         if (body?.grvtStateCache && Array.isArray(body.grvtStateCache.positions) && body.grvtStateCache.positions.length) {
             perpsMergeGrvtStateCacheFromServer(body.grvtStateCache);
             changed = true;
@@ -33567,23 +33552,6 @@ async function perpsSaveConfigAndRefresh() {
     await perpsRefresh(false);
 }
 
-function perpsClosedPairKey(pair) {
-    const symbol = String(pair?.symbol || '').trim().toUpperCase();
-    const closeTime = Number(pair?.closeTime || 0);
-    if (!symbol || !closeTime) return '';
-    const longVenue = pair?.longLeg?.venue || '';
-    const shortVenue = pair?.shortLeg?.venue || '';
-    if (pair?.exchangeOnly || (longVenue && !shortVenue) || (!longVenue && shortVenue)) {
-        const solo = pair?.longLeg || pair?.shortLeg;
-        const venue = solo?.venue || longVenue || shortVenue;
-        const side = solo?.side || (longVenue ? 'long' : 'short');
-        if (!venue) return '';
-        return `${symbol}|${closeTime}|${venue}|solo|${side}`;
-    }
-    if (!longVenue || !shortVenue) return '';
-    return `${symbol}|${closeTime}|${longVenue}|${shortVenue}`;
-}
-
 function perpsClosedPairIsHollowEstVariational(pair) {
     if (!pair?.manualVariationalClose) return false;
     if (!pair.closeLegEstimated && !pair.aprUnavailable) return false;
@@ -33736,95 +33704,6 @@ function perpsPruneExchangeOnlyClosedPairs(pairs) {
         }
         return !varCloses.some(covers);
     });
-}
-
-let _perpsClosedPairsMem = null;
-
-function perpsPruneClosedPairsByAge(pairs, now = Date.now(), maxAgeMs = PERPS_CLOSED_PAIRS_MAX_AGE_MS) {
-    const cutoff = Number(now) - Number(maxAgeMs);
-    return (Array.isArray(pairs) ? pairs : []).filter((p) => {
-        const closeTime = Number(p?.closeTime || p?.closedAt || 0);
-        return Number.isFinite(closeTime) && closeTime > 0 && closeTime >= cutoff;
-    });
-}
-
-function perpsLoadCachedClosedPairs() {
-    if (Array.isArray(_perpsClosedPairsMem)) {
-        const prunedMem = perpsPruneClosedPairsByAge(_perpsClosedPairsMem);
-        if (prunedMem.length !== _perpsClosedPairsMem.length) {
-            perpsPersistCachedClosedPairs(prunedMem);
-        } else {
-            _perpsClosedPairsMem = prunedMem;
-        }
-        return _perpsClosedPairsMem;
-    }
-    try {
-        const rows = JSON.parse(localStorage.getItem(PERPS_CLOSED_PAIRS_KEY) || '[]');
-        const list = perpsPruneClosedPairsByAge(
-            Array.isArray(rows)
-                ? rows.map((p) => perpsSlimClosedPairForStorage(perpsGuardClosedPairRecord(p)))
-                : [],
-        );
-        // One-time local shrink for older bloated closed-pair payloads + drop aged-out rows.
-        try {
-            const raw = localStorage.getItem(PERPS_CLOSED_PAIRS_KEY) || '[]';
-            const slimJson = JSON.stringify(list);
-            if (slimJson.length + 2048 < raw.length || list.length !== (Array.isArray(rows) ? rows.length : 0)) {
-                localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, slimJson);
-                if (list.length !== (Array.isArray(rows) ? rows.length : 0)) {
-                    perpsPushClosedPairsToServer(list);
-                }
-            }
-        } catch (_) {}
-        _perpsClosedPairsMem = list;
-        return list;
-    } catch (e) {
-        return Array.isArray(_perpsClosedPairsMem) ? perpsPruneClosedPairsByAge(_perpsClosedPairsMem) : [];
-    }
-}
-
-function perpsSlimClosedPairForStorage(pair) {
-    if (!pair || typeof pair !== 'object') return pair;
-    const series = Array.isArray(pair.dailyPerformanceSeries) ? pair.dailyPerformanceSeries : null;
-    if (!series) return pair;
-    // Aggregates are enough for Closed-tab funding/APR; event arrays were unused bulk.
-    const slimSeries = series.map((row) => {
-        if (!row || typeof row !== 'object') return row;
-        if (!row.fundingEvents && !row.feeEvents) return row;
-        const { fundingEvents, feeEvents, ...rest } = row;
-        return rest;
-    });
-    return { ...pair, dailyPerformanceSeries: slimSeries };
-}
-
-function perpsPersistCachedClosedPairs(rows, opts = {}) {
-    const list = perpsPruneClosedPairsByAge(Array.isArray(rows) ? rows : [])
-        .map((p) => perpsGuardClosedPairRecord(p))
-        .map((p) => perpsSlimClosedPairForStorage(p));
-    _perpsClosedPairsMem = list;
-    try {
-        localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, JSON.stringify(list));
-    } catch (e) { /* keep mem even if quota blocks localStorage */ }
-    if (!opts.skipCloudSync) {
-        perpsScheduleCloudSave();
-        perpsPushClosedPairsToServer(list);
-    }
-}
-
-async function perpsPushClosedPairsToServer(rows) {
-    const list = Array.isArray(rows) ? rows : perpsLoadCachedClosedPairs();
-    if (location.protocol === 'file:') return false;
-    try {
-        const res = await fetch('/api/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ perpsClosedPairs: list }),
-            keepalive: true,
-        });
-        return res.ok;
-    } catch (e) {
-        return false;
-    }
 }
 
 function perpsLoadVariationalHedges() {
@@ -34322,13 +34201,9 @@ function perpsApplyVariationalHedgesToData(data) {
     } catch (_) {
         data._variationalSettlementsByHedge = data._variationalSettlementsByHedge || {};
     }
-    // Seed API closedPairs with local/cloud cache so closedPairAlreadyCached + equity adjust see Var closes.
-    const cachedClosed = perpsLoadCachedClosedPairs();
-    if (cachedClosed.length || (data.closedPairs || []).length) {
-        data.closedPairs = perpsCacheNewClosedPairs([
-            ...cachedClosed,
-            ...(data.closedPairs || []),
-        ]);
+    // Seed in-memory closedPairs with API rows so closedPairAlreadyCached + Live funding see Var closes.
+    if (Array.isArray(data.closedPairs) && data.closedPairs.length) {
+        data.closedPairs = perpsCacheNewClosedPairs(data.closedPairs);
     }
     // Prune bloated multi‑MB rate-sample stores once per payload, then sample only active symbols.
     const activeSyms = perpsActiveVariationalSampleSymbols(data);
@@ -34874,67 +34749,52 @@ function perpsMergeClosedPairRecord(prev, fresh) {
     return perpsGuardClosedPairRecord(merged);
 }
 
-function perpsMergeClosedPairsFromServer(serverRows) {
-    const incoming = Array.isArray(serverRows) ? serverRows : [];
-    if (!incoming.length) return perpsPruneExchangeOnlyClosedPairs(perpsLoadCachedClosedPairs());
-    const local = perpsLoadCachedClosedPairs();
-    const byKey = new Map(local.map(p => [perpsClosedPairKey(p), p]));
-    let changed = !local.length;
-    for (const pair of incoming) {
-        const key = perpsClosedPairKey(pair);
-        if (!key) continue;
-        byKey.set(key, perpsMergeClosedPairRecord(byKey.get(key), pair));
-        changed = true;
-    }
-    let merged = perpsPruneClosedPairsByAge(perpsPruneExchangeOnlyClosedPairs([...byKey.values()]));
-    merged.sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
-    if (changed || merged.length !== byKey.size) {
-        // Skip full saveData; still push Closed list when rows were dropped (age / SOLO prune).
-        perpsPersistCachedClosedPairs(merged, { skipCloudSync: true });
-        if (merged.length !== byKey.size) void perpsPushClosedPairsToServer(merged);
-    }
-    return merged;
+function perpsInMemoryClosedPairKey(pair) {
+    const symbol = String(pair?.symbol || '').trim().toUpperCase();
+    const closeTime = Number(pair?.closeTime || 0);
+    if (!symbol || !closeTime) return '';
+    const longVenue = pair?.longLeg?.venue || '';
+    const shortVenue = pair?.shortLeg?.venue || '';
+    return `${symbol}|${closeTime}|${longVenue}|${shortVenue}`;
 }
 
+// Closed-tab computation is disabled (remade separately) — no localStorage /
+// cloud persistence. closedPairs only flows in-memory so Live features that
+// read it (variational funding events, hedge repair) keep working.
+const PERPS_CLOSED_DELETED_KEY = 'vault-perps-closed-deleted';
+function perpsLoadClosedDeletedKeys() {
+    try { return new Set(JSON.parse(localStorage.getItem(PERPS_CLOSED_DELETED_KEY) || '[]')); }
+    catch (e) { return new Set(); }
+}
+function perpsSaveClosedDeletedKeys(keys) {
+    try { localStorage.setItem(PERPS_CLOSED_DELETED_KEY, JSON.stringify([...keys])); } catch (e) { /* ignore */ }
+}
 function perpsCacheNewClosedPairs(freshPairs) {
-    const byKey = new Map(perpsLoadCachedClosedPairs().map(p => [perpsClosedPairKey(p), p]));
-    let changed = false;
-    for (const pair of freshPairs || []) {
-        const key = perpsClosedPairKey(pair);
-        if (!key) continue;
+    const deleted = perpsLoadClosedDeletedKeys();
+    const byKey = new Map();
+    for (const pair of Array.isArray(freshPairs) ? freshPairs : []) {
+        const key = perpsInMemoryClosedPairKey(pair);
+        if (!key || deleted.has(key)) continue;
         byKey.set(key, perpsMergeClosedPairRecord(byKey.get(key), pair));
-        changed = true;
     }
-    let merged = perpsPruneClosedPairsByAge(perpsPruneExchangeOnlyClosedPairs([...byKey.values()]));
-    if (merged.length !== byKey.size) changed = true;
-    merged.sort((a, b) => (b.closeTime || 0) - (a.closeTime || 0));
-    const VH = window.VariationalHedge;
-    if (VH?.dedupeVariationalClosedPairsByExchangeSession) {
-        const beforeDedup = merged.length;
-        merged = VH.dedupeVariationalClosedPairsByExchangeSession(merged, null);
-        if (merged.length !== beforeDedup) changed = true;
-    }
-    if (changed) perpsPersistCachedClosedPairs(merged);
+    const merged = [...byKey.values()];
+    merged.sort((a, b) => (Number(b?.closeTime) || 0) - (Number(a?.closeTime) || 0));
     return merged;
+}
+function perpsDeleteClosedPair(key) {
+    if (!key) return;
+    const deleted = perpsLoadClosedDeletedKeys();
+    deleted.add(key);
+    perpsSaveClosedDeletedKeys(deleted);
+    if (_perpsLastData && Array.isArray(_perpsLastData.closedPairs)) {
+        _perpsLastData.closedPairs = _perpsLastData.closedPairs.filter((p) => perpsInMemoryClosedPairKey(p) !== key);
+    }
+    if (_perpsPositionsTab === 'closed') perpsRenderPositionsPanel(_perpsLastData);
 }
 
 function perpsMergeEquitySnapshotRecord(localSnap = {}, serverSnap = {}) {
     const newerIsServer = (Number(serverSnap.fetchedAt) || 0) >= (Number(localSnap.fetchedAt) || 0);
     const merged = newerIsServer ? { ...localSnap, ...serverSnap } : { ...serverSnap, ...localSnap };
-    const localHasVar = Number.isFinite(Number(localSnap.variationalEquityAdjust));
-    const serverHasVar = Number.isFinite(Number(serverSnap.variationalEquityAdjust));
-    const pickVar = (field) => {
-        if (Number.isFinite(Number(localSnap[field]))) return Number(localSnap[field]);
-        if (Number.isFinite(Number(serverSnap[field]))) return Number(serverSnap[field]);
-        return undefined;
-    };
-    if (localHasVar || serverHasVar) {
-        merged.variationalEquityAdjust = pickVar('variationalEquityAdjust');
-        merged.variationalOpenEquityAdjust = pickVar('variationalOpenEquityAdjust');
-        merged.variationalPendingCloseEquityAdjust = pickVar('variationalPendingCloseEquityAdjust');
-        merged.variationalClosedEquityAdjust = pickVar('variationalClosedEquityAdjust');
-        merged.crossVenueSameMarkAdjust = pickVar('crossVenueSameMarkAdjust');
-    }
     // Prefer real venue equity over cron zeros so Phoenix deposits stay aligned with totals.
     const pickVenueEquity = (field) => {
         const a = Number(localSnap[field]);
@@ -34964,9 +34824,6 @@ function perpsMergeEquitySnapshotRecord(localSnap = {}, serverSnap = {}) {
 }
 
 function perpsSnapshotVariationalAdjust(snap, closedAdjFallback = 0) {
-    const VE = window.VariationalEquity;
-    if (VE?.snapshotVariationalAdjust) return VE.snapshotVariationalAdjust(snap, closedAdjFallback);
-    if (Number.isFinite(Number(snap?.variationalEquityAdjust))) return Number(snap.variationalEquityAdjust);
     return Number.isFinite(Number(closedAdjFallback)) ? Number(closedAdjFallback) : 0;
 }
 
@@ -35590,21 +35447,15 @@ function perpsResolvePointPnlNetDeposits(snap, time, data) {
 function perpsMapEquityChartPoints(points, valueMode = _perpsEquityValueMode, fixedPnlBaseline) {
     const rows = Array.isArray(points) ? points : [];
     if (valueMode === 'pnl') {
-        const VE = window.VariationalEquity;
-        if (VE?.rebaseHedgeNeutralSeriesToPnl) {
-            return VE.rebaseHedgeNeutralSeriesToPnl(rows, fixedPnlBaseline);
-        }
         if (!rows.length) return [];
         const levels = rows.map((p) => {
-            const hn = Number(p?.variationalNeutralEquity);
-            const baseHn = Number.isFinite(hn) ? hn : (Number(p?.totalEquity) || 0) + (Number(p?.variationalEquityAdjust) || 0);
             const dep = Number(p?.pnlCumulativeNetDeposits);
-            if (Number.isFinite(dep)) return baseHn - dep;
+            if (Number.isFinite(dep)) return (Number(p?.totalEquity) || 0) - dep;
             const stratDep = Number(p?.cumulativeNetDeposits);
-            if (Number.isFinite(stratDep)) return baseHn - stratDep;
+            if (Number.isFinite(stratDep)) return (Number(p?.totalEquity) || 0) - stratDep;
             const adj = Number(p?.adjustedEquity);
-            if (Number.isFinite(adj)) return adj + (Number(p?.variationalEquityAdjust) || 0);
-            return baseHn;
+            if (Number.isFinite(adj)) return adj;
+            return Number(p?.totalEquity) || 0;
         });
         const locked = Number(fixedPnlBaseline);
         const baseline = Number.isFinite(locked) ? locked : (levels[0] || 0);
@@ -35627,15 +35478,10 @@ function perpsApplyEquityChartMode(series, data, mode, valueMode = _perpsEquityV
     // PnL only: chop + rebase from Jul 22 2026. Hedge-neutral / Exchange keep full history.
     if (valueMode === 'pnl') {
         const pnlPoints = perpsFilterPnlPointsFromEpoch(allPoints);
-        const VE = window.VariationalEquity;
         const firstPt = pnlPoints.length ? pnlPoints[0] : null;
         const lastPt = pnlPoints.length ? pnlPoints[pnlPoints.length - 1] : null;
-        const epochBaseline = firstPt && VE?.capitalNeutralHedgeNeutralFromPoint
-            ? VE.capitalNeutralHedgeNeutralFromPoint(firstPt)
-            : (Number(firstPt?.variationalNeutralEquity) || Number(firstPt?.totalEquity) || 0);
-        const liveLevel = lastPt && VE?.capitalNeutralHedgeNeutralFromPoint
-            ? VE.capitalNeutralHedgeNeutralFromPoint(lastPt)
-            : (Number(lastPt?.variationalNeutralEquity) || Number(lastPt?.totalEquity) || 0);
+        const epochBaseline = Number(firstPt?.totalEquity) || 0;
+        const liveLevel = Number(lastPt?.totalEquity) || 0;
         const { startMs: pnlStartMs, baseline: pnlBaseline } = perpsEnsurePnlTracking(liveLevel, epochBaseline);
         // Prefer the live epoch snapshot baseline so $0 is Jul 22 open, not a stale lock.
         const baseline = Number.isFinite(epochBaseline) && epochBaseline !== 0
@@ -37786,17 +37632,17 @@ function perpsRenderPortfolioPositionsV3(paired) {
 }
 
 function perpsRenderClosedPositionsV3(closedPairs) {
-    const rows = perpsPruneClosedPairsByAge(closedPairs);
     const el = document.getElementById('perpsPositionsList');
     const badge = document.getElementById('perpsPairsBadge');
-    if (badge) badge.textContent = rows.length + (rows.length === 1 ? ' closed' : ' closed');
+    if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
     if (!el) return;
-    if (!rows.length) {
-        el.innerHTML = '<div class="perps-empty">No fully closed rounds in the past 30 days.</div>';
+    if (!closedPairs.length) {
+        el.innerHTML = '<div class="perps-empty">No closed positions.</div>';
         return;
     }
-    el.innerHTML = rows.map(pairRaw => {
+    el.innerHTML = closedPairs.map(pairRaw => {
         const pair = perpsNormalizeClosedPairForDisplay(pairRaw);
+        const delKey = perpsInMemoryClosedPairKey(pair);
         const margin = perpsClosedPairAvgNotional(pair);
         const closedAt = pair.closeTime
             ? new Date(pair.closeTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
@@ -37809,6 +37655,7 @@ function perpsRenderClosedPositionsV3(closedPairs) {
                     <div class="perps-mv3-name">${dashEsc(pair.symbol)}</div>
                     <div class="perps-mv3-meta">${meta}</div>
                 </div>
+                <button type="button" class="perps-mv3-x" aria-label="Delete closed position" title="Delete position" onclick="perpsDeleteClosedPair('${dashEsc(delKey)}'); event.stopPropagation();">✕</button>
             </div>
             <div class="perps-mv3-grid2">
                 ${perpsMv3Cell('Realized', perpsFmtUsd(pair.netPnl), perpsSignedCls(pair.netPnl))}
@@ -38182,7 +38029,7 @@ function perpsSanitizeVariationalClosedPairs(data) {
         : next;
     if (deduped.length !== next.length) changed = true;
 
-    const pruned = perpsPruneClosedPairsByAge(perpsPruneExchangeOnlyClosedPairs(deduped));
+    const pruned = perpsPruneExchangeOnlyClosedPairs(deduped);
     if (pruned.length !== deduped.length
         || pruned.some((p, i) => p !== deduped[i] && (p?.exchangeOnly !== deduped[i]?.exchangeOnly || p?.manualVariationalClose !== deduped[i]?.manualVariationalClose))) {
         changed = true;
@@ -38192,7 +38039,6 @@ function perpsSanitizeVariationalClosedPairs(data) {
         // Minting/closing hedges must reach cloud with the new Closed rows.
         try { perpsPersistVariationalHedges(hedges, { skipCloudSync: !mintedClosed }); } catch (_) { /* ignore */ }
     }
-    if (changed) perpsPersistCachedClosedPairs(pruned, { skipCloudSync: false });
     return pruned;
 }
 
@@ -38347,15 +38193,17 @@ function perpsClosedSlippageTip(pair) {
     return 'Close slippage = net execution PnL from matched entry/exit prices on both exchange legs';
 }
 
+// Closed-tab computation is disabled (remade separately). The Closed tab keeps
+// its UI shell and renders rows from the in-memory closedPairs, each with an X
+// delete button that removes the position (tombstoned in localStorage).
 function perpsRenderClosedPositions(closedPairs) {
     if (perpsIsMobileV3()) return perpsRenderClosedPositionsV3(closedPairs);
-    const rows = perpsPruneClosedPairsByAge(closedPairs);
     const el = document.getElementById('perpsPositionsList');
     const badge = document.getElementById('perpsPairsBadge');
-    if (badge) badge.textContent = rows.length + (rows.length === 1 ? ' closed' : ' closed');
+    if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
     if (!el) return;
-    if (!rows.length) {
-        el.innerHTML = '<div class="perps-empty">No fully closed rounds in the past 30 days.</div>';
+    if (!closedPairs.length) {
+        el.innerHTML = '<div class="perps-empty">No closed positions.</div>';
         return;
     }
     const head = `<div class="perps-pos-head closed">
@@ -38368,9 +38216,11 @@ function perpsRenderClosedPositions(closedPairs) {
         <div>Funding</div>
         <div>Fees</div>
         <div>Closed</div>
+        <div aria-hidden="true"></div>
     </div>`;
-    el.innerHTML = head + rows.map((p, closedIdx) => {
+    el.innerHTML = head + closedPairs.map((p) => {
         const pair = perpsNormalizeClosedPairForDisplay(p);
+        const delKey = perpsInMemoryClosedPairKey(pair);
         const sizeLabel = pair.size != null ? `${perpsFmtSize(pair.size)} ${pair.symbol}` : pair.symbol;
         const closedAt = perpsFormatEventTime(pair.closeTime);
         const sessionApr = perpsClosedPairSessionApr(pair);
@@ -38405,6 +38255,7 @@ function perpsRenderClosedPositions(closedPairs) {
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.funding)}">${perpsFmtUsd(pair.funding)}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Fees</div><div class="perps-pos-metric-val neg">-${perpsFmtUsd(feesAbs)}</div></div>
             <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Closed</div><div class="perps-pos-closed-time">${dashEsc(closedAt)}</div></div>
+            <div class="perps-pos-x-col"><button type="button" class="perps-pos-x" aria-label="Delete closed position" title="Delete position" onclick="perpsDeleteClosedPair('${dashEsc(delKey)}'); event.stopPropagation();">✕</button></div>
         </div></div>`;
     }).join('');
     if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
@@ -39020,10 +38871,7 @@ function perpsRenderDashboard(data, opts = {}) {
         if (document.body.dataset.activeTab === 'overview') {
             renderDashboardPnlAttribution(true);
         }
-        data.closedPairs = perpsCacheNewClosedPairs([
-            ...(data.closedPairs || []),
-            ...(data.closedPairRefreshes || []),
-        ]);
+        data.closedPairs = perpsCacheNewClosedPairs(data.closedPairs || []);
         const snapshotAdded = perpsSaveSnapshot(data);
         data._equitySeriesRaw = { ...perpsBuildEquitySeries(data), fetchedAt: data.fetchedAt };
         data._equitySeries = data._equitySeriesRaw;
@@ -39145,11 +38993,9 @@ async function perpsRefresh(silent = false) {
         }
 
         const bucketsBefore = perpsCountEquityBuckets();
-        // Hydrate hedges/closed keys before dashboard so knownClosedKeys + Phoenix are current.
+        // Hydrate hedges before dashboard so Variational closes + Phoenix are current.
         await perpsHydratePerpsAuxFromCloud().catch(() => false);
-        const knownClosedKeys = perpsLoadCachedClosedPairs().map(perpsClosedPairKey).filter(Boolean);
         const params = new URLSearchParams({ wallet: hl, days: String(perpsStatRangeToApiDays(_perpsStatRange)) });
-        if (knownClosedKeys.length) params.set('knownClosedKeys', knownClosedKeys.join(','));
         if (nadoRaw && /^0x[a-fA-F0-9]{40}$/.test(nadoRaw)) params.set('nadoWallet', nadoRaw);
         const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
         if (grvtSub) params.set('grvtSubAccount', grvtSub);
