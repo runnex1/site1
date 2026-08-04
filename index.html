@@ -34775,6 +34775,46 @@ function perpsLoadClosedDeletedKeys() {
 function perpsSaveClosedDeletedKeys(keys) {
     try { localStorage.setItem(PERPS_CLOSED_DELETED_KEY, JSON.stringify([...keys])); } catch (e) { /* ignore */ }
 }
+
+// Extended's /user/trades only returns the most recent ~300 fills, so a single
+// refresh can't see an old session's early fills (that's why price-based
+// realized showed $0.00). The user refreshes every few hours with <300 trades
+// in between, so merging each fresh payload's fills into a persistent cache
+// accumulates a complete history over time. Dedupe on time|symbol|px|sz|side.
+const PERPS_EXT_FILLS_KEY = 'vault-perps-ext-fills';
+const PERPS_EXT_FILLS_MAX = 20000;
+function perpsLoadExtFillsCache() {
+    try { return JSON.parse(localStorage.getItem(PERPS_EXT_FILLS_KEY) || '[]'); }
+    catch (e) { return []; }
+}
+function perpsSaveExtFillsCache(fills) {
+    try {
+        if (fills.length > PERPS_EXT_FILLS_MAX) fills = fills.slice(-PERPS_EXT_FILLS_MAX);
+        localStorage.setItem(PERPS_EXT_FILLS_KEY, JSON.stringify(fills));
+    } catch (e) { /* ignore */ }
+}
+function perpsExtFillKey(f) {
+    return `${f.symbol}|${f.time}|${f.px}|${f.sz}|${f.side}`;
+}
+// Merge a fresh payload's fills into the persistent cache (deduped, time-asc).
+function perpsMergeExtFills(freshFills) {
+    const fresh = Array.isArray(freshFills) ? freshFills : [];
+    if (!fresh.length) return perpsLoadExtFillsCache();
+    const cache = perpsLoadExtFillsCache();
+    const seen = new Set();
+    const out = [];
+    const push = (f) => {
+        const k = perpsExtFillKey(f);
+        if (seen.has(k)) return;
+        seen.add(k);
+        out.push(f);
+    };
+    for (const f of cache) push(f);
+    for (const f of fresh) push(f);
+    out.sort((a, b) => Number(a.time || 0) - Number(b.time || 0));
+    perpsSaveExtFillsCache(out);
+    return out;
+}
 function perpsCacheNewClosedPairs(freshPairs) {
     const deleted = perpsLoadClosedDeletedKeys();
     const byKey = new Map();
@@ -34801,15 +34841,18 @@ function perpsDeleteClosedPair(key) {
 // Per-venue realized PnL (excl. fees/funding) accumulated in each pair's latest
 // activity session. Recomputed on every refresh from the raw payload so it stays
 // fresh even when the /api/perps response is served from the server cache.
-// HL + Extended: price-based incremental from fills (realizes only on size
-//     decreases — never on increases), so fees and funding are excluded.
+// HL: price-based incremental from fills (realizes only on size decreases —
+//     never on increases), so fees and funding are excluded.
+// Extended: /user/trades only returns the most recent ~300 fills, so merge each
+//     fresh payload into the persistent cache to accumulate complete history
+//     (see perpsMergeExtFills), then compute price-based the same way as HL.
 function perpsAttachRealizedPnlByVenue(data) {
     if (!data || typeof data !== 'object') return;
     const CR = window.ClosedLegReconstruct;
     if (!CR?.computeFillRealizedPnl) return;
     const baseOf = (sym) => String(sym || '').trim().toUpperCase().replace(/-PERP$/i, '').replace(/USDT$/i, '').replace(/USD$/i, '');
     const hlFills = data?.hyperliquid?.fills?.fills || [];
-    const extFills = data?.extended?.fills?.fills || [];
+    const extFills = perpsMergeExtFills(data?.extended?.fills?.fills || []);
     for (const pair of data?.paired || []) {
         if (!pair || pair.pairType !== 'hl_extended') continue;
         const base = baseOf(pair.symbol);
@@ -34838,7 +34881,7 @@ function perpsSeedHlExtendedClosedPairsFromExchange(data) {
     };
     const hlLegs = CR.buildClosedLegsForVenue('hyperliquid', data?.hyperliquid?.fills?.fills || [], paymentSources);
     const extLegs = data?.extended?.positionHistory || [];
-    const extFills = data?.extended?.fills?.fills || [];
+    const extFills = perpsMergeExtFills(data?.extended?.fills?.fills || []);
     if (!hlLegs.length || !extLegs.length) return [];
     const extBySymbol = {};
     for (const leg of extLegs) {
