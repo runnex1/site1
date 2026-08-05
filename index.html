@@ -34979,6 +34979,66 @@ function perpsSeedHlExtendedClosedPairsFromExchange(data) {
     return seeded;
 }
 
+// Seed Closed-tab rows for HL <-> GRVT cross-venue hedge sessions from raw
+// exchange data (HL fills + GRVT position history). Mirrors the HL+Extended
+// seed and is rebuilt fresh on every refresh, so a closed GRVT hedge (like
+// ATOM HL+GRVT) appears automatically once both legs flatten. GRVT realizedPnl
+// is pure price PnL (fees/funding are separate fields), so unlike Extended no
+// fee/funding adjustment is needed.
+function perpsSeedGrvtClosedPairsFromExchange(data) {
+    const CR = window.ClosedLegReconstruct;
+    if (!CR?.buildClosedLegsForVenue) return [];
+    const grvtLegs = data?.grvt?.positionHistory || [];
+    if (!grvtLegs.length) return [];
+    const paymentSources = {
+        hyperliquid: data?.hyperliquid?.funding?.payments || [],
+    };
+    const hlLegs = CR.buildClosedLegsForVenue('hyperliquid', data?.hyperliquid?.fills?.fills || [], paymentSources);
+    if (!hlLegs.length) return [];
+    const hlBySymbol = {};
+    for (const leg of hlLegs) {
+        const sym = CR.toBaseSymbol(leg.symbol);
+        if (!sym) continue;
+        (hlBySymbol[sym] = hlBySymbol[sym] || []).push(leg);
+    }
+    const seeded = [];
+    const PAIR_WINDOW_MS = 2 * 86400000;
+    const closeOf = (leg) => Number(leg?.closeTime || 0);
+    for (const grvt of grvtLegs) {
+        const sym = CR.toBaseSymbol(grvt.symbol);
+        const hlMatches = (hlBySymbol[sym] || []).filter((hl) => {
+            const d = closeOf(hl) && closeOf(grvt) ? Math.abs(closeOf(hl) - closeOf(grvt)) : 0;
+            return d <= PAIR_WINDOW_MS;
+        });
+        for (const hl of hlMatches) {
+            if (hl.side === grvt.side) continue; // only hedge sessions pair long vs short
+            const closeTime = Math.max(closeOf(hl), closeOf(grvt)) || closeOf(grvt) || closeOf(hl) || Date.now();
+            const hlLeg = { venue: 'hyperliquid', ...hl };
+            const grvtLeg = { venue: 'grvt', ...grvt };
+            const longLeg = hl.side === 'long' ? hlLeg : grvtLeg;
+            const shortLeg = hl.side === 'long' ? grvtLeg : hlLeg;
+            const fees = Math.abs(Number(hlLeg.fees || 0)) + Math.abs(Number(grvtLeg.fees || 0));
+            const funding = (Number(hlLeg.funding || 0) || 0) + (Number(grvtLeg.funding || 0) || 0);
+            const slip = (Number(longLeg.realizedPnl) || 0) + (Number(shortLeg.realizedPnl) || 0);
+            seeded.push({
+                symbol: sym,
+                pairType: 'hl_grvt',
+                pairLabel: 'HL + GRVT',
+                size: Math.min(Math.abs(Number(hl.size || 0)), Math.abs(Number(grvt.size || 0))) || Math.abs(Number(hl.size || 0)),
+                openTime: Math.min(Number(hl.openTime || 0) || closeTime, Number(grvt.openTime || 0) || closeTime),
+                closeTime,
+                longLeg,
+                shortLeg,
+                closeSlippage: slip,
+                funding,
+                fees,
+                netPnl: slip + funding - fees,
+            });
+        }
+    }
+    return seeded;
+}
+
 function perpsMergeEquitySnapshotRecord(localSnap = {}, serverSnap = {}) {
     const newerIsServer = (Number(serverSnap.fetchedAt) || 0) >= (Number(localSnap.fetchedAt) || 0);
     const merged = newerIsServer ? { ...localSnap, ...serverSnap } : { ...serverSnap, ...localSnap };
@@ -39189,6 +39249,8 @@ function perpsRenderDashboard(data, opts = {}) {
         perpsAttachRealizedPnlByVenue(data);
         const seeded = perpsSeedHlExtendedClosedPairsFromExchange(data);
         if (seeded.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seeded]);
+        const seededGrvt = perpsSeedGrvtClosedPairsFromExchange(data);
+        if (seededGrvt.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededGrvt]);
         const snapshotAdded = perpsSaveSnapshot(data);
         data._equitySeriesRaw = { ...perpsBuildEquitySeries(data), fetchedAt: data.fetchedAt };
         data._equitySeries = data._equitySeriesRaw;
