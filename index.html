@@ -32332,9 +32332,29 @@ function perpsTrimDailyRowToCutoff(row, cutoff) {
     // Slimmed payloads (and variational merge on top) often have missing/partial event
     // arrays. Rebuilding totals from those would zero exchange funding for 1D/7D/30D.
     if (!perpsDailyRowEventsAreComplete(row)) {
-        // Summary-only boundary rows cannot be split accurately, so do not count a full
-        // calendar day as "last 24h" PnL.
-        if (Number.isFinite(dayStart) && dayStart < cutoff) return null;
+        // Summary-only boundary rows cannot be split event-by-event. Prorate the day's
+        // totals by the in-window fraction so 1D/7D/30D totals never lose a full day
+        // (dropping the row understates them; keeping it whole would overstate 1D).
+        if (Number.isFinite(dayStart) && dayStart < cutoff) {
+            const inWindowMs = dayStart + 86400000 - cutoff;
+            if (inWindowMs <= 0) return null;
+            const frac = Math.min(inWindowMs / 86400000, 1);
+            const dailyFunding = (row.dailyFunding || 0) * frac;
+            const dailyFees = (row.dailyFees || 0) * frac;
+            const byVenue = {};
+            if (row.byVenue && typeof row.byVenue === 'object') {
+                for (const [venue, val] of Object.entries(row.byVenue)) {
+                    byVenue[venue] = (Number(val) || 0) * frac;
+                }
+            }
+            return {
+                ...row,
+                dailyFunding,
+                dailyFees,
+                dailyNet: row.dailyNet != null ? row.dailyNet * frac : dailyFunding - dailyFees,
+                byVenue,
+            };
+        }
         return row;
     }
     const fundingEvents = Array.isArray(row.fundingEvents)
@@ -34911,7 +34931,30 @@ function perpsSeedHlExtendedClosedPairsFromExchange(data) {
         extended: data?.extended?.funding?.payments || [],
     };
     const hlLegs = CR.buildClosedLegsForVenue('hyperliquid', data?.hyperliquid?.fills?.fills || [], paymentSources);
-    const extLegs = data?.extended?.positionHistory || [];
+    // Extended positionHistory only contains FULLY CLOSED positions — still-open
+    // partial hedges (ETHFI/POL) never appear there, so also reconstruct legs
+    // from fills. PositionHistory legs win on overlap (exchange-reported exact).
+    const extLegs = [];
+    const pushExtLeg = (leg) => {
+        if (!leg || !leg.closeTime || !leg.symbol) return;
+        const dup = extLegs.some((l) =>
+            l.symbol === leg.symbol
+            && l.side === leg.side
+            && Math.abs(Number(l.closeTime) - Number(leg.closeTime)) <= 3600000
+            && (() => {
+                const a = Math.abs(Number(l.size || 0));
+                const b = Math.abs(Number(leg.size || 0));
+                if (!a || !b) return false;
+                return Math.abs(a - b) / Math.max(a, b) < 0.25;
+            })());
+        if (!dup) extLegs.push(leg);
+    };
+    for (const leg of data?.extended?.positionHistory || []) {
+        if (leg?.closeTime) pushExtLeg({ ...leg, venue: 'extended' });
+    }
+    for (const leg of CR.buildClosedLegsForVenue('extended', data?.extended?.fills?.fills || [], paymentSources)) {
+        pushExtLeg({ ...leg, venue: 'extended' });
+    }
     const extFills = perpsMergeExtFills(data?.extended?.fills?.fills || []);
     if (!hlLegs.length || !extLegs.length) return [];
     const extBySymbol = {};
@@ -34924,8 +34967,11 @@ function perpsSeedHlExtendedClosedPairsFromExchange(data) {
     // realisedPnl INCLUDING fees and funding, so pure price PnL = realisedPnl
     // − leg funding + leg fees (CSV trading_fees are negative costs already
     // inside realisedPnl). New sessions are exact; sessions whose fills
-    // predate the cache are best-effort.
+    // predate the cache are best-effort. Fill-reconstructed legs already
+    // carry pure price PnL (closedPnl is 0 on Extended trades), so they skip
+    // this adjustment.
     const extRealizedFromExchange = (leg) => {
+        if (leg.fromExchangeHistory !== true) return null;
         const sym = CR.toBaseSymbol(leg.symbol);
         const open = Number(leg.openTime || 0);
         const close = Number(leg.closeTime || 0);
@@ -34942,39 +34988,64 @@ function perpsSeedHlExtendedClosedPairsFromExchange(data) {
     const seeded = [];
     const PAIR_WINDOW_MS = 2 * 86400000;
     const closeOf = (leg) => Number(leg?.closeTime || 0);
+    const buildPair = (hl, ext) => {
+        const closeTime = Math.max(closeOf(ext), closeOf(hl)) || closeOf(ext) || closeOf(hl) || Date.now();
+        const hlLeg = { venue: 'hyperliquid', ...hl };
+        const extLeg = { venue: 'extended', ...ext };
+        const extRealized = extRealizedFromExchange(ext);
+        if (Number.isFinite(extRealized)) extLeg.realizedPnl = extRealized;
+        const longLeg = hl.side === 'long' ? hlLeg : extLeg;
+        const shortLeg = hl.side === 'long' ? extLeg : hlLeg;
+        const fees = Math.abs(Number(hlLeg.fees || 0)) + Math.abs(Number(extLeg.fees || 0));
+        const funding = (Number(hlLeg.funding || 0) || 0) + (Number(extLeg.funding || 0) || 0);
+        const slip = (Number(longLeg.realizedPnl) || 0) + (Number(shortLeg.realizedPnl) || 0);
+        const partiallyClosed = hl.partiallyClosed === true || ext.partiallyClosed === true;
+        return {
+            symbol: CR.toBaseSymbol(hl.symbol),
+            pairType: 'hl_extended',
+            pairLabel: 'HL + Extended',
+            size: Math.min(Math.abs(Number(hl.size || 0)), Math.abs(Number(ext.size || 0))) || Math.abs(Number(hl.size || 0)),
+            openTime: Math.min(Number(hl.openTime || 0) || closeTime, Number(ext.openTime || 0) || closeTime),
+            closeTime,
+            longLeg,
+            shortLeg,
+            closeSlippage: slip,
+            funding,
+            fees,
+            netPnl: slip + funding - fees,
+            partialClose: partiallyClosed || undefined,
+        };
+    };
+    // Pair each Extended leg at most once: multiple HL partial-close rounds of
+    // the same position can each fall inside the 2-day window, and reusing the
+    // exchange-reported leg for each one seeded duplicate Closed rows. Greedy
+    // closest-closeTime matching keeps genuinely separate rounds paired while
+    // preventing one EXT leg from producing several cards. Both sides are
+    // consumed so the mirror case (one HL round vs several EXT rounds) also
+    // collapses to a single row.
+    const extUsed = new Set();
+    const hlUsed = new Set();
+    const candidates = [];
     for (const hl of hlLegs) {
         const sym = CR.toBaseSymbol(hl.symbol);
         const extMatches = (extBySymbol[sym] || []).filter((e) => {
+            if (e.side === hl.side) return false; // only hedge sessions pair long vs short
             const d = closeOf(e) && closeOf(hl) ? Math.abs(closeOf(e) - closeOf(hl)) : 0;
             return d <= PAIR_WINDOW_MS;
         });
         for (const ext of extMatches) {
-            if (ext.side === hl.side) continue; // only hedge sessions pair long vs short
-            const closeTime = Math.max(closeOf(ext), closeOf(hl)) || closeOf(ext) || closeOf(hl) || Date.now();
-            const hlLeg = { venue: 'hyperliquid', ...hl };
-            const extLeg = { venue: 'extended', ...ext };
-            const extRealized = extRealizedFromExchange(ext);
-            if (Number.isFinite(extRealized)) extLeg.realizedPnl = extRealized;
-            const longLeg = hl.side === 'long' ? hlLeg : extLeg;
-            const shortLeg = hl.side === 'long' ? extLeg : hlLeg;
-            const fees = Math.abs(Number(hlLeg.fees || 0)) + Math.abs(Number(extLeg.fees || 0));
-            const funding = (Number(hlLeg.funding || 0) || 0) + (Number(extLeg.funding || 0) || 0);
-            const slip = (Number(longLeg.realizedPnl) || 0) + (Number(shortLeg.realizedPnl) || 0);
-            seeded.push({
-                symbol: sym,
-                pairType: 'hl_extended',
-                pairLabel: 'HL + Extended',
-                size: Math.min(Math.abs(Number(hl.size || 0)), Math.abs(Number(ext.size || 0))) || Math.abs(Number(hl.size || 0)),
-                openTime: Math.min(Number(hl.openTime || 0) || closeTime, Number(ext.openTime || 0) || closeTime),
-                closeTime,
-                longLeg,
-                shortLeg,
-                closeSlippage: slip,
-                funding,
-                fees,
-                netPnl: slip + funding - fees,
-            });
+            candidates.push({ hl, ext, d: Math.abs(closeOf(ext) - closeOf(hl)) });
         }
+    }
+    candidates.sort((a, b) => a.d - b.d);
+    const legKey = (leg, venue) => `${venue}|${CR.toBaseSymbol(leg.symbol)}|${leg.side}|${closeOf(leg)}|${Math.abs(Number(leg.size || 0))}`;
+    for (const { hl, ext } of candidates) {
+        const extKey = legKey(ext, 'extended');
+        const hlKey = legKey(hl, 'hyperliquid');
+        if (extUsed.has(extKey) || hlUsed.has(hlKey)) continue;
+        extUsed.add(extKey);
+        hlUsed.add(hlKey);
+        seeded.push(buildPair(hl, ext));
     }
     return seeded;
 }
@@ -35004,44 +35075,219 @@ function perpsSeedGrvtClosedPairsFromExchange(data) {
     const seeded = [];
     const PAIR_WINDOW_MS = 2 * 86400000;
     const closeOf = (leg) => Number(leg?.closeTime || 0);
+    const buildPair = (grvt, hl) => {
+        const closeTime = Math.max(closeOf(hl), closeOf(grvt)) || closeOf(grvt) || closeOf(hl) || Date.now();
+        const hlLeg = { venue: 'hyperliquid', ...hl };
+        const grvtLeg = { venue: 'grvt', ...grvt };
+        const longLeg = hl.side === 'long' ? hlLeg : grvtLeg;
+        const shortLeg = hl.side === 'long' ? grvtLeg : hlLeg;
+        const fees = Math.abs(Number(hlLeg.fees || 0)) + Math.abs(Number(grvtLeg.fees || 0));
+        const funding = (Number(hlLeg.funding || 0) || 0) + (Number(grvtLeg.funding || 0) || 0);
+        const slip = (Number(longLeg.realizedPnl) || 0) + (Number(shortLeg.realizedPnl) || 0);
+        return {
+            symbol: CR.toBaseSymbol(grvt.symbol),
+            pairType: 'hl_grvt',
+            pairLabel: 'HL + GRVT',
+            size: Math.min(Math.abs(Number(hl.size || 0)), Math.abs(Number(grvt.size || 0))) || Math.abs(Number(hl.size || 0)),
+            openTime: Math.min(Number(hl.openTime || 0) || closeTime, Number(grvt.openTime || 0) || closeTime),
+            closeTime,
+            longLeg,
+            shortLeg,
+            closeSlippage: slip,
+            funding,
+            fees,
+            netPnl: slip + funding - fees,
+        };
+    };
+    // Pair each GRVT leg at most once — same dedupe as the HL+Extended seed so
+    // multiple HL partial-close rounds of one position don't reuse the same
+    // GRVT round and seed duplicate Closed rows. Both sides are consumed so the
+    // mirror case (one HL round vs several GRVT rounds) also collapses.
+    const grvtUsed = new Set();
+    const hlUsed = new Set();
+    const candidates = [];
     for (const grvt of grvtLegs) {
         const sym = CR.toBaseSymbol(grvt.symbol);
         const hlMatches = (hlBySymbol[sym] || []).filter((hl) => {
+            if (hl.side === grvt.side) return false; // only hedge sessions pair long vs short
             const d = closeOf(hl) && closeOf(grvt) ? Math.abs(closeOf(hl) - closeOf(grvt)) : 0;
             return d <= PAIR_WINDOW_MS;
         });
         for (const hl of hlMatches) {
-            if (hl.side === grvt.side) continue; // only hedge sessions pair long vs short
-            const closeTime = Math.max(closeOf(hl), closeOf(grvt)) || closeOf(grvt) || closeOf(hl) || Date.now();
-            const hlLeg = { venue: 'hyperliquid', ...hl };
-            const grvtLeg = { venue: 'grvt', ...grvt };
-            const longLeg = hl.side === 'long' ? hlLeg : grvtLeg;
-            const shortLeg = hl.side === 'long' ? grvtLeg : hlLeg;
-            const fees = Math.abs(Number(hlLeg.fees || 0)) + Math.abs(Number(grvtLeg.fees || 0));
-            const funding = (Number(hlLeg.funding || 0) || 0) + (Number(grvtLeg.funding || 0) || 0);
-            const slip = (Number(longLeg.realizedPnl) || 0) + (Number(shortLeg.realizedPnl) || 0);
-            seeded.push({
-                symbol: sym,
-                pairType: 'hl_grvt',
-                pairLabel: 'HL + GRVT',
-                size: Math.min(Math.abs(Number(hl.size || 0)), Math.abs(Number(grvt.size || 0))) || Math.abs(Number(hl.size || 0)),
-                openTime: Math.min(Number(hl.openTime || 0) || closeTime, Number(grvt.openTime || 0) || closeTime),
-                closeTime,
-                longLeg,
-                shortLeg,
-                closeSlippage: slip,
-                funding,
-                fees,
-                netPnl: slip + funding - fees,
-            });
+            candidates.push({ grvt, hl, d: Math.abs(closeOf(hl) - closeOf(grvt)) });
         }
     }
+    candidates.sort((a, b) => a.d - b.d);
+    const legKey = (leg, venue) => `${venue}|${CR.toBaseSymbol(leg.symbol)}|${leg.side}|${closeOf(leg)}|${Math.abs(Number(leg.size || 0))}`;
+    for (const { grvt, hl } of candidates) {
+        const grvtKey = legKey(grvt, 'grvt');
+        const hlKey = legKey(hl, 'hyperliquid');
+        if (grvtUsed.has(grvtKey) || hlUsed.has(hlKey)) continue;
+        grvtUsed.add(grvtKey);
+        hlUsed.add(hlKey);
+        seeded.push(buildPair(grvt, hl));
+    }
+    return seeded;
+}
+
+// Seed Closed-tab rows for positions that were closed PARTIALLY — the venue
+// reports the closed session's fills/positions with the position still open
+// (size > 0) at the end. Each row aggregates one venue|symbol|side session into
+// a single Closed row with cumulative closed size and realized PnL, flagged
+// PARTIAL. Sessions are UTC activity sessions (blank day splits), matching
+// Position Performance. The server merges GRVT/Extended history legs into
+// session groups (partialCloseMerged); HL/Nado/Phoenix partials come from the
+// fill reconstruction. Only rows not already covered by a seeded hedge pair
+// (hl_extended / hl_grvt) are emitted, to avoid double counting.
+function perpsSeedPartialClosePairsFromExchange(data) {
+    const CR = window.ClosedLegReconstruct;
+    if (!CR?.buildClosedLegsForVenue) return [];
+    const seeded = [];
+
+    // Collect legs: HL/Nado/Phoenix partials from fills (fill reconstruction),
+    // GRVT/Extended from server-merged positionHistory (slimmed payload keeps
+    // partiallyClosed flags). Nado matches flow through the server's
+    // active+inactive symbol merge (data.nado.matches.matches); Phoenix fills
+    // are unbounded by symbol (data.phoenix.fills.fills).
+    const legsByVenue = { hyperliquid: [], grvt: [], extended: [], nado: [], phoenix: [] };
+    try {
+        legsByVenue.hyperliquid = CR.buildClosedLegsForVenue(
+            'hyperliquid',
+            data?.hyperliquid?.fills?.fills || [],
+            { hyperliquid: data?.hyperliquid?.funding?.payments || [] },
+        ).filter((leg) => leg.partiallyClosed === true);
+    } catch (e) { /* ignore */ }
+    try {
+        legsByVenue.nado = CR.buildClosedLegsForVenue(
+            'nado',
+            data?.nado?.matches?.matches || [],
+            { nado: data?.nado?.funding?.payments || [] },
+        ).filter((leg) => leg.partiallyClosed === true);
+    } catch (e) { /* ignore */ }
+    try {
+        legsByVenue.phoenix = CR.buildClosedLegsForVenue(
+            'phoenix',
+            data?.phoenix?.fills?.fills || [],
+            { phoenix: data?.phoenix?.funding?.payments || [] },
+        ).filter((leg) => leg.partiallyClosed === true);
+    } catch (e) { /* ignore */ }
+    for (const venue of ['grvt', 'extended']) {
+        for (const leg of (data?.[venue]?.positionHistory || [])) {
+            if (!leg || !leg.closeTime || leg.partiallyClosed !== true) continue;
+            legsByVenue[venue].push({ ...leg, venue });
+        }
+    }
+    // Extended positionHistory omits still-open positions (only fully closed
+    // rows are returned by the exchange), so also collect partial-close legs
+    // reconstructed from fills — this is the only source for partial hedges
+    // like ETHFI/POL.
+    try {
+        const extPartials = CR.buildClosedLegsForVenue(
+            'extended',
+            data?.extended?.fills?.fills || [],
+            { extended: data?.extended?.funding?.payments || [] },
+        ).filter((leg) => leg.partiallyClosed === true);
+        for (const leg of extPartials) legsByVenue.extended.push({ ...leg, venue: 'extended' });
+    } catch (e) { /* ignore */ }
+
+    // Skip sessions already represented by a seeded hedge pair on the same
+    // base symbol + close day (hl_extended / hl_grvt cover both legs there).
+    const covered = new Set();
+    for (const p of data?.closedPairs || []) {
+        if (p?.pairType !== 'hl_extended' && p?.pairType !== 'hl_grvt') continue;
+        const sym = CR.toBaseSymbol(p.symbol);
+        const day = new Date(Number(p.closeTime) || 0).toISOString().slice(0, 10);
+        if (sym && day) covered.add(`${sym}|${day}`);
+    }
+
+    const sessionDay = (ms) => {
+        const t = Number(ms);
+        return Number.isFinite(t) && t > 0 ? new Date(t).toISOString().slice(0, 10) : null;
+    };
+    const byGroup = new Map(); // venue|symbol|side|sessionStartDay -> { legs }
+    for (const venue of ['hyperliquid', 'grvt', 'extended', 'nado', 'phoenix']) {
+        for (const leg of legsByVenue[venue]) {
+            const sym = CR.toBaseSymbol(leg.symbol);
+            if (!sym) continue;
+            const side = String(leg.side || '').toLowerCase() === 'short' ? 'short' : 'long';
+            const startDay = leg.sessionStartDay || sessionDay(Number(leg.openTime || leg.closeTime || 0));
+            const key = `${venue}|${sym}|${side}|${startDay || ''}`;
+            const rec = byGroup.get(key) || { legs: [] };
+            rec.legs.push(leg);
+            byGroup.set(key, rec);
+        }
+    }
+
+    for (const rec of byGroup.values()) {
+        const group = rec.legs.sort((a, b) => (Number(a.openTime) || 0) - (Number(b.openTime) || 0));
+        const first = group[0];
+        const venue = first.venue || 'hyperliquid';
+        const sym = CR.toBaseSymbol(first.symbol);
+        const side = String(first.side || '').toLowerCase() === 'short' ? 'short' : 'long';
+        const openTime = Math.min(...group.map((l) => Number(l.openTime) || Number(l.closeTime) || 0));
+        const closeTime = Math.max(...group.map((l) => Number(l.closeTime) || 0));
+        const endDay = sessionDay(closeTime) || group[group.length - 1]?.sessionEndDay || null;
+        if (!endDay || covered.has(`${sym}|${endDay}`)) continue;
+
+        const size = group.reduce((s, l) => s + Math.abs(Number(l.size || 0)), 0);
+        if (!(size > 0)) continue;
+        const realizedPnl = group.reduce((s, l) => s + Number(l.realizedPnl || 0), 0);
+        const funding = group.reduce((s, l) => s + Number(l.funding || 0), 0);
+        const fees = group.reduce((s, l) => s + Math.abs(Number(l.fees || 0)), 0);
+        const venueLabel = { hyperliquid: 'HL', grvt: 'GRVT', extended: 'Extended', nado: 'Nado', phoenix: 'Phoenix' }[venue] || venue;
+        const leg = {
+            venue,
+            symbol: sym,
+            side,
+            size,
+            realizedPnl,
+            funding,
+            fees,
+            openTime: openTime || closeTime,
+            closeTime,
+            partiallyClosed: true,
+            partialCloseMerged: group.length > 1,
+        };
+        const longLeg = side === 'long' ? leg : null;
+        const shortLeg = side === 'short' ? leg : null;
+        const slip = Number(realizedPnl) || 0;
+        seeded.push({
+            symbol: sym,
+            pairType: 'exchange_only',
+            pairLabel: venueLabel,
+            exchangeOnly: true,
+            partialClose: true,
+            size,
+            openTime: openTime || closeTime,
+            closeTime,
+            longLeg,
+            shortLeg,
+            closeSlippage: slip,
+            funding,
+            fees,
+            netPnl: slip + funding - fees,
+            sessionStartDay: sessionDay(openTime) || endDay,
+            sessionEndDay: endDay,
+            sessionDayCount: group.length,
+        });
+    }
+
     return seeded;
 }
 
 function perpsMergeEquitySnapshotRecord(localSnap = {}, serverSnap = {}) {
     const newerIsServer = (Number(serverSnap.fetchedAt) || 0) >= (Number(localSnap.fetchedAt) || 0);
     const merged = newerIsServer ? { ...localSnap, ...serverSnap } : { ...serverSnap, ...localSnap };
+    // Cron snapshots lack the Variational-leg adj fields; keep whichever side
+    // carries a real value so the hedge-neutral chart stays accurate.
+    for (const field of ['partialCloseRealizedPnl', 'variationalOpenUpnl', 'variationalClosedEquityPnl']) {
+        const cur = Number(merged[field]);
+        if (Number.isFinite(cur) && cur !== 0) continue;
+        const a = Number(localSnap[field]);
+        const b = Number(serverSnap[field]);
+        if (Number.isFinite(a) && a !== 0) merged[field] = a;
+        else if (Number.isFinite(b) && b !== 0) merged[field] = b;
+    }
     // Prefer real venue equity over cron zeros so Phoenix deposits stay aligned with totals.
     const pickVenueEquity = (field) => {
         const a = Number(localSnap[field]);
@@ -35976,6 +36222,14 @@ function perpsBuildEquitySeries(data) {
         const variationalEquityAdjust = perpsSnapshotVariationalAdjust(snap, 0);
         const variationalNeutralEquity = VE?.variationalNeutralEquity?.(snap.totalEquity, variationalEquityAdjust)
             ?? (snap.totalEquity + variationalEquityAdjust);
+        // Cron-written / pre-56f50fa snapshots carry no Variational-leg adj. The
+        // closed-pair component is reconstructable at render time from in-memory
+        // closed pairs (time-bounded by closeTime); open-uPnL and partials have
+        // no historical record, so they stay 0 for those points.
+        const storedClosedEquity = Number(snap.variationalClosedEquityPnl);
+        const variationalClosedEquityPnl = Number.isFinite(storedClosedEquity)
+            ? storedClosedEquity
+            : perpsVariationalClosedEquityPnlAt(data, time);
         const row = {
             time,
             bucket,
@@ -35987,7 +36241,7 @@ function perpsBuildEquitySeries(data) {
             variationalNeutralEquity,
             partialCloseRealizedPnl: Number(snap.partialCloseRealizedPnl) || 0,
             variationalOpenUpnl: Number(snap.variationalOpenUpnl) || 0,
-            variationalClosedEquityPnl: Number(snap.variationalClosedEquityPnl) || 0,
+            variationalClosedEquityPnl,
             source: 'snapshot',
         };
         if (!byBucket[bucket] || row.time >= byBucket[bucket].time) byBucket[bucket] = row;
@@ -38026,7 +38280,7 @@ function perpsRenderClosedPositionsV3(closedPairs) {
             <div class="perps-mv3-head">
                 <div class="perps-mv3-icon">${makeLogo(pair.symbol, false, 36)}</div>
                 <div>
-                    <div class="perps-mv3-name">${dashEsc(pair.symbol)}</div>
+                    <div class="perps-mv3-name">${dashEsc(pair.symbol)}${pair.partialClose || pair.closedPartial || pair.partiallyClosed ? ' <span class="perps-pos-pill warn">PARTIAL</span>' : ''}</div>
                     <div class="perps-mv3-meta">${meta}</div>
                 </div>
                 <button type="button" class="perps-mv3-x" aria-label="Delete closed position" title="Delete position" onclick="perpsDeleteClosedPair('${dashEsc(delKey)}'); event.stopPropagation();">✕</button>
@@ -38614,6 +38868,7 @@ function perpsRenderClosedPositions(closedPairs) {
                         <div class="perps-pos-token-name">${dashEsc(pair.symbol)}</div>
                         <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}${pair.exchangeOnly ? ` · ${dashEsc(pair.pairLabel || 'Exchange')}` : ''}</div>
                         <span class="perps-pos-pill">CLOSED</span>
+                        ${pair.partialClose || pair.closedPartial || pair.partiallyClosed ? '<span class="perps-pos-pill warn" title="Closed partially — cumulative size and PnL for this session">PARTIAL</span>' : ''}
                         ${pair.exchangeOnly ? '<span class="perps-pos-pill" title="Never hedged — shown with the single exchange leg only">SOLO</span>' : ''}
                         ${pair.closeLegEstimated || pair.manualVariationalClose && pair.aprUnavailable ? '<span class="perps-pos-pill warn" title="Tracked close leg or PnL is estimated">EST</span>' : ''}
                     </div>
@@ -39251,6 +39506,25 @@ function perpsRenderDashboard(data, opts = {}) {
         if (seeded.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seeded]);
         const seededGrvt = perpsSeedGrvtClosedPairsFromExchange(data);
         if (seededGrvt.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededGrvt]);
+        const seededPartial = perpsSeedPartialClosePairsFromExchange(data);
+        if (seededPartial.length) {
+            // Replace prior partial rows for the same venue|symbol|side|session
+            // group: the in-memory dedupe key uses closeTime, which advances as
+            // more of the position is closed, so without this the old row would
+            // linger and the session would show two rows. The seeded row's
+            // sessionStartDay is stable for the life of the session.
+            const partialGroupKey = (p) => {
+                const v = p?.longLeg?.venue || p?.shortLeg?.venue || '';
+                const sym = String(p?.symbol || '').trim().toUpperCase();
+                const side = p?.longLeg ? 'long' : 'short';
+                return `${v}|${sym}|${side}|${p?.sessionStartDay || ''}`;
+            };
+            const keep = new Set(seededPartial.map(partialGroupKey));
+            data.closedPairs = perpsCacheNewClosedPairs([
+                ...(data.closedPairs || []).filter((p) => !(p?.partialClose === true && keep.has(partialGroupKey(p)))),
+                ...seededPartial,
+            ]);
+        }
         const snapshotAdded = perpsSaveSnapshot(data);
         data._equitySeriesRaw = { ...perpsBuildEquitySeries(data), fetchedAt: data.fetchedAt };
         data._equitySeries = data._equitySeriesRaw;
