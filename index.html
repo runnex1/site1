@@ -33731,7 +33731,13 @@ function perpsPruneExchangeOnlyClosedPairs(pairs) {
         }
         if (p?.exchangeOnly) {
             if (!ct || nowMs - ct > lookbackMs) return false;
-            if (hedgedPairs.some(covers)) return false;
+            // A never-hedged SOLO (seeded from a full-close round with zero
+            // opposite-venue activity in its lifetime) is a genuinely separate
+            // round — it must NOT be suppressed just because a hedged pair of
+            // the same symbol closed within 2 days (e.g. KAITO 48,000 closed
+            // 13 min after the 130,448 HL+Extended pair). Only suppress SOLOs
+            // that are plausible fragments of a hedged round.
+            if (!p?.neverHedged && hedgedPairs.some(covers)) return false;
             const coveringVar = varCloses.find(covers);
             if (!coveringVar) return true;
             return perpsClosedPairVarShouldYieldToExchangeOnly(coveringVar, p);
@@ -35047,7 +35053,9 @@ function perpsSeedHlExtendedClosedPairsFromExchange(data) {
         hlUsed.add(hlKey);
         seeded.push(buildPair(hl, ext));
     }
-    return seeded;
+    // Expose which legs were consumed by hedge pairing so the never-hedged SOLO
+    // seeder can turn the leftovers (like KAITO's 48,000 solo round) into rows.
+    return { pairs: seeded, hlUsed, extUsed };
 }
 
 // Seed Closed-tab rows for HL <-> GRVT cross-venue hedge sessions from raw
@@ -35127,7 +35135,9 @@ function perpsSeedGrvtClosedPairsFromExchange(data) {
         hlUsed.add(hlKey);
         seeded.push(buildPair(grvt, hl));
     }
-    return seeded;
+    // Expose consumed HL legs for the never-hedged SOLO seeder (mirror of the
+    // HL+Extended seed).
+    return { pairs: seeded, hlUsed, grvtUsed };
 }
 
 // Seed Closed-tab rows for positions that were closed PARTIALLY — the venue
@@ -35272,6 +35282,147 @@ function perpsSeedPartialClosePairsFromExchange(data) {
         });
     }
 
+    return seeded;
+}
+
+/**
+ * Seed Closed-tab SOLO rows for FULLY CLOSED rounds that were never hedged —
+ * e.g. KAITO's 48,000 HL round closed 2h44m after the Extended hedge flattened.
+ * The hedge seeds (HL+Extended / HL+GRVT) only pair legs whose lifetimes
+ * overlapped an opposite-venue leg; a solo round that opened after the hedge
+ * was flat must still surface as a SOLO card so the Closed tab shows every
+ * session's realized PnL.
+ *
+ * Classification (never-hedged): a full-close leg (not partial, not
+ * fill-reconstructed, not from exchange history) whose lifetime had NO
+ * opposite-venue leg activity for the same base symbol, closed within the
+ * 14-day lookback. Partial sessions are already handled by
+ * perpsSeedPartialClosePairsFromExchange; legs consumed by a seeded hedge pair
+ * are passed in `consumed` (the same legKey) and skipped.
+ *
+ * Venues: hyperliquid, nado, grvt, extended, phoenix — any exchange whose fills
+ * reconstruct into closed legs.
+ */
+function perpsSeedSoloClosedPairsFromExchange(data, consumed = {}) {
+    const CR = window.ClosedLegReconstruct;
+    if (!CR?.buildClosedLegsForVenue) return [];
+    const nowMs = Date.now();
+    const LOOKBACK_MS = 14 * 86400000;
+    const CLOSED_ROUND_EPS = 1e-8;
+    const consumedSet = new Set([
+        ...(consumed.hlUsed || []),
+        ...(consumed.extUsed || []),
+        ...(consumed.grvtUsed || []),
+    ]);
+    const paymentSources = {
+        hyperliquid: data?.hyperliquid?.funding?.payments || [],
+        nado: data?.nado?.funding?.payments || [],
+        grvt: data?.grvt?.funding?.payments || [],
+        extended: data?.extended?.funding?.payments || [],
+        phoenix: data?.phoenix?.funding?.payments || [],
+    };
+    const sourceFills = {
+        hyperliquid: data?.hyperliquid?.fills?.fills || [],
+        nado: data?.nado?.matches?.matches || [],
+        grvt: data?.grvt?.fills?.fills || [],
+        extended: data?.extended?.fills?.fills || [],
+        phoenix: data?.phoenix?.fills?.fills || [],
+    };
+    const venueLabel = {
+        hyperliquid: 'HL',
+        nado: 'Nado',
+        grvt: 'GRVT',
+        extended: 'Extended',
+        phoenix: 'Phoenix',
+    };
+    const legKey = (leg, venue) => `${venue}|${CR.toBaseSymbol(leg.symbol)}|${leg.side}|${Number(leg.closeTime || 0)}|${Math.abs(Number(leg.size || 0))}`;
+
+    // Collect ALL closed legs per venue for the opposite-venue activity check.
+    // GRVT/Extended positionHistory rows are exchange-reported full closes; the
+    // rest come from fill reconstruction (HL/Nado/Phoenix full closes).
+    const allLegsByVenue = { hyperliquid: [], nado: [], grvt: [], extended: [], phoenix: [] };
+    const emit = (venue, leg) => {
+        if (!leg || !leg.symbol || !leg.closeTime || !leg.venue) return;
+        allLegsByVenue[venue].push(leg);
+    };
+    for (const venue of ['grvt', 'extended']) {
+        for (const leg of (data?.[venue]?.positionHistory || [])) {
+            if (!leg?.closeTime) continue;
+            emit(venue, { ...leg, venue });
+        }
+    }
+    for (const venue of ['hyperliquid', 'nado', 'grvt', 'extended', 'phoenix']) {
+        try {
+            for (const leg of CR.buildClosedLegsForVenue(venue, sourceFills[venue] || [], paymentSources)) {
+                emit(venue, { ...leg, venue });
+            }
+        } catch (e) { /* ignore */ }
+    }
+    const allLegs = Object.values(allLegsByVenue).flat();
+
+    const hadOppositeVenueActivity = (leg) => {
+        const open = Number(leg.openTime || 0);
+        const close = Number(leg.closeTime || 0);
+        const sym = CR.toBaseSymbol(leg.symbol);
+        if (!close) return false;
+        return allLegs.some((other) => {
+            if (other === leg || !other || other.venue === leg.venue) return false;
+            if (CR.toBaseSymbol(other.symbol) !== sym) return false;
+            if (other.side === leg.side) return false;
+            const otherOpen = Number(other.openTime || 0);
+            const otherClose = Number(other.closeTime || 0);
+            if (otherOpen && open && otherOpen >= open && otherOpen <= close) return true;
+            if (otherClose && open && otherClose >= open && otherClose <= close) return true;
+            if (otherOpen && otherClose && open && close && otherOpen <= close && otherClose >= open) return true;
+            return false;
+        });
+    };
+
+    const seeded = [];
+    for (const [venue, legs] of Object.entries(allLegsByVenue)) {
+        if (!legs.length) continue;
+        for (const leg of legs) {
+            if (!leg.openTimeKnown || leg.partiallyClosed || leg.reconstructedFromClosingFills || leg.fromExchangeHistory) continue;
+            const close = Number(leg.closeTime || 0);
+            if (!close || nowMs - close > LOOKBACK_MS) continue;
+            if (!(Math.abs(Number(leg.size || 0)) > CLOSED_ROUND_EPS)) continue;
+            if (!Number.isFinite(Number(leg.realizedPnl))) continue;
+            if (hadOppositeVenueActivity(leg)) continue;
+            const key = legKey(leg, venue);
+            if (consumedSet.has(key)) continue;
+            const sym = CR.toBaseSymbol(leg.symbol);
+            const fees = Math.abs(Number(leg.fees || 0));
+            const funding = Number(leg.funding || 0) || 0;
+            const slip = Number(leg.realizedPnl) || 0;
+            const soloLeg = {
+                venue,
+                symbol: sym,
+                side: leg.side,
+                size: Math.abs(Number(leg.size || 0)),
+                realizedPnl: slip,
+                funding,
+                fees,
+                openTime: leg.openTime,
+                closeTime: close,
+            };
+            seeded.push({
+                symbol: sym,
+                pairType: 'exchange_only',
+                pairLabel: venueLabel[venue] || venue,
+                exchangeOnly: true,
+                neverHedged: true,
+                size: soloLeg.size,
+                openTime: leg.openTime,
+                closeTime: close,
+                longLeg: leg.side === 'long' ? soloLeg : null,
+                shortLeg: leg.side === 'short' ? soloLeg : null,
+                closeSlippage: slip,
+                funding,
+                fees,
+                netPnl: slip + funding - fees,
+            });
+        }
+    }
     return seeded;
 }
 
@@ -39502,9 +39653,19 @@ function perpsRenderDashboard(data, opts = {}) {
         }
         data.closedPairs = perpsCacheNewClosedPairs(data.closedPairs || []);
         perpsAttachRealizedPnlByVenue(data);
-        const seeded = perpsSeedHlExtendedClosedPairsFromExchange(data);
+        const seededRes = perpsSeedHlExtendedClosedPairsFromExchange(data);
+        const seeded = Array.isArray(seededRes) ? seededRes : (seededRes?.pairs || []);
+        const hlExtConsumed = {
+            hlUsed: Array.isArray(seededRes) ? new Set() : (seededRes?.hlUsed || new Set()),
+            extUsed: Array.isArray(seededRes) ? new Set() : (seededRes?.extUsed || new Set()),
+        };
         if (seeded.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seeded]);
-        const seededGrvt = perpsSeedGrvtClosedPairsFromExchange(data);
+        const seededGrvtRes = perpsSeedGrvtClosedPairsFromExchange(data);
+        const seededGrvt = Array.isArray(seededGrvtRes) ? seededGrvtRes : (seededGrvtRes?.pairs || []);
+        const grvtConsumed = {
+            hlUsed: Array.isArray(seededGrvtRes) ? new Set() : (seededGrvtRes?.hlUsed || new Set()),
+            grvtUsed: Array.isArray(seededGrvtRes) ? new Set() : (seededGrvtRes?.grvtUsed || new Set()),
+        };
         if (seededGrvt.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededGrvt]);
         const seededPartial = perpsSeedPartialClosePairsFromExchange(data);
         if (seededPartial.length) {
@@ -39525,6 +39686,15 @@ function perpsRenderDashboard(data, opts = {}) {
                 ...seededPartial,
             ]);
         }
+        // Never-hedged SOLO rows: full-close rounds with no opposite-venue
+        // activity in their lifetime (e.g. KAITO's 48,000 HL round closed after
+        // the Extended hedge flattened). Consumed hedge legs are excluded.
+        const seededSolo = perpsSeedSoloClosedPairsFromExchange(data, {
+            hlUsed: new Set([...hlExtConsumed.hlUsed, ...grvtConsumed.hlUsed]),
+            extUsed: hlExtConsumed.extUsed,
+            grvtUsed: grvtConsumed.grvtUsed,
+        });
+        if (seededSolo.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededSolo]);
         const snapshotAdded = perpsSaveSnapshot(data);
         data._equitySeriesRaw = { ...perpsBuildEquitySeries(data), fetchedAt: data.fetchedAt };
         data._equitySeries = data._equitySeriesRaw;
