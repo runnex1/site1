@@ -35314,6 +35314,21 @@ function perpsSeedSoloClosedPairsFromExchange(data, consumed = {}) {
         ...(consumed.extUsed || []),
         ...(consumed.grvtUsed || []),
     ]);
+    // Variational hedges pair a tracked exchange leg against a synthetic
+    // Variational leg of the opposite side. A hedged round must never be
+    // labeled "never hedged" / shown as SOLO, so load closed hedges and
+    // treat any hedge covering this leg (same symbol + tracked venue,
+    // opposite side, lifetime overlap) as opposite-venue activity.
+    const varHedges = (() => {
+        try {
+            const rows = typeof perpsLoadVariationalHedges === 'function'
+                ? perpsLoadVariationalHedges()
+                : [];
+            return Array.isArray(rows) ? rows : [];
+        } catch (e) {
+            return [];
+        }
+    })();
     const paymentSources = {
         hyperliquid: data?.hyperliquid?.funding?.payments || [],
         nado: data?.nado?.funding?.payments || [],
@@ -35365,6 +35380,23 @@ function perpsSeedSoloClosedPairsFromExchange(data, consumed = {}) {
         const close = Number(leg.closeTime || 0);
         const sym = CR.toBaseSymbol(leg.symbol);
         if (!close) return false;
+        if (varHedges.some((hedge) => {
+            if (String(hedge.symbol || '').toUpperCase() !== sym) return false;
+            if ((hedge.trackedVenue || '') !== leg.venue) return false;
+            // A hedge tracks an exchange leg of the SAME side and matched
+            // size (e.g. HL short 870k vs Var long 870k). If sizes differ
+            // (e.g. ZRO hedge 21k vs a separate 94k round) it's not this leg.
+            const trackedSize = Number(hedge.trackedSize || 0);
+            if (!trackedSize) return false;
+            const hedgeSide = trackedSize > 0 ? 'long' : 'short';
+            if (hedgeSide !== leg.side) return false;
+            if (Math.abs(Math.abs(trackedSize) - Math.abs(Number(leg.size || 0))) > Math.max(1, Math.abs(trackedSize) * 0.01)) return false;
+            const hOpen = Number(hedge.openedAt || 0);
+            const hClose = Number(hedge.closedAt || hedge.pendingCloseAt || 0);
+            if (hOpen && open && hOpen > close) return false;
+            if (hClose && hClose < open) return false;
+            return true;
+        })) return true;
         return allLegs.some((other) => {
             if (other === leg || !other || other.venue === leg.venue) return false;
             if (CR.toBaseSymbol(other.symbol) !== sym) return false;
