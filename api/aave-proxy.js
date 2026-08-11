@@ -20,7 +20,7 @@ const {
   pruneVariationalRateSamples,
   variationalRateSampleKeepSymbols,
 } = require('../lib/variational-hedge');
-const { kvGet, kvSet } = require('../lib/kv');
+const { kvGet, kvSet, kvDel } = require('../lib/kv');
 const { CACHE_KEYS, parseJson: parseCronJson } = require('../lib/cron-runner');
 const { fetchLoopRates, mergeRecentLoopPositions } = require('../lib/loop-rates');
 const {
@@ -31,6 +31,7 @@ const {
   persistLoopSnapshotStore,
   loadLoopSnapshotStore,
   ensureUsdeUsdmSnapshotsPurged,
+  ensureLoopSnapshotWalletPollutionPurged,
   ensureLoopSnapshotsCompressed,
 } = require('../lib/loop-snapshots');
 const { ensureLoopLogoCache, sanitizeLogoCacheForStorage } = require('../lib/logo-resolver');
@@ -254,7 +255,7 @@ async function handlePerpsCronSnapshot(req, res) {
       phoenix: isUsablePhoenixWallet(phoenixWallet) ? phoenixWallet : '',
       // Fallback only if capital-flow refresh fails; live flows override inside the fetcher.
       cumulativeNetDeposits: Number(previousSnapshot?.cumulativeNetDeposits) || 0,
-    }, { refreshCapitalFlows: true });
+    }, { refreshCapitalFlows: true, hedges });
     let store = appendEquitySnapshotStore(savedSnapshots, data);
     let depositRepairChanged = 0;
     if (data.capitalFlows) {
@@ -461,6 +462,9 @@ async function handleLoopSnapshots(req, res) {
 
   try {
     await ensureUsdeUsdmSnapshotsPurged({ kvGet, kvSet, parseJson });
+    await ensureLoopSnapshotWalletPollutionPurged({ kvGet, kvSet, kvDel }).catch((e) => {
+      console.warn('[loop-snapshots] pollution purge failed:', e.message || e);
+    });
     await ensureLoopSnapshotsCompressed({ kvGet, kvSet }).catch((e) => {
       console.warn('[loop-snapshots] compress failed:', e.message || e);
     });
