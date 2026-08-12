@@ -145,6 +145,10 @@ function mergeVariationalHedgeRecord(prev, hedge) {
     variationalEntryPx: pickField('variationalEntryPx'),
     variationalSize: pickField('variationalSize'),
     trackedSize: pickField('trackedSize'),
+    partialHedge: Boolean(newer?.partialHedge ?? older?.partialHedge),
+    partialSize: pickFinite('partialSize'),
+    fullLegSize: pickFinite('fullLegSize'),
+    partialCloseRealizedPnl: pickFinite('partialCloseRealizedPnl'),
     closedAt: cleanOpen ? null : (Number(newer?.closedAt) || Number(older?.closedAt) || null),
     variationalExitPx: cleanOpen ? null : (newer?.variationalExitPx ?? older?.variationalExitPx ?? null),
     closedFundingUsd: cleanOpen ? null : pickFinite('closedFundingUsd'),
@@ -275,6 +279,16 @@ function mergePerpsEquitySnapshots(existing, incoming, maxEntries = 180) {
       if (Number.isFinite(Number(merged[field]))) continue;
       if (Number.isFinite(Number(prev[field]))) merged[field] = Number(prev[field]);
       else if (Number.isFinite(Number(snap[field]))) merged[field] = Number(snap[field]);
+    }
+    // Variational-leg adj components: keep the non-zero side when the other
+    // record (e.g. a cron-written snapshot) doesn't carry them.
+    for (const field of ['partialCloseRealizedPnl', 'variationalOpenUpnl', 'variationalClosedEquityPnl']) {
+      const cur = Number(merged[field]);
+      if (Number.isFinite(cur) && cur !== 0) continue;
+      const a = Number(prev[field]);
+      const b = Number(snap[field]);
+      if (Number.isFinite(a) && a !== 0) merged[field] = a;
+      else if (Number.isFinite(b) && b !== 0) merged[field] = b;
     }
     if (!Number.isFinite(Number(merged.totalEquity)) && Number.isFinite(Number(prev.totalEquity))) {
       merged.totalEquity = Number(prev.totalEquity);

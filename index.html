@@ -756,6 +756,18 @@ body[data-active-tab="perps"] .topbar,
   border:1px solid rgba(89,240,200,0.28); background:rgba(89,240,200,0.08); color:#59f0c8; cursor:pointer;
 }
 .perps-btn.secondary { border-color:rgba(134,159,179,0.28); background:rgba(255,255,255,0.025); color:#9dacbb; }
+.perps-hedge-partial-btn {
+  margin-top: 0.55rem;
+  height: 28px;
+  padding: 0 0.7rem;
+  font-size: 0.72rem;
+  border-color: rgba(89,240,200,0.35);
+  background: rgba(89,240,200,0.07);
+  color: #59f0c8;
+  white-space: normal;
+  line-height: 1.25;
+}
+.perps-mv3-card .perps-hedge-partial-btn { margin-top: 8px; width: 100%; }
 .perps-kpi-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; }
 .perps-kpi {
   border:1px solid rgba(134,159,179,0.15); border-radius:10px;
@@ -33991,6 +34003,16 @@ function perpsBindVariationalHedgeDelegate() {
         const venue = btn.getAttribute('data-venue') || '';
         perpsHedgeWithVariational(symbol, venue);
     });
+    document.addEventListener('click', (ev) => {
+        const btn = ev.target.closest('[data-perps-hedge-partial-variational]');
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const symbol = btn.getAttribute('data-symbol') || '';
+        const venue = btn.getAttribute('data-venue') || '';
+        const residualSize = btn.getAttribute('data-residual-size') || '';
+        perpsHedgePartialWithVariational(symbol, venue, residualSize);
+    });
 }
 if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') {
@@ -34749,6 +34771,137 @@ function perpsHedgeWithVariational(symbol, venue) {
             alert(`Hedge with Variational failed: ${e?.message || e}`);
         }
     })();
+}
+
+/** Residual (partial) hedge — the pair's bigger leg minus the smaller leg on
+ *  another venue. The residual slice is hedged on Variational while the existing
+ *  cross pair stays untouched (they cover the matched size). */
+function perpsHedgePartialWithVariational(symbol, venue, residualSize) {
+    void (async () => {
+        try {
+            const VH = window.VariationalHedge;
+            if (!VH?.createPartialHedgeFromLeg) {
+                alert('Variational hedge module failed to load — hard-refresh and try again.');
+                return;
+            }
+            const data = perpsDataForVariationalAction();
+            if (!data) {
+                alert('Perps data not loaded — refresh and try again.');
+                return;
+            }
+            const leg = perpsResolvePartialLegForHedge(data, symbol, venue);
+            if (!leg) {
+                alert('Could not resolve the partial leg — refresh Perps and try again.');
+                return;
+            }
+            const partial = Math.abs(Number(residualSize));
+            if (!Number.isFinite(partial) || partial <= 0) {
+                alert('No residual to hedge — the pair is already fully hedged.');
+                return;
+            }
+            const hedge = VH.createPartialHedgeFromLeg(leg, partial, null);
+            if (!hedge) {
+                alert('Could not create the partial hedge (residual must be smaller than the full leg).');
+                return;
+            }
+            // Replace any active partial hedge already covering the same residual slice.
+            const hedges = perpsLoadVariationalHedges().filter((h) => !(
+                h.status !== 'closed'
+                && VH.hedgeIsPartial?.(h)
+                && (VH.variationalHedgeMatchKey
+                    ? VH.variationalHedgeMatchKey(h.symbol, h.trackedVenue) === VH.variationalHedgeMatchKey(symbol, venue)
+                    : h.symbol === symbol && h.trackedVenue === venue)
+            ));
+            hedges.push(hedge);
+            const persistResult = perpsPersistVariationalHedges(hedges, { skipPortfolioSync: true });
+            const inSession = perpsLoadVariationalHedgesRaw().some((h) => h.id === hedge.id);
+            if (!inSession) {
+                alert('Could not save hedge — try again.');
+                return;
+            }
+            if (!persistResult.localStorageOk) {
+                const cloudOk = await perpsPushVariationalHedgesToServer(hedges);
+                if (!cloudOk) {
+                    console.warn('Partial hedge saved for this session only (storage full).');
+                }
+            }
+            if (data) perpsApplyVariationalHedgesToData(data);
+            perpsRenderDashboard(data || {});
+        } catch (e) {
+            console.error('perpsHedgePartialWithVariational failed', e);
+            alert(`Hedge partial with Variational failed: ${e?.message || e}`);
+        }
+    })();
+}
+
+/** Find the full live leg for `venue` (from paired cross legs or unhedged), used
+ *  to build the residual slice. The residual = |bigger leg| − |smaller leg|. */
+function perpsResolvePartialLegForHedge(data, symbol, venue) {
+    const VH = window.VariationalHedge;
+    const key = VH?.variationalHedgeMatchKey
+        ? VH.variationalHedgeMatchKey(symbol, venue)
+        : perpsVariationalUnhedgedMatchKey(symbol, venue);
+    // Cross legs inside paired (e.g. hl_nado embeds raw hl/nado legs) — the full
+    // leg that hosts the residual slice.
+    for (const p of data?.paired || []) {
+        if (!(VH?.toBaseSymbol ? VH.toBaseSymbol(p.symbol) === VH.toBaseSymbol(symbol) : p.symbol === symbol)) continue;
+        const candidates = [p.hl, p.nado, p.grvt, p.extended, p.phoenix, p.crossLegA, p.crossLegB]
+            .filter(Boolean)
+            .filter((l) => l.venue === venue);
+        if (candidates.length) return candidates[0];
+    }
+    // Unhedged residual on that venue (full leg).
+    const unh = (data?.unhedged || []).find((u) => (
+        VH?.variationalHedgeMatchKey
+            ? VH.variationalHedgeMatchKey(u.symbol, u.venue) === key
+            : u.symbol === symbol && u.venue === venue
+    ));
+    if (unh) return unh;
+    return null;
+}
+
+/** Compute the residual slice of a mismatched pair: bigger leg minus smaller leg,
+ *  on whichever venue hosts the bigger leg. Returns null when fully hedged. */
+function perpsPartialHedgeInfo(p) {
+    const legs = perpsPairLegs(p);
+    const sizeA = Math.abs(Number(legs.a.size || 0));
+    const sizeB = Math.abs(Number(legs.b.size || 0));
+    if (!sizeA || !sizeB) return null;
+    if (Math.abs(sizeA - sizeB) / Math.max(sizeA, sizeB) < 0.001) return null;
+    const bigger = sizeA >= sizeB ? legs.a : legs.b;
+    const smaller = sizeA >= sizeB ? legs.b : legs.a;
+    return {
+        venue: bigger.venue,
+        residualSize: Math.abs(sizeA - sizeB),
+        fullSize: bigger.size,
+        venueLabel: perpsVenueShort(bigger.venue),
+    };
+}
+
+/** True when an active partial hedge already covers this symbol+venue slice. */
+function perpsHasActivePartialHedge(symbol, venue) {
+    const VH = window.VariationalHedge;
+    const hedges = perpsLoadVariationalHedges();
+    if (VH?.activePartialHedgeExists) return VH.activePartialHedgeExists(hedges, symbol, venue);
+    return hedges.some((h) => h.status !== 'closed'
+        && (h.partialHedge || Math.abs(Number(h.partialSize || 0)) > 0)
+        && (VH?.variationalHedgeMatchKey
+            ? VH.variationalHedgeMatchKey(h.symbol, h.trackedVenue) === VH.variationalHedgeMatchKey(symbol, venue)
+            : h.symbol === symbol && h.trackedVenue === venue));
+}
+
+/** Button markup to hedge the residual (unhedged) slice of a mismatched pair
+ * with Variational. Empty string when the pair is fully hedged, already has an
+ * active partial hedge, or no residual can be computed. */
+function perpsPartialHedgeButtonHtml(p) {
+    if (!p || perpsPairHasSizeMismatch(p) !== true) return '';
+    const VH = window.VariationalHedge;
+    if (VH?.isVariationalPair?.(p)) return '';
+    const partialInfo = perpsPartialHedgeInfo(p);
+    if (!partialInfo || !(Number(partialInfo.residualSize) > 0)) return '';
+    if (perpsHasActivePartialHedge(p.symbol, partialInfo.venue)) return '';
+    const sizeLabel = `${perpsFmtSize(partialInfo.residualSize)} ${partialInfo.venueLabel}`;
+    return `<button type="button" class="perps-btn secondary perps-hedge-partial-btn" data-perps-hedge-partial-variational data-symbol="${dashEsc(p.symbol)}" data-venue="${dashEsc(partialInfo.venue)}" data-residual-size="${partialInfo.residualSize}">Hedge partial with Variational (${dashEsc(sizeLabel)})</button>`;
 }
 
 function perpsEditVariationalEntry(hedgeId) {
@@ -38404,6 +38557,7 @@ function perpsRenderPortfolioPositionsV3(paired) {
         const warnHtml = sizeMismatch
             ? `<div class="perps-mv3-warnline">⚠ Size mismatch (not fully hedged): ${dashEsc(perpsPairSizeMismatchText(p))}</div>`
             : '';
+        const partialHedgeHtml = perpsPartialHedgeButtonHtml(p);
         return `<article class="perps-mv3-card${sizeMismatch ? ' warn' : ''}">
             <div class="perps-mv3-head">
                 <div class="perps-mv3-icon">${makeLogo(p.symbol, false, 36)}</div>
@@ -38420,6 +38574,7 @@ function perpsRenderPortfolioPositionsV3(paired) {
                 </div>
             </div>
             ${warnHtml}
+            ${partialHedgeHtml}
             <div class="perps-mv3-legs">${displayLegs.map(entry => perpsMv3LegHtml(entry, p)).join('')}</div>
             <div class="perps-mv3-risk">
                 <div class="perps-mv3-risk-cell">
@@ -38634,6 +38789,7 @@ function perpsRenderPortfolioPositions(paired) {
         const sizeWarnHtml = sizeMismatch
             ? `<div class="perps-pos-size-warn" title="Not fully hedged — leg sizes differ">⚠ Size mismatch (not fully hedged): ${dashEsc(perpsPairSizeMismatchText(p))}</div>`
             : '';
+        const partialHedgeHtml = perpsPartialHedgeButtonHtml(p);
         return `<div class="perps-pos-card${sizeMismatch ? ' size-mismatch' : ''}"><div class="perps-pos-row">
             <div class="perps-pos-token">
                 <div class="perps-pos-token-row">
@@ -38646,6 +38802,7 @@ function perpsRenderPortfolioPositions(paired) {
                             <span class="perps-pos-live-px">${perpsFmtPx(midPx)}</span>
                         </div>
                         ${sizeWarnHtml}
+                        ${partialHedgeHtml}
                     </div>
                 </div>
             </div>
