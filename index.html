@@ -35583,6 +35583,28 @@ function perpsSeedSoloClosedPairsFromExchange(data, consumed = {}) {
             if (hClose && hClose < open) return false;
             return true;
         })) return true;
+        // A closed Variational hedge pair minted by the sanitize pass (which
+        // runs BEFORE this seeder) proves this round was hedged — e.g. ZRO's
+        // 94k HL short closed 07-31T23:04 while the hedge's final trackedSize
+        // (21k) no longer matches, but the Var pair (71k) closed at the exact
+        // same minute. Real hedged rounds must never surface as SOLO rows.
+        const PAIR_WINDOW_MS = 2 * 86400000;
+        if (Array.isArray(data?.closedPairs) && data.closedPairs.some((p) => {
+            if (!p || !p.closeTime) return false;
+            const pt = String(p.pairType || '');
+            const isVarPair = !!(p.manualVariationalClose || p.variationalHedgeId) ||
+                (/variational/i.test(pt) && !/exchange_only|_extended/i.test(pt));
+            if (!isVarPair) return false;
+            if (CR.toBaseSymbol(p.symbol) !== sym) return false;
+            const pairLeg = p.longLeg?.venue === leg.venue ? p.longLeg : (p.shortLeg?.venue === leg.venue ? p.shortLeg : null);
+            if (!pairLeg || pairLeg.side !== leg.side) return false;
+            const pClose = Number(p.closeTime || 0);
+            const pOpen = Number(p.openTime || 0);
+            if (Math.abs(pClose - close) > PAIR_WINDOW_MS) return false;
+            if (pOpen && open && pOpen > close) return false;
+            if (pClose && pClose < open) return false;
+            return true;
+        })) return true;
         return allLegs.some((other) => {
             if (other === leg || !other || other.venue === leg.venue) return false;
             if (CR.toBaseSymbol(other.symbol) !== sym) return false;
