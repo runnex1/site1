@@ -34890,6 +34890,39 @@ function perpsHasActivePartialHedge(symbol, venue) {
             : h.symbol === symbol && h.trackedVenue === venue));
 }
 
+/** The active partial (residual) hedge covering this symbol+venue, or null. */
+function perpsActivePartialHedgeFor(symbol, venue) {
+    const VH = window.VariationalHedge;
+    return (perpsLoadVariationalHedges() || []).find((h) => (
+        h.status !== 'closed'
+        && VH?.hedgeIsPartial?.(h)
+        && (VH?.variationalHedgeMatchKey
+            ? VH.variationalHedgeMatchKey(h.symbol, h.trackedVenue) === VH.variationalHedgeMatchKey(symbol, venue)
+            : h.symbol === symbol && h.trackedVenue === venue)
+    )) || null;
+}
+
+/** Effective uncovered residual of a mismatched pair after any active partial
+ *  (residual) Variational hedge. Null when no partial hedge applies. */
+function perpsEffectiveMismatchResidual(p) {
+    const partialInfo = perpsPartialHedgeInfo(p);
+    if (!partialInfo) return null;
+    const partialHedge = perpsActivePartialHedgeFor(p.symbol, partialInfo.venue);
+    if (!partialHedge) return null;
+    const VH = window.VariationalHedge;
+    const partial = Math.abs(Number(
+        VH?.hedgePartialSize?.(partialHedge) ?? partialHedge.partialSize ?? 0,
+    ));
+    const residual = Math.abs(Number(partialInfo.residualSize || 0));
+    return {
+        venue: partialInfo.venue,
+        partial,
+        residual,
+        uncovered: Math.max(0, residual - partial),
+        biggerSize: Math.abs(Number(partialInfo.fullSize || 0)),
+    };
+}
+
 /** Button markup to hedge the residual (unhedged) slice of a mismatched pair
  * with Variational. Empty string when the pair is fully hedged, already has an
  * active partial hedge, or no residual can be computed. */
@@ -37266,6 +37299,16 @@ function perpsPairHasSizeMismatch(p) {
             if (Math.abs(a - b) / Math.max(a, b) >= 0.001) return true;
         }
     }
+    // An active partial (residual) hedge covers part of the bigger leg — only the
+    // still-uncovered slice is a real mismatch (e.g. MEGA 640k HL + 400k Var covers
+    // a 1,040k Nado leg fully; no warning should show).
+    const residual = perpsEffectiveMismatchResidual(p);
+    if (residual) {
+        const uncoveredPct = residual.biggerSize > 0
+            ? (residual.uncovered / residual.biggerSize) * 100
+            : 100;
+        return uncoveredPct >= 0.1;
+    }
     if (!p?.alerts?.includes('size_mismatch')) return false;
     const pct = Number(p.sizeMismatchPct);
     if (Number.isFinite(pct)) return pct >= 0.1;
@@ -37273,6 +37316,15 @@ function perpsPairHasSizeMismatch(p) {
 }
 
 function perpsPairSizeMismatchText(p) {
+    // When a partial hedge covers the residual, show the effective uncovered slice.
+    const residual = perpsEffectiveMismatchResidual(p);
+    if (residual) {
+        const legs = perpsPairLegs(p);
+        const bigger = legs.a.venue === residual.venue ? legs.a : legs.b;
+        const smaller = legs.a.venue === residual.venue ? legs.b : legs.a;
+        const uncovered = perpsFmtSize(residual.uncovered);
+        return `${uncovered} ${perpsVenueShort(bigger.venue)} uncovered vs ${perpsFmtSize(Math.abs(Number(smaller.size || 0)))} ${perpsVenueShort(smaller.venue)}`;
+    }
     const legs = perpsPairLegs(p);
     const aVenue = perpsVenueShort(legs.a.venue);
     const bVenue = perpsVenueShort(legs.b.venue);
