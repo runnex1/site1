@@ -176,6 +176,34 @@ function mergeVariationalHedgeRows(existing, incoming) {
     : merged;
 }
 
+function closedPairMergeKey(pair) {
+  return `${pair?.symbol}|${Number(pair?.closeTime) || 0}|${pair?.longLeg?.venue || ''}|${pair?.shortLeg?.venue || ''}`;
+}
+
+const CLOSED_PAIR_RETENTION_MS = 30 * 86400000;
+
+function pruneClosedPairRowsByAge(pairs) {
+  const nowMs = Date.now();
+  return (Array.isArray(pairs) ? pairs : []).filter((p) => {
+    const ct = Number(p?.closeTime || 0);
+    return ct > 0 && nowMs - ct <= CLOSED_PAIR_RETENTION_MS;
+  });
+}
+
+function mergeClosedPairRows(existing, incoming, deletedKeys = []) {
+  const deleted = new Set((deletedKeys || []).map((k) => String(k)));
+  const byKey = new Map((existing || []).map((p) => [closedPairMergeKey(p), p]));
+  for (const pair of incoming || []) {
+    const key = closedPairMergeKey(pair);
+    if (!key || key.startsWith('|')) continue;
+    byKey.set(key, { ...byKey.get(key), ...pair });
+  }
+  const merged = [...byKey.values()]
+    .filter((p) => !deleted.has(closedPairMergeKey(p)))
+    .sort((a, b) => (Number(b?.closeTime) || 0) - (Number(a?.closeTime) || 0));
+  return pruneClosedPairRowsByAge(merged);
+}
+
 function variationalSettlementFreezeQuality(row) {
   if (!row?.frozen) return 0;
   const corruptZero = Number(row.rate) === 0
@@ -1045,19 +1073,27 @@ module.exports = async function handler(req, res) {
         const perpsSnapshots = parseJson(await kvGet('vault:perps_snapshots'), {});
         return res.status(200).json({ ok: true, perpsSnapshots });
       }
+      if (req.query?.perpsClosedPairs === '1') {
+        const perpsClosedPairs = pruneClosedPairRowsByAge(parseJson(await kvGet('vault:perps_closed_pairs'), []));
+        await kvSet('vault:perps_closed_pairs', JSON.stringify(perpsClosedPairs));
+        return res.status(200).json({ ok: true, perpsClosedPairs });
+      }
       if (req.query?.perpsAux === '1') {
         const savedConfig = parseJson(await kvGet('vault:perps_config'), {});
         const grvtSubAccount = String(
           savedConfig.grvtSubAccount || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
         ).trim();
-        const [perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsVariationalSettlementsRaw, perpsVariationalRateSamplesRaw, grvtStateRaw, perpsDailyFundRaw] = await Promise.all([
+        const [perpsSnapshotsRaw, perpsVariationalHedgesRaw, perpsVariationalSettlementsRaw, perpsVariationalRateSamplesRaw, grvtStateRaw, perpsDailyFundRaw, perpsClosedPairsRaw, perpsClosedPairDeletedRaw] = await Promise.all([
           kvGet('vault:perps_snapshots'),
           kvGet('vault:perps_variational_hedges'),
           kvGet('vault:perps_variational_settlements'),
           kvGet('vault:perps_variational_rate_samples'),
           grvtSubAccount ? kvGet(`vault:grvt_state:${grvtSubAccount}`) : null,
           kvGet('vault:perps_daily_fund_cache'),
+          kvGet('vault:perps_closed_pairs'),
+          kvGet('vault:perps_closed_pairs_deleted'),
         ]);
+        const perpsClosedPairs = pruneClosedPairRowsByAge(parseJson(perpsClosedPairsRaw, []));
         return res.status(200).json({
           ok: true,
           perpsSnapshots: parseJson(perpsSnapshotsRaw, {}),
@@ -1066,6 +1102,8 @@ module.exports = async function handler(req, res) {
           perpsVariationalRateSamples: parseJson(perpsVariationalRateSamplesRaw, {}),
           grvtStateCache: parseJson(grvtStateRaw, null),
           perpsDailyFundCache: parseJson(perpsDailyFundRaw, null),
+          perpsClosedPairs,
+          perpsClosedPairDeletedKeys: parseJson(perpsClosedPairDeletedRaw, []),
         });
       }
       if (req.query?.loopSnapshots === '1') {
@@ -1415,6 +1453,22 @@ module.exports = async function handler(req, res) {
       const merged = mergeVariationalHedgeRows(existing, body.perpsVariationalHedges);
       await kvSet('vault:perps_variational_hedges', JSON.stringify(merged));
       saved.perpsVariationalHedges = true;
+    }
+    if (Array.isArray(body.perpsClosedPairs) && body.perpsClosedPairs.length) {
+      const existing = parseJson(await kvGet('vault:perps_closed_pairs'), []);
+      const deletedKeys = parseJson(await kvGet('vault:perps_closed_pairs_deleted'), []);
+      const merged = mergeClosedPairRows(existing, body.perpsClosedPairs, deletedKeys);
+      await kvSet('vault:perps_closed_pairs', JSON.stringify(merged));
+      saved.perpsClosedPairs = true;
+    }
+    if (Array.isArray(body.perpsClosedPairDeletedKeys) && body.perpsClosedPairDeletedKeys.length) {
+      const existingDeleted = new Set(parseJson(await kvGet('vault:perps_closed_pairs_deleted'), []));
+      for (const key of body.perpsClosedPairDeletedKeys) existingDeleted.add(String(key));
+      await kvSet('vault:perps_closed_pairs_deleted', JSON.stringify([...existingDeleted]));
+      const existing = parseJson(await kvGet('vault:perps_closed_pairs'), []);
+      const merged = mergeClosedPairRows(existing, [], [...existingDeleted]);
+      await kvSet('vault:perps_closed_pairs', JSON.stringify(merged));
+      saved.perpsClosedPairs = true;
     }
     if (body.perpsVariationalSettlements && typeof body.perpsVariationalSettlements === 'object'
       && Object.keys(body.perpsVariationalSettlements).length) {

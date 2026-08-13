@@ -11072,6 +11072,7 @@ const PERPS_SESSION_KEY = 'vault-perps-wallets-session';
 const PERPS_SNAPSHOTS_KEY = 'vault-perps-snapshots';
 const PERPS_VARIATIONAL_HEDGES_KEY = 'vault-perps-variational-hedges';
 const PERPS_VARIATIONAL_SETTLEMENTS_KEY = 'vault-perps-variational-settlements';
+const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pairs';
 const PERPS_VARIATIONAL_RATE_SAMPLES_KEY = 'vault-perps-variational-rate-samples';
 const PERPS_DAILY_FUND_CACHE_KEY = 'vault-perps-daily-fund-cache';
 const PERPS_GRVT_STATE_CACHE_KEY = 'vault-grvt-state-cache';
@@ -33283,6 +33284,31 @@ async function perpsHydratePerpsAuxFromCloud() {
             const localFund = perpsLoadDailyFundCache();
             if (localFund?.series?.length) await perpsPushDailyFundCacheToServer(localFund);
         }
+        if (Array.isArray(body?.perpsClosedPairs) && body.perpsClosedPairs.length) {
+            perpsMergeClosedPairsFromServer(body.perpsClosedPairs);
+            changed = true;
+        } else if (Array.isArray(body?.perpsClosedPairs)) {
+            const localPairs = perpsLoadClosedPairsRaw();
+            if (localPairs.length) await perpsPushClosedPairsToServer(localPairs);
+        }
+        if (Array.isArray(body?.perpsClosedPairDeletedKeys) && body.perpsClosedPairDeletedKeys.length) {
+            const serverDeleted = new Set(body.perpsClosedPairDeletedKeys.map((k) => String(k)));
+            const localDeleted = perpsLoadClosedDeletedKeys();
+            let deletedChanged = false;
+            for (const k of serverDeleted) {
+                if (!localDeleted.has(k)) {
+                    localDeleted.add(k);
+                    deletedChanged = true;
+                }
+            }
+            if (deletedChanged) {
+                perpsSaveClosedDeletedKeys(localDeleted);
+                perpsPersistClosedPairs(perpsLoadClosedPairsRaw());
+            }
+        } else {
+            const localDeleted = perpsLoadClosedDeletedKeys();
+            if (localDeleted.size) await perpsPushClosedPairDeletedKeysToServer(localDeleted);
+        }
         return changed;
     } catch (e) {
         return false;
@@ -33854,6 +33880,14 @@ function perpsMergeVariationalHedgesFromServer(serverRows) {
     const merged = [...byKey.values()].sort((a, b) => (b.openedAt || 0) - (a.openedAt || 0));
     if (changed) perpsPersistVariationalHedges(merged, { skipCloudSync: true });
     perpsReapplyVariationalHedgesIfMounted();
+    return merged;
+}
+
+function perpsMergeClosedPairsFromServer(serverRows) {
+    const incoming = Array.isArray(serverRows) ? serverRows : [];
+    const local = perpsLoadClosedPairsRaw();
+    const merged = perpsCacheNewClosedPairs([...local, ...incoming]);
+    if (merged.length) perpsPersistClosedPairs(merged, { skipCloudSync: true });
     return merged;
 }
 
@@ -34984,10 +35018,76 @@ function perpsInMemoryClosedPairKey(pair) {
     return `${symbol}|${closeTime}|${longVenue}|${shortVenue}`;
 }
 
-// Closed-tab computation is disabled (remade separately) — no localStorage /
-// cloud persistence. closedPairs only flows in-memory so Live features that
-// read it (variational funding events, hedge repair) keep working.
+// Closed pairs are persisted (localStorage + cloud) so closed positions
+// survive refresh even when the originating hedge is pruned (30d retention)
+// or the exchange history no longer covers the session. Deleted rows are
+// excluded via perpsLoadClosedDeletedKeys on every load/merge.
 const PERPS_CLOSED_DELETED_KEY = 'vault-perps-closed-deleted';
+const PERPS_CLOSED_PAIR_RETENTION_MS = 30 * 86400000;
+let _perpsClosedPairsMem = null;
+let _perpsClosedPairsPushTimer = null;
+function perpsPruneClosedPairsByAge(pairs) {
+    const nowMs = Date.now();
+    return (Array.isArray(pairs) ? pairs : []).filter((p) => {
+        const ct = Number(p?.closeTime || 0);
+        return ct > 0 && nowMs - ct <= PERPS_CLOSED_PAIR_RETENTION_MS;
+    });
+}
+function perpsLoadClosedPairsRaw() {
+    if (Array.isArray(_perpsClosedPairsMem)) return _perpsClosedPairsMem.slice();
+    try {
+        const rows = JSON.parse(localStorage.getItem(PERPS_CLOSED_PAIRS_KEY) || '[]');
+        _perpsClosedPairsMem = Array.isArray(rows) ? rows : [];
+        return _perpsClosedPairsMem.slice();
+    } catch (e) {
+        _perpsClosedPairsMem = [];
+        return [];
+    }
+}
+function perpsPersistClosedPairs(rows, opts = {}) {
+    const list = perpsPruneClosedPairsByAge(perpsCacheNewClosedPairs(Array.isArray(rows) ? rows : []));
+    _perpsClosedPairsMem = list.slice();
+    try {
+        localStorage.setItem(PERPS_CLOSED_PAIRS_KEY, JSON.stringify(list));
+    } catch (e) { /* quota — keep memory copy */ }
+    if (!opts.skipCloudSync && list.length) {
+        clearTimeout(_perpsClosedPairsPushTimer);
+        _perpsClosedPairsPushTimer = setTimeout(() => {
+            perpsPushClosedPairsToServer(list);
+        }, 3000);
+    }
+    return list;
+}
+async function perpsPushClosedPairsToServer(rows) {
+    const list = Array.isArray(rows) ? rows : perpsLoadClosedPairsRaw();
+    if (!list.length || location.protocol === 'file:') return false;
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ perpsClosedPairs: list }),
+            keepalive: true,
+        });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
+}
+async function perpsPushClosedPairDeletedKeysToServer(keys) {
+    const list = Array.isArray(keys) ? keys : [...perpsLoadClosedDeletedKeys()];
+    if (!list.length || location.protocol === 'file:') return false;
+    try {
+        const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ perpsClosedPairDeletedKeys: list }),
+            keepalive: true,
+        });
+        return res.ok;
+    } catch (e) {
+        return false;
+    }
+}
 function perpsLoadClosedDeletedKeys() {
     try { return new Set(JSON.parse(localStorage.getItem(PERPS_CLOSED_DELETED_KEY) || '[]')); }
     catch (e) { return new Set(); }
@@ -35055,6 +35155,8 @@ function perpsDeleteClosedPair(key) {
     if (_perpsLastData && Array.isArray(_perpsLastData.closedPairs)) {
         _perpsLastData.closedPairs = _perpsLastData.closedPairs.filter((p) => perpsInMemoryClosedPairKey(p) !== key);
     }
+    try { perpsPersistClosedPairs(_perpsLastData?.closedPairs || perpsLoadClosedPairsRaw()); } catch (e) { /* ignore */ }
+    perpsPushClosedPairDeletedKeysToServer(deleted);
     if (_perpsPositionsTab === 'closed') perpsRenderPositionsPanel(_perpsLastData);
 }
 
@@ -39914,7 +40016,10 @@ function perpsRenderDashboard(data, opts = {}) {
         if (document.body.dataset.activeTab === 'overview') {
             renderDashboardPnlAttribution(true);
         }
-        data.closedPairs = perpsCacheNewClosedPairs(data.closedPairs || []);
+        data.closedPairs = perpsCacheNewClosedPairs([
+            ...(perpsLoadClosedPairsRaw() || []),
+            ...(data.closedPairs || []),
+        ]);
         perpsAttachRealizedPnlByVenue(data);
         const seededRes = perpsSeedHlExtendedClosedPairsFromExchange(data);
         const seeded = Array.isArray(seededRes) ? seededRes : (seededRes?.pairs || []);
@@ -39958,6 +40063,9 @@ function perpsRenderDashboard(data, opts = {}) {
             grvtUsed: grvtConsumed.grvtUsed,
         });
         if (seededSolo.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededSolo]);
+        try {
+            perpsPersistClosedPairs([...perpsLoadClosedPairsRaw(), ...(data.closedPairs || [])]);
+        } catch (e) { /* non-fatal */ }
         const snapshotAdded = perpsSaveSnapshot(data);
         data._equitySeriesRaw = { ...perpsBuildEquitySeries(data), fetchedAt: data.fetchedAt };
         data._equitySeries = data._equitySeriesRaw;
