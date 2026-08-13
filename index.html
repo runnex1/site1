@@ -38050,6 +38050,18 @@ function perpsPairHasSizeMismatch(p) {
             if (Math.abs(a - b) / Math.max(a, b) >= 0.001) return true;
         }
     }
+    // hl_nado pairs: after slice attribution nadoSize is the residual (full leg
+    // minus the Variational slice), so compare the adjusted sizes directly —
+    // a stale server alert computed from the full leg must not re-flag a pair
+    // that is now fully covered.
+    if (p.pairType === 'hl_nado') {
+        const a = Math.abs(Number(p.hlSize || 0));
+        const b = Math.abs(Number(p.nadoSize || 0));
+        if (a > 0 && b > 0) {
+            if (Math.abs(a - b) / Math.max(a, b) >= 0.001) return true;
+            return false;
+        }
+    }
     // An active partial (residual) hedge covers part of the bigger leg — only the
     // still-uncovered slice is a real mismatch (e.g. MEGA 640k HL + 400k Var covers
     // a 1,040k Nado leg fully; no warning should show).
