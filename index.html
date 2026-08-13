@@ -1034,6 +1034,10 @@ body[data-active-tab="perps"] .topbar,
 .perps-pos-legs { display:flex; flex-direction:column; gap:0.35rem; }
 .perps-pos-leg { display:flex; align-items:center; justify-content:space-between; font-family:var(--ff-mono); font-size:0.68rem; }
 .perps-pos-leg-venue { color:#9dacbb; text-transform:capitalize; }
+.perps-pos-leg-pnl { display:inline-flex; align-items:center; gap:0.3rem; }
+.perps-pos-leg-net { border-top:1px dashed rgba(134,159,179,0.18); padding-top:0.3rem; margin-top:0.1rem; }
+.perps-pos-leg-net-label { font-size:0.6rem; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; color:#7f8f9f; }
+.perps-upnl-est { display:inline-flex; align-items:center; font-family:var(--ff-mono); font-size:0.5rem; font-weight:800; letter-spacing:0.05em; color:#ffc857; border:1px solid rgba(255,200,87,0.35); border-radius:4px; padding:0.05rem 0.3rem; background:rgba(255,200,87,0.08); vertical-align:middle; }
 .perps-pos-metric { min-width:0; }
 .perps-pos-metric-label { font-family:var(--ff-mono); font-size:0.52rem; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:#7f8f9f; white-space:nowrap; }
 .perps-pos-head > div { white-space:nowrap; }
@@ -8010,6 +8014,7 @@ body[data-active-tab="loops"] .page-content,
   .perps-mv3-val { font-weight: 800; font-size: 12px; color: #eef4fb; }
   .perps-mv3-val.pos { color: #55d66f; }
   .perps-mv3-val.neg { color: #ff5c7a; }
+  .perps-mv3-leg-net { border-top: 1px dashed rgba(134, 159, 179, 0.18); margin-top: 2px; }
   .perps-mv3-grid2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -38820,8 +38825,9 @@ function perpsMv3LegHtml(entry, p) {
     const side = Number(entry.leg.size) >= 0 ? 'long' : 'short';
     const label = perpsVenueLabel(entry.venue);
     const upnlCls = entry.leg.upnl != null ? perpsSignedCls(entry.leg.upnl) : '';
+    const upnlEst = entry.leg.upnlEstimated ? ' ' + perpsUpnlEstBadgeHtml() : '';
     const upnlVal = entry.leg.upnl != null ? perpsFmtUsd(entry.leg.upnl) : '—';
-    return `<div class="perps-mv3-leg"><span><span class="perps-mv3-badge ${side}">${side === 'long' ? 'L' : 'S'}</span>${dashEsc(label)}</span><span class="perps-mv3-val ${upnlCls}">${upnlVal}</span></div>`;
+    return `<div class="perps-mv3-leg"><span><span class="perps-mv3-badge ${side}">${side === 'long' ? 'L' : 'S'}</span>${dashEsc(label)}</span><span class="perps-mv3-val ${upnlCls}">${upnlVal}${upnlEst}</span></div>`;
 }
 
 function perpsRenderPortfolioPositionsV3(paired) {
@@ -38865,7 +38871,11 @@ function perpsRenderPortfolioPositionsV3(paired) {
             </div>
             ${warnHtml}
             ${partialHedgeHtml}
-            <div class="perps-mv3-legs">${displayLegs.map(entry => perpsMv3LegHtml(entry, p)).join('')}</div>
+            <div class="perps-mv3-legs">${displayLegs.map(entry => perpsMv3LegHtml(entry, p)).join('')}${(() => {
+                const net = Number(p.combinedUpnl);
+                if (!Number.isFinite(net) || p.crossLegB?.venue !== 'variational') return '';
+                return `<div class="perps-mv3-leg perps-mv3-leg-net" title="Net basis = sum of both legs (spread only, before funding/fees)"><span>Net basis</span><span class="perps-mv3-val">${perpsFmtEstUsd(net)}</span></div>`;
+            })()}</div>
             <div class="perps-mv3-risk">
                 <div class="perps-mv3-risk-cell">
                     <div class="perps-mv3-risk-label">Liq price</div>
@@ -39099,8 +39109,14 @@ function perpsRenderPortfolioPositions(paired) {
             <div class="perps-pos-legs">
                 ${displayLegs.map(entry => {
                     const fundEst = entry.leg.fundingEstimated ? ' ~est.' : '';
-                    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="perps-pos-metric-val ${entry.leg.upnl != null ? perpsSignedCls(entry.leg.upnl) : ''}">${entry.leg.upnl != null ? perpsFmtUsd(entry.leg.upnl) : '—'}</span></div>`;
+                    const upnlEst = entry.leg.upnlEstimated ? ' ' + perpsUpnlEstBadgeHtml() : '';
+                    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="perps-pos-leg-pnl">${entry.leg.upnl != null ? `<span class="perps-pos-metric-val ${perpsSignedCls(entry.leg.upnl)}">${perpsFmtUsd(entry.leg.upnl)}</span>${upnlEst}` : '<span class="perps-pos-metric-val">—</span>'}</span></div>`;
                 }).join('')}
+                ${(() => {
+                    const net = Number(p.combinedUpnl);
+                    if (!Number.isFinite(net) || p.crossLegB?.venue !== 'variational') return '';
+                    return `<div class="perps-pos-leg perps-pos-leg-net" title="Net basis = sum of both legs (spread only, before funding/fees)"><span class="perps-pos-leg-venue"><span class="perps-pos-leg-net-label">Net basis</span></span><span class="perps-pos-leg-pnl">${perpsFmtEstUsd(net)}</span></div>`;
+                })()}
             </div>
             ${perpsPositionLiqStackHtml(p, displayLegs)}
             ${perpsPositionTpSlStackHtml(p, displayLegs)}
@@ -39539,6 +39555,7 @@ function perpsPairLegs(p) {
                 size: p.crossLegA.size,
                 entry: p.crossLegA.entryPx,
                 upnl: p.crossLegA.unrealizedPnl,
+                upnlEstimated: p.crossLegA.upnlEstimated === true || p.crossLegA.variationalUpnlOffset === true,
                 funding: p.legAFundingSinceOpen,
                 markPx: p.crossLegA.markPx,
                 liquidationPx: p.crossLegA.liquidationPx,
@@ -39551,6 +39568,7 @@ function perpsPairLegs(p) {
                 size: p.crossLegB.size,
                 entry: p.crossLegB.entryPx,
                 upnl: p.crossLegB.unrealizedPnl,
+                upnlEstimated: p.crossLegB.upnlEstimated === true || p.crossLegB.variationalUpnlOffset === true,
                 funding: p.legBFundingSinceOpen,
                 markPx: p.crossLegB.markPx,
                 liquidationPx: p.crossLegB.liquidationPx,
@@ -39812,6 +39830,10 @@ function perpsPositionTpSlStackHtml(p, displayLegs) {
 function perpsSideBadgeHtml(size) {
     const side = Number(size) >= 0 ? 'long' : 'short';
     return `<span class="perps-side-badge ${side}">${side === 'long' ? 'L' : 'S'}</span>`;
+}
+
+function perpsUpnlEstBadgeHtml() {
+    return `<span class="perps-upnl-est" title="Estimated — Variational has no positions API; derived from the tracked leg (mirror + adverse slip) or fill-vs-mark">EST</span>`;
 }
 
 function perpsVenueWithSideHtml(venue, size) {
