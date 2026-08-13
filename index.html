@@ -38036,7 +38036,11 @@ function perpsSaveDailyFundCache(series, fetchedAt) {
 
 function perpsPairHasSizeMismatch(p) {
     const VH = window.VariationalHedge;
-    if (p?.crossLegA && p?.crossLegB && VH?.variationalPairHasSizeMismatch) {
+    // Var-specific size check applies ONLY to real Variational pairs. For
+    // hl_nado pairs crossLegA/B are the raw exchange legs, and resolving a
+    // partial hedge here would compare the HL leg against the partial hedge's
+    // Var slice (640k vs 550k) — a false mismatch on a fully covered pair.
+    if (VH?.isVariationalPair?.(p) && p?.crossLegA && p?.crossLegB && VH?.variationalPairHasSizeMismatch) {
         const trackedLeg = p.crossLegA?.venue === 'variational' ? p.crossLegB : p.crossLegA;
         const varLeg = p.crossLegA?.venue === 'variational' ? p.crossLegA : p.crossLegB;
         const hedge = perpsResolveVariationalHedge(p);
@@ -38079,6 +38083,22 @@ function perpsPairHasSizeMismatch(p) {
 }
 
 function perpsPairSizeMismatchText(p) {
+    // hl_nado pairs: after slice attribution nadoSize is already the residual
+    // (full leg minus the Variational slice), so the pair-local residual math
+    // would subtract the hedge a second time and report 0. Report the direct
+    // size difference instead (the truly uncovered slice).
+    if (p.pairType === 'hl_nado') {
+        const a = Math.abs(Number(p.hlSize || 0));
+        const b = Math.abs(Number(p.nadoSize || 0));
+        if (a > 0 && b > 0) {
+            const diff = Math.abs(a - b);
+            if (diff / Math.max(a, b) >= 0.001) {
+                const biggerVenue = b > a ? 'Nado' : 'HL';
+                const smallerVenue = biggerVenue === 'Nado' ? 'HL' : 'Nado';
+                return `${perpsFmtSize(diff)} ${perpsVenueShort(biggerVenue)} uncovered vs ${perpsFmtSize(Math.min(a, b))} ${perpsVenueShort(smallerVenue)}`;
+            }
+        }
+    }
     // When a partial hedge covers the residual, show the effective uncovered slice.
     const residual = perpsEffectiveMismatchResidual(p);
     if (residual) {
