@@ -34838,15 +34838,21 @@ function perpsHedgePartialWithVariational(symbol, venue, residualSize) {
                 alert('No residual to hedge — the pair is already fully hedged.');
                 return;
             }
-            const hedge = VH.createPartialHedgeFromLeg(leg, partial, null);
+            // Extend any active partial hedge already covering this slice — never
+            // shrink it. The replacement hedge covers existing partial coverage
+            // PLUS the newly requested uncovered remainder.
+            const existingHedge = perpsActivePartialHedgeFor(symbol, venue);
+            const existingPartial = Math.abs(Number(
+                existingHedge ? (VH?.hedgePartialSize?.(existingHedge) ?? existingHedge.partialSize ?? 0) : 0,
+            ));
+            const hedge = VH.createPartialHedgeFromLeg(leg, existingPartial + partial, null);
             if (!hedge) {
                 alert('Could not create the partial hedge (residual must be smaller than the full leg).');
                 return;
             }
-            // Replace any active partial hedge already covering the same residual slice.
+            // Replace the previous hedge for this slice with the extended one.
             const hedges = perpsLoadVariationalHedges().filter((h) => !(
                 h.status !== 'closed'
-                && VH.hedgeIsPartial?.(h)
                 && (VH.variationalHedgeMatchKey
                     ? VH.variationalHedgeMatchKey(h.symbol, h.trackedVenue) === VH.variationalHedgeMatchKey(symbol, venue)
                     : h.symbol === symbol && h.trackedVenue === venue)
@@ -34963,17 +34969,25 @@ function perpsEffectiveMismatchResidual(p) {
 }
 
 /** Button markup to hedge the residual (unhedged) slice of a mismatched pair
- * with Variational. Empty string when the pair is fully hedged, already has an
- * active partial hedge, or no residual can be computed. */
+ * with Variational. Empty string when the pair is fully hedged or no residual
+ * can be computed. An existing partial hedge that only covers part of the
+ * residual does NOT suppress the button — it offers to hedge the still-uncovered
+ * remainder (the action extends the existing hedge). */
 function perpsPartialHedgeButtonHtml(p) {
     if (!p || perpsPairHasSizeMismatch(p) !== true) return '';
     const VH = window.VariationalHedge;
     if (VH?.isVariationalPair?.(p)) return '';
     const partialInfo = perpsPartialHedgeInfo(p);
     if (!partialInfo || !(Number(partialInfo.residualSize) > 0)) return '';
-    if (perpsHasActivePartialHedge(p.symbol, partialInfo.venue)) return '';
-    const sizeLabel = `${perpsFmtSize(partialInfo.residualSize)} ${partialInfo.venueLabel}`;
-    return `<button type="button" class="perps-btn secondary perps-hedge-partial-btn" data-perps-hedge-partial-variational data-symbol="${dashEsc(p.symbol)}" data-venue="${dashEsc(partialInfo.venue)}" data-residual-size="${partialInfo.residualSize}">Hedge partial with Variational (${dashEsc(sizeLabel)})</button>`;
+    // Effective still-uncovered slice after any active partial hedge — the
+    // button hedges the uncovered remainder, not the full pair-local residual.
+    const effective = perpsEffectiveMismatchResidual(p);
+    const residualSize = effective && Number(effective.uncovered) > 0
+        ? Number(effective.uncovered)
+        : Number(partialInfo.residualSize);
+    if (!Number.isFinite(residualSize) || residualSize <= 0) return '';
+    const sizeLabel = `${perpsFmtSize(residualSize)} ${partialInfo.venueLabel}`;
+    return `<button type="button" class="perps-btn secondary perps-hedge-partial-btn" data-perps-hedge-partial-variational data-symbol="${dashEsc(p.symbol)}" data-venue="${dashEsc(partialInfo.venue)}" data-residual-size="${residualSize}">Hedge partial with Variational (${dashEsc(sizeLabel)})</button>`;
 }
 
 function perpsEditVariationalEntry(hedgeId) {
