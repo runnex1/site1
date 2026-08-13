@@ -35570,7 +35570,121 @@ function perpsSeedPartialClosePairsFromExchange(data) {
         });
     }
 
-    return seeded;
+    // Pair opposite-side PARTIAL sessions across venues into a single hedged
+    // card when their lifetimes overlap and their close times are close.
+    // Without this, a hedged round like XLM (Extended short 150,400 closed
+    // 08-11T16:04:53 + Phoenix long 165,000 closed 08-11T16:04:49 — 4s apart)
+    // or RENDER (Phoenix long 17,500 + HL short 17,500 — 20s apart) renders as
+    // two SOLO cards even though the two legs closed as one round. Pairing
+    // mirrors the HL+Extended / HL+GRVT seeds: opposite sides, same base
+    // symbol, overlapping lifetime, close within PAIR_WINDOW_MS. Only legs
+    // from DIFFERENT venues are eligible (a venue can't hedge against itself).
+    const PAIR_WINDOW_MS = 2 * 86400000;
+    const bySym = new Map(); // symbol -> [{ row }] (both sides)
+    for (const row of seeded) {
+        if (row?.pairType !== 'exchange_only' || row?.partialClose !== true) continue;
+        const sym = CR.toBaseSymbol(row.symbol);
+        if (!sym) continue;
+        const rec = bySym.get(sym) || [];
+        rec.push(row);
+        bySym.set(sym, rec);
+    }
+    const pairedRows = new Set();
+    const seededPairs = [];
+    for (const [sym, rows] of bySym) {
+        const longs = rows.filter((r) => r.longLeg);
+        const shorts = rows.filter((r) => r.shortLeg);
+        // Greedy closest-close matching, like the HL+Extended seeder: pair the
+        // long/short rows whose close times are nearest first so each row is
+        // consumed at most once and the tightest round wins.
+        const candidates = [];
+        for (const longRow of longs) {
+            for (const shortRow of shorts) {
+                if (longRow === shortRow) continue;
+                const longVenue = longRow.longLeg.venue;
+                const shortVenue = shortRow.shortLeg.venue;
+                if (!longVenue || !shortVenue || longVenue === shortVenue) continue;
+                const lo = Number(longRow.openTime || 0);
+                const so = Number(shortRow.openTime || 0);
+                const lc = Number(longRow.closeTime || 0);
+                const sc = Number(shortRow.closeTime || 0);
+                if (!lo || !so || !lc || !sc) continue;
+                // Lifetime overlap: either leg's open/close falls inside the other's span.
+                if (!(lo <= sc && lc >= so)) continue;
+                const diff = Math.abs(lc - sc);
+                if (diff > PAIR_WINDOW_MS) continue;
+                candidates.push({ longRow, shortRow, longVenue, shortVenue, diff, lc, sc, lo, so });
+            }
+        }
+        candidates.sort((a, b) => a.diff - b.diff);
+        for (const c of candidates) {
+            if (pairedRows.has(c.longRow) || pairedRows.has(c.shortRow)) continue;
+            pairedRows.add(c.longRow);
+            pairedRows.add(c.shortRow);
+            const closeTime = Math.max(c.lc, c.sc);
+            const openTime = Math.min(c.lo, c.so);
+            const longLeg = c.longRow.longLeg;
+            const shortLeg = c.shortRow.shortLeg;
+            const slip = (Number(longLeg.realizedPnl) || 0) + (Number(shortLeg.realizedPnl) || 0);
+            const funding = (Number(c.longRow.funding) || 0) + (Number(c.shortRow.funding) || 0);
+            const fees = Math.abs(Number(c.longRow.fees) || 0) + Math.abs(Number(c.shortRow.fees) || 0);
+            const pairLabel = `${perpsVenueShortLabel(c.longVenue)} + ${perpsVenueShortLabel(c.shortVenue)}`;
+            seededPairs.push({
+                symbol: sym,
+                pairType: 'cross_exchange',
+                pairLabel,
+                exchangeOnly: false,
+                partialClose: true,
+                size: Math.min(Math.abs(Number(longLeg.size || 0)), Math.abs(Number(shortLeg.size || 0)))
+                    || Math.abs(Number(longLeg.size || 0)),
+                openTime,
+                closeTime,
+                longLeg,
+                shortLeg,
+                closeSlippage: slip,
+                funding,
+                fees,
+                netPnl: slip + funding - fees,
+                sessionStartDay: sessionDay(openTime) || null,
+                sessionEndDay: sessionDay(closeTime) || null,
+                sessionDayCount: 1,
+            });
+        }
+    }
+
+    // Emit the paired hedged cards first; skip the rows they consumed so the
+    // same round never shows as both a hedged card and a SOLO card.
+    return [...seededPairs, ...seeded.filter((row) => !pairedRows.has(row))];
+}
+
+// Group key for a partial-close row: venue|baseSymbol|side|sessionStartDay.
+// Persisted rows may carry EMPTY leg objects ({}) for the absent side, so the
+// side is derived from which leg has a venue, never from leg truthiness.
+function perpsPartialGroupKey(pair) {
+    const v = pair?.longLeg?.venue || pair?.shortLeg?.venue || '';
+    const sym = String(pair?.symbol || '').trim().toUpperCase();
+    const side = pair?.longLeg?.venue ? 'long' : (pair?.shortLeg?.venue ? 'short' : '');
+    return `${v}|${sym}|${side}|${pair?.sessionStartDay || ''}`;
+}
+
+// Rows consumed by a seeded cross-exchange partial pair (both legs belong to
+// one hedged round) — used to retire the old single-venue SOLO rows. The old
+// SOLO rows keep their own sessionStartDay (per-leg open day), so the consumed
+// keys are derived from each LEG's sessionStartDay (or its own openTime), not
+// from the pair's min-open day — otherwise a leg that opened on a different
+// day than its partner would never match and its SOLO row would resurrect.
+function perpsPartialCrossExchangeGroupKeys(pair) {
+    if (pair?.pairType !== 'cross_exchange' || !pair?.longLeg?.venue || !pair?.shortLeg?.venue) return [];
+    const sym = String(pair?.symbol || '').trim().toUpperCase();
+    const legDay = (leg) => {
+        const d = leg?.sessionStartDay
+            || (leg?.openTime ? new Date(Number(leg.openTime)).toISOString().slice(0, 10) : '');
+        return d || pair?.sessionStartDay || '';
+    };
+    return [
+        `${pair.longLeg.venue}|${sym}|long|${legDay(pair.longLeg)}`,
+        `${pair.shortLeg.venue}|${sym}|short|${legDay(pair.shortLeg)}`,
+    ];
 }
 
 /**
@@ -38789,7 +38903,7 @@ function perpsRenderClosedPositionsV3(closedPairs) {
         const closedAt = pair.closeTime
             ? new Date(pair.closeTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
             : '—';
-        const meta = `${perpsFmtSize(pair.size)} · ${dashEsc(pair.pairLabel || (pair.exchangeOnly ? 'Exchange' : 'HL + Nado'))} · closed ${dashEsc(closedAt)}`;
+        const meta = `${perpsFmtSize(pair.size)} · ${dashEsc(pair.pairLabel || (pair.exchangeOnly ? 'Exchange' : (pair.pairType === 'cross_exchange' ? 'Cross-exchange' : 'HL + Nado')))} · closed ${dashEsc(closedAt)}`;
         return `<article class="perps-mv3-card">
             <div class="perps-mv3-head">
                 <div class="perps-mv3-icon">${makeLogo(pair.symbol, false, 36)}</div>
@@ -39382,7 +39496,7 @@ function perpsRenderClosedPositions(closedPairs) {
                     ${makeLogo(pair.symbol, false, 36)}
                     <div>
                         <div class="perps-pos-token-name">${dashEsc(pair.symbol)}</div>
-                        <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}${pair.exchangeOnly ? ` · ${dashEsc(pair.pairLabel || 'Exchange')}` : ''}</div>
+                        <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}${pair.pairLabel && (pair.exchangeOnly || pair.pairType === 'cross_exchange') ? ` · ${dashEsc(pair.pairLabel)}` : ''}</div>
                         <span class="perps-pos-pill">CLOSED</span>
                         ${pair.partialClose || pair.closedPartial || pair.partiallyClosed ? '<span class="perps-pos-pill warn" title="Closed partially — cumulative size and PnL for this session">PARTIAL</span>' : ''}
                         ${pair.exchangeOnly ? '<span class="perps-pos-pill" title="Never hedged — shown with the single exchange leg only">SOLO</span>' : ''}
@@ -40042,15 +40156,16 @@ function perpsRenderDashboard(data, opts = {}) {
             // more of the position is closed, so without this the old row would
             // linger and the session would show two rows. The seeded row's
             // sessionStartDay is stable for the life of the session.
-            const partialGroupKey = (p) => {
-                const v = p?.longLeg?.venue || p?.shortLeg?.venue || '';
-                const sym = String(p?.symbol || '').trim().toUpperCase();
-                const side = p?.longLeg ? 'long' : 'short';
-                return `${v}|${sym}|${side}|${p?.sessionStartDay || ''}`;
-            };
-            const keep = new Set(seededPartial.map(partialGroupKey));
+            // Paired cross-exchange rows consume BOTH legs (e.g. XLM
+            // phoenix|long + extended|short), so their consumed SOLO keys are
+            // added too — otherwise the old single-venue SOLO row survives next
+            // to the new hedged card.
+            const keep = new Set(seededPartial.map(perpsPartialGroupKey));
+            for (const p of seededPartial) {
+                for (const k of perpsPartialCrossExchangeGroupKeys(p)) keep.add(k);
+            }
             data.closedPairs = perpsCacheNewClosedPairs([
-                ...(data.closedPairs || []).filter((p) => !(p?.partialClose === true && keep.has(partialGroupKey(p)))),
+                ...(data.closedPairs || []).filter((p) => !(p?.partialClose === true && keep.has(perpsPartialGroupKey(p)))),
                 ...seededPartial,
             ]);
         }
@@ -40064,7 +40179,16 @@ function perpsRenderDashboard(data, opts = {}) {
         });
         if (seededSolo.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededSolo]);
         try {
-            perpsPersistClosedPairs([...perpsLoadClosedPairsRaw(), ...(data.closedPairs || [])]);
+            // Persist must NOT resurrect the old single-venue SOLO rows that a
+            // seeded cross-exchange pair consumed: the raw localStorage copies
+            // are re-added here, so drop their group keys first.
+            const retiredPartialKeys = new Set();
+            for (const p of seededPartial || []) {
+                for (const k of perpsPartialCrossExchangeGroupKeys(p)) retiredPartialKeys.add(k);
+            }
+            const rawPersisted = perpsLoadClosedPairsRaw()
+                .filter((p) => !(p?.partialClose === true && retiredPartialKeys.has(perpsPartialGroupKey(p))));
+            perpsPersistClosedPairs([...rawPersisted, ...(data.closedPairs || [])]);
         } catch (e) { /* non-fatal */ }
         const snapshotAdded = perpsSaveSnapshot(data);
         data._equitySeriesRaw = { ...perpsBuildEquitySeries(data), fetchedAt: data.fetchedAt };
