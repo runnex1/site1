@@ -34330,10 +34330,12 @@ function perpsActivePartialHedgesFor(hedges, symbol, venue) {
 }
 
 /**
- * One-time backfill of `trackedSliceEntryPx` for open partial hedges created
- * before slice-entry capture. When a partial hedge lacks the slice entry, derive
- * it from the tracked venue's fills at hedge-open and persist it — so the slice
- * PnL anchors to the hedge-open price rather than the full position's entry.
+ * Backfill `trackedSliceEntryPx` for open partial hedges from the tracked
+ * venue's fills at hedge-open. A stored slice entry is NOT trusted — it may
+ * have been captured from the mark at hedge creation, which is wrong when the
+ * slice pre-existed the hedge (the slice is the tail of the position,
+ * accumulated at its own price). Fills are the authoritative slice cost basis,
+ * so every refresh re-derives and overwrites the stored value.
  * Returns true when any hedge was updated.
  */
 function perpsBackfillSliceEntryPx(data, hedges) {
@@ -34343,16 +34345,15 @@ function perpsBackfillSliceEntryPx(data, hedges) {
     for (const h of hedges || []) {
         if (h?.status !== 'open') continue;
         if (!VH.hedgeIsPartial?.(h)) continue;
-        // Only the explicit slice-entry field counts — hedgeSliceEntryPx falls
-        // back to the snapshot entry (full position), which is the bug we're
-        // backfilling over.
-        const existing = Number(h.trackedSliceEntryPx);
-        if (Number.isFinite(existing) && existing > 0) continue;
-        const entry = VH.backfillSliceEntryPxFromFills(data, h);
+        // Force re-derivation from fills: the stored entry may be a stale
+        // mark-at-creation value, and fills are the authoritative slice cost
+        // basis (the slice is the tail of the position, opened before the hedge).
+        const entry = VH.backfillSliceEntryPxFromFills(data, h, { force: true });
         if (entry == null || !(entry > 0)) continue;
+        const prev = Number(h.trackedSliceEntryPx);
         h.trackedSliceEntryPx = entry;
         h.updatedAt = Date.now();
-        changed = true;
+        if (!(Number.isFinite(prev) && Math.abs(prev - entry) < 1e-12)) changed = true;
     }
     if (changed) {
         try { perpsPersistVariationalHedges(hedges, { skipCloudSync: false }); } catch (e) {}
@@ -35090,6 +35091,20 @@ function perpsHedgePartialWithVariational(symbol, venue, residualSize) {
             if (!hedge) {
                 alert('Could not create the partial hedge (residual must be smaller than the full leg).');
                 return;
+            }
+            // The slice often pre-exists the hedge (position grew, then the user
+            // hedges the tail on Variational). The mark at hedge creation is then
+            // NOT the slice's cost basis — the fills accumulated before the hedge
+            // are. Derive the slice entry from fills and prefer it.
+            try {
+                const sliceEntry = VH.backfillSliceEntryPxFromFills
+                    ? VH.backfillSliceEntryPxFromFills(data, hedge, { force: true })
+                    : null;
+                if (Number.isFinite(Number(sliceEntry)) && Number(sliceEntry) > 0) {
+                    hedge.trackedSliceEntryPx = Number(sliceEntry);
+                }
+            } catch (e) {
+                console.warn('slice-entry backfill failed', e);
             }
             // Replace the previous hedge for this slice with the extended one.
             const hedges = perpsLoadVariationalHedges().filter((h) => !(
