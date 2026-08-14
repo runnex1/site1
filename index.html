@@ -17019,10 +17019,10 @@ function loopPositionAssetLabel(pos) {
 }
 
 function loopPairTitleText(suppliedPositions, borrowedPositions) {
-    const supplied = loopPositionAssetLabel(suppliedPositions[0]);
-    const borrowed = loopPositionAssetLabel(borrowedPositions[0]);
-    if (supplied && borrowed) return `${supplied} / ${borrowed}`;
-    return supplied || borrowed || '';
+    const label = pos => loopPositionAssetLabel(pos);
+    const supply = (suppliedPositions || []).map(label).filter(Boolean);
+    const borrow = (borrowedPositions || []).map(label).filter(Boolean);
+    return [...supply, ...borrow].join(' / ');
 }
 
 function loopHeadStatsHtml(apyText, apyCls, healthVal, statusCls) {
@@ -17133,16 +17133,21 @@ function loopPairLegHtml(symbol, side, size = 32, pos = null) {
 }
 
 function loopPairHtml(suppliedPositions, borrowedPositions) {
-    const suppliedPos = suppliedPositions?.[0] || null;
-    const borrowedPos = borrowedPositions?.[0] || null;
-    const supplied = loopPositionAssetLabel(suppliedPos);
-    const borrowed = loopPositionAssetLabel(borrowedPos);
-    if (supplied && borrowed) {
-        return `${loopPairLegHtml(supplied, 'supply', 32, suppliedPos)}<span class="loop-pair-sep">/</span>${loopPairLegHtml(borrowed, 'borrow', 32, borrowedPos)}`;
-    }
-    const fallback = supplied || borrowed || 'Loop';
-    if (fallback === 'Loop') return dashEsc(fallback);
-    return loopPairLegHtml(fallback, 'supply', 32, suppliedPos || borrowedPos);
+    // A position may have MULTIPLE legs on a side (e.g. Aave USDe collateral
+    // with AUSD + USDC borrowed) — show every leg, not just the first, so the
+    // card head matches the real position.
+    const supplyLegs = (suppliedPositions || [])
+        .map(pos => ({ symbol: loopPositionAssetLabel(pos), pos }))
+        .filter(l => l.symbol);
+    const borrowLegs = (borrowedPositions || [])
+        .map(pos => ({ symbol: loopPositionAssetLabel(pos), pos }))
+        .filter(l => l.symbol);
+    const legs = [
+        ...supplyLegs.map(l => loopPairLegHtml(l.symbol, 'supply', 32, l.pos)),
+        ...borrowLegs.map(l => loopPairLegHtml(l.symbol, 'borrow', 32, l.pos)),
+    ];
+    if (legs.length) return legs.join('<span class="loop-pair-sep">/</span>');
+    return dashEsc('Loop');
 }
 
 function loopSupplyLegApyHtml(suppliedApr, manualKey = '', hasManual = false, suppliedPositions = []) {
