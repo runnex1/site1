@@ -35016,7 +35016,7 @@ function perpsBuildVariationalDailySeries(pair, data, sinceMs, extraEvents = [],
             venueByDay[day][venue] = (venueByDay[day][venue] || 0) + usdc;
         }
         if (!fundingEventsByDay[day]) fundingEventsByDay[day] = [];
-        fundingEventsByDay[day].push({ time, usdc, venue, intervalHours: ev.intervalHours ?? null, fundingEstimated: ev.fundingEstimated === true });
+        fundingEventsByDay[day].push({ time, usdc, venue, symbol: ev.symbol || base, intervalHours: ev.intervalHours ?? null, fundingEstimated: ev.fundingEstimated === true });
     };
 
     // When the tracked leg is partially Var-hedged, the tracked-venue payments
