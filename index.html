@@ -34699,6 +34699,118 @@ function perpsRebuildHlNadoSeriesWithMatchedFunding(pair, data, matchedEvents) {
     return points;
 }
 
+function perpsRescueOrphanedHlNadoCrossPairs(data, hedges) {
+    // Server pairing uses FULL raw position sizes and refuses pairs whose
+    // size mismatch exceeds OPEN_PAIR_MAX_SIZE_MISMATCH_PCT (50). A client-side
+    // partial Variational hedge splits a Nado leg into a Var-covered slice +
+    // residual, but the server cannot see that slice. When the full-size
+    // mismatch crosses 50 (e.g. Nado 1,306,870 vs HL 640,000 = 51%), the server
+    // drops the HL leg into unhedged even though the true residual (minus the
+    // Var slice) would pair cleanly (690,000 vs 640,000 = 7.2%). Recover those
+    // orphaned HL legs here by pairing them against the RESIDUAL Nado size.
+    const VH = window.VariationalHedge;
+    if (!VH || !data) return data;
+    if (!Array.isArray(data.paired) || !Array.isArray(data.unhedged)) return data;
+    const hedgeList = hedges || perpsLoadVariationalHedges();
+    if (!Array.isArray(hedgeList) || !hedgeList.length) return data;
+    const MAX_MISMATCH_PCT = 50;
+    const activeHedges = hedgeList.filter((h) => h?.status === 'open' && !h.supersededByLiveCross && !h.pendingCloseAt && VH.hedgeIsPartial?.(h));
+    if (!activeHedges.length) return data;
+    const existingKeys = new Set((data.paired || [])
+        .filter((p) => p?.pairType === 'hl_nado')
+        .map((p) => VH.toBaseSymbol(p.symbol)));
+
+    const rescued = [];
+    const unhedged = data.unhedged.filter((u) => {
+        if (!u || VH.normalizeTrackedVenue(u.venue) !== 'hyperliquid') return true;
+        const sym = VH.toBaseSymbol(u.symbol);
+        if (!sym) return true;
+        // Already have an hl_nado pair for this symbol? Leave as-is.
+        if (existingKeys.has(sym)) return true;
+        const hedge = activeHedges.find((h) => VH.toBaseSymbol(h.symbol) === sym && VH.normalizeTrackedVenue(h.trackedVenue) === 'nado');
+        if (!hedge) return true;
+        const nadoLeg = VH.findTrackedLeg ? VH.findTrackedLeg(data, hedge) : null;
+        if (!nadoLeg) return true;
+        const nadoFullSize = Math.abs(Number(nadoLeg.size || 0));
+        if (nadoFullSize <= 0) return true;
+        const slice = Math.abs(Number(hedge.partialSize || 0)) || Math.abs(Number(hedge.trackedSize || 0));
+        if (slice <= 0 || slice >= nadoFullSize - 1e-9) return true;
+        const residualSize = nadoFullSize - slice;
+        const hlSize = Math.abs(Number(u.size || 0));
+        if (hlSize <= 0 || residualSize <= 0) return true;
+        const mismatchPct = (Math.abs(hlSize - residualSize) / Math.max(hlSize, residualSize)) * 100;
+        if (mismatchPct > MAX_MISMATCH_PCT) return true;
+        // Nado leg object: prefer the raw state position for full-size math.
+        const nadoStatePos = (data.nado?.state?.positions || []).find((p) => VH.toBaseSymbol(p.symbol) === sym);
+        const na = nadoStatePos || nadoLeg;
+        if (!na) return true;
+        const hlUpnl = Number(u.unrealizedPnl ?? 0) || 0;
+        // The Nado leg shown on the hl_nado card is the residual (excl. the Var
+        // slice), so compute its uPnL the same way attribution does.
+        const fullEntry = Number(na.entryPx || 0);
+        const sliceEntry = Number(VH.hedgeSliceEntryPx ? VH.hedgeSliceEntryPx(hedge) : 0) || fullEntry;
+        const markPx = Number(na.markPx || 0);
+        const nadoSign = Number(na.size) < 0 ? -1 : 1;
+        let naUpnl = null;
+        if (fullEntry > 0 && markPx > 0) {
+            const residualEntry = (fullEntry * nadoFullSize - sliceEntry * slice) / residualSize;
+            naUpnl = VH.variationalLegPnl ? VH.variationalLegPnl(nadoSign * residualSize, residualEntry, markPx) : (markPx - residualEntry) * nadoSign * residualSize;
+        }
+        if (naUpnl == null || !Number.isFinite(naUpnl)) {
+            naUpnl = (Number(na.unrealizedPnl ?? 0) || 0) * (residualSize / nadoFullSize);
+        }
+        const combinedUpnl = hlUpnl + naUpnl;
+        const matchedSize = Math.min(hlSize, residualSize);
+        const entrySlippage = u.entryPx && na.entryPx != null ? (na.entryPx - u.entryPx) * matchedSize : null;
+        const avgNotional = ((u.notional || 0) + (na.notional || 0)) / 2;
+        const hlFundingSinceOpen = Number(u.funding ?? 0) || 0;
+        const nadoFundingSinceOpen = Number(na.fundingSinceOpen ?? na.funding ?? 0) || 0;
+        const fundingSinceOpen = hlFundingSinceOpen + nadoFundingSinceOpen;
+        const fees = (Number(u.fees ?? 0) || 0);
+        const realized = 0;
+        const netArbPnl = fundingSinceOpen + combinedUpnl + realized - fees;
+        const alerts = [];
+        if (Math.abs(hlSize - residualSize) > 0.001) alerts.push('size_mismatch');
+        if (Math.abs(combinedUpnl) > 500) alerts.push('basis_drift');
+        const pair = {
+            symbol: sym,
+            pairType: 'hl_nado',
+            pairLabel: 'HL + Nado',
+            hlSize: u.size,
+            nadoSize: na.size, // full raw size; perpsApplyPartialSlicePnlAttribution prorates to residual
+            hlEntry: u.entryPx,
+            nadoEntry: na.entryPx,
+            hlUpnl,
+            nadoUpnl: naUpnl,
+            combinedUpnl,
+            sizeMismatchPct: mismatchPct,
+            entrySlippage,
+            avgNotional,
+            hlFundingSinceOpen,
+            nadoFundingSinceOpen,
+            fundingSinceOpen,
+            fundingWindow: fundingSinceOpen,
+            fees,
+            realized,
+            netArbPnl,
+            currentSpread8h: null,
+            fundingRate8hA: null,
+            fundingRate8hB: null,
+            breakEvenSpread8h: null,
+            spreadCoversBreakeven: null,
+            alerts,
+            hl: { ...u, venue: 'hyperliquid', fundingSinceOpen: hlFundingSinceOpen },
+            nado: { ...na, venue: 'nado' },
+            _rescueOrphaned: true,
+        };
+        data.paired.push(pair);
+        rescued.push(pair);
+        existingKeys.add(sym);
+        return false; // drop from unhedged
+    });
+    data.unhedged = unhedged;
+    return data;
+}
 function perpsApplyVariationalHedgesToData(data) {
     const VH = window.VariationalHedge;
     if (!VH || !data) return data;
@@ -34747,6 +34859,11 @@ function perpsApplyVariationalHedgesToData(data) {
     //  1. The Var pair's tracked leg (Nado) shows slice-entry-based uPnL.
     //  2. The hl_nado pair's Nado leg excludes the Var-covered slice (both size
     //     and uPnL), so Card A only shows the portion actually hedged vs HL.
+    perpsApplyPartialSlicePnlAttribution(data, result.hedges || hedges);
+    // Server pairing cannot see client-side partial Var hedges; when a partial
+    // hedge splits a Nado leg and the full-size mismatch crosses 50, the HL leg
+    // is orphaned into unhedged. Recover those pairs against the residual size.
+    perpsRescueOrphanedHlNadoCrossPairs(data, result.hedges || hedges);
     perpsApplyPartialSlicePnlAttribution(data, result.hedges || hedges);
     const prevStatus = new Map(hedges.map(h => [h.id, h.status]));
     const statusChanged = result.hedges.some(h => prevStatus.get(h.id) !== h.status);
