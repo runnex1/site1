@@ -17022,7 +17022,10 @@ function loopPairTitleText(suppliedPositions, borrowedPositions) {
     const label = pos => loopPositionAssetLabel(pos);
     const supply = (suppliedPositions || []).map(label).filter(Boolean);
     const borrow = (borrowedPositions || []).map(label).filter(Boolean);
-    return [...supply, ...borrow].join(' / ');
+    const parts = [];
+    if (supply.length) parts.push(supply.join(' + '));
+    if (borrow.length) parts.push(borrow.join(' + '));
+    return parts.join(' / ');
 }
 
 function loopHeadStatsHtml(apyText, apyCls, healthVal, statusCls) {
@@ -17134,19 +17137,15 @@ function loopPairLegHtml(symbol, side, size = 32, pos = null) {
 
 function loopPairHtml(suppliedPositions, borrowedPositions) {
     // A position may have MULTIPLE legs on a side (e.g. Aave USDe collateral
-    // with AUSD + USDC borrowed) — show every leg, not just the first, so the
-    // card head matches the real position.
-    const supplyLegs = (suppliedPositions || [])
-        .map(pos => ({ symbol: loopPositionAssetLabel(pos), pos }))
-        .filter(l => l.symbol);
-    const borrowLegs = (borrowedPositions || [])
-        .map(pos => ({ symbol: loopPositionAssetLabel(pos), pos }))
-        .filter(l => l.symbol);
-    const legs = [
-        ...supplyLegs.map(l => loopPairLegHtml(l.symbol, 'supply', 32, l.pos)),
-        ...borrowLegs.map(l => loopPairLegHtml(l.symbol, 'borrow', 32, l.pos)),
-    ];
-    if (legs.length) return legs.join('<span class="loop-pair-sep">/</span>');
+    // with AUSD + USDC borrowed) — join same-side legs with '+' and separate
+    // sides with '/', so the card head matches the real position.
+    const legOf = (pos, side) => loopPairLegHtml(loopPositionAssetLabel(pos), side, 32, pos);
+    const supply = (suppliedPositions || []).filter(pos => loopPositionAssetLabel(pos));
+    const borrow = (borrowedPositions || []).filter(pos => loopPositionAssetLabel(pos));
+    const parts = [];
+    if (supply.length) parts.push(supply.map(pos => legOf(pos, 'supply')).join('<span class="loop-pair-sep">+</span>'));
+    if (borrow.length) parts.push(borrow.map(pos => legOf(pos, 'borrow')).join('<span class="loop-pair-sep">+</span>'));
+    if (parts.length) return parts.join('<span class="loop-pair-sep">/</span>');
     return dashEsc('Loop');
 }
 
@@ -19526,13 +19525,12 @@ function renderDashboardProtocolPreview() {
         for (const sec of p.sections || []) {
             const supplied = (sec.positions || []).filter(x => /supplied/i.test(x.sub || ''));
             const borrowed = (sec.positions || []).filter(x => /borrowed/i.test(x.sub || ''));
-            if (supplied.length && borrowed.length) {
-                const supLabel = loopCleanAssetLabel(supplied[0]?.pool) || supplied[0]?.pool || 'Asset';
-                const borLabel = loopCleanAssetLabel(borrowed[0]?.pool) || borrowed[0]?.pool || 'Debt';
-                return `${supLabel}/${borLabel} loop`;
-            }
-            if (supplied.length) return loopCleanAssetLabel(supplied[0]?.pool) || supplied[0]?.pool || 'Supplied';
-            if (borrowed.length) return loopCleanAssetLabel(borrowed[0]?.pool) || borrowed[0]?.pool || 'Borrowed';
+            const labels = arr => arr.map(pos => loopCleanAssetLabel(pos?.pool) || pos?.pool).filter(Boolean);
+            const supLabel = labels(supplied);
+            const borLabel = labels(borrowed);
+            if (supLabel.length && borLabel.length) return `${supLabel.join(' + ')}/${borLabel.join(' + ')} loop`;
+            if (supLabel.length) return supLabel.join(' + ');
+            if (borLabel.length) return borLabel.join(' + ');
             if (sec.positions?.[0]) return sec.positions[0].pool;
         }
         return p.notes || '-';
