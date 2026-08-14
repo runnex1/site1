@@ -34505,7 +34505,195 @@ function perpsApplyPartialSlicePnlAttribution(data, hedges) {
         pair.combinedUpnl = (Number(pair.hlUpnl || 0) || 0) + (Number(pair.nadoUpnl || 0) || 0);
         pair.netArbPnl = (pair.combinedUpnl ?? 0) + (pair.fundingSinceOpen ?? 0) - (pair.fees ?? 0);
     }
+
+    // 3. Funding/fees on the tracked venue: the Var-covered slice only pays
+    //    funding on the excess above the cross-hedged size, so split each
+    //    payment by the matched size at that moment — the same dollar is never
+    //    counted on both cards:
+    //      Card A (hl_nado) keeps  usdc × min(nadoSizeAt, |hlSizeAt|) / nadoSizeAt
+    //      Card B (nado_variational) gets the remainder (the excess portion).
+    const splitBySymVenue = new Map();
+    for (const [key, info] of partialBySymVenue) {
+        splitBySymVenue.set(key, perpsSplitTrackedFundingByMatchedSize(data, info.sym, info.venue, {
+            sliceSize: info.slice,
+        }));
+    }
+    // Card B: hand the slice's funding to the var pair series. The slice (the
+    // excess above the cross-hedged size) existed from slice inception — not
+    // just from hedge open — so ALL slice-share payments belong here.
+    for (const pair of data.paired || []) {
+        if (!VH.isVariationalPair?.(pair)) continue;
+        const trackedLeg = pair.crossLegA?.venue === 'variational' ? pair.crossLegB : pair.crossLegA;
+        if (!trackedLeg) continue;
+        const sym = VH.toBaseSymbol(pair.symbol);
+        const venue = VH.normalizeTrackedVenue?.(trackedLeg.venue) || trackedLeg.venue;
+        const info = splitBySymVenue.get(`${sym}|${venue}`);
+        if (!info?.slice?.length) continue;
+        // Enrichment runs after attribution and rebuilds the series — stash the
+        // slice events + inception so it can span the full slice life.
+        pair._variationalSliceFundingEvents = info.slice;
+        let since = 0;
+        for (const ev of info.slice) {
+            const t = Number(ev.time) || 0;
+            if (t && (!since || t < since)) since = t;
+        }
+        pair._variationalSliceSinceMs = since || 0;
+        try {
+            pair.dailyPerformanceSeries = perpsBuildVariationalDailySeries(pair, data, since || undefined, info.slice, {
+                excludeTrackedPayments: true,
+            });
+        } catch (e) {}
+    }
+    // Card A: rebuild the hl_nado series so Nado funding only includes the
+    // matched (residual) portion, never the slice the Var hedge covers.
+    for (const pair of data.paired || []) {
+        if (pair.pairType !== 'hl_nado') continue;
+        const sym = VH.toBaseSymbol(pair.symbol);
+        const info = splitBySymVenue.get(`${sym}|nado`);
+        if (!info?.matched?.length) continue;
+        try {
+            pair.dailyPerformanceSeries = perpsRebuildHlNadoSeriesWithMatchedFunding(pair, data, info.matched);
+        } catch (e) {}
+        // Sync the pair-level funding fields to the prorated (matched) Nado share
+        // so netArbPnl, portfolio stats and leg tooltips never use the full
+        // position's Nado funding (which would double count the Var-covered slice).
+        const matchedNadoFunding = info.matched.reduce((s, ev) => s + (ev.usdc || 0), 0);
+        pair.nadoFundingSinceOpen = matchedNadoFunding;
+        if (pair.crossLegA?.venue === 'nado') pair.crossLegA.fundingSinceOpen = matchedNadoFunding;
+        const hlFunding = Number(pair.hlFundingSinceOpen ?? 0) || 0;
+        pair.fundingSinceOpen = hlFunding + matchedNadoFunding;
+        pair.fundingWindow = pair.fundingSinceOpen;
+        pair.netArbPnl = (pair.combinedUpnl ?? 0) + (pair.fundingSinceOpen ?? 0) - (pair.fees ?? 0);
+        // The server's recentFundingEvents carry the FULL position's nado payments;
+        // replace with the prorated (matched) events so the recent-funding cards
+        // show the same amounts as the rebuilt series.
+        const rebuiltEvents = (pair.dailyPerformanceSeries || []).flatMap(r => r.fundingEvents || []);
+        if (rebuiltEvents.length) pair.recentFundingEvents = rebuiltEvents;
+    }
     return data;
+}
+
+/**
+ * Split tracked-venue funding/fees between the cross-hedged (matched) portion
+ * and the Var-covered slice. Each payment's `size` field is the position size
+ * it was charged on; the cross-hedged size at that time is the |HL short|.
+ *
+ * matched: payments prorated to the portion actually hedged vs the other leg
+ *          (usdc × min(nadoSizeAt, |hlSizeAt|) / nadoSizeAt) — belongs to Card A.
+ * slice:   the remainder (usdc × max(0, nadoSizeAt − |hlSizeAt|) / nadoSizeAt)
+ *          — belongs to Card B (the Var-covered excess), only meaningful after
+ *          the hedge opened.
+ */
+function perpsSplitTrackedFundingByMatchedSize(data, base, trackedVenue, opts = {}) {
+    const out = { matched: [], slice: [] };
+    const sliceSize = Math.abs(Number(opts.sliceSize || 0));
+    const otherVenue = trackedVenue === 'nado' ? 'hyperliquid' : 'nado';
+    const pays = perpsFundingPaymentsForVenue(data, trackedVenue)
+        .filter(p => perpsSymbolBase(p.symbol) === base)
+        .slice()
+        .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
+    const otherPays = perpsFundingPaymentsForVenue(data, otherVenue)
+        .filter(p => perpsSymbolBase(p.symbol) === base)
+        .slice()
+        .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
+    // Latest other-venue payment at/before each tracked payment gives the
+    // cross-hedged size at that moment.
+    let otherIdx = -1;
+    for (const p of pays) {
+        const t = Number(p.time) || 0;
+        while (otherIdx + 1 < otherPays.length && (Number(otherPays[otherIdx + 1].time) || 0) <= t) otherIdx++;
+        const otherSize = otherIdx >= 0 ? Math.abs(Number(otherPays[otherIdx].size) || 0) : 0;
+        const ownSize = Math.abs(Number(p.size) || 0);
+        if (!ownSize) {
+            // No size metadata — fall back to the slice-share ratio.
+            out.matched.push({ ...p, usdc: Number(p.usdc) || 0 });
+            continue;
+        }
+        const matched = Math.min(ownSize, otherSize);
+        const matchedUsdc = (Number(p.usdc) || 0) * (matched / ownSize);
+        const sliceUsdc = (Number(p.usdc) || 0) - matchedUsdc;
+        const evBase = { venue: trackedVenue, time: t, symbol: p.symbol, intervalHours: p.intervalHours ?? null };
+        if (Math.abs(matchedUsdc) > 1e-12) out.matched.push({ ...evBase, usdc: matchedUsdc, size: matched });
+        if (Math.abs(sliceUsdc) > 1e-12 && sliceSize > 0) out.slice.push({ ...evBase, usdc: sliceUsdc, size: ownSize - matched });
+    }
+    return out;
+}
+
+/**
+ * Rebuild an hl_nado pair's daily performance series so the tracked (Nado)
+ * venue's funding/fees only reflect the matched (residual) portion. The server
+ * series rows carry per-venue events without size; we rebuild from the raw
+ * payments (which carry size) plus the split events computed above.
+ */
+function perpsRebuildHlNadoSeriesWithMatchedFunding(pair, data, matchedEvents) {
+    const base = pair.symbol;
+    const hlPays = perpsFundingPaymentsForVenue(data, 'hyperliquid').filter(p => perpsSymbolBase(p.symbol) === base);
+    const oldRows = Array.isArray(pair.dailyPerformanceSeries) ? pair.dailyPerformanceSeries : [];
+    if (!oldRows.length) return pair.dailyPerformanceSeries;
+    const byDay = new Map();
+    const addFunding = (ev, venue) => {
+        const t = Number(ev.time) || 0;
+        if (!t) return;
+        const day = new Date(t).toISOString().slice(0, 10);
+        const usdc = Number(ev.usdc) || 0;
+        if (!byDay.has(day)) byDay.set(day, { day, dailyFunding: 0, dailyFees: 0, byVenue: {}, fundingEvents: [], feeEvents: [] });
+        const row = byDay.get(day);
+        row.dailyFunding += usdc;
+        row.byVenue[venue] = (row.byVenue[venue] || 0) + usdc;
+        row.fundingEvents.push({ venue, time: t, usdc, intervalHours: ev.intervalHours ?? null });
+    };
+    const addFees = (ev) => {
+        const t = Number(ev.time) || 0;
+        if (!t) return;
+        const day = new Date(t).toISOString().slice(0, 10);
+        const fee = Number(ev.fee) || 0;
+        if (!byDay.has(day)) byDay.set(day, { day, dailyFunding: 0, dailyFees: 0, byVenue: {}, fundingEvents: [], feeEvents: [] });
+        const row = byDay.get(day);
+        row.dailyFees += fee;
+        row.feeEvents.push({ time: t, fee });
+    };
+    // HL payments unchanged (full size, matched by definition).
+    for (const p of hlPays) addFunding({ ...p, venue: 'hyperliquid' }, 'hyperliquid');
+    // Nado: use the split matched events.
+    for (const ev of matchedEvents) addFunding(ev, 'nado');
+    // Fees from both venues' fills, unchanged (fees are paid on execution, not
+    // per-position-funding; the slice's fill fees stay on Card A — Card B's
+    // fee stream is a separate concern and not part of this funding fix).
+    const hlFills = perpsFillItemsForVenue(data, 'hyperliquid').filter(f => perpsSymbolBase(f.symbol) === base);
+    const nadoFills = perpsFillItemsForVenue(data, 'nado').filter(f => perpsSymbolBase(f.symbol) === base);
+    for (const f of hlFills) addFees(f);
+    for (const f of nadoFills) addFees(f);
+    // Keep the same day range as the original series.
+    const startDay = oldRows[0].day;
+    const endDay = oldRows[oldRows.length - 1].day;
+    const points = [];
+    let cumFunding = 0;
+    let cumFees = 0;
+    let cumNet = 0;
+    for (let d = new Date(startDay + 'T00:00:00Z'); d <= new Date(endDay + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) {
+        const day = d.toISOString().slice(0, 10);
+        const row = byDay.get(day) || { day, dailyFunding: 0, dailyFees: 0, byVenue: {}, fundingEvents: [], feeEvents: [] };
+        const dailyFunding = row.dailyFunding;
+        const dailyFees = row.dailyFees;
+        const dailyNet = dailyFunding - dailyFees;
+        cumFunding += dailyFunding;
+        cumFees += dailyFees;
+        cumNet += dailyNet;
+        points.push({
+            ts: d.getTime() + 43200000,
+            day,
+            dailyFunding,
+            dailyFees,
+            dailyNet,
+            cumFunding,
+            cumFees,
+            cumNet,
+            byVenue: row.byVenue,
+            fundingEvents: row.fundingEvents,
+            feeEvents: row.feeEvents,
+        });
+    }
+    return points;
 }
 
 function perpsApplyVariationalHedgesToData(data) {
@@ -34803,7 +34991,7 @@ function perpsVariationalFundingSinceMs(pair, data) {
     return earliest || (Date.now() - 365 * 86400000);
 }
 
-function perpsBuildVariationalDailySeries(pair, data, sinceMs, extraEvents = []) {
+function perpsBuildVariationalDailySeries(pair, data, sinceMs, extraEvents = [], opts = {}) {
     const trackedVenue = pair.venueA || pair.crossLegA?.venue;
     const base = pair.symbol;
     const fundingByDay = {};
@@ -34828,21 +35016,33 @@ function perpsBuildVariationalDailySeries(pair, data, sinceMs, extraEvents = [])
         fundingEventsByDay[day].push({ time, usdc, venue, intervalHours: ev.intervalHours ?? null, fundingEstimated: ev.fundingEstimated === true });
     };
 
-    for (const p of perpsFundingPaymentsForVenue(data, trackedVenue)) {
-        if (perpsSymbolBase(p.symbol) !== base) continue;
-        addFundingEvent({ ...p, venue: trackedVenue });
+    // When the tracked leg is partially Var-hedged, the tracked-venue payments
+    // were charged on the FULL position. Attribution splits them into the
+    // matched (Card A) and slice (Card B) shares and passes the slice share via
+    // extraEvents — so skip the full-payment loop to avoid double counting.
+    if (!opts.excludeTrackedPayments) {
+        for (const p of perpsFundingPaymentsForVenue(data, trackedVenue)) {
+            if (perpsSymbolBase(p.symbol) !== base) continue;
+            addFundingEvent({ ...p, venue: trackedVenue });
+        }
     }
     for (const ev of extraEvents || []) addFundingEvent(ev);
 
-    for (const f of perpsFillItemsForVenue(data, trackedVenue)) {
-        if (perpsSymbolBase(f.symbol) !== base) continue;
-        const time = Number(f.time) || 0;
-        if (!time || time < start) continue;
-        const day = new Date(time).toISOString().slice(0, 10);
-        const fee = f.fee || 0;
-        feesByDay[day] = (feesByDay[day] || 0) + fee;
-        if (!feeEventsByDay[day]) feeEventsByDay[day] = [];
-        feeEventsByDay[day].push({ time, fee });
+    // Fees: when the tracked leg is partially Var-hedged, the fill fees were
+    // paid on the FULL position and belong to the hl_nado pair (Card A) — the
+    // slice's fee attribution is a separate concern, not part of this funding
+    // fix. Skip the tracked-venue fee loop alongside the payment loop.
+    if (!opts.excludeTrackedPayments) {
+        for (const f of perpsFillItemsForVenue(data, trackedVenue)) {
+            if (perpsSymbolBase(f.symbol) !== base) continue;
+            const time = Number(f.time) || 0;
+            if (!time || time < start) continue;
+            const day = new Date(time).toISOString().slice(0, 10);
+            const fee = f.fee || 0;
+            feesByDay[day] = (feesByDay[day] || 0) + fee;
+            if (!feeEventsByDay[day]) feeEventsByDay[day] = [];
+            feeEventsByDay[day].push({ time, fee });
+        }
     }
 
     const endDay = new Date().toISOString().slice(0, 10);
@@ -34872,6 +35072,18 @@ function perpsBuildVariationalDailySeries(pair, data, sinceMs, extraEvents = [])
             fundingEvents: fundingEventsByDay[day] || [],
             feeEvents: feeEventsByDay[day] || [],
         });
+    }
+    // Slice mode (partial hedge): a zero-activity day means "no excess existed",
+    // not "position closed" — drop those days so the session split treats the
+    // slice's funding as one continuous session (Card B shows the full all-time
+    // slice sum, never just the latest segment). Dropped days add zero, so the
+    // cumulative totals on the remaining rows stay exact.
+    if (opts.excludeTrackedPayments) {
+        return points.filter(row =>
+            (row.dailyFunding || 0) !== 0 || (row.dailyFees || 0) !== 0 ||
+            (row.fundingEvents && row.fundingEvents.length > 0) ||
+            (row.feeEvents && row.feeEvents.length > 0)
+        );
     }
     return points;
 }
@@ -35005,9 +35217,24 @@ function perpsEnrichVariationalPairFunding(pair, data, opts = {}) {
         pair.crossLegB.fundingClockSource = listing?.fundingClockSource ?? null;
     }
     pair.variationalFundingClockSource = listing?.fundingClockSource ?? null;
+    // Slice funding from partial-hedge attribution (set in perpsApplyPartialSlicePnlAttribution):
+    // the Var-covered slice's share of tracked-venue payments, from slice inception.
+    // Include them as extraEvents so the series shows the slice's real funding
+    // without double counting; when present, legA claims only its slice share.
+    const sliceExtra = Array.isArray(pair._variationalSliceFundingEvents) ? pair._variationalSliceFundingEvents : [];
+    let seriesSince = sessionSince;
+    if (sliceExtra.length) {
+        pair.legAFundingSinceOpen = sliceExtra.reduce((s, ev) => s + (ev.usdc || 0), 0);
+        pair.recentFundingEvents = [...sliceExtra, ...variationalEvents]
+            .sort((a, b) => (b.time || 0) - (a.time || 0));
+        const sliceSince = Number(pair._variationalSliceSinceMs) || 0;
+        if (sliceSince && sliceSince < seriesSince) seriesSince = sliceSince;
+    }
     pair.fundingSinceOpen = (pair.legAFundingSinceOpen ?? 0) + (pair.legBFundingSinceOpen ?? 0);
     pair.fundingWindow = pair.fundingSinceOpen;
-    pair.dailyPerformanceSeries = perpsBuildVariationalDailySeries(pair, data, sessionSince, variationalEvents);
+    pair.dailyPerformanceSeries = perpsBuildVariationalDailySeries(pair, data, seriesSince, [...variationalEvents, ...sliceExtra], {
+        excludeTrackedPayments: sliceExtra.length > 0,
+    });
     return pair;
 }
 
