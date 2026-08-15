@@ -34445,7 +34445,12 @@ function perpsApplyPartialSlicePnlAttribution(data, hedges) {
             const varMirror = VH.computeVariationalOpenLegUpnl
                 ? VH.computeVariationalOpenLegUpnl(trackedLeg, varLeg.size, varLeg.markPx)
                 : null;
-            if (Number.isFinite(varMirror)) varLeg.unrealizedPnl = varMirror;
+            if (Number.isFinite(varMirror)) {
+                varLeg.unrealizedPnl = varMirror;
+                // Persist the slice-corrected mirror on the hedge so snapshots
+                // (variationalLastUpnl) match the pair legs, not the full-leg mirror.
+                if (hedge) hedge.variationalLastUpnl = varMirror;
+            }
             pair.combinedUpnl = sliceUpnl + Number(varLeg.unrealizedPnl ?? 0);
             pair.netArbPnl = (pair.combinedUpnl ?? 0) + (pair.fundingSinceOpen ?? 0) - (pair.fees ?? 0);
         }
