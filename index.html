@@ -34637,7 +34637,6 @@ function perpsRebuildHlNadoSeriesWithMatchedFunding(pair, data, matchedEvents) {
     const base = pair.symbol;
     const hlPays = perpsFundingPaymentsForVenue(data, 'hyperliquid').filter(p => perpsSymbolBase(p.symbol) === base);
     const oldRows = Array.isArray(pair.dailyPerformanceSeries) ? pair.dailyPerformanceSeries : [];
-    if (!oldRows.length) return pair.dailyPerformanceSeries;
     const byDay = new Map();
     const addFunding = (ev, venue) => {
         const t = Number(ev.time) || 0;
@@ -34671,9 +34670,25 @@ function perpsRebuildHlNadoSeriesWithMatchedFunding(pair, data, matchedEvents) {
     const nadoFills = perpsFillItemsForVenue(data, 'nado').filter(f => perpsSymbolBase(f.symbol) === base);
     for (const f of hlFills) addFees(f);
     for (const f of nadoFills) addFees(f);
-    // Keep the same day range as the original series.
-    const startDay = oldRows[0].day;
-    const endDay = oldRows[oldRows.length - 1].day;
+    // Keep the same day range as the original series; for rescued pairs with no
+    // server series, span from pairOpenedAtMs to the latest activity day.
+    let startDay = oldRows.length ? oldRows[0].day : null;
+    let endDay = oldRows.length ? oldRows[oldRows.length - 1].day : null;
+    if (!startDay || !endDay) {
+        let firstMs = Number.isFinite(Number(pair.pairOpenedAtMs)) ? Number(pair.pairOpenedAtMs) : null;
+        let lastMs = null;
+        const allTimes = [...hlPays, ...matchedEvents, ...perpsFillItemsForVenue(data, 'hyperliquid').filter(f => perpsSymbolBase(f.symbol) === base), ...perpsFillItemsForVenue(data, 'nado').filter(f => perpsSymbolBase(f.symbol) === base)]
+            .map(e => Number(e.time) || 0)
+            .filter(t => t > 0);
+        for (const t of allTimes) {
+            if (firstMs == null || t < firstMs) firstMs = t;
+            if (lastMs == null || t > lastMs) lastMs = t;
+        }
+        const start = firstMs != null ? new Date(firstMs) : new Date(Date.now() - 29 * 86400000);
+        const end = lastMs != null ? new Date(lastMs) : new Date(Date.now());
+        startDay = start.toISOString().slice(0, 10);
+        endDay = end.toISOString().slice(0, 10);
+    }
     const points = [];
     let cumFunding = 0;
     let cumFees = 0;
