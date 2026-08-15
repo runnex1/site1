@@ -9,14 +9,44 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { buildDailyFundingSeries } = require('../lib/perps.js');
+const { buildDailyFundingSeries, fundingDayKeyForMs } = require('../lib/perps.js');
 const VH = require('../lib/variational-hedge.js');
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dataPath = process.argv[2] || join(ROOT, '_perps-verify-funding.json');
 
-function isoDateFromMs(ms) {
-  return new Date(ms).toISOString().slice(0, 10);
+// Bucharest day-start (DST-aware): the offset is the difference between the
+// Bucharest wall clock at noon-UTC (as a UTC instant) and noon-UTC itself.
+const _partsFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Europe/Bucharest', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+});
+
+function bucharestDayStartMs(day) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''));
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const noonUtc = Date.UTC(y, mo - 1, d, 12);
+  const parts = _partsFmt.formatToParts(new Date(noonUtc));
+  const wall = new Date(Date.UTC(
+    Number(parts.find(p => p.type === 'year').value),
+    Number(parts.find(p => p.type === 'month').value) - 1,
+    Number(parts.find(p => p.type === 'day').value),
+    Number(parts.find(p => p.type === 'hour').value),
+    Number(parts.find(p => p.type === 'minute').value),
+    Number(parts.find(p => p.type === 'second').value),
+  ));
+  return Date.UTC(y, mo - 1, d) - (wall.getTime() - noonUtc);
+}
+
+function bucharestDayEndMs(day) {
+  const start = bucharestDayStartMs(day);
+  if (start == null) return null;
+  const next = fundingDayKeyForMs(start + 86400000);
+  if (!next) return null;
+  return bucharestDayStartMs(next) - 1;
 }
 
 function sumSeries(rows, useNet = false) {
@@ -45,7 +75,7 @@ function assertRowEventConsistency(rows, label) {
 
 function sumPaymentsOnDays(payments, daySet) {
   return (payments || []).reduce((s, p) => {
-    const day = isoDateFromMs(p.time);
+    const day = fundingDayKeyForMs(p.time);
     return s + (daySet.has(day) ? (p.usdc || 0) : 0);
   }, 0);
 }
@@ -71,9 +101,9 @@ function filterDailySeries(series, rangeMs, nowMs = Date.now()) {
     return true;
   };
   return series
-    .filter(r => new Date(r.day + 'T23:59:59.999Z').getTime() >= cutoff)
+    .filter(r => bucharestDayEndMs(r.day || '') >= cutoff)
     .map((row) => {
-      const dayStart = Date.parse((row.day || '') + 'T00:00:00.000Z');
+      const dayStart = bucharestDayStartMs(row.day || '');
       if (!eventsComplete(row)) {
         if (Number.isFinite(dayStart) && dayStart < cutoff) return null;
         return row;
@@ -104,7 +134,7 @@ function mergeVariationalIntoSeries(baseRows, events) {
   for (const ev of events) {
     const time = Number(ev.time) || 0;
     if (!time) continue;
-    const day = isoDateFromMs(time);
+    const day = fundingDayKeyForMs(time);
     if (startDay && day < startDay) continue;
     if (endDay && day > endDay) continue;
     let row = byDay.get(day);
@@ -129,17 +159,24 @@ function mergeVariationalIntoSeries(baseRows, events) {
 // --- Synthetic unit tests (no API file required) ---
 {
   const now = Date.now();
-  const todayDay = new Date(now).toISOString().slice(0, 10);
-  const yesterdayDay = new Date(now - 86400000).toISOString().slice(0, 10);
+  // Two consecutive Bucharest days, both fully in the past. Day A holds two
+  // payments (+10, -3) one hour apart; Day B holds +5. This proves the series
+  // buckets by Bucharest day (not UTC) and sums correctly per day.
+  const dayA = fundingDayKeyForMs(now - 86400000);
+  const dayB = fundingDayKeyForMs(now - 2 * 86400000);
+  const aStart = bucharestDayStartMs(dayA);
+  const bStart = bucharestDayStartMs(dayB);
   const payments = [
-    { time: Date.parse(`${todayDay}T01:00:00Z`), usdc: 10, symbol: 'ETH', intervalHours: 1 },
-    { time: Date.parse(`${todayDay}T02:00:00Z`), usdc: -3, symbol: 'ETH', intervalHours: 1 },
-    { time: Date.parse(`${yesterdayDay}T20:00:00Z`), usdc: 5, symbol: 'ETH', intervalHours: 1 },
+    { time: aStart + 4 * 3600000, usdc: 10, symbol: 'ETH', intervalHours: 1 },
+    { time: aStart + 5 * 3600000, usdc: -3, symbol: 'ETH', intervalHours: 1 },
+    { time: bStart + 4 * 3600000, usdc: 5, symbol: 'ETH', intervalHours: 1 },
   ];
   const series = buildDailyFundingSeries({ hlPayments: payments, days: 30 });
   assertRowEventConsistency(series, 'synthetic');
-  const todayRow = series.find(r => r.day === todayDay);
-  assert.equal(todayRow?.dailyFunding, 7);
+  const rowA = series.find(r => r.day === dayA);
+  const rowB = series.find(r => r.day === dayB);
+  assert.equal(rowA?.dailyFunding, 7);
+  assert.equal(rowB?.dailyFunding, 5);
   const cutoff7d = Date.now() - 7 * 86400000;
   const raw7d = payments.filter(p => p.time >= cutoff7d).reduce((s, p) => s + p.usdc, 0);
   const filtered = filterDailySeries(series, 7 * 86400000);
@@ -235,8 +272,8 @@ if (existsSync(dataPath)) {
     assert.ok(Math.abs(sumSeries(merged1).funding - sumSeries(merged2).funding) < 1e-6,
       'variational merge must be idempotent from same base');
     const varSum = varEvents
-      .filter(e => e.time >= Date.parse(pairedOnly[0].day + 'T00:00:00Z')
-        && e.time <= Date.parse(pairedOnly.at(-1).day + 'T23:59:59.999Z'))
+      .filter(e => e.time >= bucharestDayStartMs(pairedOnly[0].day)
+        && e.time <= bucharestDayEndMs(pairedOnly.at(-1).day))
       .reduce((s, e) => s + e.usdc, 0);
     const mergedVar = merged1.reduce((s, r) => s + (r.byVenue?.variational || 0), 0);
     assert.ok(Math.abs(mergedVar - varSum) < 1e-4,

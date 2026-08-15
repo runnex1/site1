@@ -1089,7 +1089,7 @@ module.exports = async function handler(req, res) {
           kvGet('vault:perps_variational_settlements'),
           kvGet('vault:perps_variational_rate_samples'),
           grvtSubAccount ? kvGet(`vault:grvt_state:${grvtSubAccount}`) : null,
-          kvGet('vault:perps_daily_fund_cache'),
+          kvGet('vault:perps_daily_fund_cache_v2'),
           kvGet('vault:perps_closed_pairs'),
           kvGet('vault:perps_closed_pairs_deleted'),
         ]);
@@ -1147,7 +1147,7 @@ module.exports = async function handler(req, res) {
           kvGet('vault:perps_variational_settlements'),
           kvGet('vault:perps_variational_rate_samples'),
           grvtSubAccount ? kvGet(`vault:grvt_state:${grvtSubAccount}`) : null,
-          kvGet('vault:perps_daily_fund_cache'),
+          kvGet('vault:perps_daily_fund_cache_v2'),
           kvGet('vault:logo_cache'),
           kvGet('vault:event_history'),
         ]);
@@ -1496,7 +1496,7 @@ module.exports = async function handler(req, res) {
     }
     if (body.perpsDailyFundCache && Array.isArray(body.perpsDailyFundCache.series)
       && body.perpsDailyFundCache.series.length) {
-      const existing = parseJson(await kvGet('vault:perps_daily_fund_cache'), null);
+      const existing = parseJson(await kvGet('vault:perps_daily_fund_cache_v2'), null);
       const incomingAt = Number(body.perpsDailyFundCache.fetchedAt || 0);
       const existingAt = Number(existing?.fetchedAt || 0);
       const slimSeries = (body.perpsDailyFundCache.series || []).map((r) => {
@@ -1525,7 +1525,7 @@ module.exports = async function handler(req, res) {
           fetchedAt: Math.max(existingAt, incomingAt) || Date.now(),
         };
       }
-      await kvSet('vault:perps_daily_fund_cache', JSON.stringify(next));
+      await kvSet('vault:perps_daily_fund_cache_v2', JSON.stringify(next));
       saved.perpsDailyFundCache = true;
     }
 

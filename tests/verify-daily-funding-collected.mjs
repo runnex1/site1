@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { buildDailyFundingSeries } = require('../lib/perps.js');
+const { buildDailyFundingSeries, fundingDayKeyForMs } = require('../lib/perps.js');
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const dataPath = process.argv[2] || join(ROOT, '_perps-verify-funding.json');
@@ -19,17 +19,16 @@ if (!existsSync(dataPath)) {
 }
 const data = JSON.parse(readFileSync(dataPath, 'utf8'));
 const days = Number(data.days) || 30;
+const fetchedAt = Number(data.fetchedAt) || Date.now();
 
 function sumPaymentsOnSeriesDays(payments, seriesRows) {
   const daySet = new Set((seriesRows || []).map(r => r.day));
-  const isoDateFromMs = (ms) => new Date(ms).toISOString().slice(0, 10);
-  return (payments || []).reduce((s, p) => s + (daySet.has(isoDateFromMs(p.time)) ? (p.usdc || 0) : 0), 0);
+  return (payments || []).reduce((s, p) => s + (daySet.has(fundingDayKeyForMs(p.time)) ? (p.usdc || 0) : 0), 0);
 }
 
 function sumFeesOnSeriesDays(items, seriesRows) {
   const daySet = new Set((seriesRows || []).map(r => r.day));
-  const isoDateFromMs = (ms) => new Date(ms).toISOString().slice(0, 10);
-  return (items || []).reduce((s, f) => s + (daySet.has(isoDateFromMs(f.time)) ? (f.fee || 0) : 0), 0);
+  return (items || []).reduce((s, f) => s + (daySet.has(fundingDayKeyForMs(f.time)) ? (f.fee || 0) : 0), 0);
 }
 
 function rebuildSeries() {
@@ -43,6 +42,7 @@ function rebuildSeries() {
     grvtFills: data.grvt?.fills?.fills || [],
     extendedFills: data.extended?.fills?.fills || [],
     days,
+    endMs: fetchedAt,
   });
 }
 
@@ -69,6 +69,7 @@ const rebuiltPaired = pairedBases.length
     grvtFills: data.grvt?.fills?.fills || [],
     extendedFills: data.extended?.fills?.fills || [],
     days,
+    endMs: fetchedAt,
     pairedBases,
   })
   : rebuilt;
@@ -113,22 +114,55 @@ if (pairedBases.length) {
     'paired funding must not exceed whole-wallet funding in same window');
 }
 
-const cutoff7d = Date.now() - 7 * 86400000;
+// Bucharest day boundaries (DST-aware) for the filter helpers below.
+const _partsFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Europe/Bucharest', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+});
+
+function bucharestDayStartMs(day) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''));
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const noonUtc = Date.UTC(y, mo - 1, d, 12);
+  const parts = _partsFmt.formatToParts(new Date(noonUtc));
+  const wall = new Date(Date.UTC(
+    Number(parts.find(p => p.type === 'year').value),
+    Number(parts.find(p => p.type === 'month').value) - 1,
+    Number(parts.find(p => p.type === 'day').value),
+    Number(parts.find(p => p.type === 'hour').value),
+    Number(parts.find(p => p.type === 'minute').value),
+    Number(parts.find(p => p.type === 'second').value),
+  ));
+  return Date.UTC(y, mo - 1, d) - (wall.getTime() - noonUtc);
+}
+
+function bucharestDayEndMs(day) {
+  const start = bucharestDayStartMs(day);
+  if (start == null) return null;
+  const next = fundingDayKeyForMs(start + 86400000);
+  if (!next) return null;
+  return bucharestDayStartMs(next) - 1;
+}
+
+const cutoff7d = fetchedAt - 7 * 86400000;
 const raw7d = (data.hyperliquid?.funding?.payments || [])
   .concat(data.nado?.funding?.payments || [], data.grvt?.funding?.payments || [], data.extended?.funding?.payments || [])
-  .filter(p => Number(p.time) >= cutoff7d)
+  .filter(p => Number(p.time) >= cutoff7d && Number(p.time) <= fetchedAt)
   .reduce((s, p) => s + (p.usdc || 0), 0);
 
 // Mirror client perpsFilterDailySeries for 7d
 function filter7d(series) {
-  const rows = series.filter(r => new Date(r.day + 'T23:59:59.999Z').getTime() >= cutoff7d);
+  const rows = series.filter(r => bucharestDayEndMs(r.day || '') >= cutoff7d);
   const trimmed = rows.map((row) => {
     const fundingEvents = (row.fundingEvents || []).filter(e => (e.time || 0) >= cutoff7d);
     const feeEvents = (row.feeEvents || []).filter(e => (e.time || 0) >= cutoff7d);
     const dailyFunding = fundingEvents.reduce((s, e) => s + (e.usdc || 0), 0);
     const dailyFees = feeEvents.reduce((s, e) => s + (e.fee || 0), 0);
     return { ...row, dailyFunding, dailyFees, dailyNet: dailyFunding - dailyFees, fundingEvents, feeEvents };
-  }).filter(r => r.fundingEvents?.length || r.feeEvents?.length || new Date(r.day + 'T00:00:00Z').getTime() >= cutoff7d);
+  }).filter(r => r.fundingEvents?.length || r.feeEvents?.length || bucharestDayStartMs(r.day || '') >= cutoff7d);
   return trimmed;
 }
 

@@ -11079,7 +11079,7 @@ const PERPS_VARIATIONAL_HEDGES_KEY = 'vault-perps-variational-hedges';
 const PERPS_VARIATIONAL_SETTLEMENTS_KEY = 'vault-perps-variational-settlements';
 const PERPS_CLOSED_PAIRS_KEY = 'vault-perps-closed-pairs';
 const PERPS_VARIATIONAL_RATE_SAMPLES_KEY = 'vault-perps-variational-rate-samples';
-const PERPS_DAILY_FUND_CACHE_KEY = 'vault-perps-daily-fund-cache';
+const PERPS_DAILY_FUND_CACHE_KEY = 'vault-perps-daily-fund-cache-v2'; // v2 = Bucharest-day bucketing
 const PERPS_GRVT_STATE_CACHE_KEY = 'vault-grvt-state-cache';
 const TICKER_VISIBLE_TABS = new Set(['overview', 'etf', 'terminal', 'history']);
 const PM_WALLETS_BACKUP_KEY = 'vault-polymarket-wallets-backup';
@@ -32295,7 +32295,7 @@ function perpsFilterDailySeries(series, range) {
     if (!ms) return perpsRecomputeDailySeriesCumulative(perpsTrimDailySeriesToLatestSession(rows));
     const cutoff = Date.now() - ms;
     const trimmed = rows
-        .filter(r => new Date(r.day + 'T23:59:59.999Z').getTime() >= cutoff)
+        .filter(r => perpsFundingDayEndMs(r.day || '') >= cutoff)
         .map(r => perpsTrimDailyRowToCutoff(r, cutoff))
         .filter(Boolean);
     return perpsRecomputeDailySeriesCumulative(trimmed);
@@ -32349,7 +32349,7 @@ function perpsTrimDailySeriesToLatestSession(rows) {
 }
 
 function perpsTrimDailyRowToCutoff(row, cutoff) {
-    const dayStart = Date.parse((row.day || '') + 'T00:00:00.000Z');
+    const dayStart = perpsFundingDayStartMs(row.day || '');
     // Slimmed payloads (and variational merge on top) often have missing/partial event
     // arrays. Rebuilding totals from those would zero exchange funding for 1D/7D/30D.
     if (!perpsDailyRowEventsAreComplete(row)) {
@@ -32357,9 +32357,11 @@ function perpsTrimDailyRowToCutoff(row, cutoff) {
         // totals by the in-window fraction so 1D/7D/30D totals never lose a full day
         // (dropping the row understates them; keeping it whole would overstate 1D).
         if (Number.isFinite(dayStart) && dayStart < cutoff) {
-            const inWindowMs = dayStart + 86400000 - cutoff;
+            const dayEnd = perpsFundingDayEndMs(row.day || '');
+            const inWindowMs = Number.isFinite(dayEnd) ? dayEnd - cutoff : dayStart + 86400000 - cutoff;
             if (inWindowMs <= 0) return null;
-            const frac = Math.min(inWindowMs / 86400000, 1);
+            const dayLenMs = Number.isFinite(dayEnd) ? dayEnd - dayStart + 1 : 86400000;
+            const frac = Math.min(inWindowMs / dayLenMs, 1);
             const dailyFunding = (row.dailyFunding || 0) * frac;
             const dailyFees = (row.dailyFees || 0) * frac;
             const byVenue = {};
@@ -34641,7 +34643,7 @@ function perpsRebuildHlNadoSeriesWithMatchedFunding(pair, data, matchedEvents) {
     const addFunding = (ev, venue) => {
         const t = Number(ev.time) || 0;
         if (!t) return;
-        const day = new Date(t).toISOString().slice(0, 10);
+        const day = perpsFundingDayKeyForMs(t);
         const usdc = Number(ev.usdc) || 0;
         if (!byDay.has(day)) byDay.set(day, { day, dailyFunding: 0, dailyFees: 0, byVenue: {}, fundingEvents: [], feeEvents: [] });
         const row = byDay.get(day);
@@ -34652,7 +34654,7 @@ function perpsRebuildHlNadoSeriesWithMatchedFunding(pair, data, matchedEvents) {
     const addFees = (ev) => {
         const t = Number(ev.time) || 0;
         if (!t) return;
-        const day = new Date(t).toISOString().slice(0, 10);
+        const day = perpsFundingDayKeyForMs(t);
         const fee = Number(ev.fee) || 0;
         if (!byDay.has(day)) byDay.set(day, { day, dailyFunding: 0, dailyFees: 0, byVenue: {}, fundingEvents: [], feeEvents: [] });
         const row = byDay.get(day);
@@ -34686,8 +34688,8 @@ function perpsRebuildHlNadoSeriesWithMatchedFunding(pair, data, matchedEvents) {
         }
         const start = firstMs != null ? new Date(firstMs) : new Date(Date.now() - 29 * 86400000);
         const end = lastMs != null ? new Date(lastMs) : new Date(Date.now());
-        startDay = start.toISOString().slice(0, 10);
-        endDay = end.toISOString().slice(0, 10);
+        startDay = perpsFundingDayKeyForMs(start.getTime());
+        endDay = perpsFundingDayKeyForMs(end.getTime());
     }
     const points = [];
     let cumFunding = 0;
@@ -35090,7 +35092,7 @@ function perpsMergeVariationalIntoDailyFundingSeries(data) {
     for (const ev of events) {
         const time = Number(ev.time) || 0;
         if (!time) continue;
-        const day = new Date(time).toISOString().slice(0, 10);
+        const day = perpsFundingDayKeyForMs(time);
         let row = byDay.get(day);
         if (!row) {
             row = {
@@ -35124,6 +35126,59 @@ function perpsMergeVariationalIntoDailyFundingSeries(data) {
 
 function perpsSymbolBase(symbol) {
     return String(symbol || '').trim().toUpperCase().replace(/-PERP$/i, '');
+}
+
+// Bucharest (Europe/Bucharest) calendar-day helpers, DST-aware (EET UTC+2 / EEST UTC+3).
+// The server now buckets daily funding/fee series by Bucharest day; the client must
+// re-bucket variational / hl_nado rebuilt series and compute day boundaries identically.
+const _perpsBucharestDayFmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Bucharest',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+});
+const _perpsBucharestPartsFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Bucharest',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+});
+
+function perpsFundingDayKeyForMs(ms) {
+    const t = Number(ms);
+    if (!Number.isFinite(t) || t <= 0) return null;
+    return _perpsBucharestDayFmt.format(new Date(t));
+}
+
+function perpsFundingDayStartMs(day) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''));
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    const noonUtc = Date.UTC(y, mo - 1, d, 12);
+    const parts = _perpsBucharestPartsFmt.formatToParts(new Date(noonUtc));
+    const wall = new Date(Date.UTC(
+        Number(parts.find(p => p.type === 'year').value),
+        Number(parts.find(p => p.type === 'month').value) - 1,
+        Number(parts.find(p => p.type === 'day').value),
+        Number(parts.find(p => p.type === 'hour').value),
+        Number(parts.find(p => p.type === 'minute').value),
+        Number(parts.find(p => p.type === 'second').value)
+    ));
+    return Date.UTC(y, mo - 1, d) - (wall.getTime() - noonUtc);
+}
+
+function perpsFundingDayEndMs(day) {
+    const start = perpsFundingDayStartMs(day);
+    if (start == null) return null;
+    const next = perpsFundingDayKeyForMs(start + 86400000);
+    if (!next) return null;
+    return perpsFundingDayStartMs(next) - 1;
 }
 
 function perpsFundingPaymentsForVenue(data, venue) {
@@ -35180,7 +35235,7 @@ function perpsBuildVariationalDailySeries(pair, data, sinceMs, extraEvents = [],
     const addFundingEvent = (ev) => {
         const time = Number(ev.time) || 0;
         if (!time || time < start) return;
-        const day = new Date(time).toISOString().slice(0, 10);
+        const day = perpsFundingDayKeyForMs(time);
         const usdc = ev.usdc || 0;
         const venue = ev.venue;
         fundingByDay[day] = (fundingByDay[day] || 0) + usdc;
@@ -35213,7 +35268,7 @@ function perpsBuildVariationalDailySeries(pair, data, sinceMs, extraEvents = [],
             if (perpsSymbolBase(f.symbol) !== base) continue;
             const time = Number(f.time) || 0;
             if (!time || time < start) continue;
-            const day = new Date(time).toISOString().slice(0, 10);
+            const day = perpsFundingDayKeyForMs(time);
             const fee = f.fee || 0;
             feesByDay[day] = (feesByDay[day] || 0) + fee;
             if (!feeEventsByDay[day]) feeEventsByDay[day] = [];
@@ -35221,8 +35276,8 @@ function perpsBuildVariationalDailySeries(pair, data, sinceMs, extraEvents = [],
         }
     }
 
-    const endDay = new Date().toISOString().slice(0, 10);
-    const startDay = new Date(start).toISOString().slice(0, 10);
+    const endDay = perpsFundingDayKeyForMs(Date.now());
+    const startDay = perpsFundingDayKeyForMs(start);
     const points = [];
     let cumFunding = 0;
     let cumFees = 0;
@@ -39268,7 +39323,7 @@ function perpsFilterPairLatestSessionForRange(series, range) {
     if (ms) {
         const cutoff = Date.now() - ms;
         rows = rows
-            .filter(r => new Date(r.day + 'T23:59:59.999Z').getTime() >= cutoff)
+            .filter(r => perpsFundingDayEndMs(r.day || '') >= cutoff)
             .map(r => perpsTrimDailyRowToCutoff(r, cutoff))
             .filter(Boolean);
     }
