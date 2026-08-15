@@ -34808,6 +34808,42 @@ function perpsRescueOrphanedHlNadoCrossPairs(data, hedges) {
             nado: { ...na, venue: 'nado' },
             _rescueOrphaned: true,
         };
+        // Mirror server attachPairFundingMeta: pairOpenedAtMs is the earliest
+        // fill/funding time for the base across both venues within the latest
+        // contiguous UTC-day activity session (a blank day splits sessions).
+        const activityTimes = [];
+        for (const venue of ['hyperliquid', 'nado']) {
+            for (const f of perpsFillItemsForVenue(data, venue)) {
+                if (perpsSymbolBase(f.symbol) !== sym) continue;
+                const t = Number(f.time) || 0;
+                if (t > 0) activityTimes.push(t);
+            }
+            for (const p of perpsFundingPaymentsForVenue(data, venue)) {
+                if (perpsSymbolBase(p.symbol) !== sym) continue;
+                const t = Number(p.time) || 0;
+                if (t > 0) activityTimes.push(t);
+            }
+        }
+        const sortedTimes = activityTimes.filter((t) => Number.isFinite(t) && t > 0).sort((a, b) => a - b);
+        let pairOpenedAt = null;
+        if (sortedTimes.length) {
+            const dayKeys = [...new Set(sortedTimes.map((t) => new Date(t).toISOString().slice(0, 10)))].sort();
+            let sessionStartDay = dayKeys[dayKeys.length - 1];
+            for (let i = dayKeys.length - 1; i > 0; i -= 1) {
+                if (Date.parse(`${dayKeys[i]}T00:00:00.000Z`) - Date.parse(`${dayKeys[i - 1]}T00:00:00.000Z`) > 86400000) break;
+                sessionStartDay = dayKeys[i - 1];
+            }
+            const sessionStartMs = Date.parse(`${sessionStartDay}T00:00:00.000Z`);
+            for (const t of sortedTimes) {
+                if (t < sessionStartMs) continue;
+                if (pairOpenedAt == null || t < pairOpenedAt) pairOpenedAt = t;
+            }
+        }
+        if (pairOpenedAt != null) {
+            pair.pairOpenedAtMs = pairOpenedAt;
+            pair.daysOpen = Math.max((Date.now() - pairOpenedAt) / 86400000, 1 / 24);
+            pair.feesHistoryComplete = !pair.daysOpen || pair.daysOpen <= (Number(data.hyperliquid?.fills?.clientFillWindowDays) || 90);
+        }
         data.paired.push(pair);
         rescued.push(pair);
         existingKeys.add(sym);
