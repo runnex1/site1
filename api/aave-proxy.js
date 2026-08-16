@@ -51,6 +51,13 @@ function parseJson(raw, fallback) {
   try { return JSON.parse(raw); } catch (e) { return fallback; }
 }
 
+function resolvePerplConfig(query, savedConfig = {}) {
+  const apiKey = String(query?.perplKey || query?.perplApiKey || savedConfig?.perpl?.apiKey || '').trim();
+  const secret = String(query?.perplSecret || savedConfig?.perpl?.secret || '').trim();
+  if (apiKey && secret) return { apiKey, secret };
+  return null;
+}
+
 function expectedSyncSecret() {
   return process.env.SYNC_SECRET || process.env.CRON_SECRET || '';
 }
@@ -226,6 +233,7 @@ async function handlePerpsCronSnapshot(req, res) {
     config.grvtSubAccount || process.env.GRVT_SUB_ACCOUNT_ID || '4860249204328359',
   ).trim();
   const phoenixWallet = String(config.phoenix || config.phoenixWallet || '').trim();
+  const perpl = resolvePerplConfig({}, config);
   const days = Math.min(365, Math.max(1, parseInt(config.days || '30', 10) || 30));
 
   if (!isWallet(wallet)) {
@@ -238,6 +246,7 @@ async function handlePerpsCronSnapshot(req, res) {
       nado: nadoWallet,
       grvtSubAccount,
       ...(isUsablePhoenixWallet(phoenixWallet) ? { phoenix: phoenixWallet } : {}),
+      ...(perpl ? { perpl } : {}),
       configured: true,
     }));
   }
@@ -253,6 +262,7 @@ async function handlePerpsCronSnapshot(req, res) {
       nado: nadoWallet,
       grvtSubAccount,
       phoenix: isUsablePhoenixWallet(phoenixWallet) ? phoenixWallet : '',
+      perpl,
       // Fallback only if capital-flow refresh fails; live flows override inside the fetcher.
       cumulativeNetDeposits: Number(previousSnapshot?.cumulativeNetDeposits) || 0,
     }, { refreshCapitalFlows: true, hedges });
@@ -310,6 +320,8 @@ async function handlePerps(req, res) {
   ).trim();
   const phoenixWalletRaw = String(req.query.phoenixWallet || req.query.phoenix || '').trim();
   const phoenixWallet = isUsablePhoenixWallet(phoenixWalletRaw) ? phoenixWalletRaw : '';
+  const savedPerpsConfig = parseJson(await kvGet('vault:perps_config'), {});
+  const perpl = resolvePerplConfig(req.query, savedPerpsConfig);
 
   if (req.query.live === '1') {
     try {
@@ -369,6 +381,7 @@ async function handlePerps(req, res) {
     nado: nadoWallet,
     grvtSubAccount,
     phoenix: phoenixWallet,
+    perpl,
     days,
     grvtPositionsOverride: req.query.grvtPositions || null,
   };
@@ -376,7 +389,7 @@ async function handlePerps(req, res) {
   try {
     const hedges = parseJson(await kvGet('vault:perps_variational_hedges'), []);
     const data = await cachedJson(
-      `perps:dashboard:${wallet.toLowerCase()}:${nadoWallet.toLowerCase()}:${grvtSubAccount}:${phoenixWallet}:${days}`,
+      `perps:dashboard:${wallet.toLowerCase()}:${nadoWallet.toLowerCase()}:${grvtSubAccount}:${phoenixWallet}:${perpl ? perpl.apiKey.slice(0, 8) : 'nop'}:${days}`,
       PERPS_DASHBOARD_CACHE_MS,
       'Perps dashboard',
       () => fetchPerpsDashboard(dashboardOpts, { hedges }),

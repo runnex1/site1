@@ -9617,7 +9617,7 @@ body[data-active-tab="loops"] .page-content,
                 <div class="perps-stat-value" id="perpsStatEquity">—</div>
                 <div class="perps-stat-tip" id="perpsStatEquityTip"></div>
               </div>
-              <div class="perps-stat-sub" id="perpsStatEquitySub">HL · Nado · GRVT · Ext · Phoenix</div>
+              <div class="perps-stat-sub" id="perpsStatEquitySub">HL · Nado · GRVT · Ext · Phoenix · Perpl</div>
             </div>
             <div class="perps-stat-card"><div class="perps-stat-label" id="perpsStatPnlLabel"><span class="perps-mv3-only" id="perpsMv3PnlLabel">PnL · 7D</span><span class="perps-desktop-only">Total PnL</span></div><div class="perps-stat-value" id="perpsStatPnl">—</div><div class="perps-stat-sub" id="perpsStatPnlSub">selected window · funding − fees</div></div>
             <div class="perps-stat-card perps-stat-funding-card"><div class="perps-stat-label">Funding</div><div class="perps-stat-value" id="perpsStatFunding">—</div><div class="perps-stat-sub" id="perpsStatFundingSub">selected window</div></div>
@@ -9679,7 +9679,7 @@ body[data-active-tab="loops"] .page-content,
               </div>
             </div>
             <div class="perps-panel-fund-head">
-              <div class="perps-pnl-note" id="perpsDailyFundNote" style="margin-top:0;font-size:0.68rem;">7D gross funding · HL, Nado, GRVT, Extended, Phoenix + ~Variational est.</div>
+              <div class="perps-pnl-note" id="perpsDailyFundNote" style="margin-top:0;font-size:0.68rem;">7D gross funding · HL, Nado, GRVT, Extended, Phoenix, Perpl + ~Variational est.</div>
               <div class="perps-pnl-total" id="perpsDailyFundTotal">—</div>
             </div>
             <div class="perps-panel-body perps-panel-body--chart">
@@ -9709,7 +9709,7 @@ body[data-active-tab="loops"] .page-content,
                 <span class="perps-pill" id="perpsPairsBadge">0 pairs</span>
               </div>
             </div>
-            <p class="perps-mv3-section-sub perps-mv3-only" id="perpsMv3PositionsSub">Hedged pairs across HL, GRVT, Extended, Phoenix + Variational</p>
+            <p class="perps-mv3-section-sub perps-mv3-only" id="perpsMv3PositionsSub">Hedged pairs across HL, GRVT, Extended, Phoenix, Perpl + Variational</p>
             <div class="perps-position-tabs" role="tablist" aria-label="Position status">
               <button type="button" class="perps-position-tab active" data-perps-positions-tab="live" onclick="perpsSetPositionsTab('live', this)">Live</button>
               <button type="button" class="perps-position-tab" data-perps-positions-tab="closed" onclick="perpsSetPositionsTab('closed', this)">Closed</button>
@@ -9808,6 +9808,15 @@ body[data-active-tab="loops"] .page-content,
               <div>
                 <label for="perpsPhoenixWallet">Phoenix wallet (Solana)</label>
                 <input type="text" id="perpsPhoenixWallet" placeholder="Solana pubkey…" autocomplete="off">
+              </div>
+              <div>
+                <label for="perpsPerplApiKey">Perpl API key</label>
+                <input type="password" id="perpsPerplApiKey" placeholder="X-API-Key token…" autocomplete="off">
+              </div>
+              <div>
+                <label for="perpsPerplSecret">Perpl private key (Ed25519 hex)</label>
+                <input type="password" id="perpsPerplSecret" placeholder="32-byte hex secret…" autocomplete="off">
+                <small style="display:block;color:var(--t3);margin-top:0.25rem;">Create a read-only key at app.perpl.xyz/apikeys — both the API key and private key are required.</small>
               </div>
               <button type="button" class="perps-btn" onclick="perpsSaveConfigAndRefresh()">Save &amp; connect</button>
             </div>
@@ -17760,7 +17769,7 @@ function dashboardPerpsEquityValue() {
     const live = _perpsLastData || _perpsCache;
     if (live?.summary) {
         const s = live.summary;
-        return Number(s.hlAccountValue || 0) + Number(s.nadoAccountValue || 0) + Number(s.grvtAccountValue || 0) + Number(s.extendedAccountValue || 0) + Number(s.phoenixAccountValue || 0);
+        return Number(s.hlAccountValue || 0) + Number(s.nadoAccountValue || 0) + Number(s.grvtAccountValue || 0) + Number(s.extendedAccountValue || 0) + Number(s.phoenixAccountValue || 0) + Number(s.perplAccountValue || 0);
     }
     if (live?.equityNow?.total != null) return Number(live.equityNow.total) || 0;
     const pts = perpsEquitySnapshotPoints();
@@ -32068,6 +32077,9 @@ function perpsApplyArbToDataObject() {
         configured: true,
     };
     if (perpsIsValidSolanaAddress(cfg.phoenix)) arb.phoenix = cfg.phoenix.trim();
+    if (cfg.perpl?.apiKey && cfg.perpl?.secret) {
+        arb.perpl = { apiKey: String(cfg.perpl.apiKey).trim(), secret: String(cfg.perpl.secret).trim() };
+    }
     const startMs = Number(cfg.pnlStartMs);
     const baseline = Number(cfg.pnlBaseline);
     if (Number.isFinite(startMs) && startMs > 0 && Number.isFinite(baseline)) {
@@ -32109,6 +32121,9 @@ function perpsRestoreWalletSnapshot(snapshot) {
             configured: true,
         };
         if (perpsIsValidSolanaAddress(snapshot.phoenix)) arb.phoenix = snapshot.phoenix.trim();
+        if (snapshot.perpl?.apiKey && snapshot.perpl?.secret) {
+            arb.perpl = { apiKey: String(snapshot.perpl.apiKey).trim(), secret: String(snapshot.perpl.secret).trim() };
+        }
         const startMs = Number(snapshot.pnlStartMs);
         const baseline = Number(snapshot.pnlBaseline);
         if (Number.isFinite(startMs) && startMs > 0 && Number.isFinite(baseline)) {
@@ -32145,6 +32160,8 @@ function perpsApplyWalletMasks() {
         ['perpsNadoWallet', 'nado'],
         ['perpsGrvtSubAccount', 'grvtSubAccount'],
         ['perpsPhoenixWallet', 'phoenix'],
+        ['perpsPerplApiKey', 'perplApiKey'],
+        ['perpsPerplSecret', 'perplSecret'],
     ];
     for (const [id, key] of fields) {
         const el = document.getElementById(id);
@@ -32157,7 +32174,7 @@ function perpsApplyWalletMasks() {
 }
 
 function perpsUnmaskWalletInputs() {
-    ['perpsHlWallet', 'perpsNadoWallet', 'perpsGrvtSubAccount', 'perpsPhoenixWallet'].forEach(id => {
+    ['perpsHlWallet', 'perpsNadoWallet', 'perpsGrvtSubAccount', 'perpsPhoenixWallet', 'perpsPerplApiKey', 'perpsPerplSecret'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         if (el.dataset.perpsReal) el.value = el.dataset.perpsReal;
@@ -32221,7 +32238,7 @@ function perpsSetEquityValueMode(mode, btn) {
 function perpsEquityPointChartValue(point, valueMode = _perpsEquityValueMode) {
     if (valueMode === 'raw') return point?.totalEquity ?? 0;
     if (valueMode === 'pnl') return point?.chartValue ?? 0;
-    // Hedge-neutral: add the Variational leg components that are NOT in the 5
+    // Hedge-neutral: add the Variational leg components that are NOT in the 6
     // exchange account values making up totalEquity: partial-close realized PnL,
     // open-leg unrealized PnL, and closed-pair off-exchange equity (slip + funding).
     // Deposits/withdrawals are NOT subtracted here — only the PnL chart is
@@ -32254,8 +32271,11 @@ function perpsRepairSavedConfig() {
     const grvtSubAccount = saved.grvtSubAccount || perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || '4860249204328359';
     const phoenixRaw = saved.phoenix || perpsReadConfigField('perpsPhoenixWallet', 'phoenix') || '';
     const phoenix = perpsIsValidSolanaAddress(phoenixRaw) ? phoenixRaw.trim() : '';
+    const perplKey = saved.perpl?.apiKey || perpsReadConfigField('perpsPerplApiKey', 'perplApiKey') || '';
+    const perplSecret = saved.perpl?.secret || perpsReadConfigField('perpsPerplSecret', 'perplSecret') || '';
+    const perpl = perplKey && perplSecret ? { apiKey: perplKey.trim(), secret: perplSecret.trim() } : undefined;
     if (hl === saved.hyperliquid && saved.configured) return;
-    perpsPersistConfig({ ...saved, hyperliquid: hl, nado, grvtSubAccount, phoenix });
+    perpsPersistConfig({ ...saved, hyperliquid: hl, nado, grvtSubAccount, phoenix, ...(perpl ? { perpl } : {}) });
 }
 
 function perpsRenderFundingForTimeWindow(data) {
@@ -32507,6 +32527,7 @@ function perpsRenderEquityBreakdownTip(container, breakdown) {
         ['GRVT', breakdown.grvt],
         ['Extended', breakdown.extended],
         ['Phoenix', breakdown.phoenix],
+        ['Perpl', breakdown.perpl],
     ];
     container.innerHTML = rows.map(([label, val]) =>
         `<div class="perps-stat-tip-row"><span>${dashEsc(label)}</span><strong>${perpsFmtUsd(val)}</strong></div>`
@@ -32535,6 +32556,18 @@ function perpsNormalizeStoredConfig(raw) {
     if (phoenix && perpsIsValidSolanaAddress(phoenix)) cfg.phoenix = phoenix;
     else delete cfg.phoenix;
     delete cfg.phoenixWallet;
+    const perplKey = String(cfg.perpl?.apiKey || cfg.perplApiKey || '').trim();
+    const perplSecret = String(cfg.perpl?.secret || cfg.perplSecret || '').trim();
+    if (perplKey && perplSecret) {
+        cfg.perpl = { apiKey: perplKey, secret: perplSecret };
+        // Flat mirrors so field lookups (mask/unmask/readConfigField) work uniformly.
+        cfg.perplApiKey = perplKey;
+        cfg.perplSecret = perplSecret;
+    } else {
+        delete cfg.perpl;
+        delete cfg.perplApiKey;
+        delete cfg.perplSecret;
+    }
     return cfg;
 }
 
@@ -32554,6 +32587,9 @@ function perpsConfigPayload(cfg) {
     };
     // Omit empty Phoenix — never upload phoenix:'' (would fight cloud preserve + wipe portfolio mirror).
     if (perpsIsValidSolanaAddress(norm.phoenix)) payload.phoenix = norm.phoenix.trim();
+    if (norm.perpl?.apiKey && norm.perpl?.secret) {
+        payload.perpl = { apiKey: String(norm.perpl.apiKey).trim(), secret: String(norm.perpl.secret).trim() };
+    }
     // Compact PnL lock — survives localStorage eviction (loop snapshots can push quota).
     // Always preserve an existing lock even when callers omit pnl* fields (wallet save).
     let startMs = Number(norm.pnlStartMs);
@@ -33380,6 +33416,13 @@ function perpsApplyCloudConfig(serverConfig) {
     const phoenix = perpsIsValidSolanaAddress(serverPhoenix)
         ? serverPhoenix
         : (perpsIsValidSolanaAddress(localPhoenix) ? localPhoenix : '');
+    const serverPerplKey = String(server.perpl?.apiKey || '').trim();
+    const serverPerplSecret = String(server.perpl?.secret || '').trim();
+    const localPerplKey = String(local.perpl?.apiKey || '').trim();
+    const localPerplSecret = String(local.perpl?.secret || '').trim();
+    const perplKey = serverPerplKey || localPerplKey;
+    const perplSecret = serverPerplSecret || localPerplSecret;
+    const perpl = perplKey && perplSecret ? { apiKey: perplKey, secret: perplSecret } : undefined;
 
     if (serverValid) {
         perpsPersistConfig({
@@ -33387,6 +33430,7 @@ function perpsApplyCloudConfig(serverConfig) {
             nado: server.nado || local.nado || '',
             grvtSubAccount: server.grvtSubAccount || local.grvtSubAccount || '4860249204328359',
             phoenix,
+            ...(perpl ? { perpl } : {}),
             statRange: server.statRange || local.statRange || _perpsStatRange,
             equityChartMode: server.equityChartMode || local.equityChartMode || _perpsEquityChartMode,
             equityValueMode: server.equityValueMode || local.equityValueMode || _perpsEquityValueMode,
@@ -33595,6 +33639,8 @@ async function perpsSaveConfigAndRefresh() {
     const nadoEl = document.getElementById('perpsNadoWallet');
     const grvtEl = document.getElementById('perpsGrvtSubAccount');
     const phoenixEl = document.getElementById('perpsPhoenixWallet');
+    const perplKeyEl = document.getElementById('perpsPerplApiKey');
+    const perplSecretEl = document.getElementById('perpsPerplSecret');
     if (hlEl) {
         const raw = hlEl.value.trim();
         if (raw && !/^\*+$/.test(raw)) hlEl.dataset.perpsReal = raw;
@@ -33611,6 +33657,14 @@ async function perpsSaveConfigAndRefresh() {
         const raw = phoenixEl.value.trim();
         if (raw && !/^\*+$/.test(raw)) phoenixEl.dataset.perpsReal = raw;
     }
+    if (perplKeyEl) {
+        const raw = perplKeyEl.value.trim();
+        if (raw && !/^\*+$/.test(raw)) perplKeyEl.dataset.perpsReal = raw;
+    }
+    if (perplSecretEl) {
+        const raw = perplSecretEl.value.trim();
+        if (raw && !/^\*+$/.test(raw)) perplSecretEl.dataset.perpsReal = raw;
+    }
     perpsSaveConfig();
     if (typeof saveData === 'function') await saveData();
     const saved = perpsGetSavedConfig();
@@ -33619,6 +33673,8 @@ async function perpsSaveConfigAndRefresh() {
         perpsNadoWallet: 'nado',
         perpsGrvtSubAccount: 'grvtSubAccount',
         perpsPhoenixWallet: 'phoenix',
+        perpsPerplApiKey: 'perplApiKey',
+        perpsPerplSecret: 'perplSecret',
     };
     for (const [id, key] of Object.entries(fieldKeys)) {
         const el = document.getElementById(id);
@@ -33689,6 +33745,7 @@ function perpsVenueShortLabel(venue) {
     if (v === 'extended') return 'Ext';
     if (v === 'nado') return 'Nado';
     if (v === 'phoenix') return 'Phx';
+    if (v === 'perpl') return 'Ppl';
     if (v === 'variational') return 'Var';
     return venue || 'Exchange';
 }
@@ -35188,6 +35245,7 @@ function perpsFundingPaymentsForVenue(data, venue) {
         grvt: data?.grvt?.funding?.payments,
         extended: data?.extended?.funding?.payments,
         phoenix: data?.phoenix?.funding?.payments,
+        perpl: data?.perpl?.funding?.payments,
     };
     return sources[venue] || [];
 }
@@ -35199,6 +35257,7 @@ function perpsFillItemsForVenue(data, venue) {
         grvt: data?.grvt?.fills?.fills,
         extended: data?.extended?.fills?.fills,
         phoenix: data?.phoenix?.fills?.fills,
+        perpl: data?.perpl?.fills?.fills,
     };
     return sources[venue] || [];
 }
@@ -36411,6 +36470,80 @@ function perpsSeedHlPhoenixClosedPairsFromExchange(data) {
     return { pairs: seeded, hlUsed, phxUsed };
 }
 
+function perpsSeedHlPerplClosedPairsFromExchange(data) {
+    const CR = window.ClosedLegReconstruct;
+    if (!CR?.buildClosedLegsForVenue) return { pairs: [], hlUsed: new Set(), pplUsed: new Set() };
+    const paymentSources = {
+        hyperliquid: data?.hyperliquid?.funding?.payments || [],
+        perpl: data?.perpl?.funding?.payments || [],
+    };
+    const hlLegs = CR.buildClosedLegsForVenue('hyperliquid', data?.hyperliquid?.fills?.fills || [], paymentSources);
+    const pplLegs = CR.buildClosedLegsForVenue('perpl', data?.perpl?.fills?.fills || [], paymentSources);
+    if (!hlLegs.length || !pplLegs.length) return { pairs: [], hlUsed: new Set(), pplUsed: new Set() };
+    const pplBySymbol = {};
+    for (const leg of pplLegs) {
+        const sym = CR.toBaseSymbol(leg.symbol);
+        if (!sym) continue;
+        (pplBySymbol[sym] = pplBySymbol[sym] || []).push(leg);
+    }
+    const seeded = [];
+    const PAIR_WINDOW_MS = 2 * 86400000;
+    const closeOf = (leg) => Number(leg?.closeTime || 0);
+    const buildPair = (hl, ppl) => {
+        const closeTime = Math.max(closeOf(hl), closeOf(ppl)) || closeOf(ppl) || closeOf(hl) || Date.now();
+        const hlLeg = { venue: 'hyperliquid', ...hl };
+        const pplLeg = { venue: 'perpl', ...ppl };
+        const longLeg = hl.side === 'long' ? hlLeg : pplLeg;
+        const shortLeg = hl.side === 'long' ? pplLeg : hlLeg;
+        const fees = Math.abs(Number(hlLeg.fees || 0)) + Math.abs(Number(pplLeg.fees || 0));
+        const funding = (Number(hlLeg.funding || 0) || 0) + (Number(pplLeg.funding || 0) || 0);
+        const slip = (Number(longLeg.realizedPnl) || 0) + (Number(shortLeg.realizedPnl) || 0);
+        return {
+            symbol: CR.toBaseSymbol(hl.symbol),
+            pairType: 'hl_perpl',
+            pairLabel: 'HL + Perpl',
+            size: Math.min(Math.abs(Number(hl.size || 0)), Math.abs(Number(ppl.size || 0))) || Math.abs(Number(hl.size || 0)),
+            openTime: Math.min(Number(hl.openTime || 0) || closeTime, Number(ppl.openTime || 0) || closeTime),
+            closeTime,
+            longLeg,
+            shortLeg,
+            closeSlippage: slip,
+            funding,
+            fees,
+            netPnl: slip + funding - fees,
+        };
+    };
+    // Pair each Perpl leg at most once (greedy closest-closeTime), mirroring
+    // the HL+Phoenix seed so one round never yields duplicate cards.
+    const pplUsed = new Set();
+    const hlUsed = new Set();
+    const candidates = [];
+    for (const hl of hlLegs) {
+        const sym = CR.toBaseSymbol(hl.symbol);
+        const pplMatches = (pplBySymbol[sym] || []).filter((p) => {
+            if (p.side === hl.side) return false; // only hedge sessions pair long vs short
+            const d = closeOf(p) && closeOf(hl) ? Math.abs(closeOf(p) - closeOf(hl)) : 0;
+            return d <= PAIR_WINDOW_MS;
+        });
+        for (const ppl of pplMatches) {
+            candidates.push({ hl, ppl, d: Math.abs(closeOf(ppl) - closeOf(hl)) });
+        }
+    }
+    candidates.sort((a, b) => a.d - b.d);
+    const legKey = (leg, venue) => `${venue}|${CR.toBaseSymbol(leg.symbol)}|${leg.side}|${closeOf(leg)}|${Math.abs(Number(leg.size || 0))}`;
+    for (const { hl, ppl } of candidates) {
+        const hlKey = legKey(hl, 'hyperliquid');
+        const pplKey = legKey(ppl, 'perpl');
+        if (hlUsed.has(hlKey) || pplUsed.has(pplKey)) continue;
+        hlUsed.add(hlKey);
+        pplUsed.add(pplKey);
+        seeded.push(buildPair(hl, ppl));
+    }
+    // Expose consumed HL/Perpl legs for the never-hedged SOLO seeder so the
+    // paired rounds never also surface as SOLO rows.
+    return { pairs: seeded, hlUsed, pplUsed };
+}
+
 // Seed Closed-tab rows for positions that were closed PARTIALLY — the venue
 // reports the closed session's fills/positions with the position still open
 // (size > 0) at the end. Each row aggregates one venue|symbol|side session into
@@ -36430,7 +36563,7 @@ function perpsSeedPartialClosePairsFromExchange(data) {
     // partiallyClosed flags). Nado matches flow through the server's
     // active+inactive symbol merge (data.nado.matches.matches); Phoenix fills
     // are unbounded by symbol (data.phoenix.fills.fills).
-    const legsByVenue = { hyperliquid: [], grvt: [], extended: [], nado: [], phoenix: [] };
+    const legsByVenue = { hyperliquid: [], grvt: [], extended: [], nado: [], phoenix: [], perpl: [] };
     try {
         legsByVenue.hyperliquid = CR.buildClosedLegsForVenue(
             'hyperliquid',
@@ -36450,6 +36583,13 @@ function perpsSeedPartialClosePairsFromExchange(data) {
             'phoenix',
             data?.phoenix?.fills?.fills || [],
             { phoenix: data?.phoenix?.funding?.payments || [] },
+        ).filter((leg) => leg.partiallyClosed === true);
+    } catch (e) { /* ignore */ }
+    try {
+        legsByVenue.perpl = CR.buildClosedLegsForVenue(
+            'perpl',
+            data?.perpl?.fills?.fills || [],
+            { perpl: data?.perpl?.funding?.payments || [] },
         ).filter((leg) => leg.partiallyClosed === true);
     } catch (e) { /* ignore */ }
     for (const venue of ['grvt', 'extended']) {
@@ -36473,10 +36613,10 @@ function perpsSeedPartialClosePairsFromExchange(data) {
 
     // Skip sessions already represented by a seeded hedge pair on the same
     // base symbol + close day (hl_extended / hl_grvt / hl_nado / hl_phoenix
-    // cover both legs there).
+    // / hl_perpl cover both legs there).
     const covered = new Set();
     for (const p of data?.closedPairs || []) {
-        if (p?.pairType !== 'hl_extended' && p?.pairType !== 'hl_grvt' && p?.pairType !== 'hl_nado' && p?.pairType !== 'hl_phoenix') continue;
+        if (p?.pairType !== 'hl_extended' && p?.pairType !== 'hl_grvt' && p?.pairType !== 'hl_nado' && p?.pairType !== 'hl_phoenix' && p?.pairType !== 'hl_perpl') continue;
         const sym = CR.toBaseSymbol(p.symbol);
         const day = new Date(Number(p.closeTime) || 0).toISOString().slice(0, 10);
         if (sym && day) covered.add(`${sym}|${day}`);
@@ -36487,7 +36627,7 @@ function perpsSeedPartialClosePairsFromExchange(data) {
         return Number.isFinite(t) && t > 0 ? new Date(t).toISOString().slice(0, 10) : null;
     };
     const byGroup = new Map(); // venue|symbol|side|sessionStartDay -> { legs }
-    for (const venue of ['hyperliquid', 'grvt', 'extended', 'nado', 'phoenix']) {
+    for (const venue of ['hyperliquid', 'grvt', 'extended', 'nado', 'phoenix', 'perpl']) {
         for (const leg of legsByVenue[venue]) {
             const sym = CR.toBaseSymbol(leg.symbol);
             if (!sym) continue;
@@ -36516,7 +36656,7 @@ function perpsSeedPartialClosePairsFromExchange(data) {
         const realizedPnl = group.reduce((s, l) => s + Number(l.realizedPnl || 0), 0);
         const funding = group.reduce((s, l) => s + Number(l.funding || 0), 0);
         const fees = group.reduce((s, l) => s + Math.abs(Number(l.fees || 0)), 0);
-        const venueLabel = { hyperliquid: 'HL', grvt: 'GRVT', extended: 'Extended', nado: 'Nado', phoenix: 'Phoenix' }[venue] || venue;
+        const venueLabel = { hyperliquid: 'HL', grvt: 'GRVT', extended: 'Extended', nado: 'Nado', phoenix: 'Phoenix', perpl: 'Perpl' }[venue] || venue;
         const leg = {
             venue,
             symbol: sym,
@@ -36701,6 +36841,7 @@ function perpsSeedSoloClosedPairsFromExchange(data, consumed = {}) {
         ...(consumed.grvtUsed || []),
         ...(consumed.nadoUsed || []),
         ...(consumed.phxUsed || []),
+        ...(consumed.pplUsed || []),
     ]);
     // Variational hedges pair a tracked exchange leg against a synthetic
     // Variational leg of the opposite side. A hedged round must never be
@@ -36723,6 +36864,7 @@ function perpsSeedSoloClosedPairsFromExchange(data, consumed = {}) {
         grvt: data?.grvt?.funding?.payments || [],
         extended: data?.extended?.funding?.payments || [],
         phoenix: data?.phoenix?.funding?.payments || [],
+        perpl: data?.perpl?.funding?.payments || [],
     };
     const sourceFills = {
         hyperliquid: data?.hyperliquid?.fills?.fills || [],
@@ -36730,6 +36872,7 @@ function perpsSeedSoloClosedPairsFromExchange(data, consumed = {}) {
         grvt: data?.grvt?.fills?.fills || [],
         extended: data?.extended?.fills?.fills || [],
         phoenix: data?.phoenix?.fills?.fills || [],
+        perpl: data?.perpl?.fills?.fills || [],
     };
     const venueLabel = {
         hyperliquid: 'HL',
@@ -36737,13 +36880,14 @@ function perpsSeedSoloClosedPairsFromExchange(data, consumed = {}) {
         grvt: 'GRVT',
         extended: 'Extended',
         phoenix: 'Phoenix',
+        perpl: 'Perpl',
     };
     const legKey = (leg, venue) => `${venue}|${CR.toBaseSymbol(leg.symbol)}|${leg.side}|${Number(leg.closeTime || 0)}|${Math.abs(Number(leg.size || 0))}`;
 
     // Collect ALL closed legs per venue for the opposite-venue activity check.
     // GRVT/Extended positionHistory rows are exchange-reported full closes; the
-    // rest come from fill reconstruction (HL/Nado/Phoenix full closes).
-    const allLegsByVenue = { hyperliquid: [], nado: [], grvt: [], extended: [], phoenix: [] };
+    // rest come from fill reconstruction (HL/Nado/Phoenix/Perpl full closes).
+    const allLegsByVenue = { hyperliquid: [], nado: [], grvt: [], extended: [], phoenix: [], perpl: [] };
     const emit = (venue, leg) => {
         if (!leg || !leg.symbol || !leg.closeTime || !leg.venue) return;
         allLegsByVenue[venue].push(leg);
@@ -36754,7 +36898,7 @@ function perpsSeedSoloClosedPairsFromExchange(data, consumed = {}) {
             emit(venue, { ...leg, venue });
         }
     }
-    for (const venue of ['hyperliquid', 'nado', 'grvt', 'extended', 'phoenix']) {
+    for (const venue of ['hyperliquid', 'nado', 'grvt', 'extended', 'phoenix', 'perpl']) {
         try {
             for (const leg of CR.buildClosedLegsForVenue(venue, sourceFills[venue] || [], paymentSources)) {
                 emit(venue, { ...leg, venue });
@@ -36892,7 +37036,7 @@ function perpsMergeEquitySnapshotRecord(localSnap = {}, serverSnap = {}) {
         if (Number.isFinite(b)) return b;
         return undefined;
     };
-    for (const field of ['hlAccountValue', 'nadoAccountValue', 'grvtAccountValue', 'extendedAccountValue', 'phoenixAccountValue']) {
+    for (const field of ['hlAccountValue', 'nadoAccountValue', 'grvtAccountValue', 'extendedAccountValue', 'phoenixAccountValue', 'perplAccountValue']) {
         const v = pickVenueEquity(field);
         if (v !== undefined) merged[field] = v;
     }
@@ -36902,6 +37046,7 @@ function perpsMergeEquitySnapshotRecord(localSnap = {}, serverSnap = {}) {
         merged.grvtAccountValue,
         merged.extendedAccountValue,
         merged.phoenixAccountValue,
+        merged.perplAccountValue,
     ].map(Number).filter(Number.isFinite);
     if (parts.length) {
         merged.totalEquity = parts.reduce((s, n) => s + n, 0);
@@ -36951,22 +37096,27 @@ function perpsHlStrategyPayments(payments) {
     return (payments || []).filter(p => p.kind === 'deposit' || p.kind === 'withdraw');
 }
 
-function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, grvtPayments = null, extendedPayments = null, phoenixPayments = null, windowMs = PERPS_CROSS_VENUE_WINDOW_MS) {
+function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, grvtPayments = null, extendedPayments = null, phoenixPayments = null, perplPayments = null, windowMs = PERPS_CROSS_VENUE_WINDOW_MS) {
     if (typeof phoenixPayments === 'number') {
         windowMs = phoenixPayments;
         phoenixPayments = null;
+    } else if (typeof perplPayments === 'number') {
+        windowMs = perplPayments;
+        perplPayments = null;
     }
     const hlP = perpsHlStrategyPayments(hlPayments);
     const nadoP = [...(nadoPayments || [])];
     const grvtP = [...(grvtPayments || [])];
     const extendedP = [...(extendedPayments || [])];
     const phoenixP = [...(phoenixPayments || [])];
+    const perplP = [...(perplPayments || [])];
     const hlNetDeposits = hlP.reduce((s, p) => s + p.usdc, 0);
     const nadoNetDeposits = nadoP.reduce((s, p) => s + p.usdc, 0);
     const grvtNetDeposits = grvtP.reduce((s, p) => s + p.usdc, 0);
     const extendedNetDeposits = extendedP.reduce((s, p) => s + p.usdc, 0);
     const phoenixNetDeposits = phoenixP.reduce((s, p) => s + p.usdc, 0);
-    const rawCombinedNetDeposits = hlNetDeposits + nadoNetDeposits + grvtNetDeposits + extendedNetDeposits + phoenixNetDeposits;
+    const perplNetDeposits = perplP.reduce((s, p) => s + p.usdc, 0);
+    const rawCombinedNetDeposits = hlNetDeposits + nadoNetDeposits + grvtNetDeposits + extendedNetDeposits + phoenixNetDeposits + perplNetDeposits;
 
     function crossOffset(paymentGroups) {
         const events = paymentGroups.flatMap((payments, venue) =>
@@ -37001,6 +37151,7 @@ function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, grvtPayments 
     if (grvtPayments) paymentGroups.push(grvtP);
     if (extendedPayments) paymentGroups.push(extendedP);
     if (phoenixPayments) paymentGroups.push(phoenixP);
+    if (perplPayments) paymentGroups.push(perplP);
     const crossVenueOffset = crossOffset(paymentGroups);
 
     return {
@@ -37010,13 +37161,14 @@ function perpsComputeCombinedNetDeposits(hlPayments, nadoPayments, grvtPayments 
     };
 }
 
-function perpsNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = null, extendedPayments = null, phoenixPayments = null) {
+function perpsNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = null, extendedPayments = null, phoenixPayments = null, perplPayments = null) {
     const hlP = perpsHlStrategyPayments(hlPayments).filter(p => p.time <= timeMs);
     const nadoP = (nadoPayments || []).filter(p => p.time <= timeMs);
     const grvtP = grvtPayments ? (grvtPayments || []).filter(p => p.time <= timeMs) : null;
     const extendedP = extendedPayments ? (extendedPayments || []).filter(p => p.time <= timeMs) : null;
     const phoenixP = phoenixPayments ? (phoenixPayments || []).filter(p => p.time <= timeMs) : null;
-    return perpsComputeCombinedNetDeposits(hlP, nadoP, grvtP, extendedP, phoenixP).combinedNetDeposits;
+    const perplP = perplPayments ? (perplPayments || []).filter(p => p.time <= timeMs) : null;
+    return perpsComputeCombinedNetDeposits(hlP, nadoP, grvtP, extendedP, phoenixP, perplP).combinedNetDeposits;
 }
 
 function perpsLoadConfig() {
@@ -37026,6 +37178,8 @@ function perpsLoadConfig() {
     const nadoEl = document.getElementById('perpsNadoWallet');
     const grvtEl = document.getElementById('perpsGrvtSubAccount');
     const phoenixEl = document.getElementById('perpsPhoenixWallet');
+    const perplKeyEl = document.getElementById('perpsPerplApiKey');
+    const perplSecretEl = document.getElementById('perpsPerplSecret');
     if (!hlEl) return;
     try {
         const saved = perpsGetSavedConfig();
@@ -37045,6 +37199,14 @@ function perpsLoadConfig() {
         if (phoenixEl && perpsIsValidSolanaAddress(saved.phoenix)) {
             phoenixEl.dataset.perpsReal = saved.phoenix;
             phoenixEl.value = saved.phoenix;
+        }
+        if (perplKeyEl && saved.perpl?.apiKey) {
+            perplKeyEl.dataset.perpsReal = saved.perpl.apiKey;
+            perplKeyEl.value = saved.perpl.apiKey;
+        }
+        if (perplSecretEl && saved.perpl?.secret) {
+            perplSecretEl.dataset.perpsReal = saved.perpl.secret;
+            perplSecretEl.value = saved.perpl.secret;
         }
         if (saved.statRange) _perpsStatRange = saved.statRange;
         if (saved.equityChartMode === 'all' || saved.equityChartMode === 'session') {
@@ -37081,7 +37243,7 @@ function perpsLoadConfig() {
 }
 
 function perpsBindConfigInputs() {
-    ['perpsHlWallet', 'perpsNadoWallet', 'perpsGrvtSubAccount', 'perpsPhoenixWallet'].forEach(id => {
+    ['perpsHlWallet', 'perpsNadoWallet', 'perpsGrvtSubAccount', 'perpsPhoenixWallet', 'perpsPerplApiKey', 'perpsPerplSecret'].forEach(id => {
         const el = document.getElementById(id);
         if (!el || el.dataset.perpsBound) return;
         el.dataset.perpsBound = '1';
@@ -37131,11 +37293,15 @@ function perpsSaveConfig(opts = {}) {
     const grvtSubAccount = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount') || prev.grvtSubAccount || '4860249204328359';
     const phoenixRaw = perpsReadConfigField('perpsPhoenixWallet', 'phoenix') || prev.phoenix || '';
     const phoenix = perpsIsValidSolanaAddress(phoenixRaw) ? phoenixRaw.trim() : '';
+    const perplKey = perpsReadConfigField('perpsPerplApiKey', 'perplApiKey') || prev.perpl?.apiKey || '';
+    const perplSecret = perpsReadConfigField('perpsPerplSecret', 'perplSecret') || prev.perpl?.secret || '';
+    const perpl = perplKey && perplSecret ? { apiKey: perplKey.trim(), secret: perplSecret.trim() } : undefined;
     perpsPersistConfig({
         hyperliquid: hl,
         nado,
         grvtSubAccount,
         phoenix,
+        ...(perpl ? { perpl } : {}),
         statRange: _perpsStatRange,
         equityChartMode: _perpsEquityChartMode,
         equityValueMode: _perpsEquityValueMode,
@@ -37263,7 +37429,8 @@ function perpsSaveSnapshot(data) {
         const grvtAccountValue = s.grvtAccountValue ?? data.equityNow?.grvt ?? 0;
         const extendedAccountValue = s.extendedAccountValue ?? data.equityNow?.extended ?? 0;
         const phoenixAccountValue = s.phoenixAccountValue ?? data.equityNow?.phoenix ?? 0;
-        const totalEquity = hlAccountValue + nadoAccountValue + grvtAccountValue + extendedAccountValue + phoenixAccountValue;
+        const perplAccountValue = s.perplAccountValue ?? data.equityNow?.perpl ?? 0;
+        const totalEquity = hlAccountValue + nadoAccountValue + grvtAccountValue + extendedAccountValue + phoenixAccountValue + perplAccountValue;
         const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
         const variationalAdj = perpsComputeVariationalEquityAdjustments(data);
         const partialCloseRealizedPnl = perpsVariationalPartialCloseRealizedPnl();
@@ -37318,6 +37485,7 @@ function perpsSaveSnapshot(data) {
                 grvtAccountValue,
                 extendedAccountValue,
                 phoenixAccountValue,
+                perplAccountValue,
                 totalEquity,
                 adjustedEquity: s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalEquity - combinedNetDeposits,
                 cumulativeNetDeposits: combinedNetDeposits,
@@ -37338,6 +37506,7 @@ function perpsSaveSnapshot(data) {
             grvtAccountValue,
             extendedAccountValue,
             phoenixAccountValue,
+            perplAccountValue,
             totalEquity,
             adjustedEquity: s.adjustedEquity ?? data.equityNow?.adjustedTotal ?? totalEquity - combinedNetDeposits,
             cumulativeNetDeposits: combinedNetDeposits,
@@ -37368,6 +37537,7 @@ function perpsIsEquitySnapshotEligible(data) {
     if (s.grvtConfigured) values.push(s.grvtAccountValue ?? data?.equityNow?.grvt);
     if (s.extendedConfigured) values.push(s.extendedAccountValue ?? data?.equityNow?.extended);
     if (s.phoenixConfigured) values.push(s.phoenixAccountValue ?? data?.equityNow?.phoenix);
+    if (s.perplConfigured) values.push(s.perplAccountValue ?? data?.equityNow?.perpl);
     return values.every(Number.isFinite);
 }
 
@@ -37387,6 +37557,7 @@ function perpsCollectCapitalPayments(data) {
         cf.grvt?.payments,
         cf.extended?.payments,
         cf.phoenix?.payments,
+        cf.perpl?.payments,
     ];
     return groups
         .flatMap(rows => (rows || []).filter(perpsIsEquityCapitalPayment))
@@ -37529,18 +37700,19 @@ function perpsIsPnlCapitalPayment(p) {
 
 /** Sum of equity-moving capital flows. No same-sign cross-venue offset (that can
  *  cancel independent withdraws across venues and break PnL neutralization). */
-function perpsComputePnlNetDeposits(hlPayments, nadoPayments, grvtPayments = null, extendedPayments = null, phoenixPayments = null) {
+function perpsComputePnlNetDeposits(hlPayments, nadoPayments, grvtPayments = null, extendedPayments = null, phoenixPayments = null, perplPayments = null) {
     const rows = [
         ...(hlPayments || []),
         ...(nadoPayments || []),
         ...(grvtPayments || []),
         ...(extendedPayments || []),
         ...(phoenixPayments || []),
+        ...(perplPayments || []),
     ].filter(perpsIsPnlCapitalPayment);
     return rows.reduce((sum, p) => sum + p.usdc, 0);
 }
 
-function perpsPnlNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = null, extendedPayments = null, phoenixPayments = null) {
+function perpsPnlNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayments = null, extendedPayments = null, phoenixPayments = null, perplPayments = null) {
     const cut = (rows) => (rows || []).filter((p) => p.time <= timeMs);
     return perpsComputePnlNetDeposits(
         cut(hlPayments),
@@ -37548,6 +37720,7 @@ function perpsPnlNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayment
         grvtPayments ? cut(grvtPayments) : null,
         extendedPayments ? cut(extendedPayments) : null,
         phoenixPayments ? cut(phoenixPayments) : null,
+        perplPayments ? cut(perplPayments) : null,
     );
 }
 
@@ -37556,6 +37729,11 @@ function perpsPnlNetDepositsAtTime(hlPayments, nadoPayments, timeMs, grvtPayment
  *  still has Phoenix deposits — subtracting those deposits creates downward V-spikes. */
 function perpsSnapIncludesPhoenixEquity(snap) {
     return Number(snap?.phoenixAccountValue) > 0;
+}
+
+/** True when this equity point's total actually includes Perpl collateral. */
+function perpsSnapIncludesPerplEquity(snap) {
+    return Number(snap?.perplAccountValue) > 0;
 }
 
 function perpsBuildVenuePnlCapitalPrefix(data, venueKey) {
@@ -37582,6 +37760,7 @@ function perpsResolvePointPnlNetDeposits(snap, time, data) {
     if (data?.capitalFlows) {
         try {
             const includePhoenix = perpsSnapIncludesPhoenixEquity(snap);
+            const includePerpl = perpsSnapIncludesPerplEquity(snap);
             const prefix = perpsBuildCapitalNetPrefix(data, 'pnl');
             let fromPrefix = perpsCapitalNetAtTimeFromPrefix(prefix, time);
             if (fromPrefix != null) {
@@ -37589,6 +37768,11 @@ function perpsResolvePointPnlNetDeposits(snap, time, data) {
                     const phxPrefix = perpsBuildVenuePnlCapitalPrefix(data, 'phoenix');
                     const phxDep = perpsCapitalNetAtTimeFromPrefix(phxPrefix, time);
                     if (Number.isFinite(phxDep)) fromPrefix -= phxDep;
+                }
+                if (!includePerpl) {
+                    const pplPrefix = perpsBuildVenuePnlCapitalPrefix(data, 'perpl');
+                    const pplDep = perpsCapitalNetAtTimeFromPrefix(pplPrefix, time);
+                    if (Number.isFinite(pplDep)) fromPrefix -= pplDep;
                 }
                 return fromPrefix;
             }
@@ -37599,6 +37783,7 @@ function perpsResolvePointPnlNetDeposits(snap, time, data) {
                 data.capitalFlows.grvt?.payments || null,
                 data.capitalFlows.extended?.payments || null,
                 includePhoenix ? (data.capitalFlows.phoenix?.payments || null) : null,
+                includePerpl ? (data.capitalFlows.perpl?.payments || null) : null,
             );
         } catch (e) { /* fall through */ }
     }
@@ -37723,6 +37908,7 @@ function perpsBuildCapitalNetPrefix(data, mode = 'strategy') {
             ...(cf.grvt?.payments || []),
             ...(cf.extended?.payments || []),
             ...(cf.phoenix?.payments || []),
+            ...(cf.perpl?.payments || []),
         ].filter(perpsIsPnlCapitalPayment).sort((a, b) => a.time - b.time);
         let run = 0;
         const times = [];
@@ -37742,14 +37928,16 @@ function perpsBuildCapitalNetPrefix(data, mode = 'strategy') {
     const grvt = cf.grvt?.payments || [];
     const ext = cf.extended?.payments || [];
     const phx = cf.phoenix?.payments || [];
+    const ppl = cf.perpl?.payments || [];
     const timesSet = new Set();
     for (const p of perpsHlStrategyPayments(hl)) if (Number.isFinite(p.time)) timesSet.add(p.time);
     for (const p of nado) if (Number.isFinite(p.time)) timesSet.add(p.time);
     for (const p of grvt) if (Number.isFinite(p.time)) timesSet.add(p.time);
     for (const p of ext) if (Number.isFinite(p.time)) timesSet.add(p.time);
     for (const p of phx) if (Number.isFinite(p.time)) timesSet.add(p.time);
+    for (const p of ppl) if (Number.isFinite(p.time)) timesSet.add(p.time);
     const times = [...timesSet].sort((a, b) => a - b);
-    const prefix = times.map((t) => perpsNetDepositsAtTime(hl, nado, t, grvt, ext, phx));
+    const prefix = times.map((t) => perpsNetDepositsAtTime(hl, nado, t, grvt, ext, phx, ppl));
     data[cacheKey] = { fetchedAt: data.fetchedAt, times, prefix, mode };
     return data[cacheKey];
 }
@@ -37789,6 +37977,7 @@ function perpsResolvePointNetDeposits(snap, time, data) {
                 data.capitalFlows.grvt?.payments || null,
                 data.capitalFlows.extended?.payments || null,
                 data.capitalFlows.phoenix?.payments || null,
+                data.capitalFlows.perpl?.payments || null,
             );
         } catch (e) { /* fall through */ }
     }
@@ -37846,7 +38035,8 @@ function perpsBuildEquitySeries(data) {
     const grvtNow = s.grvtAccountValue ?? data.equityNow?.grvt ?? 0;
     const extendedNow = s.extendedAccountValue ?? data.equityNow?.extended ?? 0;
     const phoenixNow = s.phoenixAccountValue ?? data.equityNow?.phoenix ?? 0;
-    const totalNow = hlNow + nadoNow + grvtNow + extendedNow + phoenixNow;
+    const perplNow = s.perplAccountValue ?? data.equityNow?.perpl ?? 0;
+    const totalNow = hlNow + nadoNow + grvtNow + extendedNow + phoenixNow + perplNow;
     const fetchedAt = data.fetchedAt || Date.now();
     const combinedNetDeposits = s.combinedNetDeposits ?? data.capitalFlows?.combinedNetDeposits ?? 0;
     const pnlNetDepositsNow = perpsResolvePointPnlNetDeposits(
@@ -38052,7 +38242,7 @@ function perpsRenderEquityChart(data) {
     const noteEl = document.getElementById('perpsEquityChartNote');
     if (noteEl) {
         noteEl.textContent = _perpsEquityValueMode === 'raw'
-            ? 'Exchange equity · raw HL + Nado + GRVT + Extended + Phoenix account values'
+            ? 'Exchange equity · raw HL + Nado + GRVT + Extended + Phoenix + Perpl account values'
             : (_perpsEquityValueMode === 'pnl'
                 ? 'PnL · since Aug 4 2026 · ignores deposit/withdraw resets'
                 : 'Hedge-neutral · + Var uPnL, partial-close realized, closed-pair slip+funding');
@@ -38613,6 +38803,11 @@ function perpsRenderAlerts(paired, unhedged, summary) {
     } else if (summary?.phoenixConfigured && !(summary.phoenixPositionCount > 0) && (summary.phoenixAccountValue ?? 0) <= 0) {
         pills.push('Phoenix: connected but no open positions');
     }
+    if (summary?.perplError) {
+        pills.push(`Perpl: ${summary.perplError}`);
+    } else if (summary?.perplConfigured && !(summary.perplPositionCount > 0) && (summary.perplAccountValue ?? 0) <= 0) {
+        pills.push('Perpl: connected but no open positions');
+    }
     for (const p of paired) {
         if (perpsPairHasSizeMismatch(p)) pills.push(`${p.symbol}: hedged size mismatch (${perpsPairSizeMismatchText(p)})`);
         if (p.alerts?.includes('basis_drift')) pills.push(`${p.symbol}: basis drift ${perpsFmtUsd(p.combinedUpnl)}`);
@@ -38630,7 +38825,7 @@ function perpsRenderAlerts(paired, unhedged, summary) {
         return;
     }
     bar.style.display = 'flex';
-    bar.className = 'perps-alert-bar' + ((summary?.nadoError || summary?.grvtError || summary?.grvtStale || summary?.extendedError || summary?.phoenixError || hasSizeMismatch) ? ' warn' : '');
+    bar.className = 'perps-alert-bar' + ((summary?.nadoError || summary?.grvtError || summary?.grvtStale || summary?.extendedError || summary?.phoenixError || summary?.perplError || hasSizeMismatch) ? ' warn' : '');
     bar.innerHTML = pills.map(t => `<span class="perps-alert-pill">${dashEsc(t)}</span>`).join('');
 }
 
@@ -38641,6 +38836,7 @@ function perpsVenueLabel(venue) {
         grvt: 'GRVT',
         extended: 'Extended',
         phoenix: 'Phoenix',
+        perpl: 'Perpl',
         variational: 'Variational',
     }[venue] || venue;
 }
@@ -38975,6 +39171,10 @@ function perpsVenueNativeFundingRate(venue, row) {
     }
     if (venue === 'phoenix') {
         const hourly = row.phoenixHourly ?? (row.phoenix8h != null ? row.phoenix8h / 8 : null);
+        return { rateDecimal: hourly, intervalHours: 1 };
+    }
+    if (venue === 'perpl') {
+        const hourly = row.perpl8h != null ? row.perpl8h / 8 : null;
         return { rateDecimal: hourly, intervalHours: 1 };
     }
     if (venue === 'variational') {
@@ -39703,8 +39903,9 @@ function perpsComputePortfolioStats(data) {
     const grvtEquity = s.grvtAccountValue ?? data.equityNow?.grvt ?? 0;
     const extendedEquity = s.extendedAccountValue ?? data.equityNow?.extended ?? 0;
     const phoenixEquity = s.phoenixAccountValue ?? data.equityNow?.phoenix ?? 0;
-    const totalEquity = hlEquity + nadoEquity + grvtEquity + extendedEquity + phoenixEquity;
-    const venueEquity = { hl: hlEquity, nado: nadoEquity, grvt: grvtEquity, extended: extendedEquity, phoenix: phoenixEquity, total: totalEquity };
+    const perplEquity = s.perplAccountValue ?? data.equityNow?.perpl ?? 0;
+    const totalEquity = hlEquity + nadoEquity + grvtEquity + extendedEquity + phoenixEquity + perplEquity;
+    const venueEquity = { hl: hlEquity, nado: nadoEquity, grvt: grvtEquity, extended: extendedEquity, phoenix: phoenixEquity, perpl: perplEquity, total: totalEquity };
 
     let fundingAccrualTotal = 0;
     for (const p of paired) {
@@ -39796,6 +39997,12 @@ const PERPS_MV3_SPREAD_SPECS = [
     { key: 'spreadGrvtExtended8h', label: 'GRVT−Ext' },
     { key: 'spreadGrvtPhoenix8h', label: 'GRVT−Phx' },
     { key: 'spreadExtendedPhoenix8h', label: 'Ext−Phx' },
+    { key: 'spreadHlPerpl8h', label: 'HL−Ppl' },
+    { key: 'spreadNadoPerpl8h', label: 'Nado−Ppl' },
+    { key: 'spreadGrvtPerpl8h', label: 'GRVT−Ppl' },
+    { key: 'spreadExtendedPerpl8h', label: 'Ext−Ppl' },
+    { key: 'spreadPhoenixPerpl8h', label: 'Phx−Ppl' },
+    { key: 'spreadPerplVariational8h', label: 'Ppl−Var' },
 ];
 
 function perpsMv3FmtSpreadPct(rate) {
@@ -39826,7 +40033,7 @@ function perpsMv3SyncChrome(data) {
     if (posSub) {
         posSub.textContent = _perpsPositionsTab === 'closed'
             ? 'Fully closed hedged rounds from fill history'
-            : 'Hedged pairs across HL, Nado, GRVT, Extended, Phoenix + Variational';
+            : 'Hedged pairs across HL, Nado, GRVT, Extended, Phoenix, Perpl + Variational';
     }
 }
 
@@ -39967,6 +40174,7 @@ function perpsRenderMobileFundingRates(data) {
             { label: 'Ext', val: row.extended8h },
             { label: 'Nado', val: row.nado8h },
             { label: 'Phx', val: row.phoenix8h },
+            { label: 'Ppl', val: row.perpl8h },
             { label: 'Var', val: row.variational8h },
         ].filter(v => v.val != null && Number.isFinite(v.val));
         const minRate = venueRates.length ? Math.min(...venueRates.map(v => v.val)) : null;
@@ -40550,7 +40758,7 @@ function perpsRenderClosedPositions(closedPairs) {
 }
 
 function perpsVenueShort(venue) {
-    return { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext', phoenix: 'Phx', variational: 'Var' }[venue] || venue;
+    return { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext', phoenix: 'Phx', perpl: 'Ppl', variational: 'Var' }[venue] || venue;
 }
 
 function perpsPairLegs(p) {
@@ -41015,8 +41223,8 @@ function perpsRenderSpread(rows) {
         return;
     }
     el.innerHTML = `<table class="perps-table"><thead><tr>
-        <th>Asset</th><th>HL 8h</th><th>Nado 8h</th><th>GRVT 8h</th><th>Ext 8h</th><th>Phx 8h</th><th>Var 8h</th>
-        <th>HL−Nado</th><th>HL−GRVT</th><th>HL−Ext</th><th>HL−Phx</th><th>Nado−Ext</th><th>Nado−GRVT</th><th>Nado−Phx</th><th>GRVT−Ext</th><th>GRVT−Phx</th><th>Ext−Phx</th>
+        <th>Asset</th><th>HL 8h</th><th>Nado 8h</th><th>GRVT 8h</th><th>Ext 8h</th><th>Phx 8h</th><th>Ppl 8h</th><th>Var 8h</th>
+        <th>HL−Nado</th><th>HL−GRVT</th><th>HL−Ext</th><th>HL−Phx</th><th>HL−Ppl</th><th>Nado−Ext</th><th>Nado−GRVT</th><th>Nado−Phx</th><th>Nado−Ppl</th><th>GRVT−Ext</th><th>GRVT−Phx</th><th>GRVT−Ppl</th><th>Ext−Phx</th><th>Ext−Ppl</th><th>Phx−Ppl</th><th>Ppl−Var</th>
     </tr></thead><tbody>${rows.map(r => `<tr>
         <td>${dashEsc(r.symbol)}</td>
         <td>${perpsFmtRate(r.hyperliquid8h)}</td>
@@ -41024,38 +41232,51 @@ function perpsRenderSpread(rows) {
         <td>${perpsFmtRate(r.grvt8h)}</td>
         <td>${perpsFmtRate(r.extended8h)}</td>
         <td>${perpsFmtRate(r.phoenix8h)}</td>
+        <td>${perpsFmtRate(r.perpl8h)}</td>
         <td>${perpsFmtRate(r.variational8h)}</td>
         <td>${perpsFmtRate(r.spread8h)}</td>
         <td>${perpsFmtRate(r.spreadHlGrvt8h)}</td>
         <td>${perpsFmtRate(r.spreadHlExtended8h)}</td>
         <td>${perpsFmtRate(r.spreadHlPhoenix8h)}</td>
+        <td>${perpsFmtRate(r.spreadHlPerpl8h)}</td>
         <td>${perpsFmtRate(r.spreadNadoExtended8h)}</td>
         <td>${perpsFmtRate(r.spreadNadoGrvt8h)}</td>
         <td>${perpsFmtRate(r.spreadNadoPhoenix8h)}</td>
+        <td>${perpsFmtRate(r.spreadNadoPerpl8h)}</td>
         <td>${perpsFmtRate(r.spreadGrvtExtended8h)}</td>
         <td>${perpsFmtRate(r.spreadGrvtPhoenix8h)}</td>
+        <td>${perpsFmtRate(r.spreadGrvtPerpl8h)}</td>
         <td>${perpsFmtRate(r.spreadExtendedPhoenix8h)}</td>
+        <td>${perpsFmtRate(r.spreadExtendedPerpl8h)}</td>
+        <td>${perpsFmtRate(r.spreadPhoenixPerpl8h)}</td>
+        <td>${perpsFmtRate(r.spreadPerplVariational8h)}</td>
     </tr>`).join('')}</tbody></table>`;
 }
 
-function perpsRenderFundingHistory(hlPayments, nadoPayments, grvtPayments, extendedPayments, phoenixPayments = null, days = 30) {
+function perpsRenderFundingHistory(hlPayments, nadoPayments, grvtPayments, extendedPayments, phoenixPayments = null, perplPayments = null, days = 30) {
     const el = document.getElementById('perpsFundingHistory');
     if (!el) return;
     if (typeof phoenixPayments === 'number') {
         days = phoenixPayments;
         phoenixPayments = null;
     }
+    if (typeof perplPayments === 'number') {
+        days = perplPayments;
+        perplPayments = null;
+    }
     const hlSorted = [...(hlPayments || [])].sort((a, b) => b.time - a.time);
     const nadoSorted = [...(nadoPayments || [])].sort((a, b) => b.time - a.time);
     const grvtSorted = [...(grvtPayments || [])].sort((a, b) => b.time - a.time);
     const extendedSorted = [...(extendedPayments || [])].sort((a, b) => b.time - a.time);
     const phoenixSorted = [...(phoenixPayments || [])].sort((a, b) => b.time - a.time);
+    const perplSorted = [...(perplPayments || [])].sort((a, b) => b.time - a.time);
     const merged = [
         ...hlSorted.slice(0, 12),
         ...nadoSorted.slice(0, 12),
         ...grvtSorted.slice(0, 12),
         ...extendedSorted.slice(0, 12),
         ...phoenixSorted.slice(0, 12),
+        ...perplSorted.slice(0, 12),
     ].sort((a, b) => b.time - a.time);
     if (!merged.length) {
         el.innerHTML = `<div class="perps-empty">No funding payments in the last ${days} days.</div>`;
@@ -41066,7 +41287,8 @@ function perpsRenderFundingHistory(hlPayments, nadoPayments, grvtPayments, exten
     const grvtInView = merged.filter(p => p.venue === 'grvt').length;
     const extendedInView = merged.filter(p => p.venue === 'extended').length;
     const phoenixInView = merged.filter(p => p.venue === 'phoenix').length;
-    el.innerHTML = `<div class="perps-status" style="margin:0 0.5rem 0.35rem;">Showing ${merged.length} recent rows (${hlInView} HL · ${nadoInView} Nado · ${grvtInView} GRVT · ${extendedInView} Extended · ${phoenixInView} Phoenix).</div>
+    const perplInView = merged.filter(p => p.venue === 'perpl').length;
+    el.innerHTML = `<div class="perps-status" style="margin:0 0.5rem 0.35rem;">Showing ${merged.length} recent rows (${hlInView} HL · ${nadoInView} Nado · ${grvtInView} GRVT · ${extendedInView} Extended · ${phoenixInView} Phoenix · ${perplInView} Perpl).</div>
     <table class="perps-table"><thead><tr>
         <th>Time</th><th>Venue</th><th>Market</th><th>Size</th><th>Payment</th>
     </tr></thead><tbody>${merged.map(p => {
@@ -41088,6 +41310,7 @@ function perpsVenueStateForLeverage(data, venue) {
     if (venue === 'grvt') return data?.grvt?.state || {};
     if (venue === 'extended') return data?.extended?.state || {};
     if (venue === 'phoenix') return data?.phoenix?.state || {};
+    if (venue === 'perpl') return data?.perpl?.state || {};
     return {};
 }
 
@@ -41098,6 +41321,7 @@ function perpsVenueEquityForLeverage(data, venue) {
     if (venue === 'grvt') return s.grvtAccountValue ?? data?.equityNow?.grvt ?? null;
     if (venue === 'extended') return s.extendedAccountValue ?? data?.equityNow?.extended ?? null;
     if (venue === 'phoenix') return s.phoenixAccountValue ?? data?.equityNow?.phoenix ?? null;
+    if (venue === 'perpl') return s.perplAccountValue ?? data?.equityNow?.perpl ?? null;
     return null;
 }
 
@@ -41110,6 +41334,7 @@ function perpsRenderCrossMarginLeverage(data) {
         ['grvt', 'GRVT'],
         ['extended', 'Extended'],
         ['phoenix', 'Phoenix'],
+        ['perpl', 'Perpl'],
     ];
     el.innerHTML = venues.map(([venue, label]) => {
         const state = perpsVenueStateForLeverage(data, venue);
@@ -41198,6 +41423,13 @@ function perpsRenderDashboard(data, opts = {}) {
             phxUsed: Array.isArray(seededHlPhxRes) ? new Set() : (seededHlPhxRes?.phxUsed || new Set()),
         };
         if (seededHlPhx.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededHlPhx]);
+        const seededHlPplRes = perpsSeedHlPerplClosedPairsFromExchange(data);
+        const seededHlPpl = Array.isArray(seededHlPplRes) ? seededHlPplRes : (seededHlPplRes?.pairs || []);
+        const hlPplConsumed = {
+            hlUsed: Array.isArray(seededHlPplRes) ? new Set() : (seededHlPplRes?.hlUsed || new Set()),
+            pplUsed: Array.isArray(seededHlPplRes) ? new Set() : (seededHlPplRes?.pplUsed || new Set()),
+        };
+        if (seededHlPpl.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededHlPpl]);
         const seededPartial = perpsSeedPartialClosePairsFromExchange(data);
         if (seededPartial.length) {
             // Replace prior partial rows for the same venue|symbol|side|session
@@ -41222,11 +41454,12 @@ function perpsRenderDashboard(data, opts = {}) {
         // activity in their lifetime (e.g. KAITO's 48,000 HL round closed after
         // the Extended hedge flattened). Consumed hedge legs are excluded.
         const seededSolo = perpsSeedSoloClosedPairsFromExchange(data, {
-            hlUsed: new Set([...hlExtConsumed.hlUsed, ...grvtConsumed.hlUsed, ...hlNadoConsumed.hlUsed, ...hlPhxConsumed.hlUsed]),
+            hlUsed: new Set([...hlExtConsumed.hlUsed, ...grvtConsumed.hlUsed, ...hlNadoConsumed.hlUsed, ...hlPhxConsumed.hlUsed, ...hlPplConsumed.hlUsed]),
             extUsed: hlExtConsumed.extUsed,
             grvtUsed: grvtConsumed.grvtUsed,
             nadoUsed: hlNadoConsumed.nadoUsed,
             phxUsed: hlPhxConsumed.phxUsed,
+            pplUsed: hlPplConsumed.pplUsed,
         });
         if (seededSolo.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededSolo]);
         try {
@@ -41281,11 +41514,12 @@ function perpsRenderDashboard(data, opts = {}) {
 
 function perpsFormatConnectedStatus(payload) {
     const s = payload?.summary || {};
-    let status = `Connected · ${payload?.paired?.length || 0} pairs · equity ${perpsFmtUsd((s.hlAccountValue ?? 0) + (s.nadoAccountValue ?? 0) + (s.grvtAccountValue ?? 0) + (s.extendedAccountValue ?? 0) + (s.phoenixAccountValue ?? 0))}`;
+    let status = `Connected · ${payload?.paired?.length || 0} pairs · equity ${perpsFmtUsd((s.hlAccountValue ?? 0) + (s.nadoAccountValue ?? 0) + (s.grvtAccountValue ?? 0) + (s.extendedAccountValue ?? 0) + (s.phoenixAccountValue ?? 0) + (s.perplAccountValue ?? 0))}`;
     if (s.nadoError) status += ` · NADO: ${s.nadoError}`;
     if (s.grvtError) status += ` · GRVT: ${s.grvtError}`;
     if (s.extendedError) status += ` · Extended: ${s.extendedError}`;
     if (s.phoenixError) status += ` · Phoenix: ${s.phoenixError}`;
+    if (s.perplError) status += ` · Perpl: ${s.perplError}`;
     return status;
 }
 
@@ -41299,6 +41533,7 @@ function perpsDashboardLoadWarnings(payload) {
     if (s.grvtError) warnings.push(`GRVT: ${s.grvtError}`);
     if (s.extendedError) warnings.push(`Extended: ${s.extendedError}`);
     if (s.phoenixError) warnings.push(`Phoenix: ${s.phoenixError}`);
+    if (s.perplError) warnings.push(`Perpl: ${s.perplError}`);
     if (payload?.nado?.state?.error) warnings.push(`NADO state: ${payload.nado.state.error}`);
     if (payload?.nado?.funding?.error) warnings.push(`NADO funding: ${payload.nado.funding.error}`);
     if (payload?.nado?.matches?.error) warnings.push(`NADO matches: ${payload.nado.matches.error}`);
@@ -41378,6 +41613,12 @@ async function perpsRefresh(silent = false) {
         if (grvtSub) params.set('grvtSubAccount', grvtSub);
         const phoenixRaw = perpsReadConfigField('perpsPhoenixWallet', 'phoenix');
         if (phoenixRaw && perpsIsValidSolanaAddress(phoenixRaw)) params.set('phoenixWallet', phoenixRaw.trim());
+        const perplKey = perpsReadConfigField('perpsPerplApiKey', 'perplApiKey');
+        const perplSecret = perpsReadConfigField('perpsPerplSecret', 'perplSecret');
+        if (perplKey && perplSecret) {
+            params.set('perplKey', perplKey.trim());
+            params.set('perplSecret', perplSecret.trim());
+        }
         const grvtCache = perpsLoadGrvtStateCache();
         if (grvtCache?.positions?.length) {
             const grvtJson = JSON.stringify(grvtCache.positions);
