@@ -32166,7 +32166,7 @@ function perpsApplyWalletMasks() {
     for (const [id, key] of fields) {
         const el = document.getElementById(id);
         const val = saved[key] || '';
-        if (!el || !val || document.activeElement === el) continue;
+        if (!el || !val || document.activeElement === el || el.dataset.perpsDirty) continue;
         el.dataset.perpsReal = val;
         el.value = perpsMaskSecret(val);
         el.classList.add('perps-masked');
@@ -32176,7 +32176,7 @@ function perpsApplyWalletMasks() {
 function perpsUnmaskWalletInputs() {
     ['perpsHlWallet', 'perpsNadoWallet', 'perpsGrvtSubAccount', 'perpsPhoenixWallet', 'perpsPerplApiKey', 'perpsPerplSecret'].forEach(id => {
         const el = document.getElementById(id);
-        if (!el) return;
+        if (!el || el.dataset.perpsDirty) return;
         if (el.dataset.perpsReal) el.value = el.dataset.perpsReal;
         el.classList.remove('perps-masked');
     });
@@ -33237,7 +33237,18 @@ async function perpsPushPerpsConfigToCloud(config) {
 }
 
 function perpsPersistConfig(config, opts = {}) {
-    const payload = perpsConfigPayload(config);
+    const incoming = config && typeof config === 'object' ? { ...config } : {};
+    // Preserve stored Perpl keys when the incoming config omits them
+    // (mirrors api/sync.js — wallet/stat-range saves must not wipe keys).
+    if (!(incoming.perpl?.apiKey && incoming.perpl?.secret)) {
+        try {
+            const stored = perpsGetSavedConfig();
+            if (stored.perpl?.apiKey && stored.perpl?.secret) {
+                incoming.perpl = { apiKey: String(stored.perpl.apiKey).trim(), secret: String(stored.perpl.secret).trim() };
+            }
+        } catch (e) {}
+    }
+    const payload = perpsConfigPayload(incoming);
     if (!payload) return false;
     try {
         const json = JSON.stringify(payload);
@@ -33682,6 +33693,7 @@ async function perpsSaveConfigAndRefresh() {
         const raw = el.value.trim();
         const val = raw && !/^\*+$/.test(raw) ? raw : (saved[key] || '');
         if (val) el.dataset.perpsReal = val;
+        delete el.dataset.perpsDirty;
     }
     const foot = document.getElementById('perpsConfigFoot');
     if (foot) delete foot.dataset.forceOpen;
@@ -37200,14 +37212,16 @@ function perpsLoadConfig() {
             phoenixEl.dataset.perpsReal = saved.phoenix;
             phoenixEl.value = saved.phoenix;
         }
-        if (perplKeyEl && saved.perpl?.apiKey) {
-            perplKeyEl.dataset.perpsReal = saved.perpl.apiKey;
-            perplKeyEl.value = saved.perpl.apiKey;
-        }
-        if (perplSecretEl && saved.perpl?.secret) {
-            perplSecretEl.dataset.perpsReal = saved.perpl.secret;
-            perplSecretEl.value = saved.perpl.secret;
-        }
+        // Never clobber a focused or user-edited field (cloud merge / tab switch
+        // running perpsLoadConfig while the user is typing would wipe fresh keys).
+        const setFieldIfQuiet = (el, val) => {
+            if (!el || !val) return;
+            if (document.activeElement === el || el.dataset.perpsDirty) return;
+            el.dataset.perpsReal = val;
+            el.value = val;
+        };
+        setFieldIfQuiet(perplKeyEl, saved.perpl?.apiKey);
+        setFieldIfQuiet(perplSecretEl, saved.perpl?.secret);
         if (saved.statRange) _perpsStatRange = saved.statRange;
         if (saved.equityChartMode === 'all' || saved.equityChartMode === 'session') {
             _perpsEquityChartMode = saved.equityChartMode;
@@ -37247,6 +37261,10 @@ function perpsBindConfigInputs() {
         const el = document.getElementById(id);
         if (!el || el.dataset.perpsBound) return;
         el.dataset.perpsBound = '1';
+        el.addEventListener('input', () => {
+            // Track user edits so load/unmask never clobber fresh typing.
+            el.dataset.perpsDirty = '1';
+        });
         el.addEventListener('focus', () => {
             if (el.dataset.perpsReal) {
                 el.value = el.dataset.perpsReal;
