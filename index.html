@@ -37195,23 +37195,6 @@ function perpsLoadConfig() {
     if (!hlEl) return;
     try {
         const saved = perpsGetSavedConfig();
-        if (saved.hyperliquid) {
-            hlEl.dataset.perpsReal = saved.hyperliquid;
-            hlEl.value = saved.hyperliquid;
-        }
-        if (saved.nado) {
-            nadoEl.dataset.perpsReal = saved.nado;
-            nadoEl.value = saved.nado;
-        }
-        if (grvtEl) {
-            const grvt = saved.grvtSubAccount || '4860249204328359';
-            grvtEl.dataset.perpsReal = grvt;
-            grvtEl.value = grvt;
-        }
-        if (phoenixEl && perpsIsValidSolanaAddress(saved.phoenix)) {
-            phoenixEl.dataset.perpsReal = saved.phoenix;
-            phoenixEl.value = saved.phoenix;
-        }
         // Never clobber a focused or user-edited field (cloud merge / tab switch
         // running perpsLoadConfig while the user is typing would wipe fresh keys).
         const setFieldIfQuiet = (el, val) => {
@@ -37220,6 +37203,10 @@ function perpsLoadConfig() {
             el.dataset.perpsReal = val;
             el.value = val;
         };
+        setFieldIfQuiet(hlEl, saved.hyperliquid);
+        setFieldIfQuiet(nadoEl, saved.nado);
+        setFieldIfQuiet(grvtEl, saved.grvtSubAccount || '4860249204328359');
+        if (perpsIsValidSolanaAddress(saved.phoenix)) setFieldIfQuiet(phoenixEl, saved.phoenix);
         setFieldIfQuiet(perplKeyEl, saved.perpl?.apiKey);
         setFieldIfQuiet(perplSecretEl, saved.perpl?.secret);
         if (saved.statRange) _perpsStatRange = saved.statRange;
