@@ -9811,11 +9811,11 @@ body[data-active-tab="loops"] .page-content,
               </div>
               <div>
                 <label for="perpsPerplApiKey">Perpl API key</label>
-                <input type="password" id="perpsPerplApiKey" placeholder="X-API-Key token…" autocomplete="off">
+                <input type="text" id="perpsPerplApiKey" placeholder="X-API-Key token…" autocomplete="off" spellcheck="false">
               </div>
               <div>
                 <label for="perpsPerplSecret">Perpl private key (Ed25519 hex)</label>
-                <input type="password" id="perpsPerplSecret" placeholder="32-byte hex secret…" autocomplete="off">
+                <input type="text" id="perpsPerplSecret" placeholder="32-byte hex secret…" autocomplete="off" spellcheck="false">
                 <small style="display:block;color:var(--t3);margin-top:0.25rem;">Create a read-only key at app.perpl.xyz/apikeys — both the API key and private key are required.</small>
               </div>
               <button type="button" class="perps-btn" onclick="perpsSaveConfigAndRefresh()">Save &amp; connect</button>
@@ -32155,13 +32155,13 @@ function perpsApplyWalletMasks() {
     const foot = document.getElementById('perpsConfigFoot');
     if (foot?.dataset.forceOpen) return;
     const saved = perpsGetSavedConfig();
+    // Perpl API key/secret stay visible (user opted to see characters);
+    // only wallet addresses are masked.
     const fields = [
         ['perpsHlWallet', 'hyperliquid'],
         ['perpsNadoWallet', 'nado'],
         ['perpsGrvtSubAccount', 'grvtSubAccount'],
         ['perpsPhoenixWallet', 'phoenix'],
-        ['perpsPerplApiKey', 'perplApiKey'],
-        ['perpsPerplSecret', 'perplSecret'],
     ];
     for (const [id, key] of fields) {
         const el = document.getElementById(id);
@@ -33431,8 +33431,11 @@ function perpsApplyCloudConfig(serverConfig) {
     const serverPerplSecret = String(server.perpl?.secret || '').trim();
     const localPerplKey = String(local.perpl?.apiKey || '').trim();
     const localPerplSecret = String(local.perpl?.secret || '').trim();
-    const perplKey = serverPerplKey || localPerplKey;
-    const perplSecret = serverPerplSecret || localPerplSecret;
+    // Local keys win when both exist: the user on THIS device just typed/saved
+    // them, so a stale cloud copy (e.g. old test keys) must not clobber them.
+    // Cloud keys are only used when this device has none (first-time setup).
+    const perplKey = localPerplKey || serverPerplKey;
+    const perplSecret = localPerplSecret || serverPerplSecret;
     const perpl = perplKey && perplSecret ? { apiKey: perplKey, secret: perplSecret } : undefined;
 
     if (serverValid) {
