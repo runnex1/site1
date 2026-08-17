@@ -32139,23 +32139,30 @@ function perpsReadConfigField(id, key) {
     const el = document.getElementById(id);
     const saved = perpsGetSavedConfig();
     const savedVal = saved[key] || '';
-    if (!el) return savedVal;
+    // Hard-reject stale TEST perpl values from ANY source (field, dataset,
+    // storage) — they were the reset/pollution source for weeks.
+    const isStaleTest = (v) => v === 'TESTKEY1234567890' || v === 'TESTSEcret1234567890abcdef1234567890';
+    if (!el) return isStaleTest(savedVal) ? '' : savedVal;
+    const clean = (v) => {
+        v = String(v || '').trim();
+        return isStaleTest(v) ? '' : v;
+    };
     // User is actively editing: the field's CURRENT value is authoritative.
     // (Stale dataset.perpsReal from an earlier load/save must never win over
     // fresh typing — this was wiping the Perpl secret on Save & connect.)
     if (el.dataset.perpsDirty) {
-        const live = el.value.trim();
-        return live && !/^\*+$/.test(live) ? live : savedVal;
+        const live = clean(el.value);
+        return live && !/^\*+$/.test(live) ? live : clean(savedVal);
     }
     if (document.activeElement === el) {
-        const live = el.value.trim();
-        return live && !/^\*+$/.test(live) ? live : savedVal;
+        const live = clean(el.value);
+        return live && !/^\*+$/.test(live) ? live : clean(savedVal);
     }
-    if (el.dataset.perpsReal && !/^\*+$/.test(el.dataset.perpsReal)) return el.dataset.perpsReal;
-    if (el.classList.contains('perps-masked')) return savedVal;
-    const val = el.value.trim();
+    if (el.dataset.perpsReal && !/^\*+$/.test(el.dataset.perpsReal)) return clean(el.dataset.perpsReal);
+    if (el.classList.contains('perps-masked')) return clean(savedVal);
+    const val = clean(el.value);
     if (val && !/^\*+$/.test(val)) return val;
-    return savedVal;
+    return clean(savedVal);
 }
 
 function perpsApplyWalletMasks() {
@@ -32565,7 +32572,10 @@ function perpsNormalizeStoredConfig(raw) {
     delete cfg.phoenixWallet;
     const perplKey = String(cfg.perpl?.apiKey || cfg.perplApiKey || '').trim();
     const perplSecret = String(cfg.perpl?.secret || cfg.perplSecret || '').trim();
-    if (perplKey && perplSecret) {
+    // Hard-reject known stale TEST values so they can never be read, re-saved,
+    // re-uploaded, or restored from any storage/cloud copy.
+    const isStaleTest = (v) => v === 'TESTKEY1234567890' || v === 'TESTSEcret1234567890abcdef1234567890';
+    if (perplKey && perplSecret && !isStaleTest(perplKey) && !isStaleTest(perplSecret)) {
         cfg.perpl = { apiKey: perplKey, secret: perplSecret };
         // Flat mirrors so field lookups (mask/unmask/readConfigField) work uniformly.
         cfg.perplApiKey = perplKey;
