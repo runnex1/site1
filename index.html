@@ -32140,6 +32140,13 @@ function perpsReadConfigField(id, key) {
     const saved = perpsGetSavedConfig();
     const savedVal = saved[key] || '';
     if (!el) return savedVal;
+    // User is actively editing: the field's CURRENT value is authoritative.
+    // (Stale dataset.perpsReal from an earlier load/save must never win over
+    // fresh typing — this was wiping the Perpl secret on Save & connect.)
+    if (el.dataset.perpsDirty) {
+        const live = el.value.trim();
+        return live && !/^\*+$/.test(live) ? live : savedVal;
+    }
     if (document.activeElement === el) {
         const live = el.value.trim();
         return live && !/^\*+$/.test(live) ? live : savedVal;
