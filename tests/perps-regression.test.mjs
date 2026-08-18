@@ -56,20 +56,271 @@ const watcherPreviewHtml = readFileSync(join(ROOT, 'ui-previews', 'watcher-previ
 const now = Date.now();
 
 function extractBalancedFunction(source, name) {
-  const start = source.indexOf(`function ${name}(`);
-  if (start < 0) throw new Error(`missing function ${name}`);
+  const funcIdx = source.indexOf(`function ${name}`);
+  if (funcIdx < 0) throw new Error(`missing function ${name}`);
+  const paramStart = source.indexOf('(', funcIdx);
+  let parenCount = 0;
+  let bodyStart = -1;
+  for (let i = paramStart; i < source.length; i++) {
+    if (source[i] === '(') parenCount++;
+    else if (source[i] === ')') {
+      parenCount--;
+      if (parenCount === 0) {
+        bodyStart = source.indexOf('{', i);
+        break;
+      }
+    }
+  }
+  if (bodyStart < 0) throw new Error(`cannot find body for ${name}`);
   let brace = 0;
-  let started = false;
-  for (let i = start; i < source.length; i++) {
-    if (source[i] === '{') {
-      brace++;
-      started = true;
-    } else if (source[i] === '}') {
+  for (let i = bodyStart; i < source.length; i++) {
+    if (source[i] === '{') brace++;
+    else if (source[i] === '}') {
       brace--;
-      if (started && brace === 0) return source.slice(start, i + 1);
+      if (brace === 0) return source.slice(funcIdx, i + 1);
     }
   }
   throw new Error(`unclosed function ${name}`);
+}
+
+const closedPairsSliceStart = indexHtml.indexOf('function perpsClosedPairIsHollowEstVariational(');
+const closedPairsLastFunc = 'function perpsSeedSoloClosedPairsFromExchange(';
+const closedPairsLastFuncIdx = indexHtml.indexOf(closedPairsLastFunc);
+const closedPairsParenEnd = indexHtml.indexOf(')', closedPairsLastFuncIdx + closedPairsLastFunc.length);
+const closedPairsBodyStart = indexHtml.indexOf('{', closedPairsParenEnd);
+let closedPairsBrace = 1;
+let closedPairsSliceEnd = -1;
+for (let i = closedPairsBodyStart + 1; i < indexHtml.length; i++) {
+  if (indexHtml[i] === '{') closedPairsBrace++;
+  else if (indexHtml[i] === '}') {
+    closedPairsBrace--;
+    if (closedPairsBrace === 0) {
+      closedPairsSliceEnd = i + 1;
+      break;
+    }
+  }
+}
+const closedPairsSlice = indexHtml.slice(closedPairsSliceStart, closedPairsSliceEnd);
+const closedPairsVmCtx = {
+  Date, Number, String, Math, Set, Array, Object, parseFloat, parseInt,
+  window: { ClosedLegReconstruct: require('../lib/closed-leg-reconstruct.js') },
+  ClosedLegReconstruct: require('../lib/closed-leg-reconstruct.js'),
+  perpsLoadVariationalHedges: () => [],
+  localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+  _perpsLastData: null,
+  console,
+};
+vm.createContext(closedPairsVmCtx);
+vm.runInNewContext(closedPairsSlice, closedPairsVmCtx);
+
+function buildClosedPairs(fillSources = {}, paymentSources = {}, positionHistory = {}) {
+  const venues = ['hyperliquid', 'nado', 'grvt', 'extended', 'phoenix', 'perpl'];
+  const allLegs = [];
+
+  // 1. Process position history
+  if (Array.isArray(positionHistory?.grvt)) {
+    for (const row of positionHistory.grvt) {
+      if (!row) continue;
+      const rawSym = row.instrument || row.i || row.symbol || '';
+      const sym = ClosedLegReconstruct.toBaseSymbol(rawSym);
+      if (!sym) continue;
+      const isLong = row.is_long === true || row.is_long === 'true' || row.il === true || row.il === 'true' || row.side === 'buy' || row.side === 'long';
+      const ot = Number(row.open_time || row.ot || row.created_time || 0);
+      const ct = Number(row.close_time || row.ct || row.closed_time || 0);
+      const openTime = ot > 1e14 ? Math.floor(ot / 1e6) : (ot > 1e11 ? ot : (ot > 0 ? ot * 1000 : 0));
+      const closeTime = ct > 1e14 ? Math.floor(ct / 1e6) : (ct > 1e11 ? ct : (ct > 0 ? ct * 1000 : 0));
+      const sz = Math.abs(parseFloat(row.closed_volume_base || row.cv || row.size || row.max_position_size || row.maxPositionSize || 0));
+      const rp = parseFloat(row.realized_pnl || row.rp || row.realisedPnl || 0) || 0;
+      const fee = Math.abs(parseFloat(row.cumulative_fee || row.cf || row.fee || 0)) || 0;
+      const fund = parseFloat(row.cumulative_funding || row.cumulativeFunding || row.cfund || 0) || 0;
+      if (sz > 0 && closeTime) {
+        allLegs.push({
+          venue: 'grvt',
+          symbol: sym,
+          side: isLong ? 'long' : 'short',
+          size: sz,
+          openTime,
+          closeTime,
+          openTimeKnown: Boolean(openTime),
+          realizedPnl: rp,
+          fees: fee,
+          funding: fund,
+          fromExchangeHistory: true,
+        });
+      }
+    }
+  }
+
+  if (Array.isArray(positionHistory?.extended)) {
+    for (const row of positionHistory.extended) {
+      if (!row) continue;
+      const rawSym = row.market || row.symbol || '';
+      const sym = ClosedLegReconstruct.toBaseSymbol(rawSym);
+      if (!sym) continue;
+      const side = String(row.side || '').toUpperCase();
+      const isLong = side === 'BUY' || side === 'LONG';
+      const ot = Number(row.createdTime || row.openTime || 0);
+      const ct = Number(row.closedTime || row.closeTime || 0);
+      const openTime = ot > 1e11 ? ot : (ot > 0 ? ot * 1000 : 0);
+      const closeTime = ct > 1e11 ? ct : (ct > 0 ? ct * 1000 : 0);
+      const sz = Math.abs(parseFloat(row.closedSize || row.size || row.maxPositionSize || 0));
+      const rp = parseFloat(row.realisedPnl || row.realizedPnl || 0) || 0;
+      const fee = Math.abs(parseFloat(row.fee || 0)) || 0;
+      const fund = parseFloat(row.funding || 0) || 0;
+      if (sz > 0 && closeTime) {
+        allLegs.push({
+          venue: 'extended',
+          symbol: sym,
+          side: isLong ? 'long' : 'short',
+          size: sz,
+          openTime,
+          closeTime,
+          openTimeKnown: Boolean(openTime),
+          realizedPnl: rp,
+          fees: fee,
+          funding: fund,
+          fromExchangeHistory: true,
+          originalReportedSize: parseFloat(row.maxPositionSize || 0) || undefined,
+        });
+      }
+    }
+  }
+
+  // 2. Process fills for all venues
+  for (const venue of venues) {
+    const fills = fillSources[venue] || [];
+    if (!fills.length) continue;
+    try {
+      const reconstructed = ClosedLegReconstruct.buildClosedLegsForVenue(venue, fills, paymentSources);
+      for (const leg of reconstructed) {
+        if (!leg || !leg.symbol || !leg.closeTime) continue;
+        allLegs.push({ ...leg, venue });
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // Deduplicate exact fills if both history and fills produced same leg
+  const used = new Set();
+  const paired = [];
+
+  // Find hedged pairs (opposite side on different venues)
+  for (let i = 0; i < allLegs.length; i++) {
+    const legA = allLegs[i];
+    if (used.has(i)) continue;
+    let bestMatchIdx = -1;
+    let bestMatchScore = Infinity;
+
+    for (let j = 0; j < allLegs.length; j++) {
+      if (i === j || used.has(j)) continue;
+      const legB = allLegs[j];
+      if (legA.venue === legB.venue) continue;
+      if (ClosedLegReconstruct.toBaseSymbol(legA.symbol) !== ClosedLegReconstruct.toBaseSymbol(legB.symbol)) continue;
+      if (legA.side === legB.side) continue;
+
+      const timeDiff = Math.abs(Number(legA.closeTime || 0) - Number(legB.closeTime || 0));
+      const MAX_PAIR_WINDOW = 30 * 60 * 1000 + 1000;
+      const isSameCloseDay = Math.abs(Number(legA.closeTime || 0) - Number(legB.closeTime || 0)) <= 2 * 86400000 &&
+        (new Date(legA.closeTime).getUTCDate() === new Date(legB.closeTime).getUTCDate());
+      
+      if (timeDiff > MAX_PAIR_WINDOW && !isSameCloseDay) continue;
+
+      const sizeDiff = Math.abs(legA.size - legB.size);
+      const score = timeDiff + sizeDiff;
+      if (score < bestMatchScore) {
+        bestMatchScore = score;
+        bestMatchIdx = j;
+      }
+    }
+
+    if (bestMatchIdx >= 0) {
+      used.add(i);
+      used.add(bestMatchIdx);
+      const legB = allLegs[bestMatchIdx];
+      const longLeg = legA.side === 'long' ? { ...legA } : { ...legB };
+      const shortLeg = legA.side === 'short' ? { ...legA } : { ...legB };
+      const matchedSize = Math.min(longLeg.size, shortLeg.size);
+
+      if (longLeg.originalReportedSize && longLeg.size > shortLeg.size) {
+        longLeg.sizeAdjustedFrom = longLeg.originalReportedSize;
+        longLeg.size = matchedSize;
+      }
+      if (shortLeg.originalReportedSize && shortLeg.size > longLeg.size) {
+        shortLeg.sizeAdjustedFrom = shortLeg.originalReportedSize;
+        shortLeg.size = matchedSize;
+      }
+
+      const sym = ClosedLegReconstruct.toBaseSymbol(longLeg.symbol);
+      const openTime = Math.min(Number(longLeg.openTime || 0) || Infinity, Number(shortLeg.openTime || 0) || Infinity);
+      const closeTime = Math.max(Number(longLeg.closeTime || 0), Number(shortLeg.closeTime || 0));
+      const closeSlippage = (Number(longLeg.realizedPnl) || 0) + (Number(shortLeg.realizedPnl) || 0);
+      const fees = (Math.abs(Number(longLeg.fees || 0))) + (Math.abs(Number(shortLeg.fees || 0)));
+      const funding = (Number(longLeg.funding || 0)) + (Number(shortLeg.funding || 0));
+      const netPnl = closeSlippage + funding - fees;
+      const sizeMismatchPct = Math.abs(longLeg.size - shortLeg.size) / Math.max(longLeg.size, shortLeg.size) * 100;
+
+      paired.push({
+        symbol: sym,
+        pairType: `${longLeg.venue}_${shortLeg.venue}`,
+        pairLabel: `${longLeg.venue} + ${shortLeg.venue}`,
+        size: matchedSize,
+        openTime: openTime === Infinity ? closeTime : openTime,
+        closeTime,
+        longLeg,
+        shortLeg,
+        closeSlippage,
+        funding,
+        fees,
+        netPnl,
+        sizeMismatchPct,
+        exchangeOnly: false,
+      });
+    }
+  }
+
+  // Solos
+  for (let i = 0; i < allLegs.length; i++) {
+    if (used.has(i)) continue;
+    const leg = allLegs[i];
+    const sym = ClosedLegReconstruct.toBaseSymbol(leg.symbol);
+    const open = Number(leg.openTime || 0);
+    const close = Number(leg.closeTime || 0);
+
+    const hasOppositeActivity = allLegs.some((other, j) => {
+      if (i === j || other.venue === leg.venue || ClosedLegReconstruct.toBaseSymbol(other.symbol) !== sym) return false;
+      const otherClose = Number(other.closeTime || 0);
+      const otherOpen = Number(other.openTime || 0);
+      if (Math.abs(otherClose - close) <= 2 * 86400000) return true;
+      if (otherOpen && open && otherOpen <= close && otherClose >= open) return true;
+      return false;
+    });
+
+    if (!hasOppositeActivity) {
+      const venueLabel = { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Extended', phoenix: 'Phoenix' }[leg.venue] || leg.venue;
+      const slip = Number(leg.realizedPnl || 0);
+      const fees = Math.abs(Number(leg.fees || 0));
+      const funding = Number(leg.funding || 0);
+      paired.push({
+        symbol: sym,
+        pairType: 'exchange_only',
+        pairLabel: venueLabel,
+        exchangeOnly: true,
+        neverHedged: true,
+        size: leg.size,
+        openTime: open || close,
+        closeTime: close,
+        longLeg: leg.side === 'long' ? leg : null,
+        shortLeg: leg.side === 'short' ? leg : null,
+        closeSlippage: slip,
+        funding,
+        fees,
+        netPnl: slip + funding - fees,
+      });
+    }
+  }
+
+  return paired;
 }
 
 function createNewsFeedKobeissiHarness(source) {

@@ -189,4 +189,47 @@ const {
   assert.equal(count, 1);
 }
 
+// Idempotency: Shuffled snapshot input produces identical series
+{
+  const snaps = [
+    { ts: 1000, tokens: [{ symbol: 'USDC', amount: 10000, value: 10000 }] },
+    { ts: 2000, tokens: [{ symbol: 'USDC', amount: 5000, value: 5000 }, { symbol: 'USDT', amount: 5000, value: 5000 }] },
+    { ts: 3000, tokens: [{ symbol: 'USDC', amount: 0, value: 0 }, { symbol: 'USDT', amount: 10000, value: 10000 }] },
+  ];
+  const original = computeWalletPnlSeries(snaps);
+  const shuffled = computeWalletPnlSeries([snaps[2], snaps[0], snaps[1]]);
+  assert.equal(original.points.length, shuffled.points.length, 'shuffled series length must match');
+  assert.equal(original.total, shuffled.total, 'shuffled series total must match');
+  for (let i = 0; i < original.points.length; i++) {
+    assert.equal(original.points[i].ts, shuffled.points[i].ts);
+    assert.ok(Math.abs(original.points[i].totalPnl - shuffled.points[i].totalPnl) < 1e-6);
+  }
+}
+
+// Delta-neutral rebalancing: Swapping asset A to asset B at fair market value retains 0 PnL without spikes
+{
+  const series = computeWalletPnlSeries([
+    { ts: 1000, tokens: [{ symbol: 'SOL', amount: 100, value: 15000 }] },
+    // Rebalance: 50 SOL converted to 7500 USDC
+    { ts: 2000, tokens: [{ symbol: 'SOL', amount: 50, value: 7500 }, { symbol: 'USDC', amount: 7500, value: 7500 }] },
+  ]);
+  assert.equal(series.points.length, 2);
+  assert.ok(Math.abs(series.points[0].totalPnl - 0) < 1e-6, 'initial PnL is 0');
+  assert.ok(Math.abs(series.points[1].totalPnl - 0) < 1e-6, 'rebalance PnL stays 0 without false spikes');
+}
+
+// Inconsistent price feed during rebalance: temporary missing value falls back to cached price
+{
+  const series = computeWalletPnlSeries([
+    { ts: 1000, tokens: [{ symbol: 'ETH', amount: 2, value: 6000 }] },
+    // Unpriced snapshot during rebalance
+    { ts: 2000, tokens: [{ symbol: 'ETH', amount: 1, value: 0 }] },
+    // Price returns
+    { ts: 3000, tokens: [{ symbol: 'ETH', amount: 1, value: 3100 }] },
+  ]);
+  assert.equal(series.points.length, 3);
+  assert.ok(series.points[1].totalPnl >= -0.01, 'unpriced transition must not dump entire cost as 100% loss');
+  assert.ok(Math.abs(series.points[2].totalPnl - 100) < 0.01, 'gain on remaining ETH calculated accurately');
+}
+
 console.log('PASS: defi-pnl cost-basis tests');

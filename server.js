@@ -57,6 +57,7 @@ app.get('/api/health', (req, res) => {
 
 // Serve static assets
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/lib', express.static(path.join(__dirname, 'lib')));
 app.use('/ui-previews', express.static(path.join(__dirname, 'ui-previews')));
 
 // Serve index.html or fallback
