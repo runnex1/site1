@@ -51,10 +51,10 @@ function parseJson(raw, fallback) {
   try { return JSON.parse(raw); } catch (e) { return fallback; }
 }
 
+// Perpl integration disabled. resolvePerplConfig always returns null so no
+// perpl fetches run and no perpl data is included in dashboard payloads.
 function resolvePerplConfig(query, savedConfig = {}) {
-  const apiKey = String(query?.perplKey || query?.perplApiKey || savedConfig?.perpl?.apiKey || '').trim();
-  const secret = String(query?.perplSecret || savedConfig?.perpl?.secret || '').trim();
-  if (apiKey && secret) return { apiKey, secret };
+  void query; void savedConfig;
   return null;
 }
 

@@ -1427,19 +1427,11 @@ module.exports = async function handler(req, res) {
         delete incoming.phoenix;
       }
       delete incoming.phoenixWallet;
-      // Perpl keys: never wipe stored keys when the client payload omits/empties them
-      // (read-only API key + Ed25519 secret live in the same vault config).
-      const incomingPerplKey = String(incoming.perpl?.apiKey || '').trim();
-      const incomingPerplSecret = String(incoming.perpl?.secret || '').trim();
-      const existingPerplKey = String(existingPerpsConfig.perpl?.apiKey || '').trim();
-      const existingPerplSecret = String(existingPerpsConfig.perpl?.secret || '').trim();
-      if (incomingPerplKey && incomingPerplSecret) {
-        incoming.perpl = { apiKey: incomingPerplKey, secret: incomingPerplSecret };
-      } else if (existingPerplKey && existingPerplSecret) {
-        incoming.perpl = { apiKey: existingPerplKey, secret: existingPerplSecret };
-      } else {
-        delete incoming.perpl;
-      }
+      // Perpl integration disabled: strip keys so stored KV config is purged.
+      delete incoming.perpl;
+      delete incoming.perplApiKey;
+      delete incoming.perplSecret;
+      delete incoming.perplWallet;
       // Preserve PnL chart lock — wallet/stat-range saves must not wipe another device's baseline.
       const existingStart = Number(existingPerpsConfig.pnlStartMs);
       const existingBaseline = Number(existingPerpsConfig.pnlBaseline);
