@@ -321,6 +321,13 @@ function mergePerpsEquitySnapshots(existing, incoming, maxEntries = 180) {
     if (!Number.isFinite(Number(merged.totalEquity)) && Number.isFinite(Number(prev.totalEquity))) {
       merged.totalEquity = Number(prev.totalEquity);
     }
+    if ((!Number.isFinite(Number(merged.cumulativeNetDeposits)) || Number(merged.cumulativeNetDeposits) <= 0)
+      && Number.isFinite(Number(prev.cumulativeNetDeposits)) && Number(prev.cumulativeNetDeposits) > 0) {
+      merged.cumulativeNetDeposits = Number(prev.cumulativeNetDeposits);
+    }
+    if (Number.isFinite(Number(merged.totalEquity)) && Number.isFinite(Number(merged.cumulativeNetDeposits)) && Number(merged.cumulativeNetDeposits) > 0) {
+      merged.adjustedEquity = Number(merged.totalEquity) - Number(merged.cumulativeNetDeposits);
+    }
     out[key] = merged;
   }
   const keys = Object.keys(out).sort();

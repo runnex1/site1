@@ -1,0 +1,6 @@
+{
+  "name": "Vault Portfolio",
+  "description": "DeFi, Perps, Prediction Markets, and Portfolio Analytics Platform with real-time sync, automated snapshots, and market intelligence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
