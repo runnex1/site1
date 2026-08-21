@@ -224,6 +224,38 @@ function pass(name) {
 }
 
 {
+  // Delta-neutral three-leg SKY book: HL short 475k + Nado long 110k (76.8% mismatch)
+  // must pair as hl_nado with a size_mismatch alert (residual = 365k for a Var hedge),
+  // not drop both legs into unhedged.
+  const arb = buildPairedAnalysis({
+    hlState: {
+      positions: [{
+        venue: 'hyperliquid', symbol: 'SKY', size: -475000, side: 'short',
+        entryPx: 0.033, markPx: 0.033, notional: 15675, unrealizedPnl: 0,
+      }],
+    },
+    nadoState: {
+      positions: [{
+        venue: 'nado', symbol: 'SKY', size: 110000, side: 'long',
+        entryPx: 0.033, markPx: 0.033, notional: 3630, unrealizedPnl: 0,
+      }],
+    },
+    hlFunding: { payments: [], totalFunding: 0 },
+    nadoFunding: { payments: [], totalFunding: 0 },
+    hlFills: { fills: [], totalFees: 0, totalRealized: 0 },
+    nadoMatches: { matches: [], totalFees: 0, totalRealized: 0 },
+    spreadRows: [{ symbol: 'SKY', hyperliquid8h: 0.0001, nado8h: -0.00005, spread8h: 0.00015 }],
+    days: 30,
+  });
+  assert.equal(arb.paired.length, 1, 'HL 475k + Nado 110k (76.8%) must pair, not unhedged');
+  assert.equal(arb.paired[0].pairType, 'hl_nado');
+  assert.ok(arb.paired[0].alerts.includes('size_mismatch'), 'residual 365k must warn size mismatch');
+  assert.ok(arb.paired[0].sizeMismatchPct > 50 && arb.paired[0].sizeMismatchPct <= 90);
+  assert.equal(arb.unhedged.length, 0, 'no leg should remain unhedged for the SKY book');
+  pass('buildPairedAnalysis HL 475k short + Nado 110k long pairs as residual hedge');
+}
+
+{
   const out = computeCombinedNetDeposits(
     { payments: [{ time: 1, usdc: 100, kind: 'deposit' }] },
     { payments: [] },

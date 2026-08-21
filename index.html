@@ -33715,6 +33715,53 @@ function perpsVenueShortLabel(venue) {
     return venue || 'Exchange';
 }
 
+function perpsVenueShort(venue) {
+    return { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext', phoenix: 'Phx', variational: 'Var' }[venue] || venue;
+}
+
+function perpsPairLegs(p) {
+    if (p.pairType === 'hl_nado') {
+        return {
+            a: { label: 'HL', venue: 'hyperliquid', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen, markPx: p.hl?.markPx, liquidationPx: p.hl?.liquidationPx, tpPx: p.hl?.tpPx, slPx: p.hl?.slPx },
+            b: { label: 'Nado', venue: 'nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen, markPx: p.nado?.markPx, liquidationPx: p.nado?.liquidationPx, tpPx: p.nado?.tpPx, slPx: p.nado?.slPx },
+        };
+    }
+    if (p.crossLegA && p.crossLegB) {
+        return {
+            a: {
+                label: perpsVenueShort(p.crossLegA.venue),
+                venue: p.crossLegA.venue,
+                size: p.crossLegA.size,
+                entry: p.crossLegA.entryPx,
+                upnl: p.crossLegA.unrealizedPnl,
+                upnlEstimated: p.crossLegA.upnlEstimated === true || p.crossLegA.variationalUpnlOffset === true,
+                funding: p.legAFundingSinceOpen,
+                markPx: p.crossLegA.markPx,
+                liquidationPx: p.crossLegA.liquidationPx,
+                tpPx: p.crossLegA.tpPx,
+                slPx: p.crossLegA.slPx,
+            },
+            b: {
+                label: perpsVenueShort(p.crossLegB.venue),
+                venue: p.crossLegB.venue,
+                size: p.crossLegB.size,
+                entry: p.crossLegB.entryPx,
+                upnl: p.crossLegB.unrealizedPnl,
+                upnlEstimated: p.crossLegB.upnlEstimated === true || p.crossLegB.variationalUpnlOffset === true,
+                funding: p.legBFundingSinceOpen,
+                markPx: p.crossLegB.markPx,
+                liquidationPx: p.crossLegB.liquidationPx,
+                tpPx: p.crossLegB.tpPx,
+                slPx: p.crossLegB.slPx,
+            },
+        };
+    }
+    return {
+        a: { label: 'A', venue: p.venueA || 'hyperliquid', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen },
+        b: { label: 'B', venue: p.venueB || 'nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen },
+    };
+}
+
 /** Turn a synthetic Var Closed card into an exchange-only SOLO row. */
 function perpsDemoteVariationalClosedPairToSolo(pair) {
     if (!pair?.manualVariationalClose) return pair;
@@ -34484,55 +34531,63 @@ function perpsApplyPartialSlicePnlAttribution(data, hedges) {
         }
     }
 
-    // 2. hl_nado pairs: exclude the Var-covered slice from the Nado leg.
+    // 2. hl_nado pairs: exclude the Var-covered slice from the tracked leg
+    //    (Nado-side or HL-side partial hedge) so Card A shows only the portion
+    //    actually cross-hedged, and Card B (the Var pair) covers the slice.
+    const hlNadoLegConfigs = [
+        { venue: 'nado', raw: 'nado', size: 'nadoSize', upnl: 'nadoUpnl', entry: 'nadoEntry', funding: 'nadoFundingSinceOpen' },
+        { venue: 'hyperliquid', raw: 'hl', size: 'hlSize', upnl: 'hlUpnl', entry: 'hlEntry', funding: 'hlFundingSinceOpen' },
+    ];
     for (const pair of data.paired || []) {
         if (pair.pairType !== 'hl_nado') continue;
         const sym = VH.toBaseSymbol(pair.symbol);
-        const info = partialBySymVenue.get(`${sym}|nado`);
-        if (!info || !(info.slice > 0)) continue;
-        const na = pair.nado;
-        if (!na) continue;
-        const fullNadoSize = Math.abs(Number(na.size || 0));
-        if (!fullNadoSize) continue;
-        const residualSize = Math.max(0, fullNadoSize - info.slice);
-        // If the whole Nado position is Var-covered, the HL pair's Nado leg is empty.
-        if (residualSize <= 0) {
-            pair.nadoUpnl = 0;
-            pair.nadoSize = 0;
-            if (pair.crossLegA?.venue === 'nado') pair.crossLegA.size = 0;
-            continue;
-        }
-        const residualRatio = residualSize / fullNadoSize;
-        pair.nadoSize = residualSize;
-        // Derive the residual's own entry from the full-position blended entry
-        // minus the Var slice: (blendedEntry×full − sliceEntry×slice) / residual.
-        // This keeps Card A + Card B exactly equal to the full position's uPnL
-        // (the residual is the older tranche, its entry ≠ the blended average).
-        const fullEntry = Number(na.entryPx || 0);
-        const sliceEntry = Number(info.entry || 0);
-        const residualEntry = (fullEntry > 0 && sliceEntry > 0)
-            ? (fullEntry * fullNadoSize - sliceEntry * info.slice) / residualSize
-            : 0;
-        const mark = Number(na.markPx || pair.nado?.markPx || 0);
-        const sign = Number(na.size) < 0 ? -1 : 1;
-        let residualUpnl = null;
-        if (residualEntry > 0 && mark > 0) {
-            residualUpnl = VH.variationalLegPnl
-                ? VH.variationalLegPnl(sign * residualSize, residualEntry, mark)
-                : (mark - residualEntry) * sign * residualSize;
-        }
-        if (residualUpnl == null || !Number.isFinite(residualUpnl)) {
-            // Fallback: scale the full-position uPnL by the residual ratio.
-            residualUpnl = (Number(na.unrealizedPnl || 0) || 0) * residualRatio;
-        }
-        pair.nadoUpnl = residualUpnl;
-        pair.nadoEntry = residualEntry > 0 ? residualEntry : na.entryPx;
-        pair.nadoFundingSinceOpen = (Number(na.fundingSinceOpen || 0) || 0) * residualRatio;
-        if (pair.crossLegA?.venue === 'nado') {
-            pair.crossLegA.size = residualSize;
-            pair.crossLegA.unrealizedPnl = residualUpnl;
-            pair.crossLegA.entryPx = residualEntry > 0 ? residualEntry : pair.crossLegA.entryPx;
-            pair.crossLegA.fundingSinceOpen = pair.nadoFundingSinceOpen;
+        for (const cfg of hlNadoLegConfigs) {
+            const info = partialBySymVenue.get(`${sym}|${cfg.venue}`);
+            if (!info || !(info.slice > 0)) continue;
+            const leg = pair[cfg.raw];
+            if (!leg) continue;
+            const fullSize = Math.abs(Number(leg.size || 0));
+            if (!fullSize) continue;
+            const residualSize = Math.max(0, fullSize - info.slice);
+            // If the whole leg is Var-covered, its cross-hedged share is empty.
+            if (residualSize <= 0) {
+                pair[cfg.upnl] = 0;
+                pair[cfg.size] = 0;
+                if (pair.crossLegA?.venue === cfg.venue) pair.crossLegA.size = 0;
+                continue;
+            }
+            const residualRatio = residualSize / fullSize;
+            const sign = Number(leg.size) < 0 ? -1 : 1;
+            pair[cfg.size] = sign * residualSize;
+            // Derive the residual's own entry from the full-position blended entry
+            // minus the Var slice: (blendedEntry×full − sliceEntry×slice) / residual.
+            // This keeps Card A + Card B exactly equal to the full position's uPnL
+            // (the residual is the older tranche, its entry ≠ the blended average).
+            const fullEntry = Number(leg.entryPx || 0);
+            const sliceEntry = Number(info.entry || 0);
+            const residualEntry = (fullEntry > 0 && sliceEntry > 0)
+                ? (fullEntry * fullSize - sliceEntry * info.slice) / residualSize
+                : 0;
+            const mark = Number(leg.markPx || 0);
+            let residualUpnl = null;
+            if (residualEntry > 0 && mark > 0) {
+                residualUpnl = VH.variationalLegPnl
+                    ? VH.variationalLegPnl(sign * residualSize, residualEntry, mark)
+                    : (mark - residualEntry) * sign * residualSize;
+            }
+            if (residualUpnl == null || !Number.isFinite(residualUpnl)) {
+                // Fallback: scale the full-position uPnL by the residual ratio.
+                residualUpnl = (Number(leg.unrealizedPnl || 0) || 0) * residualRatio;
+            }
+            pair[cfg.upnl] = residualUpnl;
+            pair[cfg.entry] = residualEntry > 0 ? residualEntry : leg.entryPx;
+            pair[cfg.funding] = (Number(pair[cfg.funding] || 0) || 0) * residualRatio;
+            if (pair.crossLegA?.venue === cfg.venue) {
+                pair.crossLegA.size = sign * residualSize;
+                pair.crossLegA.unrealizedPnl = residualUpnl;
+                pair.crossLegA.entryPx = residualEntry > 0 ? residualEntry : pair.crossLegA.entryPx;
+                pair.crossLegA.fundingSinceOpen = pair[cfg.funding];
+            }
         }
         pair.combinedUpnl = (Number(pair.hlUpnl || 0) || 0) + (Number(pair.nadoUpnl || 0) || 0);
         pair.netArbPnl = (pair.combinedUpnl ?? 0) + (pair.fundingSinceOpen ?? 0) - (pair.fees ?? 0);

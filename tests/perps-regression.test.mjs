@@ -4230,7 +4230,7 @@ assert.match(indexHtml, /perpsMergeDailyFundCacheFromServer/, 'mobile must hydra
 assert.match(syncJs, /vault:perps_daily_fund_cache/, 'sync must persist daily funding cache in KV');
 assert.match(syncJs, /perpsDailyFundCache:/, 'perpsAux must return daily funding cache');
 assert.match(syncJs, /_perpsDailyFundCache:/, 'auxHeavy must include daily funding cache');
-assert.match(perpsJs, /OPEN_PAIR_MAX_SIZE_MISMATCH_PCT = 50/, 'open pairing must allow intentional partial hedges up to 50% mismatch');
+assert.match(perpsJs, /OPEN_PAIR_MAX_SIZE_MISMATCH_PCT = 90/, 'open pairing must allow residual partial hedges up to 90% mismatch');
 assert.match(indexHtml, /Size mismatch \(not fully hedged\)/, 'size mismatch UI must say not fully hedged');
 assert.match(indexHtml, /equityChartMode: server\.equityChartMode \|\| local\.equityChartMode/, 'cloud config apply must preserve equity chart modes');
 assert.match(indexHtml, /\.perps-config-toggle-row \{ display: flex !important/, 'mobile must keep Edit wallets toggle visible');
