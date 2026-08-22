@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "build": "echo 'Ready'",
+    "build": "node scripts/build.mjs",
     "lint": "node -e \"console.log('Lint OK')\"",
     "test:perps-wallet": "node tests/perps-wallet-persist.mjs",
     "test:perps-regression": "node tests/perps-regression.test.mjs",

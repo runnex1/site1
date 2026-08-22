@@ -1,5 +1,6 @@
 {
   "version": 2,
+  "outputDirectory": "dist",
   "ignoreCommand": "[ \"$VERCEL_ENV\" = \"preview\" ]",
   "regions": ["iad1"],
   "functions": {

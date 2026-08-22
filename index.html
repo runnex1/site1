@@ -33715,53 +33715,6 @@ function perpsVenueShortLabel(venue) {
     return venue || 'Exchange';
 }
 
-function perpsVenueShort(venue) {
-    return { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext', phoenix: 'Phx', variational: 'Var' }[venue] || venue;
-}
-
-function perpsPairLegs(p) {
-    if (p.pairType === 'hl_nado') {
-        return {
-            a: { label: 'HL', venue: 'hyperliquid', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen, markPx: p.hl?.markPx, liquidationPx: p.hl?.liquidationPx, tpPx: p.hl?.tpPx, slPx: p.hl?.slPx },
-            b: { label: 'Nado', venue: 'nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen, markPx: p.nado?.markPx, liquidationPx: p.nado?.liquidationPx, tpPx: p.nado?.tpPx, slPx: p.nado?.slPx },
-        };
-    }
-    if (p.crossLegA && p.crossLegB) {
-        return {
-            a: {
-                label: perpsVenueShort(p.crossLegA.venue),
-                venue: p.crossLegA.venue,
-                size: p.crossLegA.size,
-                entry: p.crossLegA.entryPx,
-                upnl: p.crossLegA.unrealizedPnl,
-                upnlEstimated: p.crossLegA.upnlEstimated === true || p.crossLegA.variationalUpnlOffset === true,
-                funding: p.legAFundingSinceOpen,
-                markPx: p.crossLegA.markPx,
-                liquidationPx: p.crossLegA.liquidationPx,
-                tpPx: p.crossLegA.tpPx,
-                slPx: p.crossLegA.slPx,
-            },
-            b: {
-                label: perpsVenueShort(p.crossLegB.venue),
-                venue: p.crossLegB.venue,
-                size: p.crossLegB.size,
-                entry: p.crossLegB.entryPx,
-                upnl: p.crossLegB.unrealizedPnl,
-                upnlEstimated: p.crossLegB.upnlEstimated === true || p.crossLegB.variationalUpnlOffset === true,
-                funding: p.legBFundingSinceOpen,
-                markPx: p.crossLegB.markPx,
-                liquidationPx: p.crossLegB.liquidationPx,
-                tpPx: p.crossLegB.tpPx,
-                slPx: p.crossLegB.slPx,
-            },
-        };
-    }
-    return {
-        a: { label: 'A', venue: p.venueA || 'hyperliquid', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen },
-        b: { label: 'B', venue: p.venueB || 'nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen },
-    };
-}
-
 /** Turn a synthetic Var Closed card into an exchange-only SOLO row. */
 function perpsDemoteVariationalClosedPairToSolo(pair) {
     if (!pair?.manualVariationalClose) return pair;
@@ -36908,7 +36861,7 @@ function perpsSeedSoloClosedPairsFromExchange(data, consumed = {}) {
     for (const [venue, legs] of Object.entries(allLegsByVenue)) {
         if (!legs.length) continue;
         for (const leg of legs) {
-            if (leg.partiallyClosed || leg.fromExchangeHistory || (!leg.openTimeKnown && !leg.reconstructedFromClosingFills)) continue;
+            if (!leg.openTimeKnown || leg.partiallyClosed || leg.reconstructedFromClosingFills || leg.fromExchangeHistory) continue;
             const close = Number(leg.closeTime || 0);
             if (!close || nowMs - close > LOOKBACK_MS) continue;
             if (!(Math.abs(Number(leg.size || 0)) > CLOSED_ROUND_EPS)) continue;
@@ -36937,7 +36890,6 @@ function perpsSeedSoloClosedPairsFromExchange(data, consumed = {}) {
                 pairLabel: venueLabel[venue] || venue,
                 exchangeOnly: true,
                 neverHedged: true,
-                pillTooltip: 'Never hedged',
                 size: soloLeg.size,
                 openTime: leg.openTime,
                 closeTime: close,
@@ -39848,3 +39800,2294 @@ function perpsRerenderForViewport() {
             perpsRerenderForViewport();
         }
     };
+    mq.addEventListener('change', onViewportChange);
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(onViewportChange, 120);
+    });
+})();
+
+function perpsMv3RefreshAgo(ts) {
+    if (!ts) return 'Waiting for data…';
+    const diff = Date.now() - ts;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Updated just now';
+    if (mins < 60) return `Updated ${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `Updated ${hrs}h ago`;
+    return `Updated ${new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+}
+
+const PERPS_MV3_SPREAD_SPECS = [
+    { key: 'spreadHlVariational8h', label: 'HL−Var' },
+    { key: 'spreadGrvtVariational8h', label: 'GRVT−Var' },
+    { key: 'spreadExtendedVariational8h', label: 'Ext−Var' },
+    { key: 'spreadNadoVariational8h', label: 'Nado−Var' },
+    { key: 'spreadPhoenixVariational8h', label: 'Phx−Var' },
+    { key: 'spread8h', label: 'HL−Nado' },
+    { key: 'spreadHlGrvt8h', label: 'HL−GRVT' },
+    { key: 'spreadHlExtended8h', label: 'HL−Ext' },
+    { key: 'spreadHlPhoenix8h', label: 'HL−Phx' },
+    { key: 'spreadNadoExtended8h', label: 'Nado−Ext' },
+    { key: 'spreadNadoGrvt8h', label: 'Nado−GRVT' },
+    { key: 'spreadNadoPhoenix8h', label: 'Nado−Phx' },
+    { key: 'spreadGrvtExtended8h', label: 'GRVT−Ext' },
+    { key: 'spreadGrvtPhoenix8h', label: 'GRVT−Phx' },
+    { key: 'spreadExtendedPhoenix8h', label: 'Ext−Phx' },
+];
+
+function perpsMv3FmtSpreadPct(rate) {
+    if (rate == null || !Number.isFinite(rate)) return '—';
+    const pct = rate * 100;
+    return (pct >= 0 ? '+' : '') + pct.toFixed(4) + '%';
+}
+
+function perpsMv3SpreadEntries(row) {
+    return PERPS_MV3_SPREAD_SPECS
+        .map(spec => ({ ...spec, val: row?.[spec.key] }))
+        .filter(spec => spec.val != null && Number.isFinite(spec.val));
+}
+
+function perpsMv3SyncChrome(data) {
+    if (!perpsIsMobileV3()) return;
+    const rangeLabel = perpsStatRangeLabel(_perpsStatRange);
+    const pnlLabel = document.getElementById('perpsMv3PnlLabel');
+    if (pnlLabel) pnlLabel.textContent = `PnL · ${rangeLabel}`;
+    const equityTitle = document.getElementById('perpsMv3EquityTitle');
+    if (equityTitle) equityTitle.textContent = `Equity · ${rangeLabel}`;
+    const livePill = document.getElementById('perpsMv3LivePill');
+    const liveCount = data?.paired?.length || 0;
+    if (livePill) livePill.textContent = `${liveCount} live`;
+    const posTitle = document.getElementById('perpsMv3PositionsTitle');
+    if (posTitle) posTitle.textContent = _perpsPositionsTab === 'closed' ? 'Closed positions' : 'Live positions';
+    const posSub = document.getElementById('perpsMv3PositionsSub');
+    if (posSub) {
+        posSub.textContent = _perpsPositionsTab === 'closed'
+            ? 'Fully closed hedged rounds from fill history'
+            : 'Hedged pairs across HL, Nado, GRVT, Extended, Phoenix + Variational';
+    }
+}
+
+function perpsMv3Cell(label, val, cls) {
+    return `<div class="perps-mv3-cell"><div class="perps-mv3-cell-label">${dashEsc(label)}</div><div class="perps-mv3-cell-val${cls ? ' ' + cls : ''}">${val}</div></div>`;
+}
+
+function perpsMv3LegHtml(entry, p) {
+    const side = Number(entry.leg.size) >= 0 ? 'long' : 'short';
+    const label = perpsVenueLabel(entry.venue);
+    const upnlCls = entry.leg.upnl != null ? perpsSignedCls(entry.leg.upnl) : '';
+    const upnlEst = entry.leg.upnlEstimated ? ' ' + perpsUpnlEstBadgeHtml() : '';
+    const upnlVal = entry.leg.upnl != null ? perpsFmtUsd(entry.leg.upnl) : '—';
+    return `<div class="perps-mv3-leg"><span><span class="perps-mv3-badge ${side}">${side === 'long' ? 'L' : 'S'}</span>${dashEsc(label)}</span><span class="perps-mv3-val ${upnlCls}">${upnlVal}${upnlEst}</span></div>`;
+}
+
+function perpsRenderPortfolioPositionsV3(paired) {
+    const el = document.getElementById('perpsPositionsList');
+    const badge = document.getElementById('perpsPairsBadge');
+    if (badge) badge.textContent = paired.length + (paired.length === 1 ? ' pair' : ' pairs');
+    if (!el) return;
+    if (!paired.length) {
+        el.innerHTML = '<div class="perps-empty">No delta-neutral pairs open.</div>';
+        return;
+    }
+    el.innerHTML = paired.map((p, pairIdx) => {
+        const legs = perpsPairLegs(p);
+        const displayLegs = perpsPairDisplayLegEntries(p);
+        const totalBreakdown = perpsPairTotalPnlBreakdown(p);
+        const totalPnl = totalBreakdown.total;
+        const sessionFunding = perpsPairLatestSessionPnl(p)?.funding ?? null;
+        const currentApr = perpsPairLiveApy(p);
+        const periodApr = perpsPairPeriodApr(p, _perpsStatRange);
+        const midPx = perpsPositionMidPx(p, displayLegs);
+        const sizeMismatch = perpsPairHasSizeMismatch(p);
+        const meta = `${perpsFmtSize(legs.a.size)} · ${dashEsc(p.pairLabel || 'HL + Nado')}`;
+        const warnHtml = sizeMismatch
+            ? `<div class="perps-mv3-warnline">⚠ Size mismatch (not fully hedged): ${dashEsc(perpsPairSizeMismatchText(p))}</div>`
+            : '';
+        const partialHedgeHtml = perpsPartialHedgeButtonHtml(p);
+        return `<article class="perps-mv3-card${sizeMismatch ? ' warn' : ''}">
+            <div class="perps-mv3-head">
+                <div class="perps-mv3-icon">${makeLogo(p.symbol, false, 36)}</div>
+                <div class="perps-mv3-head-main">
+                    <div class="perps-mv3-head-text">
+                        <div class="perps-mv3-name">${dashEsc(p.symbol)}</div>
+                        <div class="perps-mv3-meta">${meta}</div>
+                        <div class="perps-mv3-status">
+                            <span class="perps-mv3-open${sizeMismatch ? ' warn' : ''}">Open</span>
+                            <span class="perps-mv3-px">${perpsFmtPx(midPx)}</span>
+                        </div>
+                    </div>
+                    <button type="button" class="perps-mv3-chart-btn" aria-label="Position performance chart" onclick="perpsOpenPositionChart(${pairIdx}); event.stopPropagation();">${perpsPositionChartIconSvg()}</button>
+                </div>
+            </div>
+            ${warnHtml}
+            ${partialHedgeHtml}
+            <div class="perps-mv3-legs">${displayLegs.map(entry => perpsMv3LegHtml(entry, p)).join('')}${(() => {
+                const net = Number(p.combinedUpnl);
+                if (!Number.isFinite(net) || p.crossLegB?.venue !== 'variational') return '';
+                return `<div class="perps-mv3-leg perps-mv3-leg-net" title="Net basis = sum of both legs (spread only, before funding/fees)"><span>Net basis</span><span class="perps-mv3-val">${perpsFmtEstUsd(net)}</span></div>`;
+            })()}</div>
+            <div class="perps-mv3-risk">
+                <div class="perps-mv3-risk-cell">
+                    <div class="perps-mv3-risk-label">Liq price</div>
+                    ${perpsPositionLiqStackHtml(p, displayLegs)}
+                </div>
+                <div class="perps-mv3-risk-cell">
+                    <div class="perps-mv3-risk-label">TP / SL</div>
+                    ${perpsPositionTpSlStackHtml(p, displayLegs)}
+                </div>
+            </div>
+            <div class="perps-mv3-grid2">
+                ${perpsMv3Cell('Total PnL', totalPnl != null ? perpsFmtUsd(totalPnl) : '—', totalPnl != null ? perpsSignedCls(totalPnl) : '')}
+                ${perpsMv3Cell('Funding', sessionFunding != null ? perpsFmtUsd(sessionFunding) : '—', sessionFunding != null ? perpsSignedCls(sessionFunding) : '')}
+                ${perpsMv3Cell('Current APR', currentApr != null ? perpsFmtPct(currentApr) : '—', currentApr != null ? perpsSignedCls(currentApr) : '')}
+                ${perpsMv3Cell('Net APR', periodApr != null ? perpsFmtPct(periodApr) : '—', periodApr != null ? perpsSignedCls(periodApr) : '')}
+            </div>
+        </article>`;
+    }).join('');
+    if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
+}
+
+function perpsRenderClosedPositionsV3(closedPairs) {
+    const el = document.getElementById('perpsPositionsList');
+    const badge = document.getElementById('perpsPairsBadge');
+    if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
+    if (!el) return;
+    if (!closedPairs.length) {
+        el.innerHTML = '<div class="perps-empty">No closed positions.</div>';
+        return;
+    }
+    el.innerHTML = closedPairs.map(pairRaw => {
+        const pair = perpsNormalizeClosedPairForDisplay(pairRaw);
+        const delKey = perpsInMemoryClosedPairKey(pair);
+        const margin = perpsClosedPairAvgNotional(pair);
+        const closedAt = pair.closeTime
+            ? new Date(pair.closeTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+            : '—';
+        const meta = `${perpsFmtSize(pair.size)} · ${dashEsc(pair.pairLabel || (pair.exchangeOnly ? 'Exchange' : (pair.pairType === 'cross_exchange' ? 'Cross-exchange' : 'HL + Nado')))} · closed ${dashEsc(closedAt)}`;
+        return `<article class="perps-mv3-card">
+            <div class="perps-mv3-head">
+                <div class="perps-mv3-icon">${makeLogo(pair.symbol, false, 36)}</div>
+                <div>
+                    <div class="perps-mv3-name">${dashEsc(pair.symbol)}${pair.partialClose || pair.closedPartial || pair.partiallyClosed ? ' <span class="perps-pos-pill warn">PARTIAL</span>' : ''}</div>
+                    <div class="perps-mv3-meta">${meta}</div>
+                </div>
+                <button type="button" class="perps-mv3-x" aria-label="Delete closed position" title="Delete position" onclick="perpsDeleteClosedPair('${dashEsc(delKey)}'); event.stopPropagation();">✕</button>
+            </div>
+            <div class="perps-mv3-grid2">
+                ${perpsMv3Cell('Realized', perpsFmtUsd(pair.netPnl), perpsSignedCls(pair.netPnl))}
+                ${perpsMv3Cell('Funding', perpsFmtUsd(pair.funding), perpsSignedCls(pair.funding))}
+                ${perpsMv3Cell('Margin', margin != null ? perpsFmtUsd(margin) : '—')}
+            </div>
+        </article>`;
+    }).join('');
+    if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
+}
+
+function perpsRenderMobileFundingRates(data) {
+    const el = document.getElementById('perpsMv3RatesList');
+    if (!el) return;
+    if (!perpsIsMobileV3()) return;
+    const symbols = [...new Set((data?.paired || []).map(p => p.symbol).filter(Boolean))];
+    if (!symbols.length) {
+        el.innerHTML = '<div class="perps-empty">No open positions.</div>';
+        return;
+    }
+    const rows = symbols.map(sym => perpsRateSpreadRow(sym)).filter(Boolean);
+    if (!rows.length) {
+        el.innerHTML = '<div class="perps-empty">No rate data available.</div>';
+        return;
+    }
+    el.innerHTML = rows.map(row => {
+        const venueRates = [
+            { label: 'HL', val: row.hyperliquid8h },
+            { label: 'GRVT', val: row.grvt8h },
+            { label: 'Ext', val: row.extended8h },
+            { label: 'Nado', val: row.nado8h },
+            { label: 'Phx', val: row.phoenix8h },
+            { label: 'Var', val: row.variational8h },
+        ].filter(v => v.val != null && Number.isFinite(v.val));
+        const minRate = venueRates.length ? Math.min(...venueRates.map(v => v.val)) : null;
+        const spreads = perpsMv3SpreadEntries(row).sort((a, b) => Math.abs(b.val) - Math.abs(a.val));
+        const bestSpread = spreads[0] || null;
+        const spreadCol = bestSpread ? bestSpread.val : null;
+        const rateCells = [
+            ...venueRates.map(v => `<div class="perps-mv3-rate-cell"><div class="perps-mv3-rate-venue">${dashEsc(v.label)}</div><div class="perps-mv3-rate-num${v.val === minRate ? ' best' : ''}">${perpsFmtRate(v.val)}</div></div>`),
+            `<div class="perps-mv3-rate-cell"><div class="perps-mv3-rate-venue">Spread</div><div class="perps-mv3-rate-num${spreadCol != null ? ' best' : ''}">${spreadCol != null ? perpsMv3FmtSpreadPct(spreadCol) : '—'}</div></div>`,
+        ].join('');
+        const pills = spreads.map((s, i) => {
+            const hot = i === 0 ? ' hot' : '';
+            return `<span class="perps-mv3-spread-pill${hot}">${dashEsc(s.label)} ${perpsMv3FmtSpreadPct(s.val)}</span>`;
+        }).join('');
+        const bestLabel = bestSpread ? `Best: ${bestSpread.label} ${perpsMv3FmtSpreadPct(bestSpread.val)}` : '—';
+        return `<div class="perps-mv3-rate-card">
+            <div class="perps-mv3-rate-head">
+                <div class="perps-mv3-rate-symbol">${dashEsc(row.symbol)}</div>
+                <div class="perps-mv3-rate-best">${dashEsc(bestLabel)}</div>
+            </div>
+            <div class="perps-mv3-rate-grid">${rateCells}</div>
+            ${pills ? `<div class="perps-mv3-rate-spreads">${pills}</div>` : ''}
+        </div>`;
+    }).join('');
+}
+
+function perpsRenderStatsBar(data) {
+    _perpsLastData = data;
+    if (typeof updateCharts === 'function' && document.body.dataset.activeTab === 'overview') updateCharts(true);
+    // Keep Total Portfolio Value in sync with Net Worth Trend once perps equity loads.
+    if (typeof dashCurrentTotal === 'function' && typeof animateValue === 'function') {
+        animateValue('totalNetWorth', dashCurrentTotal());
+    }
+    if (typeof dashboardMonthlyPnl === 'function' && typeof dashSignedUsd === 'function') {
+        const monthly = dashboardMonthlyPnl();
+        const pnlEl = document.getElementById('dashMonthlyPnl');
+        const pnlSub = document.getElementById('dashMonthlyPnlSub');
+        if (pnlEl) { pnlEl.textContent = dashSignedUsd(monthly.pnl); pnlEl.style.color = monthly.pnl < 0 ? 'var(--red)' : 'var(--t1)'; }
+        if (pnlSub && typeof dashPct === 'function') { pnlSub.textContent = dashPct(monthly.pct); pnlSub.style.color = monthly.pnl < 0 ? 'var(--red)' : 'var(--green)'; }
+    }
+    const stats = perpsComputePortfolioStats(data);
+    _perpsVenueEquity = stats.venueEquity;
+    const set = (id, val, cls) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = val;
+        el.className = 'perps-stat-value' + (cls ? ' ' + cls : '');
+    };
+    set('perpsStatNotional', perpsFmtUsd(stats.openNotional));
+    set('perpsStatEquity', perpsFmtUsd(stats.totalEquity));
+    set('perpsStatFunding', perpsFmtUsd(stats.fundingTotal), perpsSignedCls(stats.fundingTotal));
+    set('perpsStatApr', stats.apr != null ? perpsFmtPct(stats.apr) : '—', stats.apr != null ? perpsSignedCls(stats.apr) : '');
+    const tip = document.getElementById('perpsStatEquityTip');
+    if (tip) perpsRenderEquityBreakdownTip(tip, stats.venueEquity);
+    const notionalSub = document.getElementById('perpsStatNotionalSub');
+    if (notionalSub) notionalSub.textContent = `${data.paired?.length || 0} hedged · ${data.unhedged?.length || 0} unhedged`;
+    const equitySub = document.getElementById('perpsStatEquitySub');
+    if (equitySub) equitySub.textContent = 'Hover for exchange breakdown';
+    const fundSub = document.getElementById('perpsStatFundingSub');
+    if (fundSub) fundSub.textContent = `${stats.rangeLabel} · gross funding incl. ~Variational est.`;
+    const aprSub = document.getElementById('perpsStatAprSub');
+    if (aprSub) {
+        if (stats.apr != null) {
+            const aprBasis = perpsStatRangeUsesFundingOnlyApr(_perpsStatRange)
+                ? 'chart funding ÷ avg equity'
+                : 'chart net PnL ÷ avg equity';
+            aprSub.textContent = `${stats.rangeLabel} · ${aprBasis}`;
+        } else if (!(data.dailyFundingSeries || []).length) {
+            aprSub.textContent = `${stats.rangeLabel} · no daily chart data`;
+        } else {
+            aprSub.textContent = `${stats.rangeLabel} · need equity snapshots in window`;
+        }
+    }
+    perpsSyncTotalPnlForRange(data, _perpsStatRange);
+    perpsMv3SyncChrome(data);
+}
+
+function perpsSetPositionsTab(tab, btn) {
+    _perpsPositionsTab = tab === 'closed' ? 'closed' : 'live';
+    document.querySelectorAll('[data-perps-positions-tab]').forEach(el => {
+        el.classList.toggle('active', el.getAttribute('data-perps-positions-tab') === _perpsPositionsTab);
+    });
+    if (btn) btn.classList.add('active');
+    if (_perpsLastData) {
+        perpsMv3SyncChrome(_perpsLastData);
+        perpsRenderPositionsPanel(_perpsLastData);
+    }
+}
+
+function perpsRenderPositionsPanel(data) {
+    if (_perpsPositionsTab === 'closed') {
+        perpsRenderClosedPositions(data?.closedPairs || []);
+    } else {
+        perpsRenderPortfolioPositions(data?.paired || []);
+    }
+}
+
+function perpsRenderPortfolioPositions(paired) {
+    if (perpsIsMobileV3()) return perpsRenderPortfolioPositionsV3(paired);
+    const el = document.getElementById('perpsPositionsList');
+    const badge = document.getElementById('perpsPairsBadge');
+    if (badge) badge.textContent = paired.length + (paired.length === 1 ? ' pair' : ' pairs');
+    if (!el) return;
+    if (!paired.length) {
+        el.innerHTML = '<div class="perps-empty">No delta-neutral pairs open.</div>';
+        return;
+    }
+    const head = `<div class="perps-pos-head">
+        <div>Position</div>
+        <div>Exchange</div>
+        <div>Liq Price</div>
+        <div>TP/SL</div>
+        <div>Total PnL</div>
+        <div>Funding</div>
+        <div>Current APR</div>
+        <div class="perps-pos-spacer" aria-hidden="true"></div>
+        <div>Margin</div>
+        <div>Net APR</div>
+        <div aria-hidden="true"></div>
+    </div>`;
+    el.innerHTML = head + paired.map((p, pairIdx) => {
+        const legs = perpsPairLegs(p);
+        const displayLegs = perpsPairDisplayLegEntries(p);
+        const totalBreakdown = perpsPairTotalPnlBreakdown(p);
+        const totalPnl = totalBreakdown.total;
+        const sessionFunding = perpsPairLatestSessionPnl(p)?.funding ?? null;
+        const currentApr = perpsPairLiveApy(p);
+        const periodApr = perpsPairPeriodApr(p, _perpsStatRange);
+        const margin = p.avgNotional ?? 0;
+        const sizeLabel = legs.a.size != null ? `${perpsFmtSize(legs.a.size)} ${p.symbol}` : p.symbol;
+        const midPx = perpsPositionMidPx(p, displayLegs);
+        const sizeMismatch = perpsPairHasSizeMismatch(p);
+        const sizeWarnHtml = sizeMismatch
+            ? `<div class="perps-pos-size-warn" title="Not fully hedged — leg sizes differ">⚠ Size mismatch (not fully hedged): ${dashEsc(perpsPairSizeMismatchText(p))}</div>`
+            : '';
+        const partialHedgeHtml = perpsPartialHedgeButtonHtml(p);
+        return `<div class="perps-pos-card${sizeMismatch ? ' size-mismatch' : ''}"><div class="perps-pos-row">
+            <div class="perps-pos-token">
+                <div class="perps-pos-token-row">
+                    ${makeLogo(p.symbol, false, 36)}
+                    <div>
+                        <div class="perps-pos-token-name">${dashEsc(p.symbol)}</div>
+                        <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}</div>
+                        <div class="perps-pos-status-row">
+                            <span class="perps-pos-pill${sizeMismatch ? ' warn' : ''}">OPEN</span>
+                            <span class="perps-pos-live-px">${perpsFmtPx(midPx)}</span>
+                        </div>
+                        ${sizeWarnHtml}
+                        ${partialHedgeHtml}
+                    </div>
+                </div>
+            </div>
+            <div class="perps-pos-legs">
+                ${displayLegs.map(entry => {
+                    const fundEst = entry.leg.fundingEstimated ? ' ~est.' : '';
+                    const upnlEst = entry.leg.upnlEstimated ? ' ' + perpsUpnlEstBadgeHtml() : '';
+                    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${perpsVenueWithSideHtml(entry.venue, entry.leg.size)}</span><span class="perps-pos-leg-pnl">${entry.leg.upnl != null ? `<span class="perps-pos-metric-val ${perpsSignedCls(entry.leg.upnl)}">${perpsFmtUsd(entry.leg.upnl)}</span>${upnlEst}` : '<span class="perps-pos-metric-val">—</span>'}</span></div>`;
+                }).join('')}
+                ${(() => {
+                    const net = Number(p.combinedUpnl);
+                    if (!Number.isFinite(net) || p.crossLegB?.venue !== 'variational') return '';
+                    return `<div class="perps-pos-leg perps-pos-leg-net" title="Net basis = sum of both legs (spread only, before funding/fees)"><span class="perps-pos-leg-venue"><span class="perps-pos-leg-net-label">Net basis</span></span><span class="perps-pos-leg-pnl">${perpsFmtEstUsd(net)}</span></div>`;
+                })()}
+            </div>
+            ${perpsPositionLiqStackHtml(p, displayLegs)}
+            ${perpsPositionTpSlStackHtml(p, displayLegs)}
+            <div class="perps-pos-metric perps-pos-pnl-metric" onmouseenter="perpsShowPositionPnlTip(event, ${pairIdx}, 'total')" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Total PnL</div><div class="perps-pos-metric-val ${totalPnl != null ? perpsSignedCls(totalPnl) : ''}">${totalPnl != null ? perpsFmtUsd(totalPnl) : '—'}</div></div>
+            <div class="perps-pos-metric perps-pos-pnl-metric" onmouseenter="perpsShowPositionPnlTip(event, ${pairIdx}, 'funding')" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${sessionFunding != null ? perpsSignedCls(sessionFunding) : ''}">${sessionFunding != null ? perpsFmtUsd(sessionFunding) : '—'}</div></div>
+            <div class="perps-pos-metric perps-pos-apr-metric" onmouseenter="perpsShowCurrentAprTip(event, ${pairIdx})" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Current APR</div><div class="perps-pos-metric-val ${perpsSignedCls(currentApr)}">${currentApr != null ? perpsFmtPct(currentApr) : '—'}</div></div>
+            <div class="perps-pos-spacer" aria-hidden="true"></div>
+            <div class="perps-pos-metric"><div class="perps-pos-metric-label">Margin</div><div class="perps-pos-metric-val">${perpsFmtUsd(margin)}</div></div>
+            <div class="perps-pos-apr-col perps-pos-pnl-metric" onmouseenter="perpsShowPositionPnlTip(event, ${pairIdx}, 'netapr')" onmousemove="perpsMoveCurrentAprTip(event)" onmouseleave="perpsHideCurrentAprTip()"><div class="perps-pos-metric-label">Net APR</div><div class="perps-pos-apr-val ${perpsSignedCls(periodApr)}">${periodApr != null ? perpsFmtPct(periodApr) : '—'}</div></div>
+            <div class="perps-pos-chart-col"><button type="button" class="perps-pos-chart-btn" aria-label="Position performance chart" onclick="perpsOpenPositionChart(${pairIdx}); event.stopPropagation();">${perpsPositionChartIconSvg()}</button></div>
+        </div></div>`;
+    }).join('');
+    if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
+}
+
+function perpsClosedLegHtml(leg, pair) {
+    if (!leg) return '';
+    const signedSize = leg.side === 'short' ? -Math.abs(leg.size || 0) : Math.abs(leg.size || 0);
+    const venueHtml = perpsVenueWithSideHtml(leg.venue, signedSize);
+    const exchangeOnly = Boolean(pair?.exchangeOnly) || !(pair?.longLeg && pair?.shortLeg);
+    if (leg.realizedPnl == null || !Number.isFinite(Number(leg.realizedPnl))) {
+        return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val muted" title="${exchangeOnly ? 'Exchange PnL unavailable' : (leg.venue === 'variational' ? 'Variational exit price missing or estimated' : 'Exchange realized PnL unavailable for this leg')}">—</span></div>`;
+    }
+    const pnl = Number(leg.realizedPnl);
+    const pnlLabel = (leg.venue === 'variational'
+        ? !leg.variationalExitDerived && !Number.isFinite(Number(leg.avgClosePx))
+        : leg.closeLegEstimated) ? 'est. ' : '';
+    return `<div class="perps-pos-leg"><span class="perps-pos-leg-venue">${venueHtml}</span><span class="perps-pos-metric-val ${perpsSignedCls(pnl)}">${pnlLabel}${perpsFmtUsd(pnl)}</span></div>`;
+}
+
+function perpsClosedPairLegMarginPx(leg, symbol) {
+    const direct = [leg?.avgEntryPx, leg?.entryPx, leg?.avgClosePx, leg?.exitPx]
+        .map(v => Number(v))
+        .find(v => Number.isFinite(v) && v > 0);
+    if (direct) return direct;
+    const mark = perpsLegCurrentPx(symbol, leg?.venue, leg);
+    return mark != null && mark > 0 ? mark : null;
+}
+
+function perpsClosedPairAvgNotional(pair) {
+    const stored = Number(pair?.avgNotional);
+    if (Number.isFinite(stored) && stored > 0) return stored;
+    const fallbackSize = Math.abs(Number(pair?.size || 0));
+    const legs = [pair?.longLeg, pair?.shortLeg].filter(Boolean);
+    const notionals = legs.map((leg) => {
+        const px = perpsClosedPairLegMarginPx(leg, pair?.symbol);
+        const legSize = Math.abs(Number(leg?.size || fallbackSize));
+        return px != null && legSize > 0 ? legSize * px : null;
+    }).filter(n => n != null && n > 0);
+    if (notionals.length) return notionals.reduce((sum, n) => sum + n, 0) / notionals.length;
+    if (!fallbackSize) return null;
+    const marks = legs
+        .map(leg => perpsClosedPairLegMarginPx(leg, pair?.symbol))
+        .filter(px => px != null && px > 0);
+    if (!marks.length) return null;
+    const avgPx = marks.reduce((sum, px) => sum + px, 0) / marks.length;
+    return fallbackSize * avgPx;
+}
+
+function perpsGuardClosedPairRecord(pair) {
+    if (!pair?.manualVariationalClose) return pair;
+    const VH = window.VariationalHedge;
+    if (!VH?.guardVariationalClosedPair) return pair;
+    const hedge = pair.variationalHedgeId
+        ? perpsLoadVariationalHedges().find((h) => h.id === pair.variationalHedgeId) || null
+        : null;
+    return VH.guardVariationalClosedPair(pair, hedge);
+}
+
+function perpsSanitizeVariationalClosedPairs(data) {
+    const VH = window.VariationalHedge;
+    if (!VH?.guardVariationalClosedPair) return data?.closedPairs || [];
+    const hedges = perpsLoadVariationalHedges();
+    const byId = new Map(hedges.map((h) => [h.id, h]));
+    const listingBy = data?._variationalListingBySymbol || perpsVariationalBySymbolFromSpread(data?.rateSpread || []);
+    let changed = false;
+    let hedgesChanged = false;
+    let mintedClosed = false;
+
+    const pairCoversHedge = (hedge) => (data.closedPairs || []).some((p) => {
+        // Bare hedge-id match is wrong after reopen: an older Closed Var row would
+        // block reminting the latest session (ZRO Jul→Aug under one hedge id).
+        if (p?.variationalHedgeId === hedge.id) {
+            const hc = Number(hedge.closedAt || hedge.pendingCloseAt || 0);
+            const pc = Number(p.closeTime || 0);
+            if (hc && pc && Math.abs(pc - hc) <= 2 * 86400000) return true;
+        }
+        return Boolean(VH.variationalClosedPairCoversHedgeSession?.(p, hedge, data));
+    });
+
+    // Already-closed hedges must always have a Closed Var pair (equity + Closed tab).
+    for (const hedge of hedges) {
+        if (hedge.status !== 'closed') continue;
+        if (pairCoversHedge(hedge)) continue;
+        const listing = listingBy[hedge.symbol] || null;
+        const closedPair = VH.ensureVariationalClosedPairForHedge?.(hedge, data, listing)
+            || VH.recoverFrozenVariationalClosedPair?.(hedge, data, listing, VH.findTrackedCloseLeg)
+            || null;
+        if (!closedPair) continue;
+        hedgesChanged = true;
+        mintedClosed = true;
+        data.closedPairs = [...(data.closedPairs || []), closedPair];
+        changed = true;
+    }
+
+    // Close zombie open/pending hedges when exchange history shows a completed session and venue is flat.
+    for (const hedge of hedges) {
+        if (hedge.status !== 'open' && hedge.status !== 'pending_close') continue;
+        if (!VH.findTrackedCloseLegFromExchangeHistory || !VH.buildVariationalClosedPair) continue;
+        const live = VH.findTrackedLeg?.(data, hedge);
+        if (live && Math.abs(Number(live.size || 0)) > 1e-9) continue;
+        const hist = VH.findTrackedCloseLegFromExchangeHistory(data, hedge);
+        if (!hist) continue;
+        // Do not mint another Closed row when a history-backed session pair already exists.
+        if (pairCoversHedge(hedge)) {
+            if (VH.closeZombieVariationalHedgeFromHistory?.(hedge)) hedgesChanged = true;
+            continue;
+        }
+        const listing = listingBy[hedge.symbol] || null;
+        const closedPair = VH.ensureVariationalClosedPairForHedge?.(hedge, data, listing)
+            || (VH.finalizeVariationalCloseIfReady
+                ? VH.finalizeVariationalCloseIfReady(hedge, data, listing, VH.findTrackedCloseLeg)
+                : null)
+            || VH.buildVariationalClosedPair(hedge, hist, listing, data);
+        if (!closedPair) continue;
+        hedge.status = 'closed';
+        hedge.closedAt = closedPair.closeTime || hist.closeTime || hedge.closedAt || Date.now();
+        hedge.pendingCloseAt = null;
+        hedge.updatedAt = Date.now();
+        hedgesChanged = true;
+        mintedClosed = true;
+        data.closedPairs = [...(data.closedPairs || []), closedPair];
+        changed = true;
+    }
+
+    const next = (data?.closedPairs || []).map((pair) => {
+        if (!pair?.manualVariationalClose) return pair;
+        const hedge = pair.variationalHedgeId ? byId.get(pair.variationalHedgeId) : null;
+        let cleaned = perpsGuardClosedPairRecord(pair);
+        const needsRepair = hedge && (
+            (VH.variationalClosedPairNeedsHistoryRepair?.(cleaned, hedge, data))
+            || (VH.repairHollowVariationalClosedPair && VH.variationalClosedPairLooksHollow?.(cleaned))
+        );
+        if (needsRepair && VH.repairHollowVariationalClosedPair) {
+            const repaired = VH.repairHollowVariationalClosedPair(
+                cleaned,
+                hedge,
+                listingBy[hedge.symbol] || null,
+                data,
+            );
+            if (repaired && repaired !== cleaned) {
+                cleaned = repaired;
+                if (VH.closeZombieVariationalHedgeFromHistory?.(hedge, cleaned)) {
+                    hedgesChanged = true;
+                } else if (Math.abs(Number(hedge.trackedSize || 0)) !== Math.abs(Number(pair.size || 0))) {
+                    hedgesChanged = true;
+                }
+            }
+        }
+        const varLeg = cleaned.longLeg?.venue === 'variational' ? cleaned.longLeg : cleaned.shortLeg;
+        const stillBad = varLeg?.realizedPnl != null
+            && VH.variationalRealizedPnlLooksImplausible?.(varLeg, hedge, VH.resolveVariationalExitPx?.(hedge));
+        if (stillBad && hedge && VH.buildVariationalClosedPair && VH.findTrackedCloseLeg) {
+            const closeLeg = VH.findTrackedCloseLeg(data, hedge, listingBy[hedge.symbol] || null);
+            if (closeLeg) cleaned = VH.buildVariationalClosedPair(hedge, closeLeg, listingBy[hedge.symbol] || null, data);
+        }
+        // Cheap identity check — avoid JSON.stringify of fat dailyPerformanceSeries.
+        if (cleaned !== pair
+            && (cleaned.funding !== pair.funding
+                || cleaned.fees !== pair.fees
+                || cleaned.size !== pair.size
+                || cleaned.closeLegEstimated !== pair.closeLegEstimated
+                || cleaned.variationalEquityPnl !== pair.variationalEquityPnl
+                || cleaned.longLeg?.realizedPnl !== pair.longLeg?.realizedPnl
+                || cleaned.shortLeg?.realizedPnl !== pair.shortLeg?.realizedPnl
+                || cleaned.aprUnavailable !== pair.aprUnavailable)) {
+            changed = true;
+        }
+        return cleaned;
+    });
+
+    const deduped = VH.dedupeVariationalClosedPairsByExchangeSession
+        ? VH.dedupeVariationalClosedPairsByExchangeSession(next, data)
+        : next;
+    if (deduped.length !== next.length) changed = true;
+
+    const pruned = perpsPruneExchangeOnlyClosedPairs(deduped);
+    if (pruned.length !== deduped.length
+        || pruned.some((p, i) => p !== deduped[i] && (p?.exchangeOnly !== deduped[i]?.exchangeOnly || p?.manualVariationalClose !== deduped[i]?.manualVariationalClose))) {
+        changed = true;
+    }
+
+    if (hedgesChanged) {
+        // Minting/closing hedges must reach cloud with the new Closed rows.
+        try { perpsPersistVariationalHedges(hedges, { skipCloudSync: !mintedClosed }); } catch (_) { /* ignore */ }
+    }
+    return pruned;
+}
+
+function perpsNormalizeClosedPairForDisplay(pair) {
+    const next = perpsGuardClosedPairRecord({ ...pair });
+    const keepFrozenFunding = Boolean(next.manualVariationalClose)
+        && Number.isFinite(Number(next.funding));
+    // Prefer full latest-session funding (Position Performance total before close).
+    // Peak metrics keep size/fees/slippage; funding comes from session series when present.
+    if (
+        !keepFrozenFunding
+        && Array.isArray(next.dailyPerformanceSeries)
+        && next.dailyPerformanceSeries.length
+    ) {
+        const session = perpsPairLatestSessionPnl(next);
+        if (session?.source === 'session') {
+            next.funding = session.funding;
+            const slip = Number(next.closeSlippage);
+            const fees = Number(next.fees);
+            if (Number.isFinite(slip) && Number.isFinite(fees)) {
+                next.netPnl = slip + session.funding - fees;
+            }
+            const rows = perpsFilterPairLatestSessionForRange(next.dailyPerformanceSeries, null);
+            if (rows.length) {
+                next.sessionStartDay = rows[0].day;
+                next.sessionEndDay = rows[rows.length - 1].day;
+                next.sessionDayCount = rows.length;
+            }
+        }
+    }
+    const margin = perpsClosedPairAvgNotional(next);
+    if (margin) next.avgNotional = margin;
+    if (!next.aprUnavailable && !next.closeLegEstimated) {
+        const apr = perpsClosedPairSessionApr(next);
+        if (apr != null) next.sessionApr = apr;
+    }
+    return next;
+}
+
+function perpsClosedPairCarryBasis(pair) {
+    const lifetimeDays = Number(pair?.lifetimeDays);
+    const lifetimeFunding = Number(pair?.lifetimeFunding);
+    const lifetimeFees = Number(pair?.lifetimeFees);
+    if (lifetimeDays > 0 && Number.isFinite(lifetimeFunding) && Number.isFinite(lifetimeFees)) {
+        return { funding: lifetimeFunding, fees: lifetimeFees, days: lifetimeDays, source: 'lifetime' };
+    }
+    return {
+        funding: Number(pair?.funding),
+        fees: Number(pair?.fees ?? 0),
+        days: perpsClosedPairSessionDays(pair),
+        source: 'session',
+    };
+}
+
+function perpsClosedPairSessionDays(pair) {
+    const lifetimeDays = Number(pair?.lifetimeDays);
+    if (lifetimeDays > 0) return lifetimeDays;
+    const start = pair?.sessionStartDay;
+    const end = pair?.sessionEndDay;
+    if (start && end) {
+        const first = Date.parse(`${start}T12:00:00Z`);
+        const last = Date.parse(`${end}T12:00:00Z`);
+        if (Number.isFinite(first) && Number.isFinite(last)) {
+            return Math.max(1, Math.round((last - first) / 86400000) + 1);
+        }
+    }
+    const count = Number(pair?.sessionDayCount || 0);
+    if (count > 0) return count;
+    const openTime = Number(pair?.openTime || 0);
+    const closeTime = Number(pair?.closeTime || 0);
+    if (openTime > 0 && closeTime > openTime) return (closeTime - openTime) / 86400000;
+    let days = Number(pair?.sessionDays);
+    return Number.isFinite(days) && days > 0 ? days : null;
+}
+
+function perpsClosedPairSessionApr(pair) {
+    if (pair?.aprUnavailable || pair?.closeLegEstimated) return null;
+    const margin = perpsClosedPairAvgNotional(pair);
+    const carry = perpsClosedPairCarryBasis(pair);
+    const days = carry.days;
+    const netFunding = carry.funding - carry.fees;
+    if (!margin || !days || days <= 0 || !Number.isFinite(netFunding)) return null;
+    const computed = perpsAnnualizeReturnPct(netFunding, margin, days);
+    if (computed != null && Number.isFinite(computed)) return computed;
+    const stored = Number(pair?.sessionApr);
+    return Number.isFinite(stored) ? stored : null;
+}
+
+function perpsClosedPairAprTip(pair, apr) {
+    const carry = perpsClosedPairCarryBasis(pair);
+    const days = carry.days;
+    const margin = perpsClosedPairAvgNotional(pair);
+    const netFunding = Number.isFinite(carry.funding) ? carry.funding - carry.fees : null;
+    const sessionLabel = carry.source === 'lifetime'
+        ? `${new Date(pair.lifetimeOpenTime || pair.openTime || 0).toISOString().slice(0, 10)} → ${new Date(pair.closeTime || 0).toISOString().slice(0, 10)}`
+        : (pair?.sessionStartDay && pair?.sessionEndDay
+            ? `${pair.sessionStartDay} → ${pair.sessionEndDay}`
+            : 'latest session');
+    const parts = [
+        'APR = ((Funding − fees) ÷ margin) × (365 ÷ hold days) × 100',
+        carry.source === 'lifetime'
+            ? 'Annualized funding minus trading fees over the full closed hedge hold'
+            : 'Annualized funding minus trading fees over the closed round’s latest performance session',
+        apr != null ? `APR: ${perpsFmtPct(apr)}` : 'APR unavailable (missing margin estimate or session length)',
+        netFunding != null ? `Funding − fees: ${perpsFmtUsd(netFunding)}` : null,
+        margin ? `Margin: ${perpsFmtUsd(margin)}` : 'Margin: unavailable',
+        days ? `Hold: ${days.toFixed(1)}d (${sessionLabel})` : 'Hold: unavailable',
+    ].filter(Boolean);
+    return parts.join(' · ');
+}
+
+function perpsClosedDebugNoticeHtml(debug) {
+    if (!debug) return '';
+    const byVenue = Object.entries(debug.byVenue || {})
+        .map(([venue, count]) => `${perpsVenueShort(venue)} ${count}`)
+        .join(' · ');
+    const unmatched = Number(debug.unmatchedCount || 0);
+    if (!unmatched && !byVenue) return '';
+    const samples = (debug.unmatchedSample || [])
+        .filter(l => l && l.symbol && l.venue)
+        .slice(0, 8)
+        .map(l => `${dashEsc(l.symbol)} ${dashEsc(perpsVenueShort(l.venue))} ${dashEsc(l.side || '')}`)
+        .join(', ');
+    const sampleText = samples ? ` · unmatched examples: ${samples}` : '';
+    return `<div class="perps-empty" style="margin-bottom:0.8rem;text-align:left;">
+        Closed reconstruction: ${dashEsc(byVenue || '0 fetched legs')} · ${unmatched} unmatched${sampleText}
+    </div>`;
+}
+
+function perpsClosedSlippageTip(pair) {
+    if (pair?.exchangeOnly) {
+        return 'Unhedged until close — Close Slippage is the exchange realized PnL for this leg';
+    }
+    const legs = [pair?.longLeg, pair?.shortLeg].filter(Boolean);
+    const tracked = legs.find((leg) => leg?.venue !== 'variational');
+    const variational = legs.find((leg) => leg?.venue === 'variational');
+    if (pair?.manualVariationalClose || variational) {
+        const trackedPnl = Number.isFinite(Number(tracked?.realizedPnl)) ? Number(tracked.realizedPnl) : null;
+        const varPnl = Number.isFinite(Number(variational?.realizedPnl)) ? Number(variational.realizedPnl) : null;
+        return [
+            'Close slippage = tracked exchange close PnL + Variational 0.12% of 24h peak margin',
+            'Variational leg does not carry the hedged price move — only adverse 0.12% of peak position notional',
+            trackedPnl != null ? `Tracked leg: ${perpsFmtUsd(trackedPnl)}` : null,
+            varPnl != null
+                ? (pair?.variationalPeakMargin
+                    ? `Variational slip: ${perpsFmtUsd(varPnl)} (0.12% of ${perpsFmtUsd(pair.variationalPeakMargin)} peak margin)`
+                    : `Variational slip: ${perpsFmtUsd(varPnl)}`)
+                : null,
+            Number.isFinite(Number(pair?.closeSlippage)) ? `Total: ${perpsFmtUsd(pair.closeSlippage)}` : null,
+        ].filter(Boolean).join(' · ');
+    }
+    return 'Close slippage = net execution PnL from matched entry/exit prices on both exchange legs';
+}
+
+// Closed-tab computation is disabled (remade separately). The Closed tab keeps
+// its UI shell and renders rows from the in-memory closedPairs, each with an X
+// delete button that removes the position (tombstoned in localStorage).
+function perpsRenderClosedPositions(closedPairs) {
+    if (perpsIsMobileV3()) return perpsRenderClosedPositionsV3(closedPairs);
+    const el = document.getElementById('perpsPositionsList');
+    const badge = document.getElementById('perpsPairsBadge');
+    if (badge) badge.textContent = closedPairs.length + (closedPairs.length === 1 ? ' closed' : ' closed');
+    if (!el) return;
+    if (!closedPairs.length) {
+        el.innerHTML = '<div class="perps-empty">No closed positions.</div>';
+        return;
+    }
+    const head = `<div class="perps-pos-head closed">
+        <div>Position</div>
+        <div>Exchange PnL</div>
+        <div>Net PnL</div>
+        <div>APR</div>
+        <div>Margin</div>
+        <div>Close Slippage</div>
+        <div>Funding</div>
+        <div>Fees</div>
+        <div>Closed</div>
+        <div aria-hidden="true"></div>
+    </div>`;
+    el.innerHTML = head + closedPairs.map((p) => {
+        const pair = perpsNormalizeClosedPairForDisplay(p);
+        const delKey = perpsInMemoryClosedPairKey(pair);
+        const sizeLabel = pair.size != null ? `${perpsFmtSize(pair.size)} ${pair.symbol}` : pair.symbol;
+        const closedAt = perpsFormatEventTime(pair.closeTime);
+        const sessionApr = perpsClosedPairSessionApr(pair);
+        const aprTip = perpsClosedPairAprTip(pair, sessionApr);
+        const slipTip = perpsClosedSlippageTip(pair);
+        const margin = perpsClosedPairAvgNotional(pair);
+        const feesAbs = Math.abs(Number(pair.fees || 0));
+        const legsHtml = [pair.longLeg, pair.shortLeg]
+            .filter(Boolean)
+            .map((leg) => perpsClosedLegHtml(leg, pair))
+            .join('');
+        return `<div class="perps-pos-card"><div class="perps-pos-row closed">
+            <div class="perps-pos-token">
+                <div class="perps-pos-token-row">
+                    ${makeLogo(pair.symbol, false, 36)}
+                    <div>
+                        <div class="perps-pos-token-name">${dashEsc(pair.symbol)}</div>
+                        <div class="perps-pos-token-meta">${dashEsc(sizeLabel)}${pair.pairLabel && (pair.exchangeOnly || pair.pairType === 'cross_exchange') ? ` · ${dashEsc(pair.pairLabel)}` : ''}</div>
+                        <span class="perps-pos-pill">CLOSED</span>
+                        ${pair.partialClose || pair.closedPartial || pair.partiallyClosed ? '<span class="perps-pos-pill warn" title="Closed partially — cumulative size and PnL for this session">PARTIAL</span>' : ''}
+                        ${pair.exchangeOnly ? '<span class="perps-pos-pill" title="Never hedged — shown with the single exchange leg only">SOLO</span>' : ''}
+                        ${pair.closeLegEstimated || pair.manualVariationalClose && pair.aprUnavailable ? '<span class="perps-pos-pill warn" title="Tracked close leg or PnL is estimated">EST</span>' : ''}
+                    </div>
+                </div>
+            </div>
+            <div class="perps-pos-legs">
+                ${legsHtml}
+            </div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Net PnL</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.netPnl)}">${perpsFmtUsd(pair.netPnl)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">APR</div><div class="perps-pos-apr-val ${sessionApr != null ? perpsSignedCls(sessionApr) : ''}" title="${dashEsc(aprTip)}">${sessionApr != null ? perpsFmtPct(sessionApr) : '—'}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Margin</div><div class="perps-pos-metric-val">${margin != null ? perpsFmtUsd(margin) : '—'}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Slippage</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.closeSlippage)}" title="${dashEsc(slipTip)}">${perpsFmtUsd(pair.closeSlippage)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Funding</div><div class="perps-pos-metric-val ${perpsSignedCls(pair.funding)}">${perpsFmtUsd(pair.funding)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Fees</div><div class="perps-pos-metric-val neg">-${perpsFmtUsd(feesAbs)}</div></div>
+            <div class="perps-pos-closed-cell"><div class="perps-pos-metric-label">Closed</div><div class="perps-pos-closed-time">${dashEsc(closedAt)}</div></div>
+            <div class="perps-pos-x-col"><button type="button" class="perps-pos-x" aria-label="Delete closed position" title="Delete position" onclick="perpsDeleteClosedPair('${dashEsc(delKey)}'); event.stopPropagation();">✕</button></div>
+        </div></div>`;
+    }).join('');
+    if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
+}
+
+function perpsVenueShort(venue) {
+    return { hyperliquid: 'HL', nado: 'Nado', grvt: 'GRVT', extended: 'Ext', phoenix: 'Phx', variational: 'Var' }[venue] || venue;
+}
+
+function perpsPairLegs(p) {
+    if (p.pairType === 'hl_nado') {
+        return {
+            a: { label: 'HL', venue: 'hyperliquid', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen, markPx: p.hl?.markPx, liquidationPx: p.hl?.liquidationPx, tpPx: p.hl?.tpPx, slPx: p.hl?.slPx },
+            b: { label: 'Nado', venue: 'nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen, markPx: p.nado?.markPx, liquidationPx: p.nado?.liquidationPx, tpPx: p.nado?.tpPx, slPx: p.nado?.slPx },
+        };
+    }
+    if (p.crossLegA && p.crossLegB) {
+        return {
+            a: {
+                label: perpsVenueShort(p.crossLegA.venue),
+                venue: p.crossLegA.venue,
+                size: p.crossLegA.size,
+                entry: p.crossLegA.entryPx,
+                upnl: p.crossLegA.unrealizedPnl,
+                upnlEstimated: p.crossLegA.upnlEstimated === true || p.crossLegA.variationalUpnlOffset === true,
+                funding: p.legAFundingSinceOpen,
+                markPx: p.crossLegA.markPx,
+                liquidationPx: p.crossLegA.liquidationPx,
+                tpPx: p.crossLegA.tpPx,
+                slPx: p.crossLegA.slPx,
+            },
+            b: {
+                label: perpsVenueShort(p.crossLegB.venue),
+                venue: p.crossLegB.venue,
+                size: p.crossLegB.size,
+                entry: p.crossLegB.entryPx,
+                upnl: p.crossLegB.unrealizedPnl,
+                upnlEstimated: p.crossLegB.upnlEstimated === true || p.crossLegB.variationalUpnlOffset === true,
+                funding: p.legBFundingSinceOpen,
+                markPx: p.crossLegB.markPx,
+                liquidationPx: p.crossLegB.liquidationPx,
+                tpPx: p.crossLegB.tpPx,
+                slPx: p.crossLegB.slPx,
+            },
+        };
+    }
+    return {
+        a: { label: 'A', venue: p.venueA || 'hyperliquid', size: p.hlSize, entry: p.hlEntry, upnl: p.hlUpnl, funding: p.hlFundingSinceOpen },
+        b: { label: 'B', venue: p.venueB || 'nado', size: p.nadoSize, entry: p.nadoEntry, upnl: p.nadoUpnl, funding: p.nadoFundingSinceOpen },
+    };
+}
+
+function perpsNumOrNull(v) {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function perpsLegCurrentPx(symbol, venue, leg) {
+    const direct = perpsNumOrNull(leg?.markPx);
+    if (direct != null) return direct;
+    const row = perpsRateSpreadRow(symbol);
+    const key = { hyperliquid: 'hyperliquidMarkPx', nado: 'nadoMarkPx', grvt: 'grvtMarkPx', extended: 'extendedMarkPx', phoenix: 'phoenixMarkPx', variational: 'variationalMarkPx' }[venue];
+    return key ? perpsNumOrNull(row?.[key]) : null;
+}
+
+const PERPS_RISK_FULL_PCT = 20;
+const PERPS_RISK_START_PCT_UP = 58.3;
+const PERPS_RISK_START_PCT_DOWN = 50;
+
+function perpsPriceRiskLevel(currentPx, levelPx) {
+    const current = perpsNumOrNull(currentPx);
+    const level = perpsNumOrNull(levelPx);
+    if (current == null || level == null) return 0;
+    const distancePct = Math.abs(current - level) / current * 100;
+    const goingUp = level > current;
+    const startPct = goingUp ? PERPS_RISK_START_PCT_UP : PERPS_RISK_START_PCT_DOWN;
+    const span = startPct - PERPS_RISK_FULL_PCT;
+    if (distancePct <= PERPS_RISK_FULL_PCT) return 1;
+    return Math.max(0, Math.min(1, (startPct - distancePct) / span));
+}
+
+function perpsPriceRiskStyle(currentPx, levelPx) {
+    const risk = perpsPriceRiskLevel(currentPx, levelPx);
+    if (risk <= 0) return '';
+    const green = Math.round(156 - risk * 64);
+    const blue = Math.round(187 - risk * 65);
+    return `style="color:rgb(255,${green},${blue});text-shadow:0 0 ${Math.round(6 + risk * 8)}px rgba(255,92,122,${(0.18 + risk * 0.36).toFixed(2)})"`;
+}
+
+function perpsLiquidationRiskStyle(currentPx, liquidationPx) {
+    return perpsPriceRiskStyle(currentPx, liquidationPx);
+}
+
+const PERPS_SL_LIQ_WARN_PCT = 2;
+
+function perpsSlLiqProximityWarn(side, slPx, liqPx) {
+    const sl = perpsNumOrNull(slPx);
+    const liq = perpsNumOrNull(liqPx);
+    if (sl == null || liq == null || sl <= 0 || liq <= 0) return false;
+    const isShort = side === 'short' || side === 'S';
+    const band = liq * (PERPS_SL_LIQ_WARN_PCT / 100);
+    if (isShort) {
+        if (sl >= liq) return true;
+        return liq - sl <= band;
+    }
+    if (sl <= liq) return true;
+    return sl - liq <= band;
+}
+
+function perpsSlLiqWarnTitle(side) {
+    return side === 'short' || side === 'S'
+        ? 'Stop loss is at or above liquidation price, or within 2% below it — may not trigger before liquidation'
+        : 'Stop loss is at or below liquidation price, or within 2% above it — may not trigger before liquidation';
+}
+
+function perpsPositionMidPx(p, displayLegs) {
+    const prices = (displayLegs || [])
+        .map(entry => perpsLegCurrentPx(p.symbol, entry.venue || entry.leg.venue, entry.leg))
+        .filter(v => v != null);
+    if (prices.length < 2) return prices[0] ?? null;
+    return prices.reduce((sum, v) => sum + v, 0) / prices.length;
+}
+
+function perpsPositionLiqStackHtml(p, displayLegs) {
+    return `<div class="perps-pos-liq-stack">${displayLegs.map(entry => {
+        const venue = entry.venue || entry.leg.venue;
+        const currentPx = perpsLegCurrentPx(p.symbol, venue, entry.leg);
+        const liquidationPx = perpsNumOrNull(entry.leg.liquidationPx);
+        const liqStyle = perpsLiquidationRiskStyle(currentPx, liquidationPx);
+        return `<div class="perps-pos-liq-val" ${liqStyle}>${perpsFmtPx(liquidationPx)}</div>`;
+    }).join('')}</div>`;
+}
+
+const PERPS_TPSL_HEDGE_CLOSE_PCT = 1;
+
+function perpsTpSlDiffPct(a, b) {
+    const left = perpsNumOrNull(a);
+    const right = perpsNumOrNull(b);
+    if (left == null || right == null) return null;
+    const avg = (left + right) / 2;
+    return avg > 0 ? (Math.abs(left - right) / avg) * 100 : null;
+}
+
+function perpsComparableTpSlLegs(displayLegs) {
+    return (displayLegs || []).filter(entry => {
+        const venue = String(entry.venue || entry.leg?.venue || '').toLowerCase();
+        return venue !== 'nado';
+    });
+}
+
+function perpsTpSlHedgeLegs(entries) {
+    const legs = (entries || []).map(entry => ({
+        venue: entry?.venue || entry?.leg?.venue,
+        leg: entry?.leg || entry,
+    }));
+    const longEntry = legs.find(e => Number(e.leg?.size) > 0) || legs[0] || null;
+    const shortEntry = legs.find(e => Number(e.leg?.size) < 0)
+        || legs.find(e => e !== longEntry)
+        || legs[1]
+        || null;
+    return { longEntry, shortEntry, legs };
+}
+
+function perpsTpSlHedgePairAnalysis(longPx, shortPx, thresholdPct = PERPS_TPSL_HEDGE_CLOSE_PCT) {
+    const longVal = perpsNumOrNull(longPx);
+    const shortVal = perpsNumOrNull(shortPx);
+    if (longVal == null && shortVal == null) return { kind: 'none' };
+    if (longVal == null || shortVal == null) return { kind: 'missing', longPx: longVal, shortPx: shortVal };
+    const diffPct = perpsTpSlDiffPct(longVal, shortVal);
+    if (diffPct != null && diffPct <= thresholdPct) {
+        return {
+            kind: 'merged',
+            avg: (longVal + shortVal) / 2,
+            longPx: longVal,
+            shortPx: shortVal,
+            diffPct,
+        };
+    }
+    return { kind: 'mismatch', longPx: longVal, shortPx: shortVal, diffPct };
+}
+
+function perpsTpSlCrossTooltipHtml(longEntry, shortEntry) {
+    if (!longEntry || !shortEntry) return '';
+    const row = (entry, sideLabel) => {
+        const leg = entry.leg || {};
+        const venue = dashEsc(perpsVenueShort(entry.venue || leg.venue));
+        const tp = perpsNumOrNull(leg.tpPx);
+        const sl = perpsNumOrNull(leg.slPx);
+        return `<div class="perps-tpsl-tooltip-row"><span>${venue}</span><span><span class="tp">TP ${tp != null ? perpsFmtPx(tp) : '—'}</span> · <span class="sl">SL ${sl != null ? perpsFmtPx(sl) : '—'}</span></span></div>`;
+    };
+    return `<div class="perps-tpsl-tooltip">${row(longEntry, 'long')}${row(shortEntry, 'short')}</div>`;
+}
+
+function perpsTpSlValWrapHtml(innerHtml, tooltipHtml = '') {
+    if (!tooltipHtml) return innerHtml;
+    return `<span class="perps-pos-tpsl-val-wrap">${innerHtml}${tooltipHtml}</span>`;
+}
+
+function perpsFmtTpSlStackHtml(tpPx, slPx, currentPx, legCtx = {}) {
+    const tp = perpsNumOrNull(tpPx);
+    const sl = perpsNumOrNull(slPx);
+    if (tp == null && sl == null) return '<div class="perps-pos-liq-val">—</div>';
+    const side = Number(legCtx.size) < 0 ? 'short' : 'long';
+    const tooltipHtml = legCtx.tooltipHtml || '';
+    const rows = [];
+    if (tp != null) {
+        const prefix = legCtx.approxTp ? '~' : '';
+        const inner = `<div class="perps-pos-liq-val" ${perpsPriceRiskStyle(currentPx, tp)}>${prefix}${perpsFmtPx(tp)}</div>`;
+        rows.push(perpsTpSlValWrapHtml(inner, tooltipHtml));
+    }
+    if (sl != null) {
+        const slLiqWarn = perpsSlLiqProximityWarn(side, sl, legCtx.liquidationPx);
+        const slWarnCls = slLiqWarn ? ' perps-pos-sl-liq-warn' : '';
+        const slWarnTitle = slLiqWarn && !tooltipHtml ? ` title="${dashEsc(perpsSlLiqWarnTitle(side))}"` : '';
+        const slStyle = slLiqWarn ? '' : perpsPriceRiskStyle(currentPx, sl);
+        const prefix = legCtx.approxSl ? '~' : '';
+        const inner = `<div class="perps-pos-liq-val${slWarnCls}"${slWarnTitle} ${slStyle}>${slLiqWarn ? '⚠ ' : ''}${prefix}${perpsFmtPx(sl)}</div>`;
+        rows.push(perpsTpSlValWrapHtml(inner, tooltipHtml));
+    }
+    return `<div class="perps-pos-tpsl-pair">${rows.join('')}</div>`;
+}
+
+function perpsPairTpSlAnalysis(displayLegs) {
+    const comparable = perpsComparableTpSlLegs(displayLegs);
+    if (comparable.length < 2) {
+        const entry = comparable.find(e => {
+            const leg = e?.leg || e;
+            return perpsNumOrNull(leg?.tpPx) != null || perpsNumOrNull(leg?.slPx) != null;
+        }) || comparable[0] || (displayLegs || []).find(e => {
+            const leg = e?.leg || e;
+            return perpsNumOrNull(leg?.tpPx) != null || perpsNumOrNull(leg?.slPx) != null;
+        }) || (displayLegs || [])[0] || null;
+        return { mode: 'single', entry, comparable };
+    }
+    const { longEntry, shortEntry } = perpsTpSlHedgeLegs(comparable);
+    const longLeg = longEntry?.leg || {};
+    const shortLeg = shortEntry?.leg || {};
+    const tp = perpsTpSlHedgePairAnalysis(longLeg.tpPx, shortLeg.slPx);
+    const sl = perpsTpSlHedgePairAnalysis(longLeg.slPx, shortLeg.tpPx);
+    const mismatch = tp.kind === 'mismatch' || sl.kind === 'mismatch'
+        || tp.kind === 'missing' || sl.kind === 'missing';
+    return {
+        mode: mismatch ? 'split' : 'merged',
+        tp,
+        sl,
+        longEntry,
+        shortEntry,
+        comparable,
+    };
+}
+
+function perpsPairTpSlMismatch(displayLegs) {
+    return perpsPairTpSlAnalysis(displayLegs).mode === 'split';
+}
+
+function perpsPositionTpSlStackHtml(p, displayLegs) {
+    const analysis = perpsPairTpSlAnalysis(displayLegs);
+    const tpSlEntry = (entry, opts = {}) => {
+        const leg = entry?.leg || entry;
+        const venue = entry?.venue || leg?.venue;
+        const currentPx = perpsLegCurrentPx(p.symbol, venue, leg);
+        return perpsFmtTpSlStackHtml(leg?.tpPx, leg?.slPx, currentPx, {
+            size: leg?.size,
+            liquidationPx: leg?.liquidationPx,
+            ...opts,
+        });
+    };
+    if (analysis.mode === 'single') {
+        if (!analysis.entry) return '<div class="perps-pos-liq-val">—</div>';
+        return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${tpSlEntry(analysis.entry)}</div>`;
+    }
+    const tooltipHtml = perpsTpSlCrossTooltipHtml(analysis.longEntry, analysis.shortEntry);
+    if (analysis.mode === 'merged') {
+        const longLeg = analysis.longEntry?.leg || {};
+        const shortLeg = analysis.shortEntry?.leg || {};
+        const tpPx = analysis.tp.kind === 'merged'
+            ? analysis.tp.avg
+            : (analysis.tp.longPx ?? analysis.tp.shortPx ?? longLeg.tpPx ?? shortLeg.slPx);
+        const slPx = analysis.sl.kind === 'merged'
+            ? analysis.sl.avg
+            : (analysis.sl.longPx ?? analysis.sl.shortPx ?? longLeg.slPx ?? shortLeg.tpPx);
+        const midPx = perpsPositionMidPx(p, analysis.comparable);
+        return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${perpsFmtTpSlStackHtml(tpPx, slPx, midPx, {
+            size: longLeg.size,
+            liquidationPx: longLeg.liquidationPx,
+            approxTp: analysis.tp.kind === 'merged',
+            approxSl: analysis.sl.kind === 'merged',
+            tooltipHtml,
+        })}</div>`;
+    }
+    const warn = '<div class="perps-pos-tpsl-warn" title="TP/SL differ across venues or are missing on one leg">⚠ Mismatch</div>';
+    return `<div class="perps-pos-liq-stack perps-pos-tpsl-stack">${warn}${analysis.comparable.map(entry =>
+        tpSlEntry(entry, { tooltipHtml })
+    ).join('')}</div>`;
+}
+
+function perpsSideBadgeHtml(size) {
+    const side = Number(size) >= 0 ? 'long' : 'short';
+    return `<span class="perps-side-badge ${side}">${side === 'long' ? 'L' : 'S'}</span>`;
+}
+
+function perpsUpnlEstBadgeHtml() {
+    return `<span class="perps-upnl-est" title="Estimated — Variational has no positions API; derived from the tracked leg (mirror + adverse slip) or fill-vs-mark">EST</span>`;
+}
+
+function perpsVenueWithSideHtml(venue, size) {
+    return `${perpsSideBadgeHtml(size)}<span>${dashEsc(perpsVenueLabel(venue))}</span>`;
+}
+
+function perpsRenderPairedTable(paired) {
+    const el = document.getElementById('perpsPairedTable');
+    const badge = document.getElementById('perpsPairsBadge');
+    if (badge) badge.textContent = paired.length + (paired.length === 1 ? ' pair' : ' pairs');
+    if (!el) return;
+    if (!paired.length) {
+        el.innerHTML = '<div class="perps-empty">No hedged pairs found.</div>';
+        return;
+    }
+    el.innerHTML = `<table class="perps-table"><thead><tr>
+        <th>Asset</th><th>Pair</th><th>Leg A</th><th>Leg B</th><th>A entry</th><th>B entry</th>
+        <th>A uPnL</th><th>B uPnL</th><th>Combined</th><th>A funding</th><th>B funding</th>
+    </tr></thead><tbody>${paired.map(p => {
+        const mismatch = perpsPairHasSizeMismatch(p);
+        const pairLabel = p.pairLabel || 'HL + Nado';
+        const legs = perpsPairLegs(p);
+        return `<tr>
+            <td>${dashEsc(p.symbol)}${mismatch ? ` <span class="perps-warn" title="${dashEsc(perpsPairSizeMismatchText(p))}">⚠</span>` : ''}</td>
+            <td>${dashEsc(pairLabel)}</td>
+            <td>${perpsSideBadgeHtml(legs.a.size)}${dashEsc(legs.a.label)} ${legs.a.size != null ? perpsFmtSize(legs.a.size) : '—'}</td>
+            <td>${perpsSideBadgeHtml(legs.b.size)}${dashEsc(legs.b.label)} ${legs.b.size != null ? perpsFmtSize(legs.b.size) : '—'}</td>
+            <td data-vault-privacy-skip="1">${legs.a.entry != null ? perpsFmtPx(legs.a.entry) : '—'}</td>
+            <td data-vault-privacy-skip="1">${legs.b.entry != null ? perpsFmtPx(legs.b.entry) : '—'}</td>
+            <td class="${perpsSignedCls(legs.a.upnl)}">${legs.a.upnl != null ? perpsFmtUsd(legs.a.upnl) : '—'}</td>
+            <td class="${perpsSignedCls(legs.b.upnl)}">${legs.b.upnl != null ? perpsFmtUsd(legs.b.upnl) : '—'}</td>
+            <td class="${perpsSignedCls(p.combinedUpnl)}">${perpsFmtUsd(p.combinedUpnl)}</td>
+            <td class="${perpsSignedCls(legs.a.funding)}">${legs.a.funding != null ? perpsFmtUsd(legs.a.funding) : '—'}</td>
+            <td class="${perpsSignedCls(legs.b.funding)}">${legs.b.funding != null ? perpsFmtUsd(legs.b.funding) : '—'}</td>
+        </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function perpsRenderPairBreakdown(paired, days = 30) {
+    const el = document.getElementById('perpsPairBreakdown');
+    if (!el) return;
+    if (!paired.length) {
+        el.innerHTML = '<div class="perps-empty">No paired positions to break down.</div>';
+        return;
+    }
+    const daysLabel = days + 'd';
+    const sorted = [...paired].sort((a, b) => b.netArbPnl - a.netArbPnl);
+    el.innerHTML = `<table class="perps-table"><thead><tr>
+        <th>Asset</th><th>HL fund</th><th>Nado fund</th><th>Fees (${daysLabel})</th><th>Realized (${daysLabel})</th><th>Entry slip (est.)</th>
+        <th>Combined uPnL</th><th>Net arb</th><th>Spread 8h</th><th>Break-even</th>
+    </tr></thead><tbody>${sorted.map(p => `<tr>
+        <td>${dashEsc(p.symbol)}</td>
+        <td class="${perpsSignedCls(p.hlFundingSinceOpen)}">${perpsFmtUsd(p.hlFundingSinceOpen)}</td>
+        <td class="${perpsSignedCls(p.nadoFundingSinceOpen)}">${perpsFmtUsd(p.nadoFundingSinceOpen)}</td>
+        <td class="neg">${perpsFmtUsd(-p.fees)}</td>
+        <td class="${perpsSignedCls(p.realized)}">${perpsFmtUsd(p.realized)}</td>
+        <td>${p.entrySlippage != null ? perpsFmtUsd(p.entrySlippage) : '—'}</td>
+        <td class="${perpsSignedCls(p.combinedUpnl)}">${perpsFmtUsd(p.combinedUpnl)}</td>
+        <td class="${perpsSignedCls(p.netArbPnl)}">${perpsFmtUsd(p.netArbPnl)}</td>
+        <td>${perpsFmtRate(p.currentSpread8h)}</td>
+        <td class="${p.spreadCoversBreakeven ? 'perps-ok' : (p.spreadCoversBreakeven === false ? 'perps-warn' : '')}">${perpsFmtRate(p.breakEvenSpread8h)}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function perpsRenderUnhedged(unhedged) {
+    const section = document.getElementById('perpsUnhedgedSection');
+    const el = document.getElementById('perpsUnhedgedTable');
+    if (!section || !el) return;
+    _perpsUnhedgedRenderCache = new Map();
+    for (const u of unhedged || []) {
+        _perpsUnhedgedRenderCache.set(perpsVariationalUnhedgedMatchKey(u.symbol, u.venue), u);
+    }
+    section.style.display = unhedged.length ? '' : 'none';
+    if (!unhedged.length) return;
+    el.innerHTML = `<table class="perps-table"><thead><tr>
+        <th>Asset</th><th>Venue</th><th>Side</th><th>Size</th><th>Notional</th><th>uPnL</th><th>PnL w/ fund</th><th>Funding</th><th></th>
+    </tr></thead><tbody>${unhedged.map((u) => {
+        const pnlWithFund = (u.unrealizedPnl ?? 0) + (u.funding ?? 0);
+        return `<tr>
+        <td>${makeLogo(u.symbol, false, 22)} ${dashEsc(u.symbol)}</td>
+        <td>${perpsVenueWithSideHtml(u.venue, u.size)}</td>
+        <td class="${u.side === 'long' ? 'perps-side-long' : 'perps-side-short'}">${dashEsc(u.side.toUpperCase())}</td>
+        <td>${perpsFmtSize(u.size)}</td>
+        <td>${perpsFmtUsd(u.notional)}</td>
+        <td class="${perpsSignedCls(u.unrealizedPnl)}">${perpsFmtUsd(u.unrealizedPnl)}</td>
+        <td class="${perpsSignedCls(pnlWithFund)}">${perpsFmtUsd(pnlWithFund)}</td>
+        <td class="${perpsSignedCls(u.funding)}">${perpsFmtUsd(u.funding)}</td>
+        <td><button type="button" class="perps-btn secondary" style="padding:0.2rem 0.55rem;font-size:0.72rem;" data-perps-hedge-variational data-symbol="${dashEsc(u.symbol)}" data-venue="${dashEsc(u.venue)}">Hedge with Variational</button></td>
+    </tr>`;
+    }).join('')}</tbody></table>`;
+    if (typeof resolveAllPendingLogos === 'function') resolveAllPendingLogos();
+}
+
+function perpsRenderVariationalPending(pending) {
+    const section = document.getElementById('perpsVariationalPendingSection');
+    const el = document.getElementById('perpsVariationalPendingTable');
+    if (!section || !el) return;
+    section.style.display = pending.length ? '' : 'none';
+    if (!pending.length) return;
+    el.innerHTML = `<table class="perps-table"><thead><tr>
+        <th>Asset</th><th>Tracked venue</th><th>Var entry</th><th>Status</th><th></th>
+    </tr></thead><tbody>${pending.map(h => `<tr>
+        <td>${dashEsc(h.symbol)}</td>
+        <td>${dashEsc(perpsVenueShort(h.trackedVenue))}</td>
+        <td data-vault-privacy-skip="1">${h.variationalEntryPx != null ? perpsFmtPx(h.variationalEntryPx) : '—'}</td>
+        <td>Tracked leg closed — finalizing Variational close (0.12% of 24h peak margin)</td>
+        <td><span class="perps-pos-pill">AUTO</span></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function perpsRenderFundingChart(data) {
+    const chart = perpsBuildChart(data.fundingSeries, data.netArbSeries);
+    const lineEl = document.getElementById('perpsFundingLine');
+    const areaEl = document.getElementById('perpsFundingArea');
+    const netLineEl = document.getElementById('perpsNetArbLine');
+    const netAreaEl = document.getElementById('perpsNetArbArea');
+    const totalEl = document.getElementById('perpsChartTotal');
+    const statsEl = document.getElementById('perpsChartStats');
+    const noteEl = document.getElementById('perpsChartNote');
+    const badge = document.getElementById('perpsChartBadge');
+    if (lineEl) lineEl.setAttribute('d', chart.line);
+    if (areaEl) areaEl.setAttribute('d', chart.area);
+    if (netLineEl) netLineEl.setAttribute('d', chart.netLine);
+    if (netAreaEl) netAreaEl.setAttribute('d', chart.netArea);
+    if (totalEl) {
+        totalEl.textContent = perpsFmtUsd(chart.netTotal);
+        totalEl.className = 'perps-pnl-total ' + perpsSignedCls(chart.netTotal);
+    }
+    if (noteEl) noteEl.textContent = `${data.days}d paired funding (${perpsFmtUsd(chart.total)}) vs net arb after fees`;
+    if (badge) badge.textContent = data.days + 'd';
+    if (statsEl) {
+        statsEl.innerHTML = chart.stats.map(s =>
+            `<div><div class="perps-pnl-stat-label">${dashEsc(s.label)}</div><div class="perps-pnl-stat-val">${dashEsc(s.value)}</div></div>`
+        ).join('');
+    }
+}
+
+function perpsRenderPositions(containerId, positions, venue) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    if (!positions.length) {
+        el.innerHTML = '<div class="perps-empty">No open perp positions found.</div>';
+        return;
+    }
+    el.innerHTML = `<table class="perps-table"><thead><tr>
+        <th>Market</th><th>Side</th><th>Size</th><th>Notional</th><th>uPnL</th>
+    </tr></thead><tbody>${positions.map(p => {
+        const sideCls = p.side === 'long' ? 'perps-side-long' : 'perps-side-short';
+        const notional = perpsFmtUsd(p.notional ?? (p.markPx != null ? Math.abs(p.size * p.markPx) : null));
+        const upnl = p.unrealizedPnl != null ? perpsFmtUsd(p.unrealizedPnl) : '—';
+        return `<tr>
+            <td>${dashEsc(p.symbol)}</td>
+            <td class="${sideCls}">${dashEsc(p.side.toUpperCase())}</td>
+            <td>${Math.abs(p.size).toLocaleString('en-US', { maximumFractionDigits: 6 })}</td>
+            <td>${notional}</td>
+            <td class="${perpsSignedCls(p.unrealizedPnl)}">${upnl}</td>
+        </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function perpsRenderSpread(rows) {
+    const el = document.getElementById('perpsRateSpread');
+    if (!el) return;
+    if (!rows.length) {
+        el.innerHTML = '<div class="perps-empty">No rate data available.</div>';
+        return;
+    }
+    el.innerHTML = `<table class="perps-table"><thead><tr>
+        <th>Asset</th><th>HL 8h</th><th>Nado 8h</th><th>GRVT 8h</th><th>Ext 8h</th><th>Phx 8h</th><th>Var 8h</th>
+        <th>HL−Nado</th><th>HL−GRVT</th><th>HL−Ext</th><th>HL−Phx</th><th>Nado−Ext</th><th>Nado−GRVT</th><th>Nado−Phx</th><th>GRVT−Ext</th><th>GRVT−Phx</th><th>Ext−Phx</th>
+    </tr></thead><tbody>${rows.map(r => `<tr>
+        <td>${dashEsc(r.symbol)}</td>
+        <td>${perpsFmtRate(r.hyperliquid8h)}</td>
+        <td>${perpsFmtRate(r.nado8h)}</td>
+        <td>${perpsFmtRate(r.grvt8h)}</td>
+        <td>${perpsFmtRate(r.extended8h)}</td>
+        <td>${perpsFmtRate(r.phoenix8h)}</td>
+        <td>${perpsFmtRate(r.variational8h)}</td>
+        <td>${perpsFmtRate(r.spread8h)}</td>
+        <td>${perpsFmtRate(r.spreadHlGrvt8h)}</td>
+        <td>${perpsFmtRate(r.spreadHlExtended8h)}</td>
+        <td>${perpsFmtRate(r.spreadHlPhoenix8h)}</td>
+        <td>${perpsFmtRate(r.spreadNadoExtended8h)}</td>
+        <td>${perpsFmtRate(r.spreadNadoGrvt8h)}</td>
+        <td>${perpsFmtRate(r.spreadNadoPhoenix8h)}</td>
+        <td>${perpsFmtRate(r.spreadGrvtExtended8h)}</td>
+        <td>${perpsFmtRate(r.spreadGrvtPhoenix8h)}</td>
+        <td>${perpsFmtRate(r.spreadExtendedPhoenix8h)}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function perpsRenderFundingHistory(hlPayments, nadoPayments, grvtPayments, extendedPayments, phoenixPayments = null, days = 30) {
+    const el = document.getElementById('perpsFundingHistory');
+    if (!el) return;
+    if (typeof phoenixPayments === 'number') {
+        days = phoenixPayments;
+        phoenixPayments = null;
+    }
+    const hlSorted = [...(hlPayments || [])].sort((a, b) => b.time - a.time);
+    const nadoSorted = [...(nadoPayments || [])].sort((a, b) => b.time - a.time);
+    const grvtSorted = [...(grvtPayments || [])].sort((a, b) => b.time - a.time);
+    const extendedSorted = [...(extendedPayments || [])].sort((a, b) => b.time - a.time);
+    const phoenixSorted = [...(phoenixPayments || [])].sort((a, b) => b.time - a.time);
+    const merged = [
+        ...hlSorted.slice(0, 12),
+        ...nadoSorted.slice(0, 12),
+        ...grvtSorted.slice(0, 12),
+        ...extendedSorted.slice(0, 12),
+        ...phoenixSorted.slice(0, 12),
+    ].sort((a, b) => b.time - a.time);
+    if (!merged.length) {
+        el.innerHTML = `<div class="perps-empty">No funding payments in the last ${days} days.</div>`;
+        return;
+    }
+    const hlInView = merged.filter(p => p.venue === 'hyperliquid').length;
+    const nadoInView = merged.filter(p => p.venue === 'nado').length;
+    const grvtInView = merged.filter(p => p.venue === 'grvt').length;
+    const extendedInView = merged.filter(p => p.venue === 'extended').length;
+    const phoenixInView = merged.filter(p => p.venue === 'phoenix').length;
+    el.innerHTML = `<div class="perps-status" style="margin:0 0.5rem 0.35rem;">Showing ${merged.length} recent rows (${hlInView} HL · ${nadoInView} Nado · ${grvtInView} GRVT · ${extendedInView} Extended · ${phoenixInView} Phoenix).</div>
+    <table class="perps-table"><thead><tr>
+        <th>Time</th><th>Venue</th><th>Market</th><th>Size</th><th>Payment</th>
+    </tr></thead><tbody>${merged.map(p => {
+        const ts = new Date(p.time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const cls = p.usdc >= 0 ? 'perps-side-long' : 'perps-side-short';
+        return `<tr>
+            <td>${dashEsc(ts)}</td>
+            <td>${dashEsc(p.venue)}</td>
+            <td>${dashEsc(p.symbol)}</td>
+            <td>${Math.abs(p.size).toLocaleString('en-US', { maximumFractionDigits: 4 })}</td>
+            <td class="${cls}">${perpsFmtUsd(p.usdc, 4)}</td>
+        </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function perpsVenueStateForLeverage(data, venue) {
+    if (venue === 'hyperliquid') return data?.hyperliquid?.state || {};
+    if (venue === 'nado') return data?.nado?.state || {};
+    if (venue === 'grvt') return data?.grvt?.state || {};
+    if (venue === 'extended') return data?.extended?.state || {};
+    if (venue === 'phoenix') return data?.phoenix?.state || {};
+    return {};
+}
+
+function perpsVenueEquityForLeverage(data, venue) {
+    const s = data?.summary || {};
+    if (venue === 'hyperliquid') return s.hlAccountValue ?? data?.equityNow?.hl ?? null;
+    if (venue === 'nado') return s.nadoAccountValue ?? data?.equityNow?.nado ?? null;
+    if (venue === 'grvt') return s.grvtAccountValue ?? data?.equityNow?.grvt ?? null;
+    if (venue === 'extended') return s.extendedAccountValue ?? data?.equityNow?.extended ?? null;
+    if (venue === 'phoenix') return s.phoenixAccountValue ?? data?.equityNow?.phoenix ?? null;
+    return null;
+}
+
+function perpsRenderCrossMarginLeverage(data) {
+    const el = document.getElementById('perpsLeverageGrid');
+    if (!el) return;
+    const venues = [
+        ['hyperliquid', 'Hyperliquid'],
+        ['nado', 'NADO'],
+        ['grvt', 'GRVT'],
+        ['extended', 'Extended'],
+        ['phoenix', 'Phoenix'],
+    ];
+    el.innerHTML = venues.map(([venue, label]) => {
+        const state = perpsVenueStateForLeverage(data, venue);
+        const positions = Array.isArray(state.positions) ? state.positions : [];
+        const notional = positions.reduce((sum, p) => sum + Math.abs(Number(p.notional || 0)), 0);
+        const equity = Number(perpsVenueEquityForLeverage(data, venue));
+        const lev = Number.isFinite(equity) && equity > 0 ? notional / equity : null;
+        const meta = perpsIsMobileV3()
+            ? `${perpsFmtUsd(notional)} notional<br>${Number.isFinite(equity) ? perpsFmtUsd(equity) : '—'} equity · ${positions.length} pos`
+            : `${perpsFmtUsd(notional)} open notional<br>${Number.isFinite(equity) ? perpsFmtUsd(equity) : '—'} equity · ${positions.length} pos`;
+        return `<div class="perps-leverage-card">
+            <div class="perps-leverage-name">${dashEsc(label)}</div>
+            <div class="perps-leverage-value">${lev != null ? `${lev.toFixed(2)}x` : '—'}</div>
+            <div class="perps-leverage-meta">${meta}</div>
+        </div>`;
+    }).join('');
+}
+
+function perpsNormalizeVariationalHedgeRecord(hedge) {
+    if (!hedge || typeof hedge !== 'object') return hedge;
+    const next = { ...hedge };
+    if (next.status === 'open' && next.closedAt) {
+        next.status = 'closed';
+        next.pendingCloseAt = null;
+    }
+    return next;
+}
+
+function perpsSafeApplyVariationalHedgesToData(data) {
+    if (!data) return data;
+    try {
+        return perpsApplyVariationalHedgesToData(data) || data;
+    } catch (e) {
+        console.error('[perps] Variational hedge apply failed', e);
+        return data;
+    }
+}
+
+function perpsRenderDashboard(data, opts = {}) {
+    if (!data || typeof data !== 'object') return;
+    _perpsCache = data;
+    _perpsLastData = data;
+    try {
+        perpsSafeApplyVariationalHedgesToData(data);
+        try {
+            // Cache aggregates only — event arrays can be multi‑MB and freeze setItem.
+            // Also sync to cloud so overview PnL matches on mobile without a fresh /api/perps paint.
+            perpsSaveDailyFundCache(data.dailyFundingSeries || [], data.fetchedAt || Date.now());
+        } catch (e) {}
+        if (data?.grvt?.state?.positions?.length && !data.grvt.state.error) {
+            perpsSaveGrvtStateCache(data.grvt.state);
+        }
+        if (document.body.dataset.activeTab === 'overview') {
+            renderDashboardPnlAttribution(true);
+        }
+        data.closedPairs = perpsCacheNewClosedPairs([
+            ...(perpsLoadClosedPairsRaw() || []),
+            ...(data.closedPairs || []),
+        ]);
+        perpsAttachRealizedPnlByVenue(data);
+        const seededRes = perpsSeedHlExtendedClosedPairsFromExchange(data);
+        const seeded = Array.isArray(seededRes) ? seededRes : (seededRes?.pairs || []);
+        const hlExtConsumed = {
+            hlUsed: Array.isArray(seededRes) ? new Set() : (seededRes?.hlUsed || new Set()),
+            extUsed: Array.isArray(seededRes) ? new Set() : (seededRes?.extUsed || new Set()),
+        };
+        if (seeded.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seeded]);
+        const seededGrvtRes = perpsSeedGrvtClosedPairsFromExchange(data);
+        const seededGrvt = Array.isArray(seededGrvtRes) ? seededGrvtRes : (seededGrvtRes?.pairs || []);
+        const grvtConsumed = {
+            hlUsed: Array.isArray(seededGrvtRes) ? new Set() : (seededGrvtRes?.hlUsed || new Set()),
+            grvtUsed: Array.isArray(seededGrvtRes) ? new Set() : (seededGrvtRes?.grvtUsed || new Set()),
+        };
+        if (seededGrvt.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededGrvt]);
+        const seededHlNadoRes = perpsSeedHlNadoClosedPairsFromExchange(data);
+        const seededHlNado = Array.isArray(seededHlNadoRes) ? seededHlNadoRes : (seededHlNadoRes?.pairs || []);
+        const hlNadoConsumed = {
+            hlUsed: Array.isArray(seededHlNadoRes) ? new Set() : (seededHlNadoRes?.hlUsed || new Set()),
+            nadoUsed: Array.isArray(seededHlNadoRes) ? new Set() : (seededHlNadoRes?.nadoUsed || new Set()),
+        };
+        if (seededHlNado.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededHlNado]);
+        const seededHlPhxRes = perpsSeedHlPhoenixClosedPairsFromExchange(data);
+        const seededHlPhx = Array.isArray(seededHlPhxRes) ? seededHlPhxRes : (seededHlPhxRes?.pairs || []);
+        const hlPhxConsumed = {
+            hlUsed: Array.isArray(seededHlPhxRes) ? new Set() : (seededHlPhxRes?.hlUsed || new Set()),
+            phxUsed: Array.isArray(seededHlPhxRes) ? new Set() : (seededHlPhxRes?.phxUsed || new Set()),
+        };
+        if (seededHlPhx.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededHlPhx]);
+        const seededPartial = perpsSeedPartialClosePairsFromExchange(data);
+        if (seededPartial.length) {
+            // Replace prior partial rows for the same venue|symbol|side|session
+            // group: the in-memory dedupe key uses closeTime, which advances as
+            // more of the position is closed, so without this the old row would
+            // linger and the session would show two rows. The seeded row's
+            // sessionStartDay is stable for the life of the session.
+            // Paired cross-exchange rows consume BOTH legs (e.g. XLM
+            // phoenix|long + extended|short), so their consumed SOLO keys are
+            // added too — otherwise the old single-venue SOLO row survives next
+            // to the new hedged card.
+            const keep = new Set(seededPartial.map(perpsPartialGroupKey));
+            for (const p of seededPartial) {
+                for (const k of perpsPartialCrossExchangeGroupKeys(p)) keep.add(k);
+            }
+            data.closedPairs = perpsCacheNewClosedPairs([
+                ...(data.closedPairs || []).filter((p) => !(p?.partialClose === true && keep.has(perpsPartialGroupKey(p)))),
+                ...seededPartial,
+            ]);
+        }
+        // Never-hedged SOLO rows: full-close rounds with no opposite-venue
+        // activity in their lifetime (e.g. KAITO's 48,000 HL round closed after
+        // the Extended hedge flattened). Consumed hedge legs are excluded.
+        const seededSolo = perpsSeedSoloClosedPairsFromExchange(data, {
+            hlUsed: new Set([...hlExtConsumed.hlUsed, ...grvtConsumed.hlUsed, ...hlNadoConsumed.hlUsed, ...hlPhxConsumed.hlUsed]),
+            extUsed: hlExtConsumed.extUsed,
+            grvtUsed: grvtConsumed.grvtUsed,
+            nadoUsed: hlNadoConsumed.nadoUsed,
+            phxUsed: hlPhxConsumed.phxUsed,
+        });
+        if (seededSolo.length) data.closedPairs = perpsCacheNewClosedPairs([...(data.closedPairs || []), ...seededSolo]);
+        try {
+            // Persist must NOT resurrect the old single-venue SOLO rows that a
+            // seeded cross-exchange pair consumed: the raw localStorage copies
+            // are re-added here, so drop their group keys first.
+            const retiredPartialKeys = new Set();
+            for (const p of seededPartial || []) {
+                for (const k of perpsPartialCrossExchangeGroupKeys(p)) retiredPartialKeys.add(k);
+            }
+            const rawPersisted = perpsLoadClosedPairsRaw()
+                .filter((p) => !(p?.partialClose === true && retiredPartialKeys.has(perpsPartialGroupKey(p))));
+            perpsPersistClosedPairs([...rawPersisted, ...(data.closedPairs || [])]);
+        } catch (e) { /* non-fatal */ }
+        const snapshotAdded = perpsSaveSnapshot(data);
+        data._equitySeriesRaw = { ...perpsBuildEquitySeries(data), fetchedAt: data.fetchedAt };
+        data._equitySeries = data._equitySeriesRaw;
+        const adjSig = `${Number(data._equitySeriesRaw?.variationalEquityAdjustNow ?? '')}|${(data.closedPairs || []).length}|${(data.variationalPendingClose || []).length}`;
+        const adjustChanged = adjSig !== (_perpsLastEquityAdjSig || '');
+        _perpsLastEquityAdjSig = adjSig;
+        if (data.rateSpread) perpsApplyLiveRates(data.rateSpread, data.fetchedAt);
+        perpsRenderStatsBar(data);
+        if (perpsShouldRenderEquityChart(snapshotAdded, opts.cloudSnapshotsAdded, adjustChanged)) {
+            perpsRenderEquityChart(data);
+        }
+        perpsRenderFundingForTimeWindow(data);
+        perpsRenderPositionsPanel(data);
+        perpsRenderUnhedged(data.unhedged || []);
+        perpsRenderVariationalPending(data.variationalPendingClose || []);
+        perpsRenderAlerts(data.paired || [], data.unhedged || [], data.summary || {});
+        perpsRenderCrossMarginLeverage(data);
+        perpsRenderMobileFundingRates(data);
+        // Keep an open Position Performance modal fresh — recompute its realized
+        // PnL display after every refresh (per-refresh updates from latest trades).
+        if (_perpsPositionChartPairIdx != null && _perpsLastData) {
+            const modal = document.getElementById('perpsPositionChartModal');
+            if (modal && modal.classList.contains('active')) {
+                perpsOpenPositionChart(_perpsPositionChartPairIdx, { preserveFeeMode: true });
+            }
+        }
+        _perpsLastRefreshAt = data.fetchedAt || Date.now();
+        _perpsLiveAprUpdatedAt = _perpsLastRefreshAt;
+        _perpsRefreshError = null;
+        perpsUpdateRefreshBar();
+    } catch (e) {
+        console.error('[perps] dashboard render failed', e);
+        _perpsRefreshError = e?.message || 'render failed';
+        perpsUpdateRefreshBar();
+        perpsSetStatus(`Perps data loaded but UI render failed: ${e?.message || e}`);
+    }
+}
+
+function perpsFormatConnectedStatus(payload) {
+    const s = payload?.summary || {};
+    let status = `Connected · ${payload?.paired?.length || 0} pairs · equity ${perpsFmtUsd((s.hlAccountValue ?? 0) + (s.nadoAccountValue ?? 0) + (s.grvtAccountValue ?? 0) + (s.extendedAccountValue ?? 0) + (s.phoenixAccountValue ?? 0))}`;
+    if (s.nadoError) status += ` · NADO: ${s.nadoError}`;
+    if (s.grvtError) status += ` · GRVT: ${s.grvtError}`;
+    if (s.extendedError) status += ` · Extended: ${s.extendedError}`;
+    if (s.phoenixError) status += ` · Phoenix: ${s.phoenixError}`;
+    return status;
+}
+
+function perpsDashboardLoadWarnings(payload) {
+    const warnings = [];
+    const s = payload?.summary || {};
+    if (payload?.warning) warnings.push(payload.warning);
+    if (Array.isArray(payload?.warnings)) warnings.push(...payload.warnings);
+    if (s.hlError) warnings.push(`Hyperliquid: ${s.hlError}`);
+    if (s.nadoError) warnings.push(`NADO: ${s.nadoError}`);
+    if (s.grvtError) warnings.push(`GRVT: ${s.grvtError}`);
+    if (s.extendedError) warnings.push(`Extended: ${s.extendedError}`);
+    if (s.phoenixError) warnings.push(`Phoenix: ${s.phoenixError}`);
+    if (payload?.nado?.state?.error) warnings.push(`NADO state: ${payload.nado.state.error}`);
+    if (payload?.nado?.funding?.error) warnings.push(`NADO funding: ${payload.nado.funding.error}`);
+    if (payload?.nado?.matches?.error) warnings.push(`NADO matches: ${payload.nado.matches.error}`);
+    return [...new Set(warnings.filter(Boolean))];
+}
+
+async function perpsFetchDashboardPayload(params, silent = false) {
+    let lastError = null;
+    let lastGood = null;
+    for (let attempt = 0; attempt <= PERPS_REFRESH_RETRIES; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), PERPS_FETCH_TIMEOUT_MS);
+        try {
+            const res = await fetch('/api/perps?' + params.toString(), { signal: controller.signal });
+            const payload = await res.json();
+            if (!res.ok) throw new Error(payload.error || res.statusText);
+            const warnings = perpsDashboardLoadWarnings(payload);
+            if (warnings.length && !payload.cached && attempt < PERPS_REFRESH_RETRIES) {
+                lastGood = { payload, warnings };
+                if (!silent || document.body.dataset.activeTab === 'perps') {
+                    perpsSetStatus(`NADO data warning; retrying (${attempt + 1}/${PERPS_REFRESH_RETRIES})...`);
+                }
+                continue;
+            }
+            return { payload, warnings };
+        } catch (e) {
+            lastError = e;
+            if (attempt < PERPS_REFRESH_RETRIES) {
+                if (!silent || document.body.dataset.activeTab === 'perps') {
+                    const msg = e.name === 'AbortError' ? 'API timed out' : (e.message || 'fetch failed');
+                    perpsSetStatus(`Perps API failed; retrying (${attempt + 1}/${PERPS_REFRESH_RETRIES}) - ${msg}`);
+                }
+                continue;
+            }
+            if (lastGood) return lastGood;
+            throw lastError;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    }
+    if (lastGood) return lastGood;
+    throw lastError || new Error('Perps API failed');
+}
+async function perpsRefresh(silent = false) {
+    if (_perpsRefreshInFlight) {
+        // Preserve an already-queued non-silent (manual) refresh over silent follow-ups.
+        _perpsRefreshPending = { silent: silent && (_perpsRefreshPending?.silent !== false) };
+        return false;
+    }
+    _perpsRefreshInFlight = true;
+    perpsSetManualRefreshBusy(true);
+    try {
+        if (_perpsBootPromise) await _perpsBootPromise.catch(() => {});
+        perpsImportConfigFromPortfolio();
+        perpsRepairSavedConfig();
+        const hl = perpsResolveHlWallet();
+        const nadoRaw = perpsReadConfigField('perpsNadoWallet', 'nado');
+        if (!hl) {
+            if (!silent) perpsSetStatus('Enter a valid Hyperliquid wallet and click Save & connect.');
+            return false;
+        }
+        if (!silent) perpsSetStatus('Fetching exchange data…');
+
+        if (location.protocol === 'file:') {
+            _perpsRefreshError = 'Requires deployed site or local server';
+            perpsUpdateRefreshBar();
+            if (!silent) perpsSetStatus('Perps dashboard requires the local server or live site — file:// cannot call /api/perps.');
+            return false;
+        }
+
+        const bucketsBefore = perpsCountEquityBuckets();
+        // Hydrate hedges before dashboard so Variational closes + Phoenix are current.
+        await perpsHydratePerpsAuxFromCloud().catch(() => false);
+        const params = new URLSearchParams({ wallet: hl, days: String(perpsStatRangeToApiDays(_perpsStatRange)) });
+        if (nadoRaw && /^0x[a-fA-F0-9]{40}$/.test(nadoRaw)) params.set('nadoWallet', nadoRaw);
+        const grvtSub = perpsReadConfigField('perpsGrvtSubAccount', 'grvtSubAccount');
+        if (grvtSub) params.set('grvtSubAccount', grvtSub);
+        const phoenixRaw = perpsReadConfigField('perpsPhoenixWallet', 'phoenix');
+        if (phoenixRaw && perpsIsValidSolanaAddress(phoenixRaw)) params.set('phoenixWallet', phoenixRaw.trim());
+        const grvtCache = perpsLoadGrvtStateCache();
+        if (grvtCache?.positions?.length) {
+            const grvtJson = JSON.stringify(grvtCache.positions);
+            if (grvtJson.length <= 1500) params.set('grvtPositions', grvtJson);
+        }
+        const fetchResult = await perpsFetchDashboardPayload(params, silent);
+        const cloudSnapshotsAdded = perpsCountEquityBuckets() > bucketsBefore;
+        const { payload, warnings } = fetchResult;
+        perpsRenderDashboard(payload, { cloudSnapshotsAdded });
+        void perpsEnsurePhoenixSyncedToCloud();
+        if (warnings.length) {
+            _perpsRefreshError = warnings.join(' · ');
+            perpsUpdateRefreshBar();
+        }
+        if (!silent || document.body.dataset.activeTab === 'perps') {
+            perpsSetStatus(perpsFormatConnectedStatus(payload));
+        }
+        return true;
+    } catch (e) {
+        _perpsRefreshError = e.name === 'AbortError' ? 'API timed out' : (e.message || 'fetch failed');
+        perpsUpdateRefreshBar();
+        if (!silent) {
+            perpsSetStatus('Error: ' + _perpsRefreshError);
+        } else if (document.body.dataset.activeTab === 'perps') {
+            perpsSetStatus(`Saved wallet · refresh failed (${_perpsRefreshError})`);
+        }
+        console.error('[perps]', e);
+        return false;
+    } finally {
+        _perpsRefreshInFlight = false;
+        if (_perpsRefreshPending) {
+            const next = _perpsRefreshPending;
+            _perpsRefreshPending = null;
+            void perpsRefresh(next.silent);
+        } else {
+            perpsSetManualRefreshBusy(false);
+        }
+    }
+}
+
+// ── Watcher sub-tab switching ──────────────────────────────────────
+function updateWyCount() {
+    const n = syncWatcherLinksCount();
+    const el = document.getElementById('wy-tools-count');
+    const badge = document.getElementById('wtab-yield-badge');
+    if (el) el.textContent = n + (n === 1 ? ' tool saved' : ' tools saved');
+    if (badge) badge.textContent = n + (n === 1 ? ' tool' : ' tools');
+}
+
+function switchWTab(name, btn) {
+    const v2 = document.querySelector('.watcher-v2');
+    if (v2) {
+        if (name === 'aavecap') {
+            switchTab('watcher');
+            watcherToggleAaveCap(true);
+            return;
+        }
+        const filterMap = { markets: 'markets', wallets: 'wallets', yield: 'tools' };
+        const filter = filterMap[name];
+        if (filter) {
+            switchTab('watcher');
+            const filterBtn = document.querySelector(`.watcher-v2-filter[data-watcher-filter="${filter}"]`);
+            watcherSetFilter(filter, filterBtn);
+            const section = document.querySelector(`[data-watcher-section="${filter}"]`);
+            if (section) section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        if (name === 'markets') {
+            const count = typeof watchlist !== 'undefined' ? watchlist.length : 0;
+            const badge = document.getElementById('wtab-markets-badge');
+            const countEl = document.getElementById('wtab-markets-count');
+            if (badge) badge.textContent = count + ' tracked';
+            if (countEl) countEl.textContent = count + (count === 1 ? ' market' : ' markets');
+        }
+        if (name === 'wallets') updateWatcherWalletCount();
+        return;
+    }
+    document.querySelectorAll('.wtab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.wtab-btn').forEach(b => b.classList.remove('active'));
+    const panel = document.getElementById('wtab-' + name);
+    if (panel) panel.classList.add('active');
+    if (btn) btn.classList.add('active');
+    if (name === 'markets') {
+        const count = typeof watchlist !== 'undefined' ? watchlist.length : 0;
+        const badge = document.getElementById('wtab-markets-badge');
+        const countEl = document.getElementById('wtab-markets-count');
+        if (badge)   badge.textContent   = count + (count === 1 ? ' market' : ' markets');
+        if (countEl) countEl.textContent = count + (count === 1 ? ' market' : ' markets');
+    }
+    if (name === 'wallets') updateWatcherWalletCount();
+}
+
+// =============================================================================
+// BOOT — must run after all state declarations in this script block
+// =============================================================================
+function recoverPortfolioOnPageShow(event) {
+    if (location.protocol === 'file:') return;
+    if (!_vaultLoadDataReady) return;
+    const totalEl = document.getElementById('totalNetWorth');
+    const totalRaw = Number(totalEl?.getAttribute('data-raw') || 0);
+    const needsPaint = portfolioHasEntries() && (!Number.isFinite(totalRaw) || totalRaw <= 0);
+    const needsHydrate = !portfolioHasEntries();
+    if (!needsPaint && !needsHydrate && !event?.persisted) return;
+    if (needsPaint) paintPortfolioFromLocal();
+    try { ensureMarketTickerBoot(); } catch (e) {}
+    hydrateLogoCacheFromCloud().catch(() => {});
+    if (needsHydrate || event?.persisted) {
+        hydratePortfolioFromCloud({ portfolioOnly: true, background: portfolioHasEntries() })
+            .catch(markPortfolioSyncFailed);
+    }
+}
+window.addEventListener('pageshow', recoverPortfolioOnPageShow);
+
+(async () => {
+    await loadData();
+    syncEtfsServerSide();
+    applyEtfDcaSchedules();
+})();
+
+</script>
+
+<!-- TELEGRAM LATEST POSTS FEATURE -->
+<script>
+document.addEventListener("click", function(e){
+  const btn = e.target.closest("[data-telegram]");
+  if(!btn) return;
+
+  const url = btn.getAttribute("data-telegram");
+
+  let container = btn.nextElementSibling;
+  if(!container || !container.classList.contains("tg-posts")){
+    container = document.createElement("div");
+    container.className = "tg-posts";
+    container.style.marginTop = "10px";
+    container.style.padding = "10px";
+    container.style.border = "1px solid rgba(255,255,255,0.1)";
+    container.style.borderRadius = "8px";
+    btn.parentNode.insertBefore(container, btn.nextSibling);
+  }
+
+  container.innerHTML = "Loading latest posts...";
+
+  // NOTE: Telegram doesn't allow direct fetch without backend
+  // So we simulate or embed via iframe
+  const embed = document.createElement("iframe");
+  embed.src = url;
+  embed.style.width = "100%";
+  embed.style.height = "300px";
+  embed.style.border = "none";
+
+  container.innerHTML = "";
+  container.appendChild(embed);
+});
+</script>
+
+<script>
+// ── AAVE CAP MONITOR — Multi-market, Official Aave GraphQL API ────────
+(function () {
+  const AAVE_GQL = 'https://api.v3.aave.com/graphql';
+  const LS_KEY   = 'aavecap-markets-v1';
+
+  const CHAIN_NAMES = {
+    1: 'Ethereum', 10: 'Optimism', 56: 'BNB Chain', 100: 'Gnosis',
+    137: 'Polygon', 324: 'zkSync Era', 1088: 'Metis', 8453: 'Base',
+    42161: 'Arbitrum', 43114: 'Avalanche', 534352: 'Scroll', 4326: 'MegaETH',
+  };
+
+  // Default market pre-loaded
+  let markets = [{ symbol: 'USDe', chainId: 4326, id: 'USDe-4326' }];
+  try {
+    const s = localStorage.getItem(LS_KEY);
+    if (s) markets = JSON.parse(s);
+  } catch(e) {}
+
+  // Live data cache: id → { supplyCap, currentSupply, util, available, capReached, error }
+  const cache = {};
+
+  let alertActive = false;
+  let alertTimer  = null;
+
+  function save() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(markets)); } catch(e) {}
+  }
+
+  function fmt(n) {
+    n = parseFloat(n);
+    if (!isFinite(n) || n < 0) return '—';
+    if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+    if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
+    return n.toFixed(2);
+  }
+
+  function escHtml(s) {
+    return String(s||'').replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+  }
+
+  function colorFor(pct) {
+    return pct >= 99.5 ? 'var(--red)' : pct >= 90 ? 'var(--amber)' : 'var(--teal)';
+  }
+
+  // ── Render all market cards ──────────────────────────────────────────
+  function renderCards() {
+    const container = document.getElementById('aavecap-cards');
+    const empty     = document.getElementById('aavecap-empty');
+    if (!container) return;
+
+    if (markets.length === 0) {
+      container.innerHTML = '';
+      if (empty) empty.style.display = 'block';
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+
+    container.innerHTML = markets.map((m, i) => {
+      const d     = cache[m.id];
+      const chain = CHAIN_NAMES[m.chainId] || ('Chain ' + m.chainId);
+
+      if (!d) return cardLoading(m, i, chain);
+      if (d.error) return cardError(m, i, chain, d.error);
+      return cardData(m, i, chain, d);
+    }).join('');
+  }
+
+  function cardShell(m, i, chain, content) {
+    return `
+      <div style="background:var(--surf-1);border:1px solid var(--border);border-radius:var(--r-sm);padding:0.9rem 1rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-family:var(--ff-mono);font-weight:700;font-size:0.9rem;color:var(--t2);">${escHtml(m.symbol)}</span>
+            <span style="font-size:0.62rem;color:var(--t3);background:var(--surf-3);border-radius:4px;padding:1px 6px;font-family:var(--ff-mono);">${escHtml(chain)}</span>
+          </div>
+          <button onclick="aaveCapRemove(${i})"
+            style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:0.85rem;padding:2px 6px;border-radius:4px;line-height:1;"
+            onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--t3)'">✕</button>
+        </div>
+        ${content}
+      </div>`;
+  }
+
+  function cardLoading(m, i, chain) {
+    return cardShell(m, i, chain, `
+      <div style="font-size:0.75rem;color:var(--t3);font-family:var(--ff-mono);">Loading…</div>`);
+  }
+
+  function cardError(m, i, chain, err) {
+    return cardShell(m, i, chain, `
+      <div style="font-size:0.72rem;color:var(--red);font-family:var(--ff-mono);">⚠ ${escHtml(err)}</div>`);
+  }
+
+  function cardData(m, i, chain, d) {
+    const color  = colorFor(d.util);
+    const pctStr = d.util.toFixed(1) + '%';
+    const statusText = d.capReached
+      ? '✕ Cap fully reached'
+      : d.util >= 90
+        ? '⚠ Nearly full — ' + fmt(d.available) + ' ' + m.symbol + ' left'
+        : '✓ ' + fmt(d.available) + ' ' + m.symbol + ' available';
+    const statusBg = d.capReached ? 'rgba(244,63,94,0.08)' : d.util >= 90 ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)';
+    const statusBd = d.capReached ? 'rgba(244,63,94,0.2)'  : d.util >= 90 ? 'rgba(245,158,11,0.2)'  : 'rgba(34,197,94,0.2)';
+
+    return cardShell(m, i, chain, `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:0.75rem;">
+        <div>
+          <div style="font-size:0.6rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--t3);margin-bottom:2px;">Cap</div>
+          <div style="font-family:var(--ff-mono);font-size:0.85rem;color:var(--t2);">${fmt(d.supplyCap)}</div>
+        </div>
+        <div>
+          <div style="font-size:0.6rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--t3);margin-bottom:2px;">Supplied</div>
+          <div style="font-family:var(--ff-mono);font-size:0.85rem;color:var(--t2);">${fmt(d.currentSupply)}</div>
+        </div>
+        <div>
+          <div style="font-size:0.6rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--t3);margin-bottom:2px;">Available</div>
+          <div style="font-family:var(--ff-mono);font-size:0.85rem;color:${color};">${fmt(d.available)}</div>
+        </div>
+      </div>
+      <div style="margin-bottom:0.6rem;">
+        <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--t3);font-family:var(--ff-mono);margin-bottom:4px;">
+          <span>Utilization</span><span style="color:${color};">${pctStr}</span>
+        </div>
+        <div style="height:5px;background:var(--surf-3);border-radius:100px;overflow:hidden;">
+          <div style="height:100%;border-radius:100px;background:${color};width:${Math.min(100,d.util).toFixed(2)}%;transition:width 0.7s ease;"></div>
+        </div>
+      </div>
+      <div style="font-size:0.7rem;padding:5px 8px;border-radius:6px;border:1px solid ${statusBd};background:${statusBg};color:var(--t1);font-family:var(--ff-mono);">
+        ${escHtml(statusText)}
+      </div>`);
+  }
+
+  // ── Fetch all markets in one batched GraphQL query ───────────────────
+  window.aaveCapFetchAll = async function () {
+    if (document.body.dataset.activeTab !== 'watcher' || document.hidden) return;
+    if (markets.length === 0) return;
+
+    const btn = document.getElementById('aavecap-refresh-btn');
+    if (btn) { btn.textContent = '↻ …'; btn.disabled = true; }
+
+    // Collect unique chain IDs
+    const chainIds = [...new Set(markets.map(m => m.chainId))];
+
+    const query = `query AaveCapMonitor {
+      markets(request: { chainIds: [${chainIds.join(',')}] }) {
+        name
+        chain { chainId }
+        reserves {
+          underlyingToken { symbol }
+          supplyInfo {
+            total { value }
+            supplyCap { amount { value } }
+            supplyCapReached
+          }
+        }
+      }
+    }`;
+
+    try {
+      const res = await fetch(AAVE_GQL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+      if (!res.ok) throw new Error('Aave API HTTP ' + res.status);
+      const json = await res.json();
+      if (json.errors) throw new Error(json.errors.map(e => e.message).join('; '));
+
+      const apiMarkets = json.data?.markets || [];
+
+      // Build lookup: "SYMBOL-chainId" → reserve data
+      const lookup = {};
+      for (const am of apiMarkets) {
+        const cId = am.chain?.chainId;
+        for (const r of (am.reserves || [])) {
+          const sym = r.underlyingToken?.symbol?.toUpperCase();
+          if (sym && cId) lookup[sym + '-' + cId] = r;
+        }
+      }
+
+      // Update cache for each tracked market
+      const threshold = parseFloat(document.getElementById('aavecap-threshold')?.value) || 95;
+      for (const m of markets) {
+        const key = m.symbol.toUpperCase() + '-' + m.chainId;
+        const r   = lookup[key];
+        if (!r) {
+          cache[m.id] = { error: 'Not found on this chain — check symbol and chain.' };
+          continue;
+        }
+        const supplyCap     = parseFloat(r.supplyInfo?.supplyCap?.amount?.value ?? '0');
+        const currentSupply = parseFloat(r.supplyInfo?.total?.value ?? '0');
+        if (supplyCap === 0) {
+          cache[m.id] = { error: 'Supply cap is 0 — asset may have no cap set.' };
+          continue;
+        }
+        const util      = (currentSupply / supplyCap) * 100;
+        const available = Math.max(0, supplyCap - currentSupply);
+        const capReached = !!r.supplyInfo?.supplyCapReached;
+        cache[m.id] = { supplyCap, currentSupply, util, available, capReached };
+
+        // Fire alert if active and below threshold
+        if (alertActive && util < threshold) {
+          const notifMsg = 'Aave ' + m.symbol + ' (' + (CHAIN_NAMES[m.chainId] || m.chainId) + ') — cap at ' + util.toFixed(1) + '% (below ' + threshold + '%). ' + fmt(available) + ' ' + m.symbol + ' available.';
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(m.symbol + ' deposit space open — Aave ' + (CHAIN_NAMES[m.chainId] || m.chainId), {
+              body: notifMsg,
+              tag:  'aave-cap-' + m.id,
+            });
+          }
+          // Also fire in-page toast + Telegram
+          // wlShowToast fired by server poll instead
+          // tgSend(notifMsg); // handled by server worker
+        }
+      }
+
+      document.getElementById('aavecap-last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+    } catch(e) {
+      // Mark all as errored
+      for (const m of markets) cache[m.id] = { error: e.message || String(e) };
+      document.getElementById('aavecap-last-updated').textContent = 'Error ' + new Date().toLocaleTimeString();
+    } finally {
+      if (btn) { btn.textContent = '↻ Refresh All'; btn.disabled = false; }
+      renderCards();
+    }
+  };
+
+  // ── Add a market ─────────────────────────────────────────────────────
+  window.aaveCapAddMarket = function () {
+    const symEl   = document.getElementById('aavecap-add-symbol');
+    const chainEl = document.getElementById('aavecap-add-chain');
+    const errEl   = document.getElementById('aavecap-add-error');
+
+    const symbol  = (symEl?.value || '').trim().toUpperCase();
+    const chainId = parseInt(chainEl?.value || '0');
+
+    errEl.style.display = 'none';
+
+    if (!symbol) {
+      errEl.textContent = 'Enter a token symbol.';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (!chainId) {
+      errEl.textContent = 'Select a chain.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    const id = symbol + '-' + chainId;
+    if (markets.find(m => m.id === id)) {
+      errEl.textContent = symbol + ' on this chain is already tracked.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    markets.push({ symbol, chainId, id });
+    save();
+    if (symEl) symEl.value = '';
+    renderCards();
+    window.aaveCapFetchAll();
+  };
+
+  // ── Remove a market ──────────────────────────────────────────────────
+  window.aaveCapRemove = function (index) {
+    const m = markets[index];
+    if (m) delete cache[m.id];
+    markets.splice(index, 1);
+    save();
+    renderCards();
+  };
+
+  // ── Alert toggle ─────────────────────────────────────────────────────
+  window.aaveCapToggleAlert = function () {
+    const btn = document.getElementById('aavecap-alert-btn');
+    const st  = document.getElementById('aavecap-alert-status');
+    if (alertActive) {
+      alertActive = false;
+      if (alertTimer) { clearInterval(alertTimer); alertTimer = null; }
+      if (btn) { btn.textContent = 'Enable Browser Alert'; btn.style.background = 'var(--teal-10)'; }
+      if (st) st.textContent = 'Alert off';
+      return;
+    }
+    if (!('Notification' in window)) { if (st) st.textContent = 'Not supported'; return; }
+    Notification.requestPermission().then(perm => {
+      if (perm !== 'granted') { if (st) st.textContent = 'Permission denied'; return; }
+      alertActive = true;
+      if (btn) { btn.textContent = '✓ Alert On'; btn.style.background = 'var(--teal-20)'; }
+      const secs = Math.max(30, parseInt(document.getElementById('aavecap-interval')?.value) || 60);
+      if (st) st.textContent = 'Checking every ' + secs + 's';
+      alertTimer = setInterval(() => {
+        if (document.body.dataset.activeTab === 'watcher' && !document.hidden) window.aaveCapFetchAll();
+      }, secs * 1000);
+      window.aaveCapFetchAll();
+    });
+  };
+
+  // ── Init ─────────────────────────────────────────────────────────────
+  renderCards();
+})();
+</script>
+
+
+
+
+
+<script>
+(function() {
+  const WORKER_URL  = '';
+  const SYNC_SECRET = '';
+
+  async function syncAlertsToServer() {
+    try {
+      const stored = localStorage.getItem('terminal-alerts');
+      const alerts = stored ? JSON.parse(stored) : [];
+      // Only sync untriggered alerts — let server fire them independently
+      const untriggered = Array.isArray(alerts) ? alerts.filter(a => !a.triggered) : [];
+      // Also sync TG channels for event alert news checking
+      const tgChannels = (() => {
+        try { return JSON.parse(localStorage.getItem('vault_tg_channels') || '[]'); } catch(e) { return []; }
+      })();
+      await fetch(WORKER_URL + '/api/sync-alerts', {
+        method:    'POST',
+        headers:   { 'Content-Type': 'application/json', 'x-sync-secret': SYNC_SECRET },
+        body:      JSON.stringify({ alerts: untriggered, tgChannels }),
+        keepalive: true,  // completes even if the tab closes immediately
+      });
+      console.log('[VaultSync] Synced', untriggered.length, 'alerts +', tgChannels.length, 'TG channels to server.');
+    } catch (e) {
+      console.warn('[VaultSync] Failed:', e.message);
+    }
+  }
+
+  async function syncPortfolioToServer() {
+    try {
+      const get = (key, fallback) => {
+        try { return JSON.parse(localStorage.getItem(key) || fallback); } catch(e) { return JSON.parse(fallback); }
+      };
+      const payload = {
+        portfolio:     get('portfolio-data-pro', 'null'),
+        polymarketWallets: (get('portfolio-data-pro', '{}')?.polymarketWallets || []),
+        watchlist:     get('wl-data', '[]'),
+        snapshots:     get('portfolio-snapshots', '{}'),
+        aaveMarkets:   get('aavecap-markets-v1', '[]'),
+        customTokens:  get('vault-custom-tokens', '{}'),
+        watcherWallets:get('vault-watcher-wallets', '[]'),
+        watcherLinks:  get('watcher-links', '[]'),
+        opinionWallets:get('opinion-config', '{}')?.wallets || [],
+        tgChannels:    get('vault_tg_channels', '[]'),
+      };
+      // Only sync if we have real portfolio data
+      if (!payload.portfolio) return;
+      // Use main /api/sync endpoint (WORKER_URL path is deprecated)
+      await fetch('/api/sync', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      });
+      console.log('[VaultSync] Portfolio synced to server.');
+    } catch (e) {
+      console.warn('[VaultSync] Portfolio sync failed:', e.message);
+    }
+  }
+
+  async function syncTriggeredFromServer() {
+    try {
+      const res = await fetch(WORKER_URL + '/api/check-alerts');
+      const data = await res.json();
+      const _firedIds = new Set([...(data.recentFired || []), ...((data.results || []).filter(r => r.triggered).map(r => r.id))]);
+      if (!_firedIds.size) return;
+      const stored = localStorage.getItem('terminal-alerts');
+      if (!stored) return;
+      const alerts = JSON.parse(stored);
+      if (!Array.isArray(alerts)) return;
+      const remaining = alerts.filter(a => !_firedIds.has(a.id));
+      if (remaining.length < alerts.length) {
+        localStorage.setItem('terminal-alerts', JSON.stringify(remaining));
+        window.terminalAlerts = remaining;
+        if (typeof terminalRenderAlerts === 'function') terminalRenderAlerts();
+        console.log('[VaultSync] Deleted', alerts.length - remaining.length, 'fired alert(s)');
+      }
+    } catch (e) {
+      console.warn('[VaultSync] syncTriggeredFromServer failed:', e.message);
+    }
+  }
+
+  function patchTerminalSave() {
+    const original = window.terminalSave;
+    if (typeof original !== 'function') return false;
+    window.terminalSave = function() {
+      original.apply(this, arguments);
+      syncAlertsToServer();
+    };
+    return true;
+  }
+
+  // Poll server every 10 seconds to check for newly fired alerts and show browser toast
+  let lastFiredIds = new Set();
+
+  async function pollForFiredAlerts() {
+    try {
+      const res = await fetch(WORKER_URL + '/api/check-alerts');
+      const data = await res.json();
+      console.log('[VaultSync] check-alerts response:', JSON.stringify(data));
+      if (Array.isArray(data.recentFired)) {
+        dashboardRecentFired = data.recentFired;
+        window.dashboardRecentFired = data.recentFired;
+        if (typeof renderDashboardEventLog === 'function') renderDashboardEventLog();
+      }
+      if (!data.results) return;
+
+      const stored = localStorage.getItem('terminal-alerts');
+      if (!stored) return;
+      const alerts = JSON.parse(stored);
+      if (!Array.isArray(alerts)) return;
+
+      const toDelete = new Set();
+
+      for (const result of data.results) {
+        if (result.triggered && !lastFiredIds.has(result.id)) {
+          lastFiredIds.add(result.id);
+          toDelete.add(result.id);
+          const alert = alerts.find(a => a.id === result.id);
+          const label = alert ? (alert.label || alert.symbol) : result.symbol;
+          const priceStr = result.price != null ? result.price : '';
+          const msg = label + (priceStr ? ' — now at ' + priceStr : '');
+          if (typeof wlShowToast === 'function') {
+            wlShowToast('🔔 Alert Triggered', msg, null);
+          }
+          console.log('[VaultSync] Server fired alert — showing toast:', msg);
+        }
+      }
+      // Catch alerts that fired before this poll (browser missed them)
+      if (data.recentFired && Array.isArray(data.recentFired)) {
+        for (const rec of data.recentFired) {
+          const id = typeof rec === 'object' ? rec.id : rec;
+          if (!lastFiredIds.has(id)) {
+            lastFiredIds.add(id);
+            toDelete.add(id);
+            const alert = alerts.find(a => a.id === id);
+            if (alert) {
+              const label = alert.label || alert.symbol;
+              if (typeof wlShowToast === 'function') wlShowToast('🔔 Alert Triggered', label, null);
+              console.log('[VaultSync] Missed fire detected:', label);
+            }
+          }
+        }
+      }
+      if (toDelete.size) {
+        const remaining = alerts.filter(a => !toDelete.has(a.id));
+        localStorage.setItem('terminal-alerts', JSON.stringify(remaining));
+        window.terminalAlerts = remaining;
+        if (typeof terminalRenderAlerts === 'function') terminalRenderAlerts();
+        // ── Add fired alerts to event log ──────────────────────────────────
+        const firedItems = [];
+        for (const id of toDelete) {
+          const alert = alerts.find(a => a.id === id);
+          if (alert) {
+            const label = alert.label || alert.symbol || 'Alert';
+            firedItems.push({ kind: 'Alert Triggered', icon: 'bell',
+              color: 'var(--red)', alpha: 'rgba(244,63,94,0.13)',
+              text: label, ts: Date.now() });
+          }
+        }
+        if (firedItems.length && typeof _evHistSave === 'function') {
+          _evHistSave(firedItems).then(() => {
+            if (typeof renderDashboardEventLog === 'function') renderDashboardEventLog();
+          }).catch(() => {});
+        }
+      }
+    } catch (e) {}
+  }
+
+  let attempts = 0;
+  const poll = setInterval(() => {
+    if (patchTerminalSave()) {
+      clearInterval(poll);
+      syncAlertsToServer();
+      syncPortfolioToServer();
+      syncTriggeredFromServer();
+      console.log('[VaultSync] Active.');
+
+      // Sync portfolio every 5 minutes in background
+      setInterval(syncPortfolioToServer, 5 * 60 * 1000);
+      // Poll fired alerts only while the Terminal tab is active.
+      setInterval(() => {
+        if (document.body.dataset.activeTab === 'terminal' && !document.hidden) pollForFiredAlerts();
+      }, 10000);
+      if (typeof refreshServerEventLog === 'function' && document.body.dataset.activeTab === 'overview') {
+        refreshServerEventLog(true);
+      }
+    }
+    if (++attempts > 50) clearInterval(poll);
+  }, 100);
+})();
+</script>
+<script>
+// Safety net: flush alerts to server when the tab is closed/refreshed.
+// keepalive:true lets the browser complete the request after unload.
+window.addEventListener('beforeunload', function() {
+  try {
+    var stored = localStorage.getItem('terminal-alerts');
+    var alerts = stored ? JSON.parse(stored) : [];
+    var untriggered = Array.isArray(alerts) ? alerts.filter(function(a){ return !a.triggered; }) : [];
+    var tgChannels = [];
+    try { tgChannels = JSON.parse(localStorage.getItem('vault_tg_channels') || '[]'); } catch(e) {}
+    fetch('/api/sync-alerts', {
+      method:    'POST',
+      headers:   { 'Content-Type': 'application/json' },
+      body:      JSON.stringify({ alerts: untriggered, tgChannels: tgChannels }),
+      keepalive: true,
+    });
+  } catch(e) {}
+});
+</script>
+</body>
+</html>
